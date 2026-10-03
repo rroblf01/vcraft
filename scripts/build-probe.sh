@@ -23,6 +23,7 @@ echo "headers: $include"
 # `v -shared` appends a shared library suffix on its own, but it does not know
 # about CPython's EXT_SUFFIX, so vcraft supplies the full output name. Python
 # will only load a module whose file name ends in that suffix.
-v -shared -cc gcc -o "$probe_dir/probe$suffix" -cflags "-I$include" "$probe_dir/src/"
+"$here/scripts/vcraft-v.sh" -shared -o "$probe_dir/probe$suffix" \
+	-cflags "-I$include" "$probe_dir/src/"
 
 echo "built $probe_dir/probe$suffix"
