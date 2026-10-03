@@ -16,8 +16,16 @@ python/*/_stubs.pyi
 *.o
 *.a
 *.c
-!/examples/**/*.c
-!thirdparty/**/vcraft_import_lib.c
+*.s
+
+# Hand-written C lives in a c/ directory next to the module that owns it.
+!**/c/*.c
+!**/c/*.h
+
+# V compiler scratch directories
+.*.v3cc.*/
+.*.vtmp*/
+
 __pycache__/
 *.py[cod]
 
