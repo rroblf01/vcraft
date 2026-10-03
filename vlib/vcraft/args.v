@@ -119,3 +119,76 @@ pub fn require_arg(argv voidptr, i int, func string, name string) PyObj {
 	}
 	return obj
 }
+
+// Reading a sequence argument.
+//
+// A `[]T` parameter has to become a V slice of `T`, not of pointers, so the
+// elements are converted one at a time with the same reader a scalar parameter
+// would use. That means one function per element type rather than one generic
+// function: V does not emit a forward declaration for a generic called across
+// modules, so a generic here would not compile from generated code.
+//
+// Each function is named after the element type it produces.
+
+fn seq_elements(argv voidptr, i int, func string, name string) ?PyObj {
+	obj := arg_at(argv, i)
+	if obj.is_null() {
+		raise(.type_error, '${func}() missing required argument: ${name}')
+		return none
+	}
+	if !obj.type_is(list_type()) && !obj.type_is(tuple_type()) {
+		set_error(pyexc_obj(.type_error),
+			'${func}(): ${name} expected a sequence, got ${obj.type_name()}')
+		return none
+	}
+	return obj
+}
+
+// from_py_int_seq_arg reads positional argument `i` as a sequence of ints.
+pub fn from_py_int_seq_arg(argv voidptr, i int, func string, name string) ![]int {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	mut out := []int{cap: int(obj.len())}
+	mut k := 0
+	for k < int(obj.len()) {
+		out << from_py_int(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_f64_seq_arg reads positional argument `i` as a sequence of floats.
+pub fn from_py_f64_seq_arg(argv voidptr, i int, func string, name string) ![]f64 {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	mut out := []f64{cap: int(obj.len())}
+	mut k := 0
+	for k < int(obj.len()) {
+		out << from_py_f64(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_str_seq_arg reads positional argument `i` as a sequence of strings.
+pub fn from_py_str_seq_arg(argv voidptr, i int, func string, name string) ![]string {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	mut out := []string{cap: int(obj.len())}
+	mut k := 0
+	for k < int(obj.len()) {
+		out << from_py_string(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_uint_seq_arg reads positional argument `i` as a sequence of unsigned
+// integers.
+pub fn from_py_uint_seq_arg(argv voidptr, i int, func string, name string) ![]u64 {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	mut out := []u64{cap: int(obj.len())}
+	mut k := 0
+	for k < int(obj.len()) {
+		out << from_py_uint(obj.item(k), name)!
+		k++
+	}
+	return out
+}

@@ -157,6 +157,34 @@ pub fn to_py_bytes(value string) PyObj {
 	}
 }
 
+// to_py_bool boxes a V bool.
+pub fn to_py_bool(value bool) PyObj {
+	return bool_obj(value)
+}
+
+// to_py_list boxes a V slice of pointers as a Python list, calling `to_py_object`
+// on each element.
+//
+// The element conversion is a function because the element type is only known to
+// the code generator, so it passes the boxing rule in rather than this module
+// hard-coding one.
+pub fn to_py_list[T](items []T, box fn (T) PyObj) PyObj {
+	list := steal(C.PyList_New(0))
+	for item in items {
+		value := box(item)
+		C.PyList_Append(list.ptr, value.ptr)
+		value.decref()
+	}
+	return list
+}
+
+// to_py_object is the default boxing rule for a `[]voidptr` sequence: each element
+// is already a PyObject pointer, and it is passed through with its own reference
+// kept by the list.
+pub fn sequence_element_box(value voidptr) PyObj {
+	return borrow(value).new_ref()
+}
+
 // to_py_none is the result of a V function returning nothing.
 pub fn to_py_none() PyObj {
 	return py_none().new_ref()
