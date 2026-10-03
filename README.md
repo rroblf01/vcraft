@@ -430,8 +430,11 @@ target-dir = "build"
 
 ## Try it
 
-The repository ships a working example. A CPython extension module written in V,
-built with `v -shared`, imported by CPython 3.14:
+The repository ships two working examples, both built by hand rather than by
+`vcraft`, because they predate the code generator.
+
+A CPython extension module written in V, built with `v -shared`, imported by
+CPython 3.14:
 
 ```console
 $ ./scripts/build-probe.sh
@@ -440,18 +443,30 @@ $ python3 examples/probe/test_probe.py
 gate 0 passed
 ```
 
-It is built by hand rather than by `vcraft`, because it predates it. Its purpose
-is to keep the central assumption of this project under test: read
-[`examples/probe/README.md`](examples/probe/README.md) for what it proves and for
-the three compiler behaviours it uncovered.
+The runtime itself, exercised through a hand-written extension that uses it exactly
+as the generated glue will:
+
+```console
+$ ./scripts/build-runtime-tests.sh
+$ python3 tests/runtime/test_runtime.py
+...
+all 36 checks passed
+```
+
+That second one covers module construction, `METH_NOARGS` and `METH_FASTCALL`,
+integers and floats and strings and bytes and lists in both directions, docstrings,
+`error` and `panic` translation, and reference counting. Read
+[`examples/probe/README.md`](examples/probe/README.md) for what the first one proves
+and [`vlib/vcraft/README.md`](vlib/vcraft/README.md) for the compiler behaviours both
+of them uncovered.
 
 ---
 
 ## Roadmap
 
 - [x] **Gate 0**: a V shared object that CPython imports as an extension module
-- [ ] Runtime: `PyObject` wrapper, module construction, scalar and string
-      marshalling, argument parsing
+- [x] **Runtime**: `PyObj`, module construction, marshalling, argument parsing,
+      error and panic translation, covered by 36 checks
 - [ ] Code generator: annotations, docstrings, signatures, `.pyi` stubs
 - [ ] Classes: instances, fields, methods, properties, `__repr__`/`__eq__`
 - [ ] Errors: `!T` translation and `recover()`-based panic capture
@@ -483,19 +498,36 @@ $ python3 examples/probe/test_probe.py
 gate 0 passed
 ```
 
-Getting that far already produced three findings that shape the runtime, all
-written up in [`examples/probe/README.md`](examples/probe/README.md):
+Building it produced six compiler constraints that shaped the design. They are the
+kind that produce a wrong answer rather than an error, so they are written up in
+full in [`vlib/vcraft/README.md`](vlib/vcraft/README.md) and summarised here:
 
-1. The V C backend emits no prototypes for `fn C.` declarations, so a module
-   that binds to CPython **must** `#include <Python.h>`. Without it gcc applies
-   the implicit `int` return rule, truncates the returned `PyObject *` to 32
-   bits, and the interpreter segfaults on a module that loaded cleanly.
-2. A sibling `.c.v` file only exports its declarations to the module named by
-   its own `module` line.
-3. CPython's builtin exception types are data symbols, so the runtime needs a
-   small C accessor file, with a header, for each one it uses.
+1. The V C backend emits no prototypes for `fn C.` declarations, so a module that
+   binds to CPython **must** `#include <Python.h>`. Without it gcc applies the
+   implicit `int` return rule, truncates the returned `PyObject *` to 32 bits,
+   and the interpreter segfaults on a module that loaded cleanly.
+2. A sibling `.c.v` file only exports its declarations to the module named by its
+   own `module` line.
+3. CPython's builtin exception types are data symbols, so each one needs a small C
+   accessor, with a header.
+4. A generic function called across modules gets no forward declaration and does
+   not compile, so the panic guard is inlined per trampoline instead of shared.
+5. A `mut` receiver method on a struct from another module generates C that
+   passes the struct by value where a pointer is expected. That rules out a reader
+   object with a cursor, and is why the argument helpers take an explicit index.
+6. A file matching `*_test.v` is compiled as a V test file and its module export is
+   silently dropped.
 
-The remaining components are being written. Do not depend on this yet.
+One further note on running the compiler at all. A bare `v` invocation is not safe
+unattended: when a C compilation fails, V retries by bootstrapping the whole V
+compiler from source, which builds all of `vlib/v` and is easily a multi-gigabyte,
+multi-minute event. `-new-compiler` disables that retry and surfaces the real error
+instead. `scripts/vcraft-v.sh` is the single entry point for invoking V in this
+repository; it passes `-new-compiler`, bounds `VJOBS` and parallelism, and puts a
+kernel-enforced ceiling on the build. A normal build peaks around 100 MiB.
+
+The code generator, classes and the wheel writer are being written. Do not depend on
+this yet.
 
 ---
 
@@ -561,10 +593,18 @@ initialisation API, so a module loaded in one interpreter is shared by all of
 them. Subinterpreter support would need the multi-phase API; the generated
 glue is structured so that switch is a contained change.
 
+**The runtime API is stateless.** `vcraft/args.v` is a set of plain functions and
+the generated glue keeps the call state in its own locals, passing argument indices
+explicitly. The obvious design, a reader object with a `consumed` cursor, cannot be
+compiled at all: see constraint 5 above.
+
 **Nothing is installed system-wide.** `vcraft` builds into the project's `build/`
-and installs into the active virtualenv. The V runtime module ships with
-`vcraft` and is passed to the compiler with `-path`, so `VMODULES` is never
-touched.
+and installs into the active virtualenv. The V runtime module ships with `vcraft`
+and is passed to the compiler with `-path`, so `VMODULES` is never touched.
+
+**A module name ending in `_test` is rejected.** V would treat the file as a test
+file and silently drop its module export. `vcraft new` says so instead of producing
+an empty shared object.
 
 ---
 
