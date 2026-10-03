@@ -378,6 +378,7 @@ vcraft build [options]       build a distributable wheel
     --strip                  strip symbols from the extension
     --skip-audit             do not validate the resulting wheel
 
+vcraft generate-ci [github]  emit a ready-to-use CI workflow
 vcraft sdist                 build a source distribution
 vcraft publish               upload to PyPI (delegates to twine or uv)
 vcraft audit                 validate tags, RECORD and metadata of a wheel
@@ -633,15 +634,17 @@ for the ones the generator did.
 - [ ] Errors: custom V error types carrying an exception class
 - [x] **Wheels**: DEFLATE, ZIP container, `METADATA`, `WHEEL`, `RECORD` with SHA-256,
       tag computation and PEP 427 file names, verified by a real `pip install`
-- [ ] Wheels: `sdist`, editable installs, `.pyc` embedding
+- [ ] Wheels: editable installs, `.pyc` embedding
 - [x] **CLI**: `vcraft new`, `build`, `develop`, `sdist`, `publish`, `info`, `clean`
 - [x] **abi3**: stable-ABI builds with multi-phase initialisation, verified by a real
       `pip install`
 - [x] **PEP 517**: `pip install .` and `pip install <sdist>` both work
-- [ ] Free-threaded builds, cross-compilation, `--target`
-- [ ] Free-threaded builds, cross-compilation, `--target`
-- [ ] GitHub Actions: `vcraft-action@v1`, `generate-ci`, manylinux and musllinux
-      images
+- [x] **Free-threading**: checked against the interpreter rather than assumed, so a
+      `cp314t` wheel cannot be produced from a GIL build
+- [ ] Cross-compilation, `--target`, aarch64 and musllinux verification
+- [x] **CI**: `vcraft generate-ci` emits a matrix derived from the project's ABI
+      choice, with `vcraft-action@v1`
+- [ ] CI: published manylinux and musllinux images, and the action's own releases
 - [ ] Zero-copy buffers, `@[vc_gil]`, iterators
 - [ ] Apple Silicon, Windows and musllinux verification
 

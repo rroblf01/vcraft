@@ -100,6 +100,9 @@ pub fn load(root string) !Project {
 	}
 	p.classifiers = classifiers
 	p.dependencies = pkg.string_list_of('dependencies')
+	// The root-level keys, before any table. A key written after `[package]` belongs to
+	// that table in TOML, and a lookup that ignores the table it is in returns nothing
+	// rather than an error.
 	p.minimum_version = table.string_of('minimum-version', p.minimum_version)
 	p.abi3 = table.string_of('abi3', '')
 	p.free_threading = table.bool_of('free-threading', false)
@@ -113,7 +116,22 @@ pub fn load(root string) !Project {
 // can read. Quoted throughout rather than relying on bare words, because a description
 // with a comma in it is not a bare word and a classifier with a `::` looks like one.
 pub fn (p Project) render() string {
-	mut out := '[package]\n'
+	// The root-level keys come first, before any table header. In TOML a key belongs to
+	// whichever table precedes it, so `minimum-version` written after `[package]` is a
+	// key of that table: it parses without complaint and reads back as the default, and
+	// the generated file and the loaded configuration disagree with no error anywhere.
+	mut out := ''
+	out += 'minimum-version = ${quote(p.minimum_version)}\n'
+	if p.abi3.len > 0 {
+		out += 'abi3 = ${quote(p.abi3)}\n'
+	}
+	if p.free_threading {
+		out += 'free-threading = true\n'
+	}
+	if p.strip {
+		out += 'strip = true\n'
+	}
+	out += '\n[package]\n'
 	out += 'name = ${quote(p.name)}\n'
 	out += 'version = ${quote(p.version)}\n'
 	out += 'module = ${quote(p.module)}\n'
@@ -129,17 +147,6 @@ pub fn (p Project) render() string {
 			out += quote(d)
 		}
 		out += ']\n'
-	}
-	out += '\n'
-	out += 'minimum-version = ${quote(p.minimum_version)}\n'
-	if p.abi3.len > 0 {
-		out += 'abi3 = ${quote(p.abi3)}\n'
-	}
-	if p.free_threading {
-		out += 'free-threading = true\n'
-	}
-	if p.strip {
-		out += 'strip = true\n'
 	}
 	out += '\n'
 	for c in p.classifiers {

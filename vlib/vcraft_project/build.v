@@ -63,6 +63,22 @@ pub fn interpreter_version(python string) string {
 	return out.output.trim_space()
 }
 
+// interpreter_is_free_threaded reports whether an interpreter has no global interpreter
+// lock.
+//
+// `sys._is_gil_enabled` does not answer it. It reports the *current* state of the
+// interpreter, which a GIL build also reports as enabled, so using it means a GIL
+// interpreter is never detected. The build flag is the honest answer: it is set at
+// compile time and does not change while the process runs.
+pub fn interpreter_is_free_threaded(python string) bool {
+	script := "import sysconfig;print(sysconfig.get_config_var('Py_GIL_DISABLED') or 0)"
+	out := os.execute(python + ' -c "' + script + '"')
+	if out.exit_code != 0 {
+		return false
+	}
+	return out.output.trim_space() == '1'
+}
+
 // extension_suffix returns the suffix CPython expects for an extension, including the
 // ABI tag. Read from the interpreter rather than hard-coded, because `cpython-314` on
 // one build and `cpython-313` on another is the difference between a wheel that
@@ -180,6 +196,17 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	version := interpreter_version(python)
 	if version.len == 0 {
 		return error('cannot run ${python}; is it on PATH?')
+	}
+	// The free-threaded build is whatever interpreter the caller named, and this is
+	// the check: a GIL interpreter produces a `cp314t`-tagged wheel full of GIL code,
+	// which the installer accepts and the free-threaded runtime then refuses to load.
+	// Asking the interpreter is the only reliable answer, because the tag suffix
+	// depends on how it was configured rather than on its version.
+	if p.free_threading && !interpreter_is_free_threaded(python) {
+		return error('free-threading is set but ${python} is not a free-threaded build; pass --interpreter for one')
+	}
+	if !p.free_threading && interpreter_is_free_threaded(python) {
+		return error('${python} is a free-threaded build; set free-threading in vcraft.toml or pass --free-threading')
 	}
 	suffix := interpreter_suffix(python, p.abi3)
 	include := include_dir(python)

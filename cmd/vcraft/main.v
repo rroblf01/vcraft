@@ -9,6 +9,7 @@ module main
 
 import os
 
+import vcraft_ci
 import vcraft_project
 
 const usage = 'vcraft: Python extensions in V
@@ -18,6 +19,7 @@ usage:
   vcraft build [options]       build a wheel
   vcraft develop               build and install into the active virtualenv
   vcraft sdist                 build a source distribution
+  vcraft generate-ci           emit a GitHub Actions workflow into .github/workflows/
   vcraft publish               upload the built distributions to PyPI
   vcraft info                  show what vcraft resolved for this project
   vcraft version               print the version
@@ -28,6 +30,7 @@ build options:
   --interpreter <path>         build against a specific interpreter
   --out-dir <dir>              output directory (default: dist/)
   --platform <tag>             override the platform tag
+  --free-threading             build against a free-threaded interpreter
   --strip                      strip symbols
   --skip-audit                 do not validate the resulting wheel
   --jobs <n>                   compiler parallelism
@@ -101,7 +104,8 @@ fn parse_args(argv []string) !Args {
 
 // takes_value reports whether an option is followed by a value.
 fn takes_value(name string) bool {
-	return name in ['abi3', 'interpreter', 'out-dir', 'platform', 'jobs', 'python']
+	return name in ['abi3', 'interpreter', 'out-dir', 'platform', 'jobs', 'python',
+		'action']
 }
 
 fn main() {
@@ -125,6 +129,7 @@ fn main() {
 		// `vcraft help | less` has to work.
 		'help', '--help', '-h' { print(usage) }
 		'sdist' { cmd_sdist(args) }
+		'generate-ci' { cmd_generate_ci(args) }
 		'publish' { cmd_publish(args) }
 		'clean' { cmd_clean(args) }
 		else {
@@ -172,6 +177,17 @@ fn cmd_build(args Args, develop bool) {
 	}
 	if args.flags['strip'] {
 		p.strip = true
+	}
+	if args.flags['free-threading'] {
+		p.free_threading = true
+	}
+	if args.options['interpreter'] == '' && p.free_threading {
+		// A free-threaded interpreter is not the default one and is not on PATH under
+		// an obvious name, so the flag is not enough on its own.
+		eprintln('error: --free-threading needs --interpreter')
+		eprintln('  a free-threaded CPython, for example:')
+		eprintln('    --interpreter python3.14t')
+		exit(2)
 	}
 	opt := vcraft_project.BuildOptions{
 		root:        root
@@ -249,6 +265,32 @@ fn cmd_sdist(args Args) {
 		exit(1)
 	}
 	println('built ${path}')
+}
+
+// cmd_generate_ci writes a GitHub Actions workflow.
+fn cmd_generate_ci(args Args) {
+	p := vcraft_project.load('.') or {
+		eprintln('error: ${err.msg()}')
+		exit(1)
+	}
+	action := if args.options['action'] != '' { args.options['action'] } else {
+		'vcraft-action@v1'
+	}
+	dir := '.github/workflows'
+	if !os.exists(dir) {
+		os.mkdir_all(dir) or {
+			eprintln('error: cannot create ${dir}')
+			exit(1)
+		}
+	}
+	text := vcraft_ci.workflow(p, action, p.free_threading)
+	path := dir + '/build.yml'
+	os.write_file(path, text) or {
+		eprintln('error: cannot write ${path}')
+		exit(1)
+	}
+	println('wrote ${path}')
+	println('commit it and push; GitHub reads it from the repository root')
 }
 
 // cmd_publish delegates the upload.

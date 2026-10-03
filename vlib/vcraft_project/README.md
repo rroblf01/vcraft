@@ -181,6 +181,62 @@ has the right length and unpacks to files of the wrong size.
 The checksum is the one field that covers itself, so it is written as eight spaces while
 the sum is computed.
 
+## The TOML parser: a key belongs to the table above it
+
+A `vcraft.toml` bug that costs an afternoon is the quiet one. A key written after
+`[package]` is a key *of that table* in TOML, not of the document, and a parser that
+looks it up in the root returns the default. No diagnostic, no error, and the generated
+file and the loaded configuration disagree with nothing in between to explain it:
+
+    [package]
+    name = "demo"
+
+    abi3 = "3.12"          # a key of `package`, not of the document
+
+So `render` writes the root-level keys *before* the first header, and the parser routes
+each key by which table is open rather than by which object is being filled.
+
+That routing is the whole reason the parser has one table under construction. An
+earlier version kept `root`, `table` and a collected list of sections and wrote to all
+three. V copies a struct on assignment, so the three are independent values from the
+moment they are set, and the write-back that keeps them in step has to be right on every
+path. The symptom was a configuration file whose keys parsed cleanly and read back as
+defaults.
+
+`tests/project/check_toml.py` covers this directly, with cases that are files which parse
+without error and read back wrong. That is the only shape a parser bug takes when the
+grammar implemented is a subset of the real one.
+
+## Free-threading is asked, not assumed
+
+`sys._is_gil_enabled` does not report whether an interpreter was *built* without the GIL:
+it reports the current state, which a GIL build also reports as enabled. Using it means a
+GIL interpreter is never detected and a `cp314t` wheel is produced from GIL code — which
+the installer accepts and the free-threaded runtime then refuses to load.
+
+`sysconfig.get_config_var('Py_GIL_DISABLED')` is a build-time flag and does not change
+while the process runs, so it is the honest answer. The build checks it in both
+directions: a free-threaded request against a GIL interpreter fails, and so does a normal
+build against a free-threaded one, because a `cp314` wheel built from a `cp314t`
+interpreter is wrong in the same way.
+
+## CI: the matrix follows the ABI choice
+
+`vcraft generate-ci` derives the matrix from the project rather than emitting one fixed
+list. Without `abi3` every interpreter needs its own wheel, so the matrix is interpreters
+crossed with the platforms that have a current interpreter. With `abi3` one wheel covers
+every interpreter from the floor up, so the matrix is one cell per platform and the
+per-interpreter cells are simply absent.
+
+The combinations that cannot work are left out rather than emitted and failed: an abi3
+build and a free-threaded build are mutually exclusive, because the free-threaded runtime
+has no stable ABI.
+
+Two details in the output. A YAML value like `3.10` unquoted is a float and comes back as
+`3.1`, which is a version nobody publishes, so every scalar is quoted. And GitHub's
+`${{ }}` is the same shape as a V interpolation, so writing one into generated V source
+needs the braces split apart or V tries to evaluate `matrix.python` as a field access.
+
 ## Tests
 
 ```console

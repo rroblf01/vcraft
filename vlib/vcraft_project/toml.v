@@ -149,25 +149,31 @@ pub fn parse(text string) !Table {
 // every key, and V copies a struct on assignment, so a write-back that looks correct
 // can still leave a stale copy behind: the symptom is a key that parses without error
 // and then reads back empty.
+// Parser holds the state one parse needs.
+//
+// One table is under construction at a time and it is reached through `current`, never
+// held twice. An earlier version kept `root`, `table` and a collected list of sections
+// and wrote to all three, which cannot work: V copies a struct on assignment, so the
+// three are independent values from the moment they are set, and a write-back that
+// looks correct leaves one of them stale. The symptom was a configuration file whose
+// keys parsed without error and then read back as the defaults.
 struct Parser {
 mut:
 	// lines is the file, split.
 	lines []string
 	// at is the 1-based line being read.
 	at int
-	// root holds the keys written before the first header.
+	// root holds the keys written before the first header. It is only ever written to
+	// while `pending_name` is empty, and `merge` starts from it.
 	root Table
-	// table is the table currently being filled: the root at first, a nested table
-	// after a header.
+	// table is the table being filled right now.
 	table Table
-	// nested is true once a header has moved the parser into a nested table.
-	nested bool
-	// sections collects the nested tables by header name, in the order they appeared.
-	// A repeated `[[name]]` appends, which is what makes a list accumulate rather
-	// than replace.
-	sections []Section
-	// pending_name is the header the table being filled belongs to.
+	// pending_name is the header `table` belongs to, empty while it is the root.
 	pending_name string
+	// sections collects the finished tables by header name, in the order they appeared.
+	// A repeated `[[name]]` appends, which is what makes a list accumulate rather than
+	// replace.
+	sections []Section
 }
 
 // Section is one table collected under a header name.
@@ -179,12 +185,9 @@ pub mut:
 
 // run reads every line.
 fn (mut p Parser) run() !Table {
-	p.root = Table{
+	p.table = Table{
 		line: 1
 	}
-	p.table = p.root
-	// `at` walks forward to `lines.len + 1` and stops, which is one past the end and
-	// the reason a `while` here has to check before indexing rather than after.
 	for p.at <= p.lines.len {
 		line := p.lines[p.at - 1].trim_space()
 		if line == '' || line.starts_with('#') {
@@ -197,9 +200,14 @@ fn (mut p Parser) run() !Table {
 			}
 			name := line[2..line.len - 2].trim_space()
 			p.at++
-			// Each `[[name]]` is one entry of an array of tables, collected here and
-			// merged at the end.
-			p.open_table(name)
+			// Each `[[name]]` is one entry of an array of tables. The one being filled is
+			// finished into `sections` before the new one starts, which is what keeps
+			// exactly one table alive at a time.
+			p.file_current()
+			p.table = Table{
+				line: p.at
+			}
+			p.pending_name = name
 			continue
 		}
 		if line.starts_with('[') {
@@ -210,39 +218,44 @@ fn (mut p Parser) run() !Table {
 			p.at++
 			// A `[name]` header is collected the same way as `[[name]]`, so reading it
 			// back does not have to know which form the file used.
-			p.open_table(name)
+			p.file_current()
+			p.table = Table{
+				line: p.at
+			}
+			p.pending_name = name
 			continue
 		}
 		key, value := p.parse_pair(line)!
-		p.table.entries << Entry{
-			name:  key
-			value: value
+		// A key before any header is a root key, and a key after one belongs to that
+		// table. `pending_name` says which, and routing by it rather than by which
+		// table object is being filled is what keeps the two from being confused: V
+		// copies a struct on assignment, so `root` and `table` are independent values
+		// and a key written to the wrong one parses cleanly and reads back absent.
+		if p.pending_name == '' {
+			p.root.entries << Entry{
+				name:  key
+				value: value
+			}
+		} else {
+			p.table.entries << Entry{
+				name:  key
+				value: value
+			}
 		}
 		p.at++
 	}
 	return p.merge()
 }
 
-// open_table starts a nested table and makes it the one new keys go into.
+// file_current files the table being filled under its header name, if it has one.
 //
-// The table is finished into `sections` when the next header or the end of the file is
-// reached, rather than on a copy kept alongside it. That keeps one copy of everything.
-fn (mut p Parser) open_table(name string) {
-	p.close_section()
-	p.table = Table{
-		line: p.at
-	}
-	p.nested = true
-	p.pending_name = name
-}
-
-// close_section files the table being filled under its header name.
-fn (mut p Parser) close_section() {
-	if !p.nested {
+// A table with no header is the root and is not filed: `merge` returns it as it stands.
+fn (mut p Parser) file_current() {
+	if p.pending_name == '' {
 		return
 	}
 	p.add_section(p.pending_name, p.table)
-	p.nested = false
+	p.pending_name = ''
 }
 
 // add_section appends a table to the section called `name`.
@@ -278,7 +291,7 @@ fn (mut p Parser) add_section(name string, table Table) {
 
 // merge finishes the file and folds the nested tables into the root.
 fn (mut p Parser) merge() Table {
-	p.close_section()
+	p.file_current()
 	mut out := p.root
 	for s in p.sections {
 		out = push_section(out, s.name, s.tables)
