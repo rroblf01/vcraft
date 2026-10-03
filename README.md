@@ -392,6 +392,38 @@ itself and passed to the compiler with `-path`, so `VMODULES` is left untouched.
 
 ---
 
+## Wheels
+
+```console
+$ ./scripts/build-wheel-test.sh
+/home/you/vpy/build/vcraft_demo-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl
+$ pip install build/vcraft_demo-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl
+```
+
+A wheel is written from scratch in V: DEFLATE, the ZIP container, `METADATA`, `WHEEL`,
+`RECORD` with SHA-256, the compatibility tag, and the file name.
+
+zlib is not linked. It is on most build hosts but not all, and linking it makes the
+extension depend on a shared library the manylinux and musllinux images have to agree
+on. About 250 lines of fixed-Huffman DEFLATE is cheaper than that or than vendoring
+zlib, and the output is read by every unzip. A `.so` compresses to roughly 43%.
+
+`RECORD` carries base64 digests with the URL-safe alphabet and no padding, because pip
+compares the string. A hex digest installs and then fails verification on every file.
+
+The details that are easy to get wrong are written up in
+[`vlib/vcraft_wheel/README.md`](vlib/vcraft_wheel/README.md). The shortest version:
+
+- The distribution name is **escaped**, a run of `-_.` becoming `_`. The version is
+  escaped too, but only its dashes: `-` becomes `_` and `.` stays `.`. Writing `0-1-0`
+  looks equivalent because PEP 440 agrees it is the same version, but the installer
+  splits the file name on `-` and pip rejects it with "wrong number of parts".
+- The `.dist-info` directory is named after the distribution, never the module. pip
+  checks this before opening the archive.
+- The extension goes at the archive root. A directory named after the module is a
+  namespace package, and Python resolves one without opening the files inside it, so
+  the wheel installs and then imports as an empty module with `__file__` of `None`.
+
 ## Generated project layout
 
 ```
@@ -582,7 +614,9 @@ for the ones the generator did.
 - [x] **Errors**: `!T` translation, `raise_domain` for a specific Python exception,
       `recover()`-based panic capture
 - [ ] Errors: custom V error types carrying an exception class
-- [ ] Wheels: ZIP writer with DEFLATE, `METADATA`, `RECORD`, tag computation
+- [x] **Wheels**: DEFLATE, ZIP container, `METADATA`, `WHEEL`, `RECORD` with SHA-256,
+      tag computation and PEP 427 file names, verified by a real `pip install`
+- [ ] Wheels: `sdist`, editable installs, `.pyc` embedding
 - [ ] PEP 517 backend, `vcraft build` / `develop` / `sdist` / `audit`
 - [ ] `abi3` and free-threaded builds
 - [ ] GitHub Actions: `vcraft-action@v1`, `generate-ci`, manylinux and musllinux
