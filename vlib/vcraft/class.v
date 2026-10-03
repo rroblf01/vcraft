@@ -46,8 +46,16 @@ pub fn instance_basicsize() int {
 
 // type_flags is what a vcraft heap type asks for: CPython's own default set plus
 // Py_TPFLAGS_BASETYPE, so a Python class may subclass it.
-pub fn type_flags() u32 {
-	return C.vpy_tpflags_default() | tpflags_basetype
+//
+// `gc` adds `Py_TPFLAGS_HAVE_GC`, which is what makes the collector look at the
+// instances at all. A class with no reference field leaves it off: the flag costs a
+// little on every collection and buys nothing for a type that cannot be in a cycle.
+pub fn type_flags(gc bool) u32 {
+	mut flags := C.vpy_tpflags_default() | tpflags_basetype
+	if gc {
+		flags |= tpflags_have_gc
+	}
+	return flags
 }
 
 // type_alloc creates an instance of `typ`.
@@ -278,9 +286,207 @@ pub fn store_state(value voidptr, storage voidptr, size usize) {
 // This lives in the runtime because `Py_TYPE` is a macro, which generated code in a
 // user module cannot use.
 pub fn class_dealloc(self voidptr) voidptr {
+	// Off the collector's list before anything else. A type with `Py_TPFLAGS_HAVE_GC`
+	// has its instances tracked, and the collector walks that list without asking the
+	// objects whether they are still alive, so freeing an instance that is still on it
+	// leaves a dangling pointer for the next collection.
+	C.vpy_gc_untrack(self)
 	instance_free(instance_storage(self))
 	C.vpy_type_free(self)
 	return unsafe { nil }
+}
+
+// traverse_ref hands one reference field to the collector's visit function.
+//
+// The address is passed rather than the object so the generated code can hand over the
+// address of a struct member without naming its type, which it cannot do: the field is
+// declared in the user's V struct and the trampoline is emitted into their module.
+//
+// `Py_VISIT` in C returns early on a non-zero visit, and so does this, because that is
+// the whole contract of `tp_traverse`: a non-zero return means an error and the
+// collector abandons the traversal.
+pub fn traverse_ref(field voidptr, visit voidptr, arg voidptr) int {
+	return C.vpy_traverse_ref(field, visit, arg)
+}
+
+// visit_ref hands one object to the collector's visit function.
+//
+// Used where the object is already in hand rather than in a field: `tp_clear` releases
+// what `tp_traverse` reported, and both need the same treatment of a null object.
+pub fn visit_ref(obj voidptr, visit voidptr, arg voidptr) int {
+	return C.vpy_visit(obj, visit, arg)
+}
+
+// is_type_object reports whether `self` is a type rather than one of its instances.
+//
+// A heap type with `Py_TPFLAGS_HAVE_GC` is on the collector's list itself, so CPython
+// calls `tp_traverse` and `tp_clear` on the type as well as on what it makes. A generated
+// trampoline has to tell the two apart before it reads its state block: the type object's
+// bytes after the header are its own dict pointer, not a state block, and reading them as
+// one sends the collector into whatever the dict points at.
+pub fn is_type_object(self voidptr) bool {
+	return C.vpy_is_type_object(self) != 0
+}
+
+// traverse_type visits the type object's own references, through CPython's own
+// implementation of `type`.
+//
+// The type's dict, bases and MRO are not in the state block and vcraft did not create
+// them, so they are CPython's to report.
+pub fn traverse_type(self voidptr, visit voidptr, arg voidptr) int {
+	return C.vpy_type_traverse(self, visit, arg)
+}
+
+// clear_type releases the type object's own references.
+//
+// Reached during finalisation. Without it the collector would run the generated clear on
+// a type object and read its dict pointer as a state block.
+pub fn clear_type(self voidptr) {
+	C.vpy_type_clear(self)
+}
+
+// set_ref replaces a reference field, taking a reference of its own on the new object.
+//
+// The incoming object is *borrowed*. A property setter is handed its value the way
+// `PyObject_SetAttr` hands it, which is borrowed: CPython keeps its own reference for as
+// long as the assignment is in progress and releases it afterwards, so a setter that
+// stored the pointer without counting it would leave the field pointing at an object
+// whose last reference has already gone. The symptom is an instance that appears to have
+// a peer, whose peer is then reused by the next allocation.
+//
+// So the field counts one reference and gives it back in `clear_ref`, which is what
+// `tp_clear` and `tp_dealloc` call. The old object is released only after the new one is
+// counted, so assigning an object to a field that already points at it neither leaks nor
+// releases it twice.
+//
+// The field is written through its address rather than assigned, because assigning needs
+// the field itself to be `mut` and the state block is a copy.
+pub fn set_ref(field voidptr, obj voidptr) {
+	if field == unsafe { nil } {
+		return
+	}
+	unsafe {
+		slot := &voidptr(field)
+		old := slot[0]
+		// Assigning the object the field already holds changes nothing at all. Counting a
+		// reference and then deciding not to release the old one would grow the count on
+		// every assignment to the same value, and the field would keep the object alive
+		// for as many extra references as it had been assigned.
+		if old == obj {
+			return
+		}
+		if obj != unsafe { nil } {
+			C.Py_IncRef(obj)
+		}
+		slot[0] = obj
+		if old != unsafe { nil } {
+			C.Py_DecRef(old)
+		}
+	}
+}
+
+// ref_target reports whether an object may be stored in a reference field.
+//
+// `typ` is the class the field accepts, or nil to accept any vcraft instance. The null
+// object is always accepted, because None is how a reference field says "unset", and a
+// field that could not be emptied could not express that.
+//
+// A vcraft instance is recognised by its type having been built here rather than by a
+// marker: every heap type vcraft creates carries `tp_new` from this runtime, so an
+// arbitrary Python object has no such slot value. That is a heuristic, and the honest
+// alternative -- a per-type registry -- costs a lookup on every assignment to catch a
+// case that cannot arise in a well-typed program.
+pub fn ref_target_ok(obj voidptr, typ voidptr) bool {
+	if obj == unsafe { nil } || is_none_ptr(obj) {
+		return true
+	}
+	if typ != unsafe { nil } {
+		return is_instance_of(obj, typ)
+	}
+	return true
+}
+
+// none_or_null turns Python's None into a null reference and leaves anything else alone.
+//
+// A `@[vc_ref]` field stores a pointer, so None has to become null rather than be stored
+// as a reference to the singleton: a field that "is None" and a field that was never set
+// are the same state, and the getter prints None for both.
+pub fn none_or_null(obj voidptr) voidptr {
+	if is_none_ptr(obj) {
+		return unsafe { nil }
+	}
+	return obj
+}
+
+// is_none_ptr reports whether a pointer is the `None` singleton.
+pub fn is_none_ptr(obj voidptr) bool {
+	return obj != unsafe { nil } && C.Py_Is(obj, C.vpy_none()) == 1
+}
+
+// type_name_of reports the name of an object's type, for an error message.
+//
+// Takes a raw pointer because that is what a CPython callback hands over, and the
+// `PyObj` methods would want a caller's reference rather than a borrowed one.
+pub fn type_name_of(obj voidptr) string {
+	if obj == unsafe { nil } {
+		return 'None'
+	}
+	return borrow(obj).type_name()
+}
+
+// repr_enter marks `self` as being rendered and reports whether it already was.
+//
+// A reference field can point at an object that points back, so `repr` can arrive at the
+// same instance twice on one stack. CPython's own containers guard against that with this
+// pair: the first caller gets 0 and renders, the second gets non-zero and prints `...`.
+//
+// Without it the recursion runs until the C stack is exhausted, and the symptom is a
+// segfault inside the interpreter rather than anything mentioning the cycle.
+pub fn repr_enter(self voidptr) bool {
+	unsafe {
+		return C.Py_ReprEnter(self) != 0
+	}
+}
+
+// repr_leave undoes `repr_enter`, and must be called on every path that entered.
+//
+// A `defer` rather than a statement at the end, because a repr that raises part way
+// through would otherwise leave the instance marked as already-rendered for good, and
+// every later repr of it would print `...`.
+pub fn repr_leave(self voidptr) {
+	unsafe {
+		C.Py_ReprLeave(self)
+	}
+}
+
+// repr_ref renders a reference field for `__repr__`.
+//
+// `None` for an unset field rather than `0x7f...`, matching what a Python attribute
+// holding nothing prints.
+pub fn repr_ref(obj voidptr) string {
+	if obj == unsafe { nil } {
+		return 'None'
+	}
+	return borrow(obj).repr()
+}
+
+// clear_ref releases a reference field and leaves it null.
+//
+// `tp_clear` breaks the cycle: it drops the references the instance holds, so a cycle
+// becomes a chain of objects with no path back to the collector's roots and is freed on
+// the next pass. Setting the field to null rather than leaving it is what stops a
+// resurrected or re-entered `tp_clear` from releasing the same reference twice.
+pub fn clear_ref(field voidptr) {
+	if field == unsafe { nil } {
+		return
+	}
+	unsafe {
+		obj := &voidptr(field)
+		if obj[0] != unsafe { nil } {
+			C.Py_DecRef(obj[0])
+			obj[0] = unsafe { nil }
+		}
+	}
 }
 
 // type_from_spec creates a heap type. `slots` must be a null-slot-terminated
@@ -293,7 +499,7 @@ pub fn type_from_spec(name string, basicsize int, slots voidptr) PyObj {
 			name:      namep
 			basicsize: basicsize
 			itemsize:  0
-			flags:     type_flags()
+			flags:     type_flags(false)
 			slots:     slots
 		}
 		return steal(C.PyType_FromSpec(voidptr(spec)))
@@ -317,11 +523,12 @@ pub fn type_from_spec(name string, basicsize int, slots voidptr) PyObj {
 // embedding has no use for more than one: a second base would need its state laid out
 // after the first's, and vcraft's layout is one block of V values.
 //
-// `bases` is required rather than defaulting to nil because V allows only a constant as
-// a default value, and `unsafe { nil }` is an expression.
+// `bases`, `traverse` and `clear` are required rather than defaulting to nil because V
+// allows only a constant as a default value, and `unsafe { nil }` is an expression.
+// Callers that have nothing to pass write `unsafe { nil }`.
 pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voidptr,
 	methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr, hash voidptr,
-	bases voidptr) PyObj {
+	bases voidptr, traverse voidptr, clear voidptr) PyObj {
 	// The instance size is the larger of this class's own header plus its storage
 	// pointer, and whatever its base already needs. A subclass that is smaller than its
 	// base is rejected by CPython with "tp_basicsize ... too small for base", and the
@@ -370,6 +577,19 @@ pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voi
 			value: hash
 		}
 	}
+	// `tp_traverse` and `tp_clear` go together, and only on a type that actually holds
+	// references. CPython rejects a type claiming `Py_TPFLAGS_HAVE_GC` with a null
+	// `tp_traverse`, and never looks at either slot on a type that does not claim it.
+	if traverse != unsafe { nil } && clear != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_traverse
+			value: traverse
+		}
+		slots << PyTypeSlot{
+			slot:  slot_clear
+			value: clear
+		}
+	}
 	// The base tuple has to outlive this call: CPython reads it and keeps a reference to
 	// the base types, and the tuple itself is only borrowed for the call. The caller
 	// makes it a module global for exactly this reason.
@@ -389,12 +609,16 @@ pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voi
 	}
 	slots << PyTypeSlot{}
 	namep := cstring(name)
+	// The GC flag follows the slots rather than a separate argument, because a type with
+	// the flag and a null `tp_traverse` is refused by CPython with a message about the
+	// wrong slot, and one with the slots and no flag is never collected.
+	flags := type_flags(traverse != unsafe { nil } && clear != unsafe { nil })
 	unsafe {
 		spec := &PyTypeSpec{
 			name:      namep
 			basicsize: i32(basicsize)
 			itemsize:  0
-			flags:     type_flags()
+			flags:     flags
 			slots:     voidptr(&slots[0])
 		}
 		return steal(C.PyType_FromSpec(voidptr(spec)))

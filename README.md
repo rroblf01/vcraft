@@ -42,6 +42,7 @@ vcraft build --release
 - [Type marshalling](#type-marshalling)
 - [Classes and properties](#classes-and-properties)
   - [Inheritance](#inheritance)
+  - [Reference fields and cycles](#reference-fields-and-cycles)
 - [Errors and panics](#errors-and-panics)
 - [The command line](#the-command-line)
 - [Generated project layout](#generated-project-layout)
@@ -137,6 +138,7 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_field]`   | struct fields   | Exposes the field as an attribute of the instance           |
 | `@[vc_property]`| methods         | Registers the method as a Python `property`                 |
 | `@[vc_base]`    | `pub struct`    | Makes the class inherit the named one                       |
+| `@[vc_ref]`     | struct fields   | Exposes the field as a strong reference to another instance  |
 | `@[vc_static]`  | methods         | Registers the method as a `staticmethod`                    |
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
 | `@[vc_gil]`     | `pub fn`        | Runs the call with the GIL released                         |
@@ -363,9 +365,56 @@ is holding the whole state or half of it.
 True
 ```
 
-Cycles are not yet collected. Nothing in a class holds a reference back to its
-instance, so an instance is freed as soon as Python drops it; a class that grew a
-field pointing at another `Counter` would need `tp_traverse` and `tp_clear`.
+### Reference fields and cycles
+
+`@[vc_ref(Name)]` exposes a field as a strong reference to another instance. The field
+is declared `vcraft.PyObj`, because that is what it holds: a pointer and a reference
+count, and nothing V's collector would recognise.
+
+```v
+@[vc_class]
+pub struct Node {
+mut:
+	@[vc_field] label int
+	@[vc_ref(Node)] peer vcraft.PyObj
+}
+
+// link makes two nodes point at each other.
+//
+// `retain`, not `steal`: a function parameter is borrowed, and the field has to keep the
+// object alive on its own.
+@[vc_methods]
+pub fn (mut n Node) link(other voidptr) {
+	n.peer = vcraft.retain(other)
+}
+```
+
+A class holding references is created with `Py_TPFLAGS_HAVE_GC` and gets `tp_traverse`
+and `tp_clear`, so a cycle of instances is collected rather than leaked. Two details are
+load-bearing and neither is obvious.
+
+`Py_TPFLAGS_HAVE_GC` makes the *type object itself* collectable, so CPython calls
+`tp_traverse` and `tp_clear` on the type as well as on its instances. A type's bytes after
+the header are its dict, not a state block, so both trampolines check whether they were
+handed a type and hand that case to CPython before reading anything.
+
+`PyObject_GC_UnTrack` reads a collector header that only exists on a collectable
+allocation, so the deallocator's untrack is guarded on the flag. A class with no reference
+fields does not set it, and untracking its instances unconditionally crashes several
+collections later, inside `PyObject_GC_UnTrack`, with nothing in the frame pointing back.
+
+`__repr__` is guarded with `Py_ReprEnter` for the same reason a cycle needs collecting in
+the first place: two nodes that point at each other would otherwise recurse until the C
+stack ran out, and the segfault would name neither.
+
+The reference count is maintained by hand, because a `PyObj` is deliberately not a V
+reference type. `retain` takes a reference of your own on a borrowed pointer, which is
+what a method parameter is; `set_ref` counts one when Python assigns through the property;
+`clear_ref` gives it back in `tp_clear` and `tp_dealloc`. A property setter's value is
+borrowed, so the field counts its own rather than adopting CPython's.
+
+Weak references are not supported yet: that needs a `tp_weaklistoffset` inside the
+instance and registration in `tp_traverse`.
 
 ---
 
@@ -735,7 +784,9 @@ for the ones the generator did.
       the ordering operators
 - [x] **Inheritance**: `@[vc_base]`, any order of declaration, chains of any depth up to
       the runtime's published levels, and a diagnostic for each way it can be wrong
-- [ ] Classes: cycle collection
+- [x] **Cycle collection**: `@[vc_ref]` reference fields, `Py_TPFLAGS_HAVE_GC`,
+      `tp_traverse` and `tp_clear`, verified by freeing a pair that points at each other
+      in both a normal and an abi3 build
 - [x] **Errors**: `!T` translation, `raise_domain` for a specific Python exception,
       `recover()`-based panic capture
 - [ ] Errors: custom V error types carrying an exception class

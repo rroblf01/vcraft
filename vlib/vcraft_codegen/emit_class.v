@@ -41,7 +41,9 @@ fn emit_class(p Project, c Class) string {
 	w.write_string(emit_class_methods(c))
 	w.write_string(emit_field_accessors(p, c))
 	w.write_string(emit_class_new(c))
-	w.write_string(emit_class_dealloc(c))
+	w.write_string(emit_class_traverse(p, c))
+	w.write_string(emit_class_clear(p, c))
+	w.write_string(emit_class_dealloc(p, c))
 	w.write_string(emit_class_repr(p, c))
 	w.write_string(emit_class_richcompare(c))
 	w.write_string(emit_class_hash(c))
@@ -116,6 +118,42 @@ fn emit_field_accessors(p Project, c Class) string {
 		w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
 			'${c.size_fn}())\n')
 		w.write_string(emit_enter_state(p, c))
+		if f.is_reference() {
+			// A new reference, because CPython steals whatever a getter returns and the
+			// instance keeps the one it already has. Returning the borrowed pointer
+			// instead would leave the caller holding a reference nobody counted, and the
+			// object would be freed while Python still had it.
+			// A reference field holds null when it was never set or was set to None, and
+			// null is not an object: returning it would hand CPython a null from a getter
+			// with no exception set, which it reports as "error return without exception
+			// set". None is what Python prints for an attribute holding nothing, so None is
+			// what an unset field reads as.
+			w.write_string('\tif vcraft.is_null(state.' + c.field_access(f.name) +
+				') {\n')
+			w.write_string('\t\treturn vcraft.to_py_none().ptr\n\t}\n')
+			w.write_string('\treturn vcraft.incref(state.' + c.field_access(f.name) +
+				').ptr\n')
+			w.write_string('}\n\n')
+			w.write_string('fn vcraft_generated__set_${c.key}_${f.name}(self voidptr, value voidptr) int {\n')
+			w.write_string('\tif value == unsafe { nil } {\n')
+			w.write_string("\t\tvcraft.raise_attribute_error('${c.name}.${f.name} cannot be deleted')\n")
+			w.write_string('\t\treturn -1\n\t}\n')
+			w.write_string(emit_ref_type_check(p, c, f))
+			w.write_string('\tmut state := ' + c.state_type() + '{}\n')
+			w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
+				'${c.size_fn}())\n')
+			w.write_string(emit_enter_state(p, c))
+			// `value` is the reference CPython handed over and this setter now owns.
+			// `set_ref` releases whatever the field held, so assigning over a field does
+			// not leak and assigning the same object to it does not release it twice.
+			w.write_string('\tvcraft.set_ref(unsafe { voidptr(&state.' +
+				c.field_access(f.name) + ')}, vcraft.none_or_null(value))\n')
+			w.write_string('\tvcraft.store_state(unsafe { voidptr(&state) }, ' +
+				'vcraft.instance_storage(self), ${c.size_fn}())\n')
+			w.write_string('\treturn 0\n')
+			w.write_string('}\n\n')
+			continue
+		}
 		w.write_string('\treturn ' + boxed_expr(lookup(f.v_type), 'state.' +
 			c.field_access(f.name)) + '.ptr\n')
 		w.write_string('}\n\n')
@@ -153,6 +191,45 @@ fn emit_field_accessors(p Project, c Class) string {
 		w.write_string('\treturn 0\n')
 		w.write_string('}\n\n')
 	}
+	return w.str()
+}
+
+// ref_fields returns every reference field an instance of the class holds, its own and
+// its bases'.
+//
+// The flattened list rather than the class's own fields, because the state block is the
+// base's state followed by the class's own struct: an inherited reference is in there and
+// has to be reported to the collector or a cycle through the base is never broken.
+pub fn (c Class) ref_fields() []Field {
+	return c.state_fields.filter(it.ref)
+}
+
+// emit_ref_type_check renders the guard a reference setter runs on its argument.
+//
+// Without a target any object is accepted, so the check is left out entirely rather than
+// emitted as a test that cannot fail. A target means the assignment is checked the way a
+// typed attribute is, and the message names the class the caller should have used.
+fn emit_ref_type_check(p Project, c Class, f Field) string {
+	if f.ref_target.len == 0 {
+		return ''
+	}
+	target := class_index(p, f.ref_target)
+	if target < 0 {
+		// Reported by the collector, which runs first. Emitting a reference to a type
+		// handle that was never created would be a compile error instead of the
+		// diagnostic.
+		return ''
+	}
+	mut w := new_builder()
+	// `.ptr`, like every other place a type handle reaches the runtime: `g_vc_type_x` is
+	// a `PyObj`, and handing one where a `voidptr` is expected relies on V dereferencing
+	// the single-field struct.
+	w.write_string('\tif !vcraft.ref_target_ok(value, ' + p.classes[target].ctype +
+		'.ptr) {\n')
+	w.write_string('\t\tvcraft.raise_type_error(')
+	w.write_string(vstring_literal('${c.name}.${f.name} must be a ${f.ref_target}, not '))
+	w.write_string(' + vcraft.type_name_of(value))\n')
+	w.write_string('\t\treturn -1\n\t}\n')
 	return w.str()
 }
 
@@ -224,10 +301,6 @@ fn emit_class_new(c Class) string {
 	return w.str()
 }
 
-// emit_class_dealloc renders `tp_dealloc`.
-//
-// The state block is released first, then the base deallocator runs. Calling the
-// base last is the documented requirement for a subtype.
 // emit_enter_state publishes the state block and every generation above it, so a method
 // that is about to run can reach what it inherited.
 //
@@ -277,11 +350,98 @@ fn emit_enter_state(p Project, c Class) string {
 	return w.str()
 }
 
-fn emit_class_dealloc(c Class) string {
+// emit_class_dealloc renders `tp_dealloc`.
+//
+// The state block is released first, then the base deallocator runs. Calling the
+// base last is the documented requirement for a subtype.
+//
+// A class holding references releases them before the block goes. `tp_clear` is not
+// enough on its own: the collector calls it for an instance it found in a cycle, but an
+// instance whose last reference is simply dropped reaches `tp_dealloc` with its reference
+// count already at zero and nothing else having released what it pointed at.
+fn emit_class_dealloc(p Project, c Class) string {
 	mut w := new_builder()
 	w.write_string('fn vcraft_generated__dealloc_${c.key}(self voidptr) voidptr {\n')
+	if c.ref_fields().len > 0 {
+		w.write_string('\tmut state := ' + c.state_type() + '{}\n')
+		w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
+			'${c.size_fn}())\n')
+		w.write_string(emit_clear_refs(c))
+		w.write_string('\tvcraft.store_state(unsafe { voidptr(&state) }, ' +
+			'vcraft.instance_storage(self), ${c.size_fn}())\n')
+	}
 	w.write_string('\treturn vcraft.class_dealloc(self)\n')
 	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_class_traverse renders `tp_traverse`, the half of cycle collection that reports
+// what an instance holds.
+//
+// One `traverse_ref` per reference field in the whole state, the base's included, because
+// the block is the base's state followed by the class's own and the collector cannot see
+// either half on its own. The return value is checked per field rather than accumulated:
+// `tp_traverse` returns non-zero to say the traversal failed, and CPython's own types
+// stop at the first field that does.
+fn emit_class_traverse(p Project, c Class) string {
+	refs := c.ref_fields()
+	if refs.len == 0 {
+		return ''
+	}
+	mut w := new_builder()
+	w.write_string('fn vcraft_generated__traverse_${c.key}(self voidptr, visit voidptr, ' +
+		'arg voidptr) int {\n')
+	// The collector calls this on the type object as well, because a heap type with
+	// `Py_TPFLAGS_HAVE_GC` is tracked itself. A type's bytes after the header are its
+	// dict, not a state block, so that case goes to CPython before anything is read.
+	w.write_string('\tif vcraft.is_type_object(self) {\n')
+	w.write_string('\t\treturn vcraft.traverse_type(self, visit, arg)\n\t}\n')
+	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
+	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
+		'${c.size_fn}())\n')
+	for f in refs {
+		w.write_string('\tif vcraft.traverse_ref(unsafe { voidptr(&state.' + f.path +
+			')}, visit, arg) != 0 {\n')
+		w.write_string('\t\treturn 1\n\t}\n')
+	}
+	w.write_string('\treturn 0\n')
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_class_clear renders `tp_clear`, the half that breaks the cycle.
+//
+// The same fields as `tp_traverse`, released and nulled. Nulling is what makes it safe to
+// run twice: the collector clears an object, and the object may already be on its way out
+// by the time its reference count reaches zero.
+fn emit_class_clear(p Project, c Class) string {
+	refs := c.ref_fields()
+	if refs.len == 0 {
+		return ''
+	}
+	mut w := new_builder()
+	w.write_string('fn vcraft_generated__clear_${c.key}(self voidptr) voidptr {\n')
+	// The type object reaches here too, during finalisation. See the traverse trampoline.
+	w.write_string('\tif vcraft.is_type_object(self) {\n')
+	w.write_string('\t\tvcraft.clear_type(self)\n')
+	w.write_string('\t\treturn unsafe { nil }\n\t}\n')
+	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
+	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
+		'${c.size_fn}())\n')
+	w.write_string(emit_clear_refs(c))
+	w.write_string('\tvcraft.store_state(unsafe { voidptr(&state) }, ' +
+		'vcraft.instance_storage(self), ${c.size_fn}())\n')
+	w.write_string('\treturn unsafe { nil }\n')
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_clear_refs releases every reference field of a loaded state, in place.
+fn emit_clear_refs(c Class) string {
+	mut w := new_builder()
+	for f in c.ref_fields() {
+		w.write_string('\tvcraft.clear_ref(unsafe { voidptr(&state.' + f.path + ')})\n')
+	}
 	return w.str()
 }
 
@@ -421,6 +581,18 @@ fn emit_class_hash(c Class) string {
 fn emit_class_repr(p Project, c Class) string {
 	mut w := new_builder()
 	w.write_string('fn vcraft_generated__repr_${c.key}(self voidptr) voidptr {\n')
+	// A class holding references can be its own ancestor: a cycle renders as `Pair(...)`
+	// whose field renders the peer, which renders this one again. CPython's containers
+	// guard against that with `Py_ReprEnter`, and the second arrival prints `...`.
+	//
+	// Only for a class that can recurse. A class with no reference field prints scalars,
+	// which cannot reach back, and paying for the guard on every repr of every instance
+	// would be a cost paid by the common case for the sake of the rare one.
+	if c.ref_fields().len > 0 {
+		w.write_string('\tif vcraft.repr_enter(self) {\n')
+		w.write_string("\t\treturn vcraft.to_py_string('${c.name}(...)').ptr\n\t}\n")
+		w.write_string('\tdefer { vcraft.repr_leave(self) }\n')
+	}
 	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
 	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
 		'${c.size_fn}())\n')
@@ -436,7 +608,16 @@ fn emit_class_repr(p Project, c Class) string {
 	for f in c.state_fields {
 		// Concatenated rather than interpolated: inside one V literal the call would be
 		// text, so the repr would print `vcraft.repr_int(state.value)` instead of 4.
-		rendered := py_repr_expr(lookup(f.v_type), 'state.' + f.path)
+		//
+		// A reference field goes through `repr_ref` rather than the type table: it holds
+		// an object, so what it prints is that object's own repr, and `None` for a field
+		// that was never set.
+		mut rendered := ''
+		if f.is_reference() {
+			rendered = 'vcraft.repr_ref(state.' + f.path + '.ptr)'
+		} else {
+			rendered = py_repr_expr(lookup(f.v_type), 'state.' + f.path)
+		}
 		w.write_string("\tparts << " + vstring_literal('${f.name}: ') + " + " + rendered +
 			'\n')
 	}

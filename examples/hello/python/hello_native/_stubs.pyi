@@ -75,3 +75,20 @@ class BoundedCounter(Counter):
     @property
     def at_limit(self) -> bool: ...
     def bump(self, by: int) -> int: ...
+
+"""A node in a chain, and the class that exists to show a cycle being collected.
+	
+	`peer` is a strong reference: Node holds it, and a Node can hold one of these back.
+	Neither instance is reachable from Python once both names are dropped, so only the
+	collector can free them, and only a type with `Py_TPFLAGS_HAVE_GC` is ever a candidate.
+	
+	The field is declared `PyObj` because that is what it holds: a pointer and a reference
+	count, and nothing V's collector would recognise. Declaring it as `&Pair` would put a
+	V-visible reference to memory CPython allocated into a V-local copy of the state, and
+	V would try to free it.
+"""
+class Pair:
+    tag: int
+    peer: int
+    def link(self, other: Any) -> None: ...
+    def other(self) -> None: ...

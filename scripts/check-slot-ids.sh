@@ -18,6 +18,8 @@ cat > "$tmp/slots.c" <<'SRC'
 int main(void) {
 	printf("slot_doc %d\n", Py_tp_doc);
 	printf("slot_bases %d\n", Py_tp_bases);
+	printf("slot_clear %d\n", Py_tp_clear);
+	printf("slot_traverse %d\n", Py_tp_traverse);
 	printf("slot_dealloc %d\n", Py_tp_dealloc);
 	printf("slot_init %d\n", Py_tp_init);
 	printf("slot_methods %d\n", Py_tp_methods);
@@ -40,6 +42,7 @@ gcc -I"$python_include" "$tmp/slots.c" -o "$tmp/slots"
 # The values vlib/vcraft/cpython.c.v declares.
 cat > "$tmp/expected.txt" <<'SRC'
 slot_doc 56
+slot_clear 51
 slot_bases 49
 slot_dealloc 52
 slot_init 60
@@ -49,6 +52,7 @@ slot_repr 66
 slot_members 72
 slot_getset 73
 slot_richcompare 67
+slot_traverse 71
 slot_hash 59
 slot_str 70
 sizeof_type_spec 32

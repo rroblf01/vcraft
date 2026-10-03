@@ -52,7 +52,51 @@ pub fn (o PyObj) decref() {
 	}
 }
 
+// incref returns an owned reference to the same object.
+//
+// The free-function spelling of `new_ref`. A method on an imported type does not resolve
+// from a user's module -- V reports "unknown method or field" for it -- so anything a
+// generated file or a user's own code needs has to be reachable as a plain function.
+// The name follows the C API this runtime is a mirror of.
+pub fn incref(o PyObj) PyObj {
+	return o.new_ref()
+}
+
+// retain turns a borrowed pointer into an owned reference.
+//
+// The one to reach for when a value crosses into storage that has to keep it alive: a
+// `@[vc_ref]` field, or anything else that outlives the call it came from. A V function
+// parameter arrives borrowed -- CPython owns the reference, and the callee does not get
+// one -- so storing one without retaining it leaves a field pointing at an object whose
+// last reference Python has already dropped.
+//
+//	@[vc_methods]
+//	pub fn (mut n Node) link(other voidptr) {
+//		n.peer = vcraft.retain(other)
+//	}
+//
+// `retain` and `steal` are opposites that read alike. `steal` adopts a reference that is
+// already new, which is what CPython hands a property setter; `retain` takes one of its
+// own. Mixing them up leaks or double-frees, the same as in C.
+pub fn retain(p voidptr) PyObj {
+	if p == unsafe { nil } {
+		return null
+	}
+	unsafe {
+		C.Py_IncRef(p)
+	}
+	return PyObj{
+		ptr: p
+	}
+}
+
 // is_null reports whether the reference is the null pointer.
+//
+// The free-function spelling of the method, for the same reason as `incref`.
+pub fn is_null(o PyObj) bool {
+	return o.is_null()
+}
+
 pub fn (o PyObj) is_null() bool {
 	return o.ptr == unsafe { nil }
 }

@@ -56,6 +56,27 @@ void *vpy_instance_alloc(size_t n);
 void vpy_instance_free(void *p);
 
 // CPython's singletons, which are exported as data.
+// Cycle collection.
+//
+// `visitproc` is a function-pointer typedef and `traverseproc` takes one, so V cannot
+// spell a `tp_traverse` trampoline: it would have to declare a struct field of a callback
+// type. These three do the calling instead, so the trampoline in V is an ordinary
+// function that hands its work over.
+int vpy_visit(void *obj, void *visit, void *arg);
+int vpy_traverse_ref(void *ref, void *visit, void *arg);
+void vpy_gc_untrack(void *self);
+void vpy_gc_track(void *self);
+
+// The type object itself.
+//
+// A heap type with `Py_TPFLAGS_HAVE_GC` is tracked by the collector too, so `tp_traverse`
+// and `tp_clear` are called on the type as well as on its instances. A type's own
+// references -- its dict, its bases, its MRO -- are not in the state block, so that case
+// is handed to CPython's own implementation of `type`.
+int vpy_is_type_object(void *self);
+int vpy_type_traverse(void *self, void *visit, void *arg);
+void vpy_type_clear(void *self);
+
 PyObject *vpy_none(void);
 PyObject *vpy_notimplemented(void);
 PyObject *vpy_bool_type(void);

@@ -293,6 +293,46 @@ fn check_chain_depth(mut p Project) {
 	}
 }
 
+// link_refs checks that every `@[vc_ref(Name)]` names a class, and drops the field when it
+// does not.
+//
+// Deferred to here for the same reason `link_bases` is: the target may be declared later
+// in the file or in a file that sorts after this one, so resolving it while collecting
+// would report a forward reference as an error.
+//
+// A field whose target is missing is dropped rather than left as an unchecked reference.
+// Leaving it would compile, and the setter would accept anything, which is a mistake with
+// no message rather than one with a diagnostic.
+fn link_refs(mut p Project) {
+	for i, c in p.classes {
+		mut kept := []Field{}
+		for f in c.fields {
+			if f.ref_target.len > 0 && class_index(p, f.ref_target) < 0 {
+				report(mut p, c.origin, astquery.Declaration{
+					name:      c.name
+					type_name: f.v_type
+					line:      field_line_of(p, i, f.name)
+					column:    1
+				}, 'error: `@[vc_ref(${f.ref_target})] ${c.name}.${f.name}` names `${f.ref_target}`, which is not a class in this project')
+				continue
+			}
+			kept << f
+		}
+		p.classes[i].fields = kept
+	}
+}
+
+// field_line_of finds the line a class's field is declared on, for a diagnostic raised
+// after the collection pass has moved on.
+fn field_line_of(p Project, class_index int, field string) int {
+	for line, text in read_lines(p.classes[class_index].origin) {
+		if text.trim_space().starts_with(field + ' ') {
+			return line + 1
+		}
+	}
+	return p.classes[class_index].line
+}
+
 // sort_classes puts every class after the one it inherits.
 //
 // Not an optimisation but a requirement, and of two separate things:
@@ -594,16 +634,34 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			pending = ''
 		}
 	}
-	// Only the annotated ones are exposed, and only scalars are safe to hold in
-	// CPython-owned memory.
+	// Only the annotated ones are exposed, and only scalars and references are safe to
+	// hold in CPython-owned memory.
 	mut exposed := []Field{}
 	for _, original in out {
 		mut f := original
 		block := read_inline(lines, field_line(ast, f.name))
-		if attr_field !in block.attrs {
+		if attr_field !in block.attrs && attr_ref !in block.attrs {
 			continue
 		}
 		f.doc = block.doc
+		if attr_ref in block.attrs {
+			f.ref = true
+			f.ref_target = block.args[attr_ref]
+			if !f.is_pyobj() {
+				report(mut p, path, astquery.Declaration{
+					name:       f.name
+					type_name:  f.v_type
+					line:       field_line(ast, f.name)
+					column:     1
+				}, 'error: `@[vc_ref] ${struct_name}.${f.name}` has type `${f.v_type}`, but a reference field must be a `vcraft.PyObj`: it holds a Python object and a reference count, and vcraft keeps that count itself. Declare it as `@[vc_ref] ${f.name} vcraft.PyObj`')
+				continue
+			}
+			// The target is not resolved here. A class may be declared after this one, or
+			// in a file that sorts later, so resolving it during collection would reject
+			// every forward reference. `link_refs` does it once the whole project is read.
+			exposed << f
+			continue
+		}
 		if !f.is_scalar() {
 			report(mut p, path, astquery.Declaration{
 				name:       f.name
@@ -695,6 +753,7 @@ fn link_classes(mut p Project) {
 	// were seen.
 	link_operators(mut p)
 	link_bases(mut p)
+	link_refs(mut p)
 	mut ctors := []string{}
 	for i, c in p.classes {
 		// V spells a constructor `new_TypeName` in snake case, so the lookup

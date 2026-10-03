@@ -73,12 +73,11 @@ pub fn emit_glue(p Project) string {
 	return w.str()
 }
 
-// register_class adds one class to the module being built.
+// glue_module_body renders the module definition and the two entry points.
 //
 // The tables the type needs are module-level globals rather than locals, because
 // CPython keeps reading them: `PyType_FromSpec` copies what it needs, but a
 // PyMethodDef's name and doc pointers are borrowed for the life of the type.
-// glue_module_body renders the module definition and the two entry points.
 //
 // The module under construction is a global rather than a local of `pyinit`.
 //
@@ -186,9 +185,6 @@ pub fn interp(name string) string {
 }
 
 // render_class_exec renders a class's registration for inside `exec`.
-//
-// Indented one level deeper than `register_class` because it runs in the callback
-// rather than in `pyinit`, so the two take their indentation as a parameter.
 pub fn render_class_exec(p Project, c Class) string {
 	// Rendered at generation time rather than as a `for` in the output: every value
 	// here is known now, and a generated `for` over the classes would need its own
@@ -229,6 +225,17 @@ pub fn render_class_exec(p Project, c Class) string {
 	} else {
 		w.write_string('\t\tvoidptr(g_vc_bases_' + c.key + '.ptr),\n')
 	}
+	// `tp_traverse` and `tp_clear`, only for a class that holds references. `new_type`
+	// turns them into `Py_TPFLAGS_HAVE_GC`, and that flag is what makes the collector
+	// look at the instances at all: without it a cycle is never found, and the objects
+	// in it are never freed.
+	if c.ref_fields().len > 0 {
+		w.write_string('\t\tvoidptr(vcraft_generated__traverse_' + c.key + '),\n')
+		w.write_string('\t\tvoidptr(vcraft_generated__clear_' + c.key + '),\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+		w.write_string('\t\tunsafe { nil },\n')
+	}
 	w.write_string('\t)\n')
 	// The error check is here rather than inside `new_type` because a class that fails
 	// to build is a generator-level problem: the interpreter reports "raised
@@ -241,36 +248,6 @@ pub fn render_class_exec(p Project, c Class) string {
 	w.write_string('\t}\n')
 	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.name) + ', ' +
 		c.ctype + ')\n')
-	return w.str()
-}
-
-// register_class renders a class's registration for inside `pyinit`.
-fn register_class(c Class) string {
-	mut w := new_builder()
-	w.write_string('\t${c.ctype} = vcraft.new_type(')
-	w.write_string("'${c.qualified}',\n")
-	w.write_string('\t\t' + vstring_literal(c.doc) + ',\n')
-	w.write_string('\t\tvoidptr(${c.ctor}),\n')
-	// `tp_init` is left null: the constructor runs in `tp_new`, so a subclass that
-	// overrides `__init__` still gets a chance to add to it.
-	w.write_string('\t\tunsafe { nil },\n')
-	w.write_string('\t\tvoidptr(${c.dealloc}),\n')
-	// Taking the address of a mutable array element needs an unsafe block, and both
-	// tables are module-level globals that the type borrows for its lifetime.
-	if c.methods.any(it.property == false) {
-		w.write_string('\t\tunsafe { voidptr(&g_vc_methods_${c.key}[0]) },\n')
-	} else {
-		w.write_string('\t\tunsafe { nil },\n')
-	}
-	if c.fields.len > 0 || c.methods.any(it.property) {
-		w.write_string('\t\tunsafe { voidptr(&g_vc_getsets_${c.key}[0]) },\n')
-	} else {
-		w.write_string('\t\tunsafe { nil },\n')
-	}
-	w.write_string('\t\tvoidptr(${c.repr}),\n')
-	w.write_string('\t)\n')
-	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.name) +
-		', ${c.ctype})\n')
 	return w.str()
 }
 
@@ -514,7 +491,12 @@ pub fn return_expr(strategy Strategy, value string, raw bool) string {
 		// interpreter on exit rather than at the call.
 		return "vcraft.borrow(${value}).new_ref().ptr"
 	}
-	return '${boxed_expr(strategy, value)}.ptr'
+	// `boxed_expr` already produces an expression that yields the object, except for
+	// `.pyref`, where it is the object itself rather than a pointer to one.
+	return match strategy {
+		.pyref { boxed_expr(strategy, value) + '.ptr' }
+		else { '${boxed_expr(strategy, value)}.ptr' }
+	}
 }
 
 // zero_value is the initial value of a result local. It has to be valid V for the
@@ -526,6 +508,7 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 		.int, .uint { '0' }
 		.float { '0.0' }
 		.str, .bytes { "''" }
+		.pyref { 'vcraft.null' }
 		.seq { '${v_type}{}' }
 		.pyobj, .unsupported { 'unsafe { nil }' }
 	}
@@ -556,12 +539,19 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 				else { "vcraft.from_py_int_seq_arg(args, ${index}, '${func}', '${param}')" }
 			}
 		}
+		.pyobj {
+			// A `voidptr` parameter, so the reader hands one over. `require_arg` returns a
+			// `PyObj` and relies on V dereferencing the struct into the `voidptr`, which
+			// warns and is documented as going away.
+			"\t${local} := vcraft.require_voidptr_arg(args, ${index}, '${func}', '${param}')\n" +
+				'\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}'
+		}
 		else {
 			"\t${local} := vcraft.require_arg(args, ${index}, '${func}', '${param}')\n" +
 				'\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}'
 		}
 	}
-	if strategy == .pyobj || strategy == .unsupported {
+	if strategy == .pyobj || strategy == .pyref || strategy == .unsupported {
 		return call
 	}
 	return '${local} := ${call} or { return unsafe { nil } }'
@@ -592,6 +582,9 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 		.bytes { 'vcraft.to_py_bytes(' + value + ')' }
 		.seq { 'vcraft.to_py_list(' + value + ')' }
 		.pyobj { value }
+		// The V value owns a reference and CPython steals the one a getter returns, so
+		// the ownership moves rather than being copied. `steal` is the spelling of that.
+		.pyref { 'vcraft.steal(' + value + '.ptr)' }
 		.unsupported { 'unsafe { nil }' }
 	}
 }
@@ -605,6 +598,10 @@ pub fn unbox_expr(strategy Strategy, value string) string {
 		.int { 'vcraft.unbox_int(' + value + ', ' + vstring_literal('value') + ')' }
 		.uint { 'vcraft.unbox_uint(' + value + ', ' + vstring_literal('value') + ')' }
 		.float { 'vcraft.unbox_f64(' + value + ', ' + vstring_literal('value') + ')' }
+		// Borrowed, because the caller keeps its own reference to whatever it passed.
+		// The value it ends up in is released with `decref` or handed to a field, which
+		// counts it.
+		.pyref { 'vcraft.borrow(' + value + ')' }
 		else { 'vcraft.unbox_int(' + value + ', ' + vstring_literal('value') + ')' }
 	}
 }

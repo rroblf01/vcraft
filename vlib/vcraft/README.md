@@ -301,6 +301,48 @@ state.
 module, for constraint 4 above: no forward declaration is emitted for a generic. The cast
 is what is left, and it costs the reader one `unsafe`.
 
+## Cycle collection
+
+A type holding references to other objects needs three things from CPython: the
+`Py_TPFLAGS_HAVE_GC` flag, a `tp_traverse` that reports what it holds, and a `tp_clear`
+that lets it go. Two of them have a trap that costs an afternoon each.
+
+**The type object is collectable too.** The flag marks the type, not just its instances,
+so CPython calls `tp_traverse` and `tp_clear` on the type itself. The bytes after a type's
+header are its dict, not a state block, so a trampoline that reads them as one sends the
+collector into whatever the dict points at. `is_type_object` tells the two apart and
+hands the type case to CPython's own implementation of `type`.
+
+**`PyObject_GC_UnTrack` assumes a collectable allocation.** It reads a header that only
+exists on memory the collector allocated. Called on an instance of a class that holds no
+references -- and so never got the flag -- it reads the first word of the payload as a
+linked-list pointer, and the next collection walks into whatever that was. The guard is
+inside the accessor, because every generated deallocator calls it and only some of those
+classes are collectable.
+
+Under the stable ABI the type object's own traverse has to come through
+`PyType_GetSlot`: `PyTypeObject` is opaque there, so `PyType_Type.tp_traverse` cannot be
+reached as a member at all.
+
+## Reference counts on a `@[vc_ref]` field
+
+A `PyObj` is deliberately not a V reference type -- V's collector would try to free
+CPython's objects -- so the count is maintained by hand and every operation on it has to
+say which direction it moves:
+
+| Operation      | Direction                          |
+| -------------- | ---------------------------------- |
+| `retain`       | takes one on a borrowed pointer    |
+| `set_ref`      | takes one on a setter's value      |
+| `incref`       | takes one on a `PyObj` already held |
+| `clear_ref`    | gives one back                     |
+
+A property setter's value is *borrowed*, which is the one that is easy to get wrong:
+storing the pointer without counting it leaves the field pointing at an object whose last
+reference Python has already dropped, and the next allocation reuses that memory. The
+symptom is an instance that appears to have a peer, whose peer then turns out to be a
+different object that happens to sit at the same address.
+
 ## Tests
 
 ```console

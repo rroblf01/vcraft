@@ -18,9 +18,17 @@ pub enum Strategy {
 	// Str and Bytes map onto Python str and bytes.
 	str
 	bytes
-	// PyObj passes an arbitrary object through untouched. This is the `@[vc.raw]`
+	// PyObj passes an arbitrary object through untouched. This is the `@[vc_raw]`
 	// escape hatch and it costs nothing.
 	pyobj
+	// PyRef is a V value that is already a `PyObj`: the type of a `@[vc_ref]` field, and
+	// what a function returns when it hands back an object rather than a `voidptr`.
+	//
+	// Distinct from PyObj because the two cross the boundary in opposite directions. A
+	// `voidptr` is a raw borrowed pointer and the generated code passes it straight
+	// through, while a `PyObj` is an owned reference and boxing one hands that ownership
+	// to CPython rather than copying a pointer at it.
+	pyref
 	// Seq accepts any Python iterable and builds a V slice from it.
 	seq
 	// Unsupported means the generator refuses to emit code for it.
@@ -38,6 +46,12 @@ pub fn lookup(v_type string) Strategy {
 	}
 	if base == 'voidptr' || base.len == 0 {
 		return .pyobj
+	}
+	// `PyObj` unqualified, because a user's module imports vcraft and names the type
+	// without a prefix wherever the annotation makes the type obvious. A `vcraft.PyObj`
+	// is the same type written out.
+	if base == 'PyObj' || base == 'vcraft.PyObj' {
+		return .pyref
 	}
 	return match base {
 		'bool' { Strategy.bool }

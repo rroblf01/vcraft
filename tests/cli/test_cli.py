@@ -394,6 +394,69 @@ def main() -> int:
                     and "Counter(value: 0, step: 1)" in proc.stdout,
                     (proc.stderr or proc.stdout).strip()[-300:])
 
+        print("abi3 with cycles")
+        # `Py_TPFLAGS_HAVE_GC` reaches CPython differently under the stable ABI: the type
+        # object's own traverse has to come through `PyType_GetSlot`, because
+        # `PyTypeObject` is opaque there and `tp_traverse` cannot be reached as a member.
+        # A cycle in an abi3 build is the case that tells the two paths apart.
+        native = project / "src" / "mypkg_native.v"
+        saved = native.read_text()
+        native.write_text(saved + """
+@[vc_class]
+pub struct Node {
+mut:
+	@[vc_field] label int
+	@[vc_ref(Node)] peer vcraft.PyObj
+}
+
+@[vc_methods]
+pub fn (mut n Node) link(other voidptr) {
+	n.peer = vcraft.retain(other)
+}
+""")
+        try:
+            proc = vcraft("build", "--abi3", "3.12", cwd=project)
+            t.check("an abi3 build with a reference field succeeds",
+                    proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-400:])
+            if proc.returncode == 0:
+                abi_cycles = [w for w in (project / "dist").glob("*abi3*.whl")]
+                t.check("the wheel is written", len(abi_cycles) == 1, abi_cycles)
+                target2 = tmp / "venv-abi3-cycles"
+                make_venv(target2, with_pip=True)
+                proc = subprocess.run(
+                    [str(target2 / "bin" / "python"), "-m", "pip", "install",
+                     "--no-index", "--no-deps", str(abi_cycles[0])],
+                    capture_output=True, text=True)
+                t.check("pip installs it", proc.returncode == 0,
+                        (proc.stderr or proc.stdout).strip()[-300:])
+                probe = (
+                    "import gc\n"
+                    "import mypkg_native as m\n"
+                    "a = m.Node()\n"
+                    "b = m.Node()\n"
+                    "a.label = 1\n"
+                    "b.label = 2\n"
+                    "a.link(b)\n"
+                    "b.link(a)\n"
+                    "print(repr(a))\n"
+                    "del a, b\n"
+                    "print(gc.collect())\n"
+                )
+                proc = subprocess.run([str(target2 / "bin" / "python"), "-c", probe],
+                                      capture_output=True, text=True, cwd=tmp)
+                t.check("it runs", proc.returncode == 0,
+                        (proc.stderr or "").strip()[-400:])
+                if proc.returncode == 0:
+                    # `splitlines`, not `split`: the repr contains spaces.
+                    lines = proc.stdout.splitlines()
+                    t.check("the cycle renders with a guard",
+                            lines[0] == "Node(label: 1, peer: Node(label: 2, peer: Node(...)))",
+                            proc.stdout)
+                    t.check("and the collector frees it", lines[1] == "2", proc.stdout)
+        finally:
+            native.write_text(saved)
+            vcraft("build", cwd=project)
+
         print("sdist")
         proc = vcraft("sdist", cwd=project)
         t.check("sdist succeeds", proc.returncode == 0,

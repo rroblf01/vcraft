@@ -50,6 +50,14 @@ fn C.PyErr_NoMemory()
 fn C.vpy_memcpy(dst voidptr, src voidptr, n usize) voidptr
 
 fn C.vpy_type_free(self voidptr)
+fn C.vpy_visit(obj voidptr, visit voidptr, arg voidptr) int
+fn C.vpy_traverse_ref(field voidptr, visit voidptr, arg voidptr) int
+fn C.vpy_gc_untrack(self voidptr)
+fn C.Py_ReprLeave(self voidptr)
+fn C.vpy_is_type_object(self voidptr) int
+fn C.vpy_type_traverse(self voidptr, visit voidptr, arg voidptr) int
+fn C.vpy_type_clear(self voidptr)
+fn C.vpy_gc_track(self voidptr)
 
 fn C.vpy_type_ptr(self voidptr) voidptr
 
@@ -308,7 +316,11 @@ pub const slot_new = i32(65)
 
 pub const slot_repr = i32(66)
 
+pub const slot_traverse = i32(71)
+
 pub const slot_bases = i32(49)
+
+pub const slot_clear = i32(51)
 
 pub const slot_hash = i32(59)
 
@@ -320,6 +332,12 @@ pub const slot_getset = i32(73)
 
 // Py_TPFLAGS_BASETYPE, required before a Python class may be subclassed.
 pub const tpflags_basetype = u32(1 << 10)
+
+// Py_TPFLAGS_HAVE_GC, required on any type whose instances hold references to other
+// objects. CPython refuses a type that claims it and leaves tp_traverse null, and it
+// never collects a type that does not claim it, so an instance in a cycle would leak
+// rather than be collected.
+pub const tpflags_have_gc = u32(1 << 14)
 
 // ------------------------------------------------------------- C layouts
 //

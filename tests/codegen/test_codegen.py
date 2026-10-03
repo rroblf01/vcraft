@@ -353,6 +353,84 @@ def main() -> int:
     t.check("the stub declares the base",
             "class BoundedCounter(Counter):" in stub, stub[-600:])
 
+    print("references and cycles")
+    # A `@[vc_ref]` field holds a strong reference, which is the whole reason a cycle can
+    # exist at all. Everything here is about the ownership of that reference: the count it
+    # holds, the count `tp_clear` and `tp_dealloc` give back, and whether the collector
+    # can actually free a pair that points at each other.
+    pair = h.Pair()
+    peer = h.Pair()
+    t.equal("an unset reference reads as None", pair.other(), None)
+    t.check("and prints as None", repr(pair) == "Pair(tag: 0, peer: None)", repr(pair))
+
+    before = sys.getrefcount(peer)
+    pair.peer = peer
+    t.check("the field holds the object it was given", pair.peer is peer)
+    t.check("and counts a reference of its own",
+            sys.getrefcount(peer) == before + 1, sys.getrefcount(peer) - before)
+
+    t.raises("a reference field is type checked", TypeError, "must be a Pair",
+             lambda: setattr(pair, "peer", 5))
+    t.check("a rejected assignment changes nothing", pair.peer is peer)
+    t.raises("a reference field cannot be deleted", AttributeError, "cannot be deleted",
+             lambda: delattr(pair, "peer"))
+
+    pair.peer = None
+    t.check("None clears the field", pair.peer is None)
+    t.check("and gives the reference back", sys.getrefcount(peer) == before,
+            sys.getrefcount(peer) - before)
+    t.check("the object is still alive", repr(peer) == "Pair(tag: 0, peer: None)",
+            repr(peer))
+
+    pair.peer = peer
+    pair.peer = peer
+    t.check("assigning the same object twice counts once",
+            sys.getrefcount(peer) == before + 1, sys.getrefcount(peer) - before)
+    pair.peer = None
+    t.check("and clearing it once gives it all back", sys.getrefcount(peer) == before,
+            sys.getrefcount(peer) - before)
+
+    # A method that stores a borrowed pointer has to retain it. `link` does, so the peer
+    # stays alive as long as the pair does.
+    left = h.Pair()
+    right = h.Pair()
+    right_before = sys.getrefcount(right)
+    left.link(right)
+    t.check("a method can store a reference", left.peer is right)
+    t.check("and the method retained it", sys.getrefcount(right) == right_before + 1,
+            sys.getrefcount(right) - right_before)
+
+    # The cycle. Neither instance is reachable from Python once both names are gone, and
+    # each holds the other's last reference, so only the collector can free them.
+    left.tag = 1
+    right.tag = 2
+    left.link(right)
+    right.link(left)
+    t.check("a cycle renders without recursing for ever",
+            repr(left) == "Pair(tag: 1, peer: Pair(tag: 2, peer: Pair(...)))", repr(left))
+    del left, right
+    gc.collect()
+    t.check("the pair is gone", sys.getrefcount(peer) == before,
+            sys.getrefcount(peer) - before)
+    t.check("a fresh instance still works", h.Pair().tag == 0)
+
+    print("cycle collection in the generated file")
+    t.check("the type is collectable", "voidptr(vcraft_generated__traverse_pair)" in glue)
+    t.check("and can be cleared", "voidptr(vcraft_generated__clear_pair)" in glue)
+    t.check("a class with no references is not", "traverse_counter" not in glue)
+    t.check("the traverse reports every reference field",
+            "vcraft.traverse_ref(unsafe { voidptr(&state.peer)}, visit, arg)" in glue)
+    t.check("and stops on the first failure it is told about",
+            "if vcraft.traverse_ref(unsafe { voidptr(&state.peer)}, visit, arg) != 0 {" in glue)
+    t.check("the type object is not mistaken for an instance",
+            glue.count("vcraft.is_type_object(self)") == 2,
+            glue.count("vcraft.is_type_object(self)"))
+    t.check("dealloc releases the references",
+            "vcraft.clear_ref(unsafe { voidptr(&state.peer)})" in glue)
+    t.check("a repr of a cycle is guarded", "vcraft.repr_enter(self)" in glue)
+    t.check("and only for a class that can recurse", glue.count("repr_enter") == 1,
+            glue.count("repr_enter"))
+
     print("class stress")
     batch = [h.Counter() for _ in range(20000)]
     for item in batch:

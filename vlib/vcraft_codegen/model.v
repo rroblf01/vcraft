@@ -28,6 +28,11 @@ pub const attr_static = 'vc_static'
 // which is why it is a name rather than a boolean like the rest.
 pub const attr_base = 'vc_base'
 
+// attr_ref marks a field as holding a strong reference to another instance. Its value
+// is the class it accepts, empty when it accepts any vcraft instance, so it is a name
+// where `@[vc_field]` is a boolean.
+pub const attr_ref = 'vc_ref'
+
 pub const attr_eq = 'vc_eq'
 
 pub const attr_hash = 'vc_hash'
@@ -41,6 +46,7 @@ pub const known_attrs = [
 	attr_eq,
 	attr_hash,
 	attr_base,
+	attr_ref,
 	attr_nogil,
 	attr_class,
 	attr_methods,
@@ -200,6 +206,13 @@ pub mut:
 	v_type string
 	// setter is empty for a read-only field.
 	setter string
+	// ref marks a `@[vc_ref]` field, which holds a strong reference to another
+	// instance rather than a value of its own.
+	ref bool
+	// ref_target is the class named by `@[vc_ref(Name)]`, empty when the field holds a
+	// reference to any vcraft instance. Only a check: the field holds a `PyObj`, so
+	// nothing in the layout depends on the target.
+	ref_target string
 	// path is the member path of this field within the *state block* of the class that
 	// declares it, without the leading `state.`. Only set on the flattened list: a field
 	// of the class itself is just its name, and one inherited from a base is reached
@@ -224,6 +237,25 @@ pub fn (f Field) is_scalar() bool {
 		'f32', 'f64' { true }
 		else { false }
 	}
+}
+
+// is_pyobj reports whether a V type is the runtime's own object reference.
+//
+// Both spellings, because V needs the qualified one in a module that imports vcraft and
+// accepts the bare one in the runtime's own module. The generator compares the type as
+// written rather than resolving it, so both have to be recognised here.
+pub fn (f Field) is_pyobj() bool {
+	return f.v_type == 'PyObj' || f.v_type == 'vcraft.PyObj'
+}
+
+// is_reference reports whether a field holds a strong reference to another instance.
+//
+// A reference field is a `PyObj`: a pointer plus a reference count, and nothing V's
+// collector would recognise. That is what makes it safe to keep in memory CPython
+// allocated, and it is also why the reference count has to be maintained by hand --
+// `tp_traverse` reports it to the collector and `tp_clear` releases it.
+pub fn (f Field) is_reference() bool {
+	return f.ref
 }
 
 // Project is everything the generator found.

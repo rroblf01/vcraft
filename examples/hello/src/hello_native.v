@@ -233,3 +233,49 @@ pub fn counter_hash(self voidptr) int {
 pub fn (c &Counter) is_zero() bool {
 	return c.value == 0
 }
+
+// A node in a chain, and the class that exists to show a cycle being collected.
+//
+// `peer` is a strong reference: Node holds it, and a Node can hold one of these back.
+// Neither instance is reachable from Python once both names are dropped, so only the
+// collector can free them, and only a type with `Py_TPFLAGS_HAVE_GC` is ever a candidate.
+//
+// The field is declared `PyObj` because that is what it holds: a pointer and a reference
+// count, and nothing V's collector would recognise. Declaring it as `&Pair` would put a
+// V-visible reference to memory CPython allocated into a V-local copy of the state, and
+// V would try to free it.
+@[vc_class]
+pub struct Pair {
+mut:
+	// tag is an ordinary field, so the repr shows a cycle is still readable.
+	@[vc_field] tag int
+	// peer is the other half of the pair, or None.
+	@[vc_ref(Pair)] peer vcraft.PyObj
+}
+
+// A pair with nothing set.
+@[vc_fn]
+pub fn new_pair() &Pair {
+	return &Pair{}
+}
+
+// link makes two instances point at each other, which is the cycle the collector
+// exists to break.
+@[vc_methods]
+pub fn (mut p Pair) link(other voidptr) {
+	// `retain`, not `steal`: a function parameter is borrowed, and the field has to keep
+	// the object alive on its own.
+	p.peer = vcraft.retain(other)
+}
+
+// other returns the peer as an object, or None when it was never set.
+//
+// `state_at(0)` is the block the trampoline loaded, which for a class with no base is
+// the class's own struct, so the peer's own struct is one step along.
+@[vc_methods]
+pub fn (p &Pair) other() vcraft.PyObj {
+	if vcraft.is_null(p.peer) {
+		return vcraft.to_py_none()
+	}
+	return vcraft.incref(p.peer)
+}

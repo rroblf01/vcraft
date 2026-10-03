@@ -281,6 +281,104 @@ void vpy_instance_free(void *p) {
 	PyObject_Free(p);
 }
 
+// vpy_visit calls CPython's visit function on one object.
+//
+// The visit function is a `visitproc`, which V cannot name, so it arrives as a void
+// pointer and is cast back here. The cast is the one thing this file does that C's type
+// system would otherwise check, and it is safe because the only caller is the generated
+// `tp_traverse`, which receives its arguments from CPython.
+int vpy_visit(void *obj, void *visit, void *arg) {
+	if (obj == NULL) {
+		// Nothing to visit. Not an error: a reference field may legitimately be unset,
+		// and CPython's own types treat a null slot as nothing to report.
+		return 0;
+	}
+	visitproc fn = (visitproc)visit;
+	return fn((PyObject *)obj, arg);
+}
+
+// vpy_traverse_ref visits one reference held in an instance's state block.
+//
+// `ref` is the address of the field, not its value, so the generated code can hand over
+// the address of the member without knowing its type. A null field is skipped rather
+// than reported as an error, matching what CPython's own containers do.
+int vpy_traverse_ref(void *ref, void *visit, void *arg) {
+	if (ref == NULL) {
+		return 0;
+	}
+	PyObject *obj = *(PyObject **)ref;
+	if (obj == NULL) {
+		return 0;
+	}
+	visitproc fn = (visitproc)visit;
+	return fn(obj, arg);
+}
+
+// vpy_is_type_object reports whether `self` is a type rather than an instance of one.
+int vpy_is_type_object(void *self) {
+	if (self == NULL) {
+		return 0;
+	}
+	return PyType_Check((PyObject *)self);
+}
+
+// vpy_type_traverse visits the type object's own references.
+//
+// Through `PyType_GetSlot` rather than `PyType_Type.tp_traverse`, because under the
+// limited API `PyTypeObject` is opaque and the member cannot be reached at all. The slot
+// id is the same one the generated type uses, so both agree.
+int vpy_type_traverse(void *self, void *visit, void *arg) {
+	traverseproc fn = (traverseproc)PyType_GetSlot((PyTypeObject *)&PyType_Type,
+	                                               Py_tp_traverse);
+	if (fn == NULL) {
+		return 0;
+	}
+	return fn((PyObject *)self, (visitproc)visit, arg);
+}
+
+// vpy_type_clear releases the type object's own references.
+//
+// Reached during finalisation, when the collector clears everything before the
+// interpreter tears down. Same reason as `vpy_type_traverse` for using the slot.
+void vpy_type_clear(void *self) {
+	inquiry fn = (inquiry)PyType_GetSlot((PyTypeObject *)&PyType_Type, Py_tp_clear);
+	if (fn == NULL) {
+		return;
+	}
+	fn((PyObject *)self);
+}
+
+// vpy_gc_untrack removes an instance from the collector's list.
+//
+// The first step of any `tp_dealloc` for a type with `Py_TPFLAGS_HAVE_GC`. Skipping it
+// leaves a freed object on the collector's list, and the next collection walks into it.
+//
+// Guarded on the flag, and the guard is not optional. `PyObject_GC_UnTrack` reads the
+// collector's header out of the object, which only exists on a type allocated as
+// collectable. Called on an instance of a class with no reference fields it reads the
+// first word of the payload as a linked-list pointer and the next collection walks into
+// whatever that was: the segfault lands in `PyObject_GC_UnTrack`, several collections
+// later, with nothing in the frame to connect it to the class that lacked the flag.
+void vpy_gc_untrack(void *self) {
+	PyTypeObject *type = Py_TYPE((PyObject *)self);
+	if (type != NULL && PyType_HasFeature(type, Py_TPFLAGS_HAVE_GC)) {
+		PyObject_GC_UnTrack((PyObject *)self);
+	}
+}
+
+// vpy_gc_track puts an instance back on the collector's list.
+//
+// Needed when `tp_dealloc` resurrects an object, which a class whose `__del__`-like
+// behaviour re-adds a reference can do. vcraft does not resurrect, and this exists so
+// the pair is available rather than because something calls it. Guarded for the same
+// reason as `vpy_gc_untrack`.
+void vpy_gc_track(void *self) {
+	PyTypeObject *type = Py_TYPE((PyObject *)self);
+	if (type != NULL && PyType_HasFeature(type, Py_TPFLAGS_HAVE_GC)) {
+		PyObject_GC_Track((PyObject *)self);
+	}
+}
+
 PyObject *vpy_none(void) {
 	return Py_None;
 }

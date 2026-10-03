@@ -120,6 +120,21 @@ pub fn require_arg(argv voidptr, i int, func string, name string) PyObj {
 	return obj
 }
 
+// require_voidptr_arg reads a required argument as an opaque handle.
+//
+// The `voidptr` counterpart of `require_arg`, and used for every parameter typed
+// `voidptr` or `PyObj` in the generated glue. Handing a `PyObj` to a `voidptr` parameter
+// happens to work because V dereferences the single-field struct for it, but it warns,
+// it is documented as going away, and a `PyObj` is one field only by accident.
+pub fn require_voidptr_arg(argv voidptr, i int, func string, name string) voidptr {
+	obj := arg_at(argv, i)
+	if obj.is_null() {
+		raise(.type_error, '${func}() missing required argument: ${name}')
+		return unsafe { nil }
+	}
+	return obj.ptr
+}
+
 // Reading a sequence argument.
 //
 // A `[]T` parameter has to become a V slice of `T`, not of pointers, so the
