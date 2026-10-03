@@ -108,6 +108,8 @@ pub enum PyExc {
 	memory_error
 	system_error
 	overflow_error
+	zero_division_error
+	arithmetic_error
 }
 
 // pyexc_obj resolves an enum member to the CPython exception type.
@@ -125,6 +127,8 @@ pub fn pyexc_obj(kind PyExc) PyObj {
 		.memory_error { C.vpy_exc_memory_error() }
 		.system_error { C.vpy_exc_system_error() }
 		.overflow_error { C.vpy_exc_overflow_error() }
+		.zero_division_error { C.vpy_exc_zero_division_error() }
+		.arithmetic_error { C.vpy_exc_arithmetic_error() }
 	})
 }
 
@@ -153,10 +157,43 @@ pub fn raise_runtime_error(message string) {
 	raise(.runtime_error, message)
 }
 
-// raise_from_error turns a V error value into a Python RuntimeError. IError is
-// V's builtin error interface, so this accepts any error a `!T` function can
-// produce, including the anonymous ones `error('...')` creates.
+// raise_domain raises the Python exception a domain failure maps to, and returns an
+// error carrying the same message.
+//
+// This is how a `!T` function reports a specific exception:
+//
+//	if b == 0.0 {
+//		return vcraft.raise_domain(.zero_division_error, 'division by zero')
+//	}
+//
+// The exception is set here rather than in the wrapper because V gives a wrapper no
+// way to tell a ZeroDivisionError from a ValueError: both arrive as an IError with a
+// message and nothing else. Once set, the wrapper's `error_is_set` check stops the
+// value from reaching Python as a result, and the exception set here is the one
+// Python sees.
+//
+// A custom V error struct cannot be returned from a `!T` function in V 0.5.2: the
+// compiler rejects a value whose type is not IError, and a struct that implements
+// `msg()` is not one. That is why the choice travels out of band, through the
+// pending Python exception, instead of inside the error value.
+pub fn raise_domain(kind PyExc, message string) IError {
+	raise(kind, message)
+	return error(message)
+}
+
+// raise_from_error turns a V error value into a Python exception.
+//
+// IError is V's builtin error interface, so this accepts any error a `!T` function
+// can produce, including the anonymous ones `error('...')` creates. Those become a
+// RuntimeError, since a bare message says nothing about which exception was meant.
+// A DomainError carries the choice instead.
 pub fn raise_from_error(err IError) {
+	// An exception already set means `raise_domain` named the right one at the point
+	// of failure. Replacing it here would undo that choice and turn every domain
+	// failure into a RuntimeError, which is the one thing the caller was avoiding.
+	if error_is_set() {
+		return
+	}
 	raise(.runtime_error, err.str())
 }
 

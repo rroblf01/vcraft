@@ -75,7 +75,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 7,
+            glue.count("add_function_owned") == 9,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -125,7 +125,9 @@ def main() -> int:
 
     print("errors")
     t.raises("V error", RuntimeError, "name must not be empty", lambda: h.greet(""))
-    t.raises("V error from a float function", RuntimeError, "division by zero",
+    # `divide` names ZeroDivisionError rather than letting it fall back to
+    # RuntimeError, so `except ZeroDivisionError` around a call into V keeps working.
+    t.raises("V error from a float function", ZeroDivisionError, "division by zero",
              lambda: h.divide(1.0, 0.0))
     t.raises("too few arguments", TypeError, "takes 2 positional",
              lambda: h.add(1))
@@ -141,6 +143,37 @@ def main() -> int:
     print("still alive after all of that")
     t.equal("arithmetic", h.add(20, 22), 42)
     t.equal("strings", h.repeat("-", 3), "---")
+
+    print("errors")
+    t.equal("result value", h.divide(10.0, 4.0), 2.5)
+    t.raises("domain error maps to its own type", ZeroDivisionError,
+             "division by zero", lambda: h.divide(1.0, 0.0))
+    t.equal("parse_int", h.parse_int("1234"), 1234)
+    t.raises("value error", ValueError, "invalid literal",
+             lambda: h.parse_int("12a4"))
+    t.raises("overflow error", OverflowError, "too large",
+             lambda: h.parse_int("9" * 25))
+    t.raises("an anonymous error stays a RuntimeError", RuntimeError,
+             "name must not be empty", lambda: h.greet(""))
+    t.raises("argument type error", TypeError, "expected str",
+             lambda: h.greet(123))
+    t.raises("arity error", TypeError, "positional argument",
+             lambda: h.add(1))
+
+    print("panics")
+    t.check("a recovered panic raises", True)
+    try:
+        h.first_char("")
+    except RuntimeError as exc:
+        t.check("panic message names the cause", "out of bounds" in str(exc), str(exc))
+        t.check("panic names the V frame", "panic in V code" in str(exc), str(exc))
+    else:
+        t.check("a recovered panic raises", False, "no exception")
+    # The point of recovering: the interpreter is still usable afterwards, and the
+    # extension is not left with a half-written result or a stale exception.
+    t.equal("interpreter survives", h.add(2, 3), 5)
+    t.equal("extension still works", h.parse_int("7"), 7)
+    t.equal("no panic state leaks", h.greet("Ana"), "Hello, Ana!")
 
     print("class")
     counter = h.Counter()

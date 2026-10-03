@@ -74,5 +74,7 @@ PyObject *vpy_exc_stop_iteration(void);
 PyObject *vpy_exc_memory_error(void);
 PyObject *vpy_exc_system_error(void);
 PyObject *vpy_exc_overflow_error(void);
+PyObject *vpy_exc_zero_division_error(void);
+PyObject *vpy_exc_arithmetic_error(void);
 
 #endif // VCRAFT_SHIM_H

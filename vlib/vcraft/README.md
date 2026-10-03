@@ -137,16 +137,42 @@ The wrapper then checks `error_is_set` before returning, so a recovered panic is
 reported rather than reaching Python as a half-written result. Panic state is
 thread-local, which keeps this correct under free threading.
 
-## Tests
+## Errors
 
-```console
-$ ./scripts/build-runtime-tests.sh
-$ python3 tests/runtime/test_runtime.py
+A bare `error('...')` carries only a message, so every `!T` failure becomes a
+RuntimeError. That hides real problems: `except ZeroDivisionError` around a call
+into a V extension stops matching, because the code raises RuntimeError instead.
+
+The specific exception cannot travel inside the error value. V 0.5.2 rejects a
+`return` whose type is not `IError`, and a struct that implements `msg()` is not an
+`IError`, so a custom error struct cannot be propagated at all:
+
+```v
+struct MyErr { mut: msg string }
+fn (e &MyErr) msg() string { return e.msg }
+
+fn boom() IError { return &MyErr{ msg: 'boom' } }   // cannot use `&MyErr` as `IError`
 ```
 
-`tests/runtime/vcraft_runtime_check.v` writes the glue by hand, exactly as the
-generator will. It is what the generator is checked against, and it lets the runtime
-be tested before the generator exists.
+A struct literal is not a valid `match` pattern either, and a type assertion is not
+allowed in an `if` guard, so neither `match err { ... }` nor `if e := err as
+?DomainError` is available for recovering the type.
+
+So the exception is set where the failure happens:
+
+```v
+pub fn divide(a f64, b f64) !f64 {
+	if b == 0.0 {
+		return vcraft.raise_domain(.zero_division_error, 'division by zero')
+	}
+	return a / b
+}
+```
+
+and the wrapper leaves an already-set exception alone. That last part is what makes
+it work: `raise_from_error` used to overwrite whatever `raise_domain` had set, which
+turned every domain failure back into a RuntimeError and hid the bug the mechanism
+was added to fix.
 
 ## Classes: three things that cost an afternoon each
 
@@ -206,3 +232,14 @@ The state block is allocated with `PyObject_Malloc` and freed in `tp_dealloc`. O
 scalars may live in it. A V `string` is a pointer into V's heap, and V's collector
 does not scan memory CPython allocated, so the string would be reclaimed while
 Python still holds it. A class that needs strings marshals them through a method.
+
+## Tests
+
+```console
+$ ./scripts/build-runtime-tests.sh
+$ python3 tests/runtime/test_runtime.py
+```
+
+`tests/runtime/vcraft_runtime_check.v` writes the glue by hand, exactly as the
+generator will. It is what the generator is checked against, and it lets the runtime
+be tested before the generator exists.

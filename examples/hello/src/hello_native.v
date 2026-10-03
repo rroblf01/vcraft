@@ -1,5 +1,7 @@
 module hello_native
 
+import vcraft
+
 // Adds two integers and returns the sum.
 @[vc_fn]
 pub fn add(a int, b int) int {
@@ -17,12 +19,49 @@ pub fn greet(name string) !string {
 }
 
 // Divides two floats, refusing a zero divisor.
+//
+// The failure is a ZeroDivisionError rather than a RuntimeError, because Python
+// code dividing by zero expects to catch that. See vcraft/errors.v.
 @[vc_fn]
 pub fn divide(a f64, b f64) !f64 {
 	if b == 0.0 {
-		return error('division by zero')
+		return vcraft.raise_domain(.zero_division_error, 'division by zero')
 	}
 	return a / b
+}
+
+// Parses an integer, refusing anything else.
+//
+// An out-of-range value is an OverflowError and a non-digit is a ValueError, which
+// are what int() raises for the same inputs.
+@[vc_fn]
+pub fn parse_int(text string) !int {
+	n := text.len
+	for i in 0 .. n {
+		ch := text[i]
+		if ch < `0` || ch > `9` {
+			return vcraft.raise_domain(.value_error, 'invalid literal for int(): ${text}')
+		}
+	}
+	if n > 19 {
+		return vcraft.raise_domain(.overflow_error, 'int too large to parse')
+	}
+	mut value := 0
+	for i in 0 .. n {
+		value = value * 10 + int(text[i] - `0`)
+	}
+	return value
+}
+
+// Reads past the end of a slice, to show what a V panic looks like from Python.
+//
+// A V panic would call exit(1) and take the interpreter with it. The generated
+// wrapper recovers it and raises RuntimeError instead, so the process survives.
+@[vc_fn]
+pub fn first_char(text string) string {
+	unsafe {
+		return text[..1].str()
+	}
 }
 
 // Repeats a string n times.

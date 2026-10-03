@@ -268,9 +268,10 @@ field pointing at another `Counter` would need `tp_traverse` and `tp_clear`.
 
 ## Errors and panics
 
-V error propagation and Python exceptions map onto each other directly:
+A `!T` return becomes a Python exception:
 
 ```v
+// Greet someone by name.
 @[vc_fn]
 pub fn greet(name string) !string {
 	if name.len == 0 {
@@ -285,28 +286,76 @@ pub fn greet(name string) !string {
 RuntimeError: name must not be empty
 ```
 
-Any `!T` value whose error stringifies becomes a `RuntimeError`. Failing that, it
-becomes a `TypeError` for argument marshalling failures and `ValueError` for
-domain violations, chosen by the code generator from the position of the failure.
-
-V `panic` is a harder case. A V program panics by printing a message and calling
-`exit(1)`, which inside CPython would take the whole interpreter down. V 0.5 has
-Go-style recovery, so every generated wrapper installs a frame:
+A bare `error('...')` carries nothing but a message, so it becomes a
+`RuntimeError`. That is right often enough to hide the problem: Python code that
+divides by zero expects `ZeroDivisionError`, and an `except ZeroDivisionError`
+around a call into a V extension silently stops matching. So a failure that means a
+particular exception says so:
 
 ```v
-fn _vcraft_generated__wrap_div(a f64, b f64) f64 {
-	defer {
-		if msg := recover() {
-			vc.set_pending_panic(msg)
-		}
+// Divides two floats, refusing a zero divisor.
+@[vc_fn]
+pub fn divide(a f64, b f64) !f64 {
+	if b == 0.0 {
+		return vcraft.raise_domain(.zero_division_error, 'division by zero')
 	}
-	return divide(a, b)
+	return a / b
 }
 ```
 
-The panic is caught, enriched with the V file and line, and raised as a
-`RuntimeError`. Panic state is thread-local in V, so this remains correct when the
-extension is used from a free-threaded interpreter.
+```python
+>>> m.divide(1.0, 0.0)
+ZeroDivisionError: division by zero
+```
+
+The exception is chosen where the failure happens rather than in the wrapper,
+because V gives a wrapper nothing to choose from: every error arrives as an
+`IError` holding a message, and a bare message does not say whether it was a
+`ValueError` or a `ZeroDivisionError`. `raise_domain` sets the Python exception and
+returns an error, and the wrapper's `error_is_set` check stops the value from
+reaching Python as a result. A wrapper never overwrites an exception that is already
+set, so the choice survives.
+
+A custom V error struct cannot carry the choice. V 0.5.2 rejects a value whose type
+is not `IError`, and a struct that implements `msg()` is not one, so the exception
+travels out of band through the pending Python exception instead of inside the error
+value.
+
+Argument marshalling failures are separate and never reach your code: a wrong
+argument type is a `TypeError` and the wrong number of arguments is a `TypeError`,
+both naming the parameter.
+
+### Panics
+
+A V `panic` prints a message and calls `exit(1)`, which inside CPython would take
+the whole interpreter down with it. V 0.5 has Go-style recovery, so every generated
+wrapper installs a frame:
+
+```v
+fn _vcraft_generated__wrap_first_char(text string) string {
+	defer {
+		if message := recover() {
+			vcraft.raise_runtime_error('panic in V code: ${message}')
+		}
+	}
+	return first_char(text)
+}
+```
+
+```python
+>>> m.first_char('')
+RuntimeError: panic in V code: substr(0, 1) out of bounds (len=0) s=
+>>> m.add(2, 3)          # the interpreter is still fine
+5
+```
+
+A recovered panic is raised rather than reaching Python as a half-written result,
+which is what the wrapper's `error_is_set` check after the call is for. Panic state
+is thread-local in V, so this stays correct under free threading.
+
+The guard is inlined per trampoline rather than shared through a helper. V emits no
+forward declaration for a generic function called across modules, so a shared
+wrapper fails to compile with an implicit-declaration error.
 
 `@[vc_gil]` marks a function as pure V with no Python interaction. The GIL is
 released around the call, so long-running V code runs in parallel the way
@@ -526,11 +575,13 @@ for the ones the generator did.
 - [x] **Runtime**: `PyObj`, module construction, marshalling, argument parsing,
       error and panic translation, covered by 36 checks
 - [x] **Code generator**: annotations, docstrings, signatures, `.pyi` stubs,
-      covered by 77 checks against a working example
+      covered by 92 checks against a working example
 - [x] **Classes**: instances, scalar fields as read/write attributes, methods,
       properties, `__repr__`, docstrings and `__dealloc__`
 - [ ] Classes: `__eq__`, `__hash__`, inheritance from V, cycle collection
-- [ ] Errors: `!T` translation and `recover()`-based panic capture
+- [x] **Errors**: `!T` translation, `raise_domain` for a specific Python exception,
+      `recover()`-based panic capture
+- [ ] Errors: custom V error types carrying an exception class
 - [ ] Wheels: ZIP writer with DEFLATE, `METADATA`, `RECORD`, tag computation
 - [ ] PEP 517 backend, `vcraft build` / `develop` / `sdist` / `audit`
 - [ ] `abi3` and free-threaded builds

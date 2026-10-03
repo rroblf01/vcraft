@@ -226,6 +226,8 @@ fn C.vpy_exc_memory_error() voidptr
 fn C.vpy_exc_system_error() voidptr
 
 fn C.vpy_exc_overflow_error() voidptr
+fn C.vpy_exc_zero_division_error() voidptr
+fn C.vpy_exc_arithmetic_error() voidptr
 
 // ---------------------------------------------------------------- constants
 

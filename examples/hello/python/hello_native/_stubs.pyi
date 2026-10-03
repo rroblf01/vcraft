@@ -11,8 +11,26 @@ def add(a: int, b: int) -> int: ...
 """
 def greet(name: str) -> str: ...
 
-"""Divides two floats, refusing a zero divisor."""
+"""Divides two floats, refusing a zero divisor.
+	
+	The failure is a ZeroDivisionError rather than a RuntimeError, because Python
+	code dividing by zero expects to catch that. See vcraft/errors.v.
+"""
 def divide(a: float, b: float) -> float: ...
+
+"""Parses an integer, refusing anything else.
+	
+	An out-of-range value is an OverflowError and a non-digit is a ValueError, which
+	are what int() raises for the same inputs.
+"""
+def parse_int(text: str) -> int: ...
+
+"""Reads past the end of a slice, to show what a V panic looks like from Python.
+	
+	A V panic would call exit(1) and take the interpreter with it. The generated
+	wrapper recovers it and raises RuntimeError instead, so the process survives.
+"""
+def first_char(text: str) -> str: ...
 
 """Repeats a string n times."""
 def repeat(text: str, n: int) -> str: ...

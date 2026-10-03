@@ -159,6 +159,14 @@ PyObject *vpy_exc_system_error(void) {
 	return PyExc_SystemError;
 }
 
+PyObject *vpy_exc_zero_division_error(void) {
+	return PyExc_ZeroDivisionError;
+}
+
+PyObject *vpy_exc_arithmetic_error(void) {
+	return PyExc_ArithmeticError;
+}
+
 PyObject *vpy_exc_overflow_error(void) {
 	return PyExc_OverflowError;
 }
