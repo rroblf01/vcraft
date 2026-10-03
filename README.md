@@ -10,7 +10,7 @@ There is **no Rust and no C++ in the pipeline**. A `.v` file compiles to a CPyth
 // src/lib.v
 module mi_extension_nativa
 
-// Suma dos enteros y los devuelve.
+// Adds two integers and returns the result.
 @[vc.fn]
 pub fn add(a int, b int) int {
 	return a + b
