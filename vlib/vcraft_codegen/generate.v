@@ -70,6 +70,19 @@ pub fn generate(opt Options) Generated {
 // compiler hashes its inputs itself, so an unchanged file costs nothing and a
 // changed one can never be missed.
 pub fn (g Generated) write() ! {
+	// The stub goes in a directory named after the package, which a fresh project does
+	// not have. Without this the first `vcraft build` of a scaffolded project fails on
+	// a missing directory rather than on anything about the project.
+	ensure_dir_of(g.stub_path)
 	os.write_file(g.glue_path, g.glue)!
 	os.write_file(g.stub_path, g.stub)!
+}
+
+// ensure_dir_of creates the directory a path lives in, if it is missing.
+fn ensure_dir_of(path string) {
+	dir := path.all_before_last('/')
+	if dir == '' || os.exists(dir) {
+		return
+	}
+	os.mkdir_all(dir) or { return }
 }

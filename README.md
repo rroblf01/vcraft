@@ -390,6 +390,23 @@ vcraft clean                 remove build artefacts
 the project. The V runtime module is located relative to the `vcraft` binary
 itself and passed to the compiler with `-path`, so `VMODULES` is left untouched.
 
+A project from scratch, end to end:
+
+```console
+$ ./scripts/build-vcraft.sh
+$ vcraft new mypkg
+$ cd mypkg && vcraft develop
+$ python -c "import mypkg_native as m; print(m.greet('world'))"
+Hello, world!
+```
+
+Packaging configuration lives in `vcraft.toml`, not in `v.mod`. `v.mod` is V's
+manifest and names the V module; a wheel also needs a distribution name, a version,
+a licence and a `Requires-Python`, and none of those are V's business.
+
+See [`vlib/vcraft_project/README.md`](vlib/vcraft_project/README.md) for the TOML
+subset that is parsed, and for the compiler constraints that shaped it.
+
 ---
 
 ## Wheels
@@ -617,7 +634,9 @@ for the ones the generator did.
 - [x] **Wheels**: DEFLATE, ZIP container, `METADATA`, `WHEEL`, `RECORD` with SHA-256,
       tag computation and PEP 427 file names, verified by a real `pip install`
 - [ ] Wheels: `sdist`, editable installs, `.pyc` embedding
-- [ ] PEP 517 backend, `vcraft build` / `develop` / `sdist` / `audit`
+- [x] **CLI**: `vcraft new`, `build`, `develop`, `info`, `clean`, verified against a
+      real project and a real `pip install`
+- [ ] PEP 517 backend, `vcraft sdist` and `publish`
 - [ ] `abi3` and free-threaded builds
 - [ ] GitHub Actions: `vcraft-action@v1`, `generate-ci`, manylinux and musllinux
       images

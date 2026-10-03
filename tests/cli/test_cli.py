@@ -1,0 +1,272 @@
+"""Checks the `vcraft` CLI end to end.
+
+Every step runs the real binary against a real project: scaffold, build, install, use.
+Nothing here stubs the compiler or the wheel writer, because the failures worth
+catching are the ones where the pieces disagree, and a stubbed test cannot see that.
+
+The install checks use a fresh virtualenv each time. Installing into the ambient
+environment would make the suite depend on what else is installed, which is the same
+class of mistake `vcraft develop` is written to avoid.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import sysconfig
+import tempfile
+import venv
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+VCRAFT = ROOT / "bin" / "vcraft"
+
+
+class Suite:
+    def __init__(self) -> None:
+        self.passed = 0
+        self.failures: list[str] = []
+
+    def check(self, label: str, condition: bool, detail: str = "") -> None:
+        if condition:
+            self.passed += 1
+            print(f"  ok   {label}")
+        else:
+            print(f"  FAIL {label} {detail}")
+            self.failures.append(label)
+
+    def equal(self, label: str, got, expected) -> None:
+        self.check(label, got == expected, f"got {got!r}, want {expected!r}")
+
+
+def build_binary() -> None:
+    proc = subprocess.run([str(ROOT / "scripts" / "build-vcraft.sh")],
+                          capture_output=True, text=True)
+    if proc.returncode != 0 or not VCRAFT.exists():
+        raise SystemExit(f"cannot build {VCRAFT}:\n{proc.stdout}\n{proc.stderr}")
+
+
+def vcraft(*args: str, cwd: Path) -> subprocess.CompletedProcess:
+    return subprocess.run([str(VCRAFT), *args], cwd=cwd, capture_output=True, text=True)
+
+
+def make_venv(path: Path, with_pip: bool = False) -> Path:
+    # `with_pip` is off by default because a venv with pip takes several seconds and
+    # `develop` only needs an interpreter. The one check that installs a wheel turns it
+    # on for that venv alone.
+    venv.EnvBuilder(with_pip=with_pip, clear=True).create(path)
+    return path
+
+
+def main() -> int:
+    build_binary()
+    t = Suite()
+
+    print("binary")
+    t.check("the binary exists", VCRAFT.exists(), str(VCRAFT))
+    proc = vcraft("version", cwd=ROOT)
+    t.check("version", proc.returncode == 0 and proc.stdout.strip() != "",
+            proc.stderr.strip())
+    proc = vcraft("help", cwd=ROOT)
+    t.check("help", proc.returncode == 0 and "vcraft new" in proc.stdout)
+    proc = vcraft("nonsense", cwd=ROOT)
+    t.check("an unknown command fails", proc.returncode != 0)
+    t.check("an unknown command explains itself", "unknown command" in proc.stderr,
+            proc.stderr.strip())
+
+    tmp = Path(tempfile.mkdtemp(prefix="vcraft-cli-"))
+    try:
+        print("new")
+        proc = vcraft("new", "mypkg", cwd=tmp)
+        t.check("new succeeds", proc.returncode == 0, proc.stderr.strip())
+        project = tmp / "mypkg"
+        t.check("vcraft.toml", (project / "vcraft.toml").exists())
+        t.check("v.mod", (project / "v.mod").exists())
+        t.check("the V source", (project / "src" / "mypkg_native.v").exists())
+        t.check("the README", (project / "README.md").exists())
+        t.check(".gitignore", (project / ".gitignore").exists())
+        t.check("no glue is scaffolded",
+                not (project / "src" / "_vcraft_generated.v").exists(),
+                "the glue is regenerated on every build and would go stale")
+
+        toml = (project / "vcraft.toml").read_text()
+        t.check("the manifest names the package", 'name = "mypkg"' in toml, toml)
+        t.check("the manifest names the module", 'module = "mypkg_native"' in toml)
+        t.check("the manifest has classifiers", "[[classifier]]" in toml)
+        t.check("the manifest has a minimum version", "minimum-version" in toml)
+
+        vmod = (project / "v.mod").read_text()
+        t.check("v.mod declares base_url", 'base_url: "src"' in vmod, vmod)
+        t.check("v.mod requires vcraft", 'requires: ["vcraft"]' in vmod, vmod)
+        t.check("v.mod names the V module", '"mypkg_native"' in vmod, vmod)
+
+        proc = vcraft("new", "mypkg", cwd=tmp)
+        t.check("new refuses to overwrite", proc.returncode != 0, proc.stdout)
+        t.check("and says why", "already exists" in proc.stderr, proc.stderr.strip())
+
+        print("info")
+        proc = vcraft("info", cwd=project)
+        t.check("info succeeds", proc.returncode == 0, proc.stderr.strip())
+        # `info` prints a label and, when there is one, a value. A flag line has only
+        # a label, so a split that yields one part is a flag rather than a broken line.
+        info: dict[str, str] = {}
+        for line in proc.stdout.splitlines():
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                info[parts[0]] = parts[1].strip()
+        t.check("info reports the name", info.get("name", "").strip() == "mypkg",
+                proc.stdout)
+        t.check("info reports the module",
+                info.get("module", "").strip() == "mypkg_native", proc.stdout)
+        t.check("info reports the python version",
+                info.get("python", "").strip().startswith("3."),
+                proc.stdout)
+        t.check("info reports the extension suffix",
+                ".so" in info.get("extension", ""), proc.stdout)
+        t.check("info reports where vlib is",
+                info.get("vlib", "").strip() == str(ROOT / "vlib"), proc.stdout)
+
+        print("build")
+        proc = vcraft("build", cwd=project)
+        t.check("build succeeds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        wheels = list((project / "dist").glob("*.whl"))
+        t.check("a wheel is written", len(wheels) == 1,
+                str([w.name for w in (project / 'dist').glob('*')]))
+        if not wheels:
+            print()
+            print(f"{len(t.failures)} failure(s)")
+            return 1
+        wheel = wheels[0]
+
+        t.check("the glue is generated",
+                (project / "src" / "_vcraft_generated.v").exists())
+        t.check("a stub is generated",
+                (project / "python" / "mypkg_native" / "_stubs.pyi").exists(),
+                str(list((project / "python").rglob("*.pyi"))))
+        stub = (project / "python" / "mypkg_native" / "_stubs.pyi").read_text()
+        t.check("the stub declares the functions", "def greet(" in stub, stub)
+        t.check("the stub declares the class", "class Counter:" in stub, stub)
+        t.check("the stub declares the fields", "    value: int" in stub, stub)
+
+        name = wheel.name
+        t.check("the name has no dots in the version",
+                "-0.1.0-" in name, name)
+        t.check("the tag names the interpreter", "cp3" in name, name)
+        t.check("the tag names the platform", "_x86_64" in name or "_arm64" in name
+                or "_amd64" in name or "universal2" in name, name)
+
+        with zipfile.ZipFile(wheel) as z:
+            t.check("the wheel is a valid archive", z.testzip() is None)
+            entries = z.namelist()
+            t.check("the extension is at the root",
+                    any(n.endswith(".so") and "/" not in n for n in entries),
+                    str(entries))
+            t.check("METADATA", any(n.endswith("METADATA") for n in entries))
+            t.check("WHEEL", any(n.endswith("dist-info/WHEEL") for n in entries))
+            t.check("RECORD", any(n.endswith("dist-info/RECORD") for n in entries))
+            wheel_meta = z.read(
+                next(n for n in entries if n.endswith("dist-info/WHEEL"))).decode()
+            t.check("the wheel is not pure Python",
+                    "Root-Is-Purelib: false" in wheel_meta, wheel_meta)
+
+        print("build twice")
+        first = wheel.read_bytes()
+        proc = vcraft("build", cwd=project)
+        t.check("a rebuild succeeds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        t.check("the rebuild is identical", wheel.read_bytes() == first,
+                "a build that is not reproducible makes a diff meaningless")
+
+        print("install the wheel with pip")
+        target = tmp / "venv-wheel"
+        make_venv(target, with_pip=True)
+        proc = subprocess.run(
+            [str(target / "bin" / "python"), "-m", "pip", "install", "--no-index",
+             "--no-deps", str(wheel)],
+            capture_output=True, text=True)
+        t.check("pip installs the wheel", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        script = (
+            "import mypkg_native as m\n"
+            "print(m.greet('pip'))\n"
+            "print(m.add(2, 3))\n"
+            "print(repr(m.Counter()))\n"
+            "print(m.parse_int('1234'))\n"
+        )
+        proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+                              capture_output=True, text=True, cwd=tmp)
+        t.check("the installed wheel works", proc.returncode == 0,
+                (proc.stderr or "").strip()[-300:])
+        if proc.returncode == 0:
+            lines = proc.stdout.split()
+            t.check("greet", "Hello," in proc.stdout, proc.stdout)
+            t.check("add", "5" in lines, proc.stdout)
+            t.check("the class is constructible", "Counter(value: 0, step: 1)"
+                    in proc.stdout, proc.stdout)
+            t.check("parse_int", "1234" in lines, proc.stdout)
+
+        print("develop")
+        target = tmp / "venv-develop"
+        make_venv(target)
+        env = dict(os.environ, VIRTUAL_ENV=str(target))
+        proc = subprocess.run([str(VCRAFT), "develop"], cwd=project, env=env,
+                              capture_output=True, text=True)
+        t.check("develop succeeds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        t.check("develop says where it installed",
+                "installed into" in proc.stdout, proc.stdout)
+        installed = list((target / "lib").rglob("mypkg_native*.so"))
+        t.check("the extension is in site-packages", len(installed) == 1,
+                str([str(p) for p in (target / "lib").rglob("*.so")]))
+        proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+                              capture_output=True, text=True, cwd=tmp)
+        t.check("the developed extension works", proc.returncode == 0,
+                (proc.stderr or "").strip()[-300:])
+        if proc.returncode == 0:
+            t.check("develop produced a working class",
+                    "Counter(value: 0, step: 1)" in proc.stdout, proc.stdout)
+
+        # The class must come out initialised, not holding whatever the allocator left.
+        # That is the difference between a constructor that ran and one that did not,
+        # and it is invisible in the build log.
+        proc = subprocess.run(
+            [str(target / "bin" / "python"), "-c",
+             "import mypkg_native as m;c=m.Counter();print(c.is_zero,c.increment())"],
+            capture_output=True, text=True, cwd=tmp)
+        t.check("the constructor runs", proc.stdout.strip() == "True 1",
+                proc.stdout.strip() or proc.stderr.strip()[-200:])
+
+        print("errors")
+        proc = vcraft("build", "--out-dir", cwd=project)
+        t.check("a missing option value fails", proc.returncode != 0)
+        t.check("and says which option", "--out-dir" in proc.stderr,
+                proc.stderr.strip())
+
+        empty = tmp / "empty"
+        empty.mkdir()
+        proc = vcraft("build", cwd=empty)
+        t.check("build outside a project fails", proc.returncode != 0)
+        t.check("and suggests new", "vcraft new" in proc.stderr,
+                proc.stderr.strip())
+
+        proc = vcraft("clean", cwd=project)
+        t.check("clean succeeds", proc.returncode == 0, proc.stderr.strip())
+        t.check("clean removes dist", not (project / "dist").exists())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    print()
+    if t.failures:
+        print(f"{len(t.failures)} failure(s): {', '.join(t.failures)}")
+        return 1
+    print(f"all {t.passed} checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
