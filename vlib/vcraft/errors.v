@@ -138,6 +138,11 @@ pub fn raise_type_error(message string) {
 	raise(.type_error, message)
 }
 
+// raise_attribute_error reports a missing or undeletable attribute.
+pub fn raise_attribute_error(message string) {
+	raise(.attribute_error, message)
+}
+
 // raise_value_error reports a value of the right type but an unusable value.
 pub fn raise_value_error(message string) {
 	raise(.value_error, message)

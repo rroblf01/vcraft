@@ -30,8 +30,56 @@ pub mut:
 	doc string
 }
 
+// read_inline reads the annotation and doc comment of a declaration written on one
+// line, which is how a struct field looks:
+//
+//	@[vc_field] value int
+//
+// The annotation sits on the declaration's own line, so `read_above` would read the
+// line before it and pick up the previous field's annotation instead.
+pub fn read_inline(lines []string, line int) AttrBlock {
+	mut block := AttrBlock{}
+	if line < 1 || line > lines.len {
+		return block
+	}
+	block.attrs = parse_attr_names(lines[line - 1])
+	block.doc = doc_above(lines, line)
+	return block
+}
+
+// starts_comment_at reports whether a doc comment opens on or above `index`.
+fn starts_comment_at(lines []string, index int) bool {
+	for i in index .. 0 {
+		trimmed := lines[i].trim_space()
+		if trimmed == '' {
+			continue
+		}
+		return trimmed.starts_with('//')
+	}
+	return false
+}
+
+// doc_above reads the doc comment immediately above `line`, skipping blanks.
+fn doc_above(lines []string, line int) string {
+	mut doc_lines := []string{}
+	mut i := line - 2
+	for i >= 0 {
+		trimmed := lines[i].trim_space()
+		if trimmed == '' {
+			break
+		}
+		if !trimmed.starts_with('//') {
+			break
+		}
+		doc_lines.prepend(strip_comment_marker(trimmed))
+		i--
+	}
+	return doc_lines.join('\n')
+}
+
 // read_above reads the annotation block and doc comment that precede `line`, which
-// is 1-based.
+// is 1-based. This is the form a function or struct declaration takes, where the
+// annotation is on its own line above.
 //
 // `lines` is the whole file split into lines, which the caller already has.
 pub fn read_above(lines []string, line int) AttrBlock {
@@ -48,6 +96,13 @@ pub fn read_above(lines []string, line int) AttrBlock {
 			continue
 		}
 		if !trimmed.starts_with('@[') {
+			break
+		}
+		// A doc comment above the attribute block belongs to it. The attributes are
+		// still read from below; the comment is what stops the walk, because the
+		// annotation and its docstring are separate things in V and the next block up
+		// is a different declaration's.
+		if starts_comment_at(lines, i) {
 			break
 		}
 		// Walk back to the start of this attribute, which may open on an earlier

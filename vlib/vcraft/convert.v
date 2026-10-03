@@ -196,3 +196,53 @@ pub fn to_py_none() PyObj {
 pub fn to_py_voidptr(p voidptr) PyObj {
 	return borrow(p)
 }
+
+// unbox_int, unbox_uint, unbox_f64 and unbox_bool convert a value a field setter was
+// handed into the V type the field holds.
+//
+// A setter receives a `PyObject *`. That object is a `PyLong` or a `PyFloat` with
+// CPython's own layout, so the value has to be converted rather than copied: memcpy'ing
+// the bytes would read the interpreter's internals as if they were a V value.
+//
+// The object is borrowed. CPython owns the argument for the duration of the call, so
+// taking a reference would leak one per assignment.
+pub fn unbox_int(value voidptr, name string) !int {
+	return from_py_int(borrow(value), name)
+}
+
+pub fn unbox_uint(value voidptr, name string) !u64 {
+	return from_py_uint(borrow(value), name)
+}
+
+pub fn unbox_f64(value voidptr, name string) !f64 {
+	return from_py_f64(borrow(value), name)
+}
+
+pub fn unbox_bool(value voidptr) !bool {
+	if value == unsafe { nil } {
+		return error('a setter was called without a value')
+	}
+	return from_py_bool(borrow(value))
+}
+
+// repr_int, repr_uint, repr_f64, repr_bool and repr_string render a V value the way
+// Python's own repr would, so an instance's repr reads like a Python one.
+pub fn repr_int(value int) string {
+	return '${value}'
+}
+
+pub fn repr_uint(value u64) string {
+	return '${value}'
+}
+
+pub fn repr_f64(value f64) string {
+	return '${value}'
+}
+
+pub fn repr_bool(value bool) string {
+	return if value { 'True' } else { 'False' }
+}
+
+pub fn repr_string(value string) string {
+	return "'${value}'"
+}

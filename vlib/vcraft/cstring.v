@@ -22,14 +22,10 @@ pub fn cstring(s string) voidptr {
 		if buf == nil {
 			return nil
 		}
-		// A plain byte loop rather than memcpy: V maps `memcpy` to the C
-		// function `v_memcpy`, whose declaration the backend emits late in the
-		// file, so calling it from an early helper trips gcc's implicit
-		// declaration rule. These strings are attribute names and error
-		// messages, so the loop is not worth avoiding anyway.
-		for i in 0 .. s.len {
-			*(buf + i) = s.str[i]
-		}
+		// The copy goes through the shim's memcpy rather than V's builtin, because
+		// the builtin compiles to `v_memcpy` whose declaration is emitted late in
+		// the file and would trip gcc's implicit declaration rule here.
+		C.vpy_memcpy(buf, s.str, usize(s.len))
 		*(buf + s.len) = 0
 		return buf
 	}

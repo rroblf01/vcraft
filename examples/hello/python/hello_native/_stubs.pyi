@@ -25,3 +25,19 @@ def total(values: Sequence[Any]) -> int: ...
 
 """Takes any Python object and returns it unchanged."""
 def passthrough(obj: Any) -> Any: ...
+
+"""A counter with state.
+	
+	Fields must be scalars. A V string inside a Python object would be a pointer
+	that V's collector cannot see, because it does not scan memory CPython
+	allocated, so the string would be reclaimed while Python still held it. Reach a
+	string through a method, which marshals it properly.
+"""
+class Counter:
+    value: int
+    step: int
+    def increment(self) -> int: ...
+    def set_step(self, step: int) -> None: ...
+    def double(self) -> None: ...
+    @property
+    def is_zero(self) -> bool: ...

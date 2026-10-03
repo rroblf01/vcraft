@@ -33,6 +33,30 @@ fn C.vpy_size_PyModuleDef() isize
 
 fn C.vpy_size_PyMethodDef() isize
 
+fn C.vpy_size_PyObject() isize
+
+fn C.vpy_tpflags_default() u32
+
+fn C.vpy_instance_alloc(n usize) voidptr
+
+fn C.vpy_instance_free(p voidptr)
+
+fn C.PyType_FromSpec(spec voidptr) voidptr
+
+fn C.PyType_GenericAlloc(typ voidptr, nitems isize) voidptr
+
+fn C.PyErr_NoMemory()
+
+fn C.vpy_memcpy(dst voidptr, src voidptr, n usize) voidptr
+
+fn C.vpy_type_free(self voidptr)
+
+fn C.vpy_type_ptr(self voidptr) voidptr
+
+fn C.vpy_ob_size(self voidptr) isize
+
+fn C.vpy_tuple_size(self voidptr) isize
+
 // vcraft passes -d vcraft_limited_api when it builds an abi3 wheel. Under that
 // setting CPython hides the concrete object structs behind the stable ABI, so
 // the runtime has to reach everything through functions. The `?` form keeps one
@@ -238,11 +262,27 @@ pub const meth_fastcall = 0x0080
 // METH_FASTCALL | METH_KEYWORDS
 pub const meth_fastcall_keywords = meth_fastcall | 0x0002
 
-// Py_TPFLAGS_DEFAULT, needed so PyType_FromSpec produces a heap type.
-pub const tpflags_default = 0x0000_0000 | (1 << 25)
+// Type slot identifiers, from CPython's typeslots.h. A slot id is a macro, so the
+// runtime repeats the numbers and `check_layout` would catch a future change only
+// by name, not by value. They are part of the stable ABI.
+pub const slot_doc = i32(56)
+
+pub const slot_dealloc = i32(52)
+
+pub const slot_init = i32(60)
+
+pub const slot_methods = i32(64)
+
+pub const slot_new = i32(65)
+
+pub const slot_repr = i32(66)
+
+pub const slot_members = i32(72)
+
+pub const slot_getset = i32(73)
 
 // Py_TPFLAGS_BASETYPE, required before a Python class may be subclassed.
-pub const tpflags_basetype = 1 << 10
+pub const tpflags_basetype = u32(1 << 10)
 
 // ------------------------------------------------------------- C layouts
 //
@@ -251,17 +291,21 @@ pub const tpflags_basetype = 1 << 10
 // reference-typed fields, and an omitted-field literal has to be able to produce
 // C's all-zero sentinels, such as the PyMethodDef terminator.
 
+// Every C `int` here is `i32`, never V's `int`. V's `int` is 64 bits and C's is 32,
+// which for `PyTypeSpec` moves `flags` and `slots` to the wrong offsets and makes
+// CPython read a garbage pointer. Most of the other mirrors happen to line up
+// anyway; none of them are worth relying on.
 pub struct PyMethodDef {
-mut:
+pub mut:
 	name  voidptr
 	meth  voidptr
-	flags int
+	flags i32
 	doc   voidptr
 }
 
 // PyObject_HEAD plus the three single-phase fields.
 pub struct PyModuleDefBase {
-mut:
+pub mut:
 	ob_refcnt isize
 	ob_type   voidptr
 	m_init    voidptr
@@ -270,7 +314,7 @@ mut:
 }
 
 pub struct PyModuleDef {
-mut:
+pub mut:
 	base       PyModuleDefBase
 	m_name     voidptr
 	m_doc      voidptr
@@ -283,7 +327,31 @@ mut:
 }
 
 pub struct PyTypeSlot {
-mut:
-	slot  int
+pub mut:
+	slot  i32
 	value voidptr
+}
+
+// There is no `doc` member. CPython's PyType_Spec is exactly five fields, and a
+// mirror that adds one does not merely lose `__doc__`: `basicsize`, `flags` and
+// `slots` all shift and CPython reads a garbage pointer. A type's docstring travels
+// in the `Py_tp_doc` slot instead.
+pub struct PyTypeSpec {
+mut:
+	name      voidptr
+	basicsize i32
+	itemsize  i32
+	flags     u32
+	slots     voidptr
+}
+
+// PyGetSetDef is a property descriptor. A nil `set` makes it read only, which is
+// what a V method marked as a property produces.
+pub struct PyGetSetDef {
+pub mut:
+	name    voidptr
+	get     voidptr
+	set     voidptr
+	doc     voidptr
+	closure voidptr
 }

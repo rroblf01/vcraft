@@ -186,46 +186,83 @@ file, line and column, not a runtime surprise.
 ## Classes and properties
 
 ```v
+// A counter with state.
+//
+// Fields must be scalars. A V string inside a Python object would be a pointer
+// that V's collector cannot see, because it does not scan memory CPython
+// allocated, so the string would be reclaimed while Python still held it. Reach a
+// string through a method, which marshals it properly.
 @[vc_class]
 pub struct Counter {
 mut:
+	// value is the running total.
 	@[vc_field] value int
-	@[vc_field] label string
+	@[vc_field] step int
 }
 
-@[vc_methods]
-pub fn new_counter(label string) &Counter {
-	return &Counter{ label: label }
+// new_counter builds a Counter. It takes no arguments; the convention is that
+// `new_<Class>` is the constructor, and an instance is made by calling the type.
+pub fn new_counter() &Counter {
+	return &Counter{ step: 1 }
 }
 
+// increment adds step to value and returns the new total.
 @[vc_methods]
-pub fn (c &Counter) increment(by int) int {
-	c.value += by
+pub fn (mut c Counter) increment() int {
+	c.value += c.step
 	return c.value
 }
 
+// set_step changes how much each increment adds.
+@[vc_methods]
+pub fn (mut c Counter) set_step(step int) {
+	c.step = step
+}
+
+// is_zero reports whether the value is still zero.
 @[vc_methods]
 @[vc_property]
-pub fn (c &Counter) doubled int {
-	return c.value * 2
+pub fn (c &Counter) is_zero() bool {
+	return c.value == 0
 }
 ```
 
 ```python
->>> c = m.new_counter("hits")
->>> c.increment(4)
-4
->>> c.doubled
-8
->>> c.label
-'hits'
+>>> c = m.Counter()
+>>> repr(c)
+'Counter(value: 0, step: 1)'
+>>> c.increment(), c.increment()
+(1, 2)
+>>> c.step = 5
+>>> c.increment()
+7
+>>> c.is_zero
+False
+>>> c.value = 100
+>>> c
+Counter(value: 100, step: 5)
 ```
 
-Instances are created through your own `new_*` constructor, so there is no
-implied `__init__` signature to keep in sync. The V pointer behind the instance is
-released in `tp_dealloc`, reference cycles are handled by `tp_traverse` and
-`tp_clear`, and immutable fields can additionally be exposed as `getset`
-descriptors for faster reads than `__dict__`.
+A class becomes a CPython heap type created with `PyType_FromSpec`. The state lives
+in a block CPython allocates, the V struct is copied in before a method runs and
+back out after, and `tp_dealloc` frees the block.
+
+An `@[vc_field]` becomes a read/write attribute. Assigning the wrong type raises
+`TypeError`, and deleting one raises `AttributeError`: both come for free from
+registering a setter, rather than from a hand-written check per field. An
+`@[vc_property]` method becomes a read-only property, and a plain `@[vc_methods]`
+method takes arguments like any other exposed function.
+
+The constructor runs in `tp_new` and takes no arguments, so `Counter(1)` is a
+`TypeError`. That is deliberate: there is no implied `__init__` signature to keep
+in sync with a V constructor that could change shape. Give the constructor
+parameters and you would have to keep two signatures aligned by hand.
+
+Docstrings reach `__doc__` on the type, its methods, its properties and its fields.
+
+Cycles are not yet collected. Nothing in a class holds a reference back to its
+instance, so an instance is freed as soon as Python drops it; a class that grew a
+field pointing at another `Counter` would need `tp_traverse` and `tp_clear`.
 
 ---
 
@@ -489,8 +526,10 @@ for the ones the generator did.
 - [x] **Runtime**: `PyObj`, module construction, marshalling, argument parsing,
       error and panic translation, covered by 36 checks
 - [x] **Code generator**: annotations, docstrings, signatures, `.pyi` stubs,
-      covered by 47 checks against a working example
-- [ ] Classes: instances, fields, methods, properties, `__repr__`/`__eq__`
+      covered by 77 checks against a working example
+- [x] **Classes**: instances, scalar fields as read/write attributes, methods,
+      properties, `__repr__`, docstrings and `__dealloc__`
+- [ ] Classes: `__eq__`, `__hash__`, inheritance from V, cycle collection
 - [ ] Errors: `!T` translation and `recover()`-based panic capture
 - [ ] Wheels: ZIP writer with DEFLATE, `METADATA`, `RECORD`, tag computation
 - [ ] PEP 517 backend, `vcraft build` / `develop` / `sdist` / `audit`

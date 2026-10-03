@@ -21,7 +21,7 @@ mkdir -p "$here/build"
 "$here/build/vc-generate" "$project" "$module" "$module"
 
 mkdir -p "$project/python"
-"$here/scripts/vcraft-v.sh" -shared -o "$project/python/$module$suffix" \
+"$here/scripts/vcraft-v.sh" -enable-globals -shared -o "$project/python/$module$suffix" \
 	-path "$here/vlib|@vlib" \
 	-cflags "-I$include" \
 	"$project"

@@ -5,6 +5,7 @@ module vcraft_codegen
 import os
 import v.astquery
 import v.flat
+import v.token
 
 // collect_file adds everything the generator acts on in one file to `p`.
 //
@@ -17,7 +18,7 @@ pub fn collect_file(path string, mut p Project) {
 		match decl.kind {
 			.fn { collect_fn(path, lines, ast, decl, mut p) }
 			.method { collect_method(path, lines, ast, decl, mut p) }
-			.struct { collect_struct(path, lines, decl, mut p) }
+			.struct { collect_struct(path, lines, ast, decl, mut p) }
 			else {}
 		}
 	}
@@ -123,7 +124,7 @@ fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 	}
 	f.v_ret, f.returns_result = split_result(decl.type_name)
 	f.trampoline = if is_method {
-		'vcraft_generated__method_${decl.receiver}_${decl.name}'
+		'vcraft_generated__method_${decl.receiver.to_lower()}_${decl.name}'
 	} else {
 		'vcraft_generated__wrap_${decl.name}'
 	}
@@ -140,7 +141,10 @@ fn collect_fn(path string, lines []string, ast &flat.FlatAst, decl astquery.Decl
 		report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
 		return
 	}
-	f := build_func(decl, ast, block, false)
+	mut f := build_func(decl, ast, block, false)
+	f.origin = path
+	f.line = decl.line
+	f.column = decl.column
 	validate(mut p, path, decl, f)
 	p.funcs << f
 }
@@ -167,10 +171,18 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 		report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
 		return
 	}
-	p.classes[target].methods << build_func(decl, ast, block, true)
+	mut m := build_func(decl, ast, block, true)
+	m.property = attr_property in block.attrs
+	if attr_static in block.attrs {
+		report(mut p, path, decl,
+			'error: `@[vc_static] ${decl.name}` is not supported yet; a static method still needs a receiver in V')
+		return
+	}
+	p.classes[target].methods << m
 }
 
-fn collect_struct(path string, lines []string, decl astquery.Declaration, mut p Project) {
+fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.Declaration,
+	mut p Project) {
 	block := read_above(lines, decl.line)
 	if attr_class !in block.attrs {
 		return
@@ -179,10 +191,206 @@ fn collect_struct(path string, lines []string, decl astquery.Declaration, mut p 
 		report(mut p, path, decl, 'error: `@[vc_class] ${decl.name}` is declared twice')
 		return
 	}
-	p.classes << Class{
-		name: decl.name
-		doc:  block.doc
+	key := decl.name.to_lower()
+	mut c := Class{
+		name:      decl.name
+		doc:       block.doc
+		qualified: '${p.module}.${decl.name}'
+		ctor:      'vcraft_generated__new_${key}'
+		size_fn:   'vcraft_generated__sizeof_${key}'
+		ctype:     'g_vc_type_${key}'
+		dealloc:   'vcraft_generated__dealloc_${key}'
+		repr:      'vcraft_generated__repr_${key}'
+		key:       key
 	}
+	c.fields = collect_fields(path, lines, ast, decl.name, mut p)
+	p.classes << c
+}
+
+// collect_fields reads the `@[vc_field]` fields of a class.
+//
+// A field's annotation is written on the field's own line, so it is read from there
+// rather than from the line above, and its type comes from the tree.
+fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name string,
+	mut p Project) []Field {
+	mut out := []Field{}
+	id := find_struct_node(ast, struct_name) or { return out }
+	node := ast.node(id)
+	// A `pub` field reaches the tree as two nodes: one whose value is `pub` and
+	// whose type is the field name, and one holding only the type. Anything else is
+	// a plain field whose value is the name.
+	// A `pub` or `mut` field reaches the tree as a marker node followed by a node
+	// holding only the type; a plain field is one node with the name in `value` and
+	// the type in `typ`. Rather than guess which shape a field has, accept both and
+	// keep only pairs whose name looks like an identifier.
+	mut pending := ''
+	for child in ast.children_of(node) {
+		c := ast.node(child)
+		if c.kind != .field_decl {
+			continue
+		}
+		if c.value == 'pub' || c.value == 'mut' {
+			// The documented shape: the marker carries the name in `typ`.
+			if c.typ != c.value && is_identifier(c.typ) {
+				pending = c.typ
+			}
+			continue
+		}
+		if c.value == '' {
+			// A type-only node completes the pending name.
+			if pending != '' && c.typ != '' {
+				out << Field{
+					name:   pending
+					v_type: c.typ
+				}
+				pending = ''
+			}
+			continue
+		}
+		if is_identifier(c.value) && c.typ != '' {
+			out << Field{
+				name:   c.value
+				v_type: c.typ
+			}
+			pending = ''
+		}
+	}
+	// Only the annotated ones are exposed, and only scalars are safe to hold in
+	// CPython-owned memory.
+	mut exposed := []Field{}
+	for _, original in out {
+		mut f := original
+		block := read_inline(lines, field_line(ast, f.name))
+		if attr_field !in block.attrs {
+			continue
+		}
+		f.doc = block.doc
+		if !f.is_scalar() {
+			report(mut p, path, astquery.Declaration{
+				name:       f.name
+				type_name:  f.v_type
+				line:       field_line(ast, f.name)
+				column:     1
+			}, 'error: `@[vc_field] ${struct_name}.${f.name}` has type `${f.v_type}`, which cannot be stored in a Python object: only bool, the integer and float types are safe. Expose it through a method instead')
+			continue
+		}
+		exposed << f
+	}
+	return exposed
+}
+
+// is_identifier reports whether a name could be a V declaration name, which is how
+// a field name is told apart from the `pub` and `mut` markers.
+fn is_identifier(text string) bool {
+	if text.len == 0 {
+		return false
+	}
+	first := text[0]
+	if !(first == `_` || (first >= `a` && first <= `z`) || (first >= `A` && first <= `Z`)) {
+		return false
+	}
+	for i in 1 .. text.len {
+		ch := text[i]
+		if !(ch == `_` || (ch >= `a` && ch <= `z`) || (ch >= `A` && ch <= `Z`) ||
+			(ch >= `0` && ch <= `9`)) {
+			return false
+		}
+	}
+	return true
+}
+
+// field_line is the 1-based line of a field, used to look its annotation up.
+fn field_line(ast &flat.FlatAst, name string) int {
+	for raw in ast.file_node_ids {
+		if line := find_field_line(ast, flat.NodeId(raw), name) {
+			return line
+		}
+	}
+	return 1
+}
+
+fn find_field_line(ast &flat.FlatAst, id flat.NodeId, name string) ?int {
+	node := ast.node(id)
+	if node.kind == .field_decl && (node.value == name || node.typ == name) {
+		return ast.source_position(node.pos) or { token.Position{} }.line
+	}
+	for child in ast.children_of(node) {
+		if line := find_field_line(ast, child, name) {
+			return line
+		}
+	}
+	return none
+}
+
+// find_struct_node locates a struct declaration so its fields can be read.
+fn find_struct_node(ast &flat.FlatAst, wanted string) ?flat.NodeId {
+	for raw in ast.file_node_ids {
+		if found := find_struct_in(ast, flat.NodeId(raw), wanted) {
+			return found
+		}
+	}
+	return none
+}
+
+fn find_struct_in(ast &flat.FlatAst, id flat.NodeId, wanted string) ?flat.NodeId {
+	node := ast.node(id)
+	if node.kind == .struct_decl && node.value == wanted {
+		return id
+	}
+	for child in ast.children_of(node) {
+		if found := find_struct_in(ast, child, wanted) {
+			return found
+		}
+	}
+	return none
+}
+
+// link_classes resolves the `new_*` function of each class and gives the class
+// methods their flags.
+//
+// A class with no `new_*` is usable from V but cannot be instantiated from Python,
+// which is allowed rather than reported: not every class needs to be constructible.
+fn link_classes(mut p Project) {
+	mut ctors := []string{}
+	for i, c in p.classes {
+		// V spells a constructor `new_TypeName` in snake case, so the lookup
+		// ignores case rather than guessing at a second naming convention.
+		wanted := 'new_${c.name}'.to_lower()
+		for f in p.funcs {
+			if f.name.to_lower() == wanted {
+				p.classes[i].ctor_fn = f.name
+				ctors << f.name
+				if f.params.len > 0 {
+					p.diagnostics << Diagnostic{
+						file:    f.origin
+						line:    f.line
+						column:  f.column
+						message: 'error: constructor `${f.name}` takes ${f.params.len} argument(s); a class constructor must take none, because it runs in `tp_new` before Python has set anything up'
+					}
+				}
+			}
+		}
+	}
+	if ctors.len == 0 {
+		return
+	}
+	// A `new_X` function is the class's `tp_new`, not a module-level callable. It
+	// returns `&X`, which has no marshalling rule of its own, so it is dropped from
+	// the exported set along with any diagnostic raised for its signature.
+	p.funcs = p.funcs.filter(it.name !in ctors)
+	mut kept := []Diagnostic{}
+	for d in p.diagnostics {
+		mut skip := false
+		for ctor in ctors {
+			if d.message.contains('`' + ctor + '`') {
+				skip = true
+			}
+		}
+		if !skip {
+			kept << d
+		}
+	}
+	p.diagnostics = kept
 }
 
 // class_index returns the position of a class by name, or -1.

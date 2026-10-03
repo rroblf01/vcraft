@@ -68,24 +68,71 @@ pub mut:
 	raw bool
 	// nogil marks a pure V function the wrapper may call with the GIL released.
 	nogil bool
+	// property marks a method exposed as a Python property rather than a call.
+	property bool
+	// static marks a method that takes no receiver.
+	static bool
 	// mangled is the C-level V name of the trampoline, unique within the module.
 	trampoline string
+	// origin, line and column place the declaration, for a diagnostic raised in a
+	// later pass than the one that found it.
+	origin string
+	line   int
+	column int
 }
 
 // Class is one struct the generator will expose as a Python type.
 pub struct Class {
 pub mut:
-	name     string
-	doc      string
-	fields   []Field
-	methods  []Func
+	name string
+	doc  string
+	// qualified is the name the type is created under, which is the V module name
+	// plus the class name, so that two modules may each declare a `Point`.
+	qualified string
+	// storage is the C name of the generated size constant.
+	storage string
+	fields  []Field
+	methods []Func
+	// ctor_fn is the user's `new_*` function, run by `tp_new`. Empty when the class
+	// has none, in which case instances can only be built from V.
+	ctor_fn string
+	// ctor is the generated `tp_new` trampoline.
+	ctor string
+	// ctype is the local the generated `PyInit` holds the heap type in.
+	ctype string
+	// size_fn is the generated helper reporting the struct's size in bytes.
+	size_fn string
+	// dealloc is the generated `tp_dealloc`.
+	dealloc string
+	// repr is the generated `tp_repr`.
+	repr string
+	// key is the class name folded to snake_case, because V rejects an identifier
+	// with uppercase letters in it.
+	key string
 }
 
 // Field is one exposed struct field.
 pub struct Field {
-pub:
+pub mut:
 	name string
 	doc  string
+	// v_type is the declared field type, which decides the accessor.
+	v_type string
+	// setter is empty for a read-only field.
+	setter string
+}
+
+// is_scalar reports whether a field type is safe to hold in CPython-owned memory.
+//
+// Only scalars are. A `string` copied there would be a Boehm pointer that nothing
+// keeps alive, because Boehm does not scan memory CPython allocated.
+pub fn (f Field) is_scalar() bool {
+	return match f.v_type {
+		'bool', 'int', 'i8', 'i16', 'i32', 'i64', 'isize' { true }
+		'u8', 'u16', 'u32', 'u64', 'usize' { true }
+		'f32', 'f64' { true }
+		else { false }
+	}
 }
 
 // Project is everything the generator found.

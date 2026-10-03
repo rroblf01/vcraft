@@ -56,11 +56,156 @@ pub fn emit_glue(p Project) string {
 		w.write_string("\tm.add_function_owned('${f.name}', voidptr(${f.trampoline}), " +
 			'${flags},\n\t\t${vstring_literal(python_signature(f))})\n')
 	}
-	w.write_string('\treturn m.seal().ptr\n}\n')
+	// The module has to exist before anything can be attached to it, so `seal`
+	// comes first and the classes go on afterwards.
+	w.write_string('\tmodule := m.seal()\n')
+	for c in p.classes {
+		w.write_string(register_class(c))
+	}
+	w.write_string('\treturn module.ptr\n}\n')
 	for f in p.funcs {
 		w.write_string('\n')
 		w.write_string(emit_trampoline(f))
 	}
+	for c in p.classes {
+		w.write_string(emit_class(c))
+		for m in c.methods {
+			w.write_string('\n')
+			if m.property {
+				w.write_string(emit_property_trampoline(c, m))
+			} else {
+				w.write_string(emit_method_trampoline(c, m))
+			}
+		}
+	}
+	return w.str()
+}
+
+// register_class adds one class to the module being built.
+//
+// The tables the type needs are module-level globals rather than locals, because
+// CPython keeps reading them: `PyType_FromSpec` copies what it needs, but a
+// PyMethodDef's name and doc pointers are borrowed for the life of the type.
+fn register_class(c Class) string {
+	mut w := new_builder()
+	w.write_string('\t${c.ctype} := vcraft.new_type(')
+	w.write_string("'${c.qualified}',\n")
+	w.write_string('\t\t' + vstring_literal(c.doc) + ',\n')
+	w.write_string('\t\tvoidptr(${c.ctor}),\n')
+	// `tp_init` is left null: the constructor runs in `tp_new`, so a subclass that
+	// overrides `__init__` still gets a chance to add to it.
+	w.write_string('\t\tunsafe { nil },\n')
+	w.write_string('\t\tvoidptr(${c.dealloc}),\n')
+	// Taking the address of a mutable array element needs an unsafe block, and both
+	// tables are module-level globals that the type borrows for its lifetime.
+	if c.methods.any(it.property == false) {
+		w.write_string('\t\tunsafe { voidptr(&g_vc_methods_${c.key}[0]) },\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+	}
+	if c.fields.len > 0 || c.methods.any(it.property) {
+		w.write_string('\t\tunsafe { voidptr(&g_vc_getsets_${c.key}[0]) },\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+	}
+	w.write_string('\t\tvoidptr(${c.repr}),\n')
+	w.write_string('\t)\n')
+	w.write_string("\tvcraft.add_object_ref_on(module, '${c.name}', ${c.ctype})\n")
+	return w.str()
+}
+
+// emit_method_trampoline renders a method of a class.
+//
+// It is the ordinary trampoline wrapped in the two statements that move the V value
+// in and out of the instance's state block.
+pub fn emit_method_trampoline(c Class, f Func) string {
+	mut w := new_builder()
+	signature := if f.params.len == 0 {
+		'self voidptr, args voidptr'
+	} else {
+		'self voidptr, args voidptr, nargs isize'
+	}
+	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
+	if f.params.len > 0 {
+		w.write_string("\tvcraft.require_nargs('${f.name}', ${f.params.len}, int(nargs))\n")
+		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	}
+	mut names := []string{}
+	for i, param in f.params {
+		name := local_name(i)
+		names << name
+		w.write_string('\t${reader_expr(lookup(param.v_type), name, i, f.name, param.name, param.v_type)}\n')
+	}
+	if f.params.len > 0 {
+		w.write_string("\tvcraft.reject_extra_args('${f.name}', ${f.params.len}, int(nargs))\n")
+		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	}
+	w.write_string('\tmut state := ${c.name}{}\n')
+	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
+		'${c.size_fn}())\n')
+	ret := lookup(f.v_ret)
+	has_value := ret != .void
+	if has_value {
+		w.write_string('\tmut result := ${zero_value(ret, f.v_ret)}\n')
+	}
+	w.write_string('\tdefer {\n')
+	w.write_string('\t\tif message := recover() {\n')
+	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+	w.write_string('\t\t}\n')
+	w.write_string('\t}\n')
+	call := if f.params.len == 0 { 'state.${f.name}()' } else { 'state.${f.name}(${names.join(', ')})' }
+	if f.returns_result {
+		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
+		if has_value {
+			w.write_string('\tresult := ${call} or {\n\t\t${inner}\n\t}\n')
+		} else {
+			w.write_string('\t${call} or {\n\t\t${inner}\n\t}\n')
+		}
+	} else if has_value {
+		w.write_string('\tresult = ${call}\n')
+	} else {
+		w.write_string('\t${call}\n')
+	}
+	// The instance is written back before anything can fail, so a method that
+	// raises leaves the object consistent.
+	w.write_string('\tvcraft.store_state(voidptr(&state), vcraft.instance_storage(self), ' +
+		'${c.size_fn}())\n')
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	if has_value {
+		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+	} else {
+		w.write_string('\treturn vcraft.to_py_none().ptr\n')
+	}
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_property_trampoline renders a method exposed as a Python property.
+//
+// A getter is called with the instance and the descriptor closure, not with an
+// argument tuple, and it must take no arguments.
+pub fn emit_property_trampoline(c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${f.trampoline}(self voidptr, closure voidptr) voidptr {\n')
+	w.write_string('\tmut state := ${c.name}{}\n')
+	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
+		'${c.size_fn}())\n')
+	ret := lookup(f.v_ret)
+	w.write_string('\tdefer {\n')
+	w.write_string('\t\tif message := recover() {\n')
+	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+	w.write_string('\t\t}\n')
+	w.write_string('\t}\n')
+	if f.returns_result {
+		inner := 'vcraft.raise_from_error(err)\n\treturn unsafe { nil }'
+		w.write_string('\tresult := state.${f.name}() or {\n\t${inner}\n\t}\n')
+		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+	} else {
+		w.write_string('\tresult := state.${f.name}()\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+	}
+	w.write_string('}\n')
 	return w.str()
 }
 
@@ -267,6 +412,31 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 	}
 }
 
+// unbox_expr renders the call that converts an incoming `PyObject *` into the V type
+// a field holds. A setter cannot copy the bytes: the object behind an int is a
+// `PyLong` with CPython's own layout.
+pub fn unbox_expr(strategy Strategy, value string) string {
+	return match strategy {
+		.bool { 'vcraft.unbox_bool(' + value + ')' }
+		.int { 'vcraft.unbox_int(' + value + ', ' + vstring_literal('value') + ')' }
+		.uint { 'vcraft.unbox_uint(' + value + ', ' + vstring_literal('value') + ')' }
+		.float { 'vcraft.unbox_f64(' + value + ', ' + vstring_literal('value') + ')' }
+		else { 'vcraft.unbox_int(' + value + ', ' + vstring_literal('value') + ')' }
+	}
+}
+
+// py_repr_expr renders a V expression that produces the Python repr of a value.
+pub fn py_repr_expr(strategy Strategy, value string) string {
+	return match strategy {
+		.bool { 'vcraft.repr_bool(' + value + ')' }
+		.int { 'vcraft.repr_int(' + value + ')' }
+		.uint { 'vcraft.repr_uint(' + value + ')' }
+		.float { 'vcraft.repr_f64(' + value + ')' }
+		.str { 'vcraft.repr_string(' + value + ')' }
+		else { "'...'" }
+	}
+}
+
 // The bytes that have to be escaped inside a single-quoted V literal.
 const esc_backslash = u8(92)
 
@@ -323,7 +493,16 @@ pub fn emit_stubs(p Project) string {
 			w.write_string('${indent_doc(c.doc)}\n')
 		}
 		w.write_string('class ${c.name}:\n')
+		// Fields come first and are attributes rather than methods: that is what they
+		// are at runtime, and a stub that declared them as methods would type-check
+		// `c.value` as a bound method.
+		for field in c.fields {
+			w.write_string('    ${field.name}: ${describe(field.v_type)}\n')
+		}
 		for method in c.methods {
+			if method.property {
+				w.write_string('    @property\n')
+			}
 			w.write_string('    def ${method.name}(self${method_params(method)}) -> ' +
 				'${describe(method.v_ret)}: ...\n')
 		}

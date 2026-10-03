@@ -55,3 +55,52 @@ pub fn total(values []int) int {
 pub fn passthrough(obj voidptr) voidptr {
 	return obj
 }
+
+// A counter with state.
+//
+// Fields must be scalars. A V string inside a Python object would be a pointer
+// that V's collector cannot see, because it does not scan memory CPython
+// allocated, so the string would be reclaimed while Python still held it. Reach a
+// string through a method, which marshals it properly.
+@[vc_class]
+pub struct Counter {
+mut:
+	// value is the running total.
+	@[vc_field] value int
+	@[vc_field] step int
+}
+
+// A new counter starts at zero with a step of one.
+@[vc_fn]
+pub fn new_counter() &Counter {
+	return &Counter{ step: 1 }
+}
+
+// increment adds step to value and returns the new total.
+@[vc_methods]
+pub fn (mut c Counter) increment() int {
+	c.value += c.step
+	return c.value
+}
+
+// set_step changes how much each increment adds.
+@[vc_methods]
+pub fn (mut c Counter) set_step(step int) {
+	c.step = step
+}
+
+// Doubles the counter, so a method can change state beyond the fields.
+//
+// The receiver is by value. vcraft copies the struct in before the call and back
+// out after it, so a mutating method is written the idiomatic V way.
+@[vc_methods]
+pub fn (mut c Counter) double() {
+	c.value *= 2
+}
+
+// is_zero reports whether the value is still zero.
+@[vc_methods]
+@[vc_property]
+pub fn (c &Counter) is_zero() bool {
+	return c.value == 0
+}

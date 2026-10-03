@@ -34,6 +34,47 @@ Py_ssize_t vpy_size_PyMethodDef(void) {
 	return (Py_ssize_t)sizeof(PyMethodDef);
 }
 
+Py_ssize_t vpy_size_PyObject(void) {
+	return (Py_ssize_t)sizeof(PyObject);
+}
+
+// The interpreter's own Py_TPFLAGS_DEFAULT, which is a union whose contents depend
+// on how CPython was built. Asking beats hard-coding a bitmask.
+unsigned int vpy_tpflags_default(void) {
+	return (unsigned int)Py_TPFLAGS_DEFAULT;
+}
+
+void *vpy_memcpy(void *dst, const void *src, size_t n) {
+	return memcpy(dst, src, n);
+}
+
+void *vpy_type_ptr(PyObject *self) {
+	return (void *)Py_TYPE(self);
+}
+
+Py_ssize_t vpy_tuple_size(PyObject *self) {
+	if (self == NULL) {
+		return 0;
+	}
+	return PyTuple_GET_SIZE(self);
+}
+
+Py_ssize_t vpy_ob_size(PyObject *self) {
+	return (Py_ssize_t)Py_SIZE(self);
+}
+
+void vpy_type_free(PyObject *self) {
+	Py_TYPE(self)->tp_free(self);
+}
+
+void *vpy_instance_alloc(size_t n) {
+	return PyObject_Malloc(n);
+}
+
+void vpy_instance_free(void *p) {
+	PyObject_Free(p);
+}
+
 PyObject *vpy_none(void) {
 	return Py_None;
 }

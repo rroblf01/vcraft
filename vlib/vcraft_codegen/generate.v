@@ -49,6 +49,7 @@ pub fn generate(opt Options) Generated {
 	for path in v_files_under(src) {
 		report_unknown_attrs(read_lines(path), path, mut p)
 	}
+	link_classes(mut p)
 
 	return Generated{
 		glue_path:    os.join_path(src, '_vcraft_generated.v')

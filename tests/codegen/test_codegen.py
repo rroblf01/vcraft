@@ -9,6 +9,7 @@ produced. Nothing but the standard library is needed:
     python3 tests/codegen/test_codegen.py
 """
 
+import gc
 import subprocess
 import sys
 import sysconfig
@@ -140,6 +141,76 @@ def main() -> int:
     print("still alive after all of that")
     t.equal("arithmetic", h.add(20, 22), 42)
     t.equal("strings", h.repeat("-", 3), "---")
+
+    print("class")
+    counter = h.Counter()
+    t.check("instance repr", repr(counter) == "Counter(value: 0, step: 1)", repr(counter))
+    t.check("class name", h.Counter.__name__ == "Counter", h.Counter.__name__)
+    t.check("qualified name", h.Counter.__qualname__ == "Counter", h.Counter.__qualname__)
+    t.check("module", h.Counter.__module__ == "hello_native", h.Counter.__module__)
+    t.check("default field", counter.value == 0, counter.value)
+    # Each call is bound before the check, because passing the call itself as the
+    # failure detail would run it twice and move the number being asserted.
+    first = counter.increment()
+    t.check("no-arg method", first == 1, first)
+    second = counter.increment()
+    t.check("method mutates state", second == 2, second)
+    counter.double()
+    t.check("second no-arg method", counter.value == 4, counter.value)
+    t.check("property reads", counter.is_zero is False, counter.is_zero)
+    counter.value = 100
+    t.check("field is writable", counter.value == 100, counter.value)
+    counter.set_step(4)
+    stepped = counter.increment()
+    t.check("method with one argument", stepped == 104, stepped)
+    t.check("class attributes", sorted(
+        n for n in dir(h.Counter) if not n.startswith("_")) ==
+        ["double", "increment", "is_zero", "set_step", "step", "value"])
+    t.check("instances are distinct",
+            h.Counter().value == 0 and h.Counter().value == 0)
+    t.check("isinstance", isinstance(counter, h.Counter))
+    t.check("subclassable", issubclass(h.Counter, object))
+    t.raises("constructor takes no arguments", TypeError, "takes no arguments",
+             lambda: h.Counter(1))
+    t.raises("setter rejects a wrong type", TypeError, "expected int",
+             lambda: setattr(counter, "value", "nope"))
+    t.raises("fields cannot be deleted", AttributeError, "cannot be deleted",
+             lambda: delattr(counter, "value"))
+    t.check("rejected assignment changes nothing", counter.value == 104, counter.value)
+
+    print("class docstrings")
+    t.check("class docstring", h.Counter.__doc__.startswith("A counter with state."),
+            h.Counter.__doc__)
+    t.check("method docstring",
+            h.Counter.increment.__doc__ == "increment adds step to value and returns the new total.",
+            h.Counter.increment.__doc__)
+    t.check("property docstring",
+            h.Counter.is_zero.__doc__ == "is_zero reports whether the value is still zero.",
+            h.Counter.is_zero.__doc__)
+    t.check("field docstring", h.Counter.value.__doc__ == "value is the running total.",
+            h.Counter.value.__doc__)
+
+    print("class stub")
+    stub = STUBS.read_text() if STUBS.exists() else ""
+    t.check("class is declared", "class Counter:" in stub)
+    t.check("fields are attributes", "    value: int" in stub, stub[-400:])
+    t.check("methods are declared", "    def increment(self) -> int: ..." in stub)
+    t.check("property is decorated", "    @property\n" in stub)
+    t.check("class docstring reaches the stub", "A counter with state." in stub)
+
+    print("class stress")
+    batch = [h.Counter() for _ in range(20000)]
+    for item in batch:
+        item.increment()
+    t.check("20k instances", all(i.value == 1 for i in batch))
+    del batch
+    gc.collect()
+    t.check("released without a leak", h.Counter().value == 0)
+
+    print("slot ids")
+    slots = subprocess.run([str(ROOT / "scripts" / "check-slot-ids.sh")],
+                           capture_output=True, text=True)
+    t.check("slot ids match the headers", slots.returncode == 0, slots.stdout.strip())
 
     print("symbol table")
     import subprocess as sp

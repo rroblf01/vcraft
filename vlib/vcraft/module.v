@@ -87,8 +87,21 @@ pub fn (m Module) add_object(name string, value PyObj) {
 	free_cstring(namep)
 }
 
-// add_object_ref installs an attribute without stealing, which is the safer
-// choice when the caller keeps using the value afterwards.
+// add_object_ref_on installs an attribute on a finished module without stealing the
+// reference, which is the safer choice when the caller keeps using the value.
+//
+// It takes the module as a `PyObj` rather than a `Module`, because by the time
+// anything is attached the module is already sealed and `Module.obj` is what the
+// generated glue holds.
+pub fn add_object_ref_on(module PyObj, name string, value PyObj) {
+	namep := cstring(name)
+	unsafe {
+		C.PyModule_AddObjectRef(module.ptr, namep, value.ptr)
+	}
+	free_cstring(namep)
+}
+
+// add_object_ref installs an attribute without stealing.
 pub fn (m Module) add_object_ref(name string, value PyObj) {
 	namep := cstring(name)
 	unsafe {

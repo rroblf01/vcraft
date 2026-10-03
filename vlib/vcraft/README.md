@@ -147,3 +147,62 @@ $ python3 tests/runtime/test_runtime.py
 `tests/runtime/vcraft_runtime_check.v` writes the glue by hand, exactly as the
 generator will. It is what the generator is checked against, and it lets the runtime
 be tested before the generator exists.
+
+## Classes: three things that cost an afternoon each
+
+A class is a heap type from `PyType_FromSpec` plus a block of memory holding the V
+struct. Getting there turned up four problems worth writing down, because each one
+produces a wrong answer rather than an error.
+
+**`PyType_Spec` has no `doc`.** A type's docstring travels in the `Py_tp_doc` slot.
+The obvious move is to add `doc` to the V mirror of the spec and set it there, and
+that compiles cleanly, because the mirror has five fields either way and V emits no
+layout check. It shifts `basicsize`, `flags` and `slots` by one pointer, and
+`PyType_FromSpec` dereferences the shifted `slots` and segfaults. Read
+`object.h` rather than trusting the shape you assumed.
+
+**C `int` is 32 bits, V `int` is 64.** Every C `int` in a CPython struct mirror is
+`i32`. With `int`, `PyTypeSpec.flags` and `.slots` land at the wrong offsets and
+CPython reads a garbage pointer. `tp_basicsize` has the same hazard.
+
+**`tp_new` receives the type, not an instance.** The first argument is the
+`PyTypeObject *` the call was made on. An implementation that stores its state at
+that address and returns it makes `Counter()` hand back the class object itself, and
+writes the state over the type. The instance comes from `tp_alloc`, which is
+`PyType_GenericAlloc`.
+
+**V wraps a C callback whose parameters are `mut`.** A getset setter written as
+`(self voidptr, mut value voidptr)` receives shifted arguments, so `value` arrives as
+whatever the wrapper put there. Generated trampolines take plain parameters and copy
+into a local when they need to mutate.
+
+Two smaller ones: a getset setter returns `int`, so returning a null `voidptr`
+reports *success* and leaves the exception set, which CPython only complains about
+much later; and `PyType_Slot.slot` is an `int`, so slot ids go in as `i32` too.
+
+Slot ids come from CPython's `typeslots.h` and are macros, so the runtime repeats the
+numbers: `Py_tp_doc` 56, `Py_tp_dealloc` 52, `Py_tp_init` 60, `Py_tp_methods` 64,
+`Py_tp_new` 65, `Py_tp_repr` 66, `Py_tp_getset` 73.
+
+Those are the numbers CPython 3.14 happens to use, and nothing in a compiled
+extension notices when they change: the type is built, the wrong slots are silently
+left unset, and the symptom is a method that does not exist. So they are checked
+against the headers rather than trusted:
+
+```console
+$ ./scripts/check-slot-ids.sh
+Py_tp_doc    56 ok
+Py_tp_new    65 ok
+...
+slot ids match CPython 3.14
+```
+
+The same applies to the struct mirrors: `sizeof(PyType_Spec)` is 32 bytes with five
+members, and a sixth is not caught by the compiler.
+
+## Class state
+
+The state block is allocated with `PyObject_Malloc` and freed in `tp_dealloc`. Only
+scalars may live in it. A V `string` is a pointer into V's heap, and V's collector
+does not scan memory CPython allocated, so the string would be reclaimed while
+Python still holds it. A class that needs strings marshals them through a method.

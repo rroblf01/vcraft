@@ -21,6 +21,33 @@ int vpy_int_size(void);
 // the mirrors still agree with the headers the extension was built against.
 Py_ssize_t vpy_size_PyModuleDef(void);
 Py_ssize_t vpy_size_PyMethodDef(void);
+Py_ssize_t vpy_size_PyObject(void);
+unsigned int vpy_tpflags_default(void);
+
+// A real memcpy, reached through a prototype.
+//
+// V's `memcpy` builtin compiles to `v_memcpy`, whose declaration the backend emits
+// late in the file, so calling it from a helper declared early trips gcc's implicit
+// declaration rule. This is the same reason the module includes <Python.h>.
+void *vpy_memcpy(void *dst, const void *src, size_t n);
+
+// Calls the base deallocator for a heap type.
+//
+// `Py_TYPE(self)->tp_free(self)` is the required last step of a subtype's
+// `tp_dealloc`, and it needs the full PyTypeObject layout, which the runtime does
+// not mirror.
+void vpy_type_free(PyObject *self);
+void *vpy_type_ptr(PyObject *self);
+Py_ssize_t vpy_ob_size(PyObject *self);
+Py_ssize_t vpy_tuple_size(PyObject *self);
+
+// Instance storage.
+//
+// A class instance keeps its V state in memory CPython owns, so it is released
+// with the matching allocator and no V object is ever left for the garbage
+// collector to find or lose.
+void *vpy_instance_alloc(size_t n);
+void vpy_instance_free(void *p);
 
 // CPython's singletons, which are exported as data.
 PyObject *vpy_none(void);
