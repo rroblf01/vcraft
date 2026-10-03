@@ -247,6 +247,41 @@ A class becomes a CPython heap type created with `PyType_FromSpec`. The state li
 in a block CPython allocates, the V struct is copied in before a method runs and
 back out after, and `tp_dealloc` frees the block.
 
+An `@[vc_eq]` and an `@[vc_hash]` function fill the type's comparison and hash slots.
+They are free functions rather than methods, because V allows exactly one receiver per
+method and a comparison needs both operands:
+
+```v
+@[vc_eq]
+pub fn counter_eq(a voidptr, b voidptr) bool {
+	mut x := Counter{}
+	mut y := Counter{}
+	vcraft.load_state(a, voidptr(&x), sizeof(Counter))
+	vcraft.load_state(b, voidptr(&y), sizeof(Counter))
+	return x.value == y.value && x.step == y.step
+}
+
+@[vc_hash]
+pub fn counter_hash(self voidptr) int {
+	mut c := Counter{}
+	vcraft.load_state(self, voidptr(&c), sizeof(Counter))
+	return c.value * 31 + c.step
+}
+```
+
+```python
+>>> a, b = m.Counter(), m.Counter()
+>>> a == b, {a, b}
+(True, {Counter(value: 0, step: 1)})
+```
+
+The two go together. Python's dicts assume that two objects which compare equal hash the
+same, so a value comparison with an identity hash misses every lookup in a set or a dict
+key without reporting anything. Only `==` and `!=` reach the function; the ordering
+operators return `NotImplemented`, which is what lets Python try the other operand's
+reflected method before failing with an error that names the type. Comparing against
+another type is `False` rather than a `TypeError`, which is what `NotImplemented` buys.
+
 An `@[vc_field]` becomes a read/write attribute. Assigning the wrong type raises
 `TypeError`, and deleting one raises `AttributeError`: both come for free from
 registering a setter, rather than from a hand-written check per field. An
@@ -628,7 +663,9 @@ for the ones the generator did.
       covered by 92 checks against a working example
 - [x] **Classes**: instances, scalar fields as read/write attributes, methods,
       properties, `__repr__`, docstrings and `__dealloc__`
-- [ ] Classes: `__eq__`, `__hash__`, inheritance from V, cycle collection
+- [x] **Class operators**: `__eq__`, `__ne__` and `__hash__`, with `NotImplemented` for
+      the ordering operators
+- [ ] Classes: ordering operators, inheritance from V, cycle collection
 - [x] **Errors**: `!T` translation, `raise_domain` for a specific Python exception,
       `recover()`-based panic capture
 - [ ] Errors: custom V error types carrying an exception class

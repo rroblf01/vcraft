@@ -42,6 +42,10 @@ Py_ssize_t vpy_ob_size(PyObject *self);
 Py_ssize_t vpy_tuple_size(PyObject *self);
 int vpy_is_limited_api(void);
 int vpy_call_exec(void *fn_ptr, void *module);
+Py_hash_t vpy_hash(PyObject *self);
+long vpy_hash_bits(void);
+int vpy_type_check(PyObject *o, PyTypeObject *type);
+PyObject *vpy_not_implemented(void);
 
 // Instance storage.
 //

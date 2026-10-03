@@ -226,6 +226,38 @@ slot ids match CPython 3.14
 The same applies to the struct mirrors: `sizeof(PyType_Spec)` is 32 bytes with five
 members, and a sixth is not caught by the compiler.
 
+## Comparisons are free functions, not methods
+
+`@[vc_eq]` and `@[vc_hash]` are attached to free functions that take the state
+pointers, not to methods. V allows exactly one receiver per method and rejects a second
+parameter outright -- the parser reads `&Counter, other` as a second receiver type and
+reports `unexpected name 'voidptr', expecting ','` -- so a comparison cannot even name
+the other operand. The class is identified by the function's name: `counter_eq` belongs
+to `Counter`.
+
+Two things follow from that, and both cost an afternoon:
+
+- **The operator may be declared before its class.** A free function is dispatched from
+  the `.fn` arm of the scan, and the struct may be in a later file or later in the same
+  one. It is collected into a pending list and attached once every class is known.
+- **The dispatch must `continue`, not `return`.** The scan loops over the declarations of
+  a file, and a `return` leaves the whole loop: the first `@[vc_eq]` in a file stops every
+  declaration after it from being seen, including the class, whose operators then cannot
+  be resolved because it was never collected. The symptom is a hash that stays identity
+  and an `__eq__` that is never called, with no diagnostic anywhere.
+
+`NotImplemented` has to be the singleton, not the exception class of the same name. The
+class is truthy, so `==` reports a class rather than a bool, and every comparison ends in
+a TypeError far from the cause. It also has to come through a C accessor: `Py_NotImplemented`
+is a macro over `&_Py_NotImplementedStruct`, which V expands before the declaration is
+resolved and the compiler then reports "the object called is not a function" from inside
+`object.h`.
+
+`PyObject_TypeCheck` is a `static inline` in `object.h`, not an exported symbol, and
+under `Py_LIMITED_API` at 3.11 and above it is also a macro wrapping itself. It is
+reimplemented in the shim over the exported `PyType_IsSubtype`, which says the same thing
+once identity is added.
+
 ## Class state
 
 The state block is allocated with `PyObject_Malloc` and freed in `tp_dealloc`. Only

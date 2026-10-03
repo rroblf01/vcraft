@@ -137,6 +137,40 @@ pub fn (mut c Counter) double() {
 	c.value *= 2
 }
 
+// counter_eq reports whether two counters hold the same state.
+//
+// `@[vc_eq]` makes this the class's `__eq__`. The operator is not a parameter: `==` and
+// `!=` both come here, and `!=` is the negation of the answer.
+//
+// It is a free function rather than a method because V allows exactly one receiver per
+// method and rejects a second parameter outright: the parser reads `&Counter, other` as a
+// second receiver type and reports "unexpected name `voidptr`, expecting `,`". So the
+// class is named in the function's name and both operands arrive as state pointers.
+//
+// Only `==` and `!=` reach here. The ordering operators return NotImplemented, which is
+// what lets Python try the other operand's reflected method before giving up with an
+// error that names the type.
+@[vc_eq]
+pub fn counter_eq(a voidptr, b voidptr) bool {
+	mut x := Counter{}
+	mut y := Counter{}
+	vcraft.load_state(a, voidptr(&x), sizeof(Counter))
+	vcraft.load_state(b, voidptr(&y), sizeof(Counter))
+	return x.value == y.value && x.step == y.step
+}
+
+// two_counters_hash returns a hash consistent with `two_counters_equal`.
+//
+// Required alongside `@[vc_eq]`. Python's dicts assume that two objects which compare
+// equal hash the same, so a value comparison with an identity-based hash makes every
+// lookup in a set or a dict key miss without an error.
+@[vc_hash]
+pub fn counter_hash(self voidptr) int {
+	mut c := Counter{}
+	vcraft.load_state(self, voidptr(&c), sizeof(Counter))
+	return c.value * 31 + c.step
+}
+
 // is_zero reports whether the value is still zero.
 @[vc_methods]
 @[vc_property]

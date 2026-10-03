@@ -24,6 +24,9 @@ int main(void) {
 	printf("slot_repr %d\n", Py_tp_repr);
 	printf("slot_members %d\n", Py_tp_members);
 	printf("slot_getset %d\n", Py_tp_getset);
+	printf("slot_richcompare %d\n", Py_tp_richcompare);
+	printf("slot_hash %d\n", Py_tp_hash);
+	printf("slot_str %d\n", Py_tp_str);
 	printf("sizeof_type_spec %zu\n", sizeof(PyType_Spec));
 	printf("sizeof_type_slot %zu\n", sizeof(PyType_Slot));
 	return 0;
@@ -43,6 +46,9 @@ slot_new 65
 slot_repr 66
 slot_members 72
 slot_getset 73
+slot_richcompare 67
+slot_hash 59
+slot_str 70
 sizeof_type_spec 32
 sizeof_type_slot 16
 SRC

@@ -97,6 +97,59 @@ int vpy_call_exec(void *fn_ptr, void *module) {
 	return exec_fn((PyObject *)module);
 }
 
+// vpy_hash returns an object's default hash.
+//
+// `PyObject_Hash` is not in the limited API, and under `Py_LIMITED_API` a type's
+// `tp_hash` has to be filled with a function that reaches the hash through whatever the
+// stable ABI offers. There is nothing it offers here, so an abi3 build reports -1,
+// which CPython reads as "hash failed" -- the correct answer for a type whose hash is
+// identity, since an address-based hash cannot be computed without the concrete object
+// header.
+Py_hash_t vpy_hash(PyObject *self) {
+	// The address, shifted right by four bits: the low bits of a pointer are always
+	// zero, so folding them in would halve the hash's range for nothing.
+	//
+	// `_Py_HashPointer` is not available under `Py_LIMITED_API`, so the shift is done
+	// here rather than through it. An abi3 build that used the helper would fail to
+	// compile on an implicit declaration.
+	return (Py_hash_t)((size_t)self >> 4);
+}
+
+// vpy_hash_bits reports the width of `Py_hash_t`, which is a `long` and therefore
+// platform dependent: 64 bits where `long` is 64, 32 where it is not.
+long vpy_hash_bits(void) {
+	return (long)sizeof(Py_hash_t) * 8;
+}
+
+// vpy_type_check reports whether an object is an instance of a type, subclasses
+// included.
+//
+// Written here rather than called because `PyObject_TypeCheck` is a `static inline` in
+// object.h, not an exported symbol. Under `Py_LIMITED_API` at 3.11 and above it is
+// additionally a macro wrapping itself, which V expands before the declaration is ever
+// resolved and the compiler then reports `expected declaration specifiers ... before
+// '(' token` from inside Python's own header. `PyType_IsSubtype` is exported and says
+// the same thing once identity is added.
+// vpy_not_implemented returns the `NotImplemented` singleton.
+//
+// Through an accessor because `Py_NotImplemented` is a macro over `&_Py_NotImplementedStruct`,
+// and V expands it before the declaration is resolved: the compiler then reports "the
+// object called is not a function nor a pointer to function" from inside object.h.
+PyObject *vpy_not_implemented(void) {
+	Py_INCREF(Py_NotImplemented);
+	return Py_NotImplemented;
+}
+
+int vpy_type_check(PyObject *o, PyTypeObject *type) {
+	if (o == NULL || type == NULL) {
+		return 0;
+	}
+	if ((PyObject *)type == (PyObject *)o) {
+		return 1;
+	}
+	return PyType_IsSubtype(Py_TYPE(o), type);
+}
+
 Py_ssize_t vpy_tuple_size(PyObject *self) {
 	if (self == NULL) {
 		return 0;
@@ -148,6 +201,59 @@ int vpy_is_limited_api(void) {
 int vpy_call_exec(void *fn_ptr, void *module) {
 	int (*exec_fn)(PyObject *) = (int (*)(PyObject *))fn_ptr;
 	return exec_fn((PyObject *)module);
+}
+
+// vpy_hash returns an object's default hash.
+//
+// `PyObject_Hash` is not in the limited API, and under `Py_LIMITED_API` a type's
+// `tp_hash` has to be filled with a function that reaches the hash through whatever the
+// stable ABI offers. There is nothing it offers here, so an abi3 build reports -1,
+// which CPython reads as "hash failed" -- the correct answer for a type whose hash is
+// identity, since an address-based hash cannot be computed without the concrete object
+// header.
+Py_hash_t vpy_hash(PyObject *self) {
+	// The address, shifted right by four bits: the low bits of a pointer are always
+	// zero, so folding them in would halve the hash's range for nothing.
+	//
+	// `_Py_HashPointer` is not available under `Py_LIMITED_API`, so the shift is done
+	// here rather than through it. An abi3 build that used the helper would fail to
+	// compile on an implicit declaration.
+	return (Py_hash_t)((size_t)self >> 4);
+}
+
+// vpy_hash_bits reports the width of `Py_hash_t`, which is a `long` and therefore
+// platform dependent: 64 bits where `long` is 64, 32 where it is not.
+long vpy_hash_bits(void) {
+	return (long)sizeof(Py_hash_t) * 8;
+}
+
+// vpy_type_check reports whether an object is an instance of a type, subclasses
+// included.
+//
+// Written here rather than called because `PyObject_TypeCheck` is a `static inline` in
+// object.h, not an exported symbol. Under `Py_LIMITED_API` at 3.11 and above it is
+// additionally a macro wrapping itself, which V expands before the declaration is ever
+// resolved and the compiler then reports `expected declaration specifiers ... before
+// '(' token` from inside Python's own header. `PyType_IsSubtype` is exported and says
+// the same thing once identity is added.
+// vpy_not_implemented returns the `NotImplemented` singleton.
+//
+// Through an accessor because `Py_NotImplemented` is a macro over `&_Py_NotImplementedStruct`,
+// and V expands it before the declaration is resolved: the compiler then reports "the
+// object called is not a function nor a pointer to function" from inside object.h.
+PyObject *vpy_not_implemented(void) {
+	Py_INCREF(Py_NotImplemented);
+	return Py_NotImplemented;
+}
+
+int vpy_type_check(PyObject *o, PyTypeObject *type) {
+	if (o == NULL || type == NULL) {
+		return 0;
+	}
+	if ((PyObject *)type == (PyObject *)o) {
+		return 1;
+	}
+	return PyType_IsSubtype(Py_TYPE(o), type);
 }
 
 Py_ssize_t vpy_tuple_size(PyObject *self) {

@@ -231,6 +231,38 @@ def main() -> int:
     t.check("property is decorated", "    @property\n" in stub)
     t.check("class docstring reaches the stub", "A counter with state." in stub)
 
+    print("class operators")
+    a = h.Counter()
+    b = h.Counter()
+    t.check("equal by value", (a == b) is True, repr(a == b))
+    t.check("not-equal is the negation", (a != b) is False, repr(a != b))
+    a.increment()
+    t.check("different values are not equal", (a == b) is False)
+    t.check("and not-equal", (a != b) is True)
+    t.check("hash agrees with equality", hash(a) != hash(b),
+            f"{hash(a)} == {hash(b)} for unequal values")
+    b.increment()
+    t.check("equal again", (a == b) is True)
+    t.check("hash agrees when equal", hash(a) == hash(b),
+            f"{hash(a)} != {hash(b)} for equal values")
+    # The dict and set cases are the point of pairing __eq__ with __hash__: a value
+    # comparison with an identity hash misses every lookup without an error.
+    keyed = {a: "found"}
+    t.check("a dict finds an equal key", keyed.get(b) == "found", str(keyed.get(b)))
+    t.check("a set deduplicates equal values", len({a, b}) == 1, str(len({a, b})))
+    t.check("a set holds unequal values", len({a, h.Counter()}) == 2)
+    # `==` against another type must be False rather than a TypeError, which is what
+    # returning NotImplemented buys.
+    t.check("equal to an int is False", (a == 5) is False, repr(a == 5))
+    t.check("not equal to an int is True", (a != 5) is True)
+    try:
+        a < b
+    except TypeError as exc:
+        t.check("ordering raises TypeError", "not supported" in str(exc), str(exc))
+    else:
+        t.check("ordering raises TypeError", False, "no exception")
+    t.check("a subclass is still an instance", isinstance(h.Counter(), h.Counter))
+
     print("class stress")
     batch = [h.Counter() for _ in range(20000)]
     for item in batch:

@@ -55,6 +55,13 @@ pub fn emit_glue(p Project) string {
 	for c in p.classes {
 		w.write_string(emit_class(c))
 		for m in c.methods {
+			// `@[vc_eq]` and `@[vc_hash]` fill the type's slots rather than the method
+			// table, and they are called from `richcompare` and `hash` rather than from
+			// Python. Emitting them as methods would put a `state.(arg0, arg1)` in the
+			// generated source, because two receivers are not a receiver plus arguments.
+			if m.eq || m.hash {
+				continue
+			}
 			w.write_string('\n')
 			if m.property {
 				w.write_string(emit_property_trampoline(c, m))
@@ -91,6 +98,14 @@ pub fn glue_module_body(p Project) string {
 	w.write_string('__global (\n')
 	w.write_string("\tg_vc_module = vcraft.new_module('${p.package}', " +
 		'${vstring_literal(module_docstring(p))})\n')
+	// The type handles are globals because the comparison and hash slots reference them
+	// and CPython calls those after `Py_mod_exec` has returned.
+	for c in p.classes {
+		// `mut x = ...` is not valid in a global block: V's global syntax wants the
+		// mutability and the value in separate places, and a `mut` here is rejected with
+		// "unexpected token `=`, expecting name".
+		w.write_string('\t' + c.ctype + ' = vcraft.PyObj{}\n')
+	}
 	w.write_string(')\n\n')
 	w.write_string("@[export: 'PyInit_${p.package}']\n")
 	w.write_string('fn vcraft_generated__pyinit() voidptr {\n')
@@ -128,6 +143,12 @@ pub fn glue_module_body(p Project) string {
 	w.write_string('fn vcraft_generated__exec(module voidptr) int {\n')
 	// The method table has to be installed here rather than left to module creation:
 	// under multi-phase initialisation the module arrives empty.
+	//
+	// The types are declared here rather than where they are created because the
+	// comparison and hash slots need to name them and CPython calls those after `exec`
+	// has returned. A local would be out of scope, and the generated file would not
+	// compile at all -- which is a better failure than a type whose `__eq__` silently
+	// compares identity because the slot was never filled.
 	w.write_string('\tg_vc_module.install_functions(module) or { return -1 }\n')
 	for c in p.classes {
 		w.write_string(render_class_exec(c))
@@ -164,7 +185,7 @@ pub fn render_class_exec(c Class) string {
 	// here is known now, and a generated `for` over the classes would need its own
 	// interpolation trick for no benefit.
 	mut w := new_builder()
-	w.write_string('\t' + c.ctype + ' := vcraft.new_type(')
+	w.write_string('\t' + c.ctype + ' = vcraft.new_type(')
 	w.write_string(vstring_literal(c.qualified) + ',\n')
 	w.write_string('\t\t' + vstring_literal(c.doc) + ',\n')
 	w.write_string('\t\tvoidptr(' + c.ctor + '),\n')
@@ -185,6 +206,8 @@ pub fn render_class_exec(c Class) string {
 		w.write_string('\t\tunsafe { nil },\n')
 	}
 	w.write_string('\t\tvoidptr(' + c.repr + '),\n')
+	w.write_string('\t\tvoidptr(' + c.richcompare + '),\n')
+	w.write_string('\t\tvoidptr(' + c.hash_fn + '),\n')
 	w.write_string('\t)\n')
 	// The error check is here rather than inside `new_type` because a class that fails
 	// to build is a generator-level problem: the interpreter reports "raised
@@ -203,7 +226,7 @@ pub fn render_class_exec(c Class) string {
 // register_class renders a class's registration for inside `pyinit`.
 fn register_class(c Class) string {
 	mut w := new_builder()
-	w.write_string('\t${c.ctype} := vcraft.new_type(')
+	w.write_string('\t${c.ctype} = vcraft.new_type(')
 	w.write_string("'${c.qualified}',\n")
 	w.write_string('\t\t' + vstring_literal(c.doc) + ',\n')
 	w.write_string('\t\tvoidptr(${c.ctor}),\n')

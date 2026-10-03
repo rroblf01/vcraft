@@ -175,6 +175,10 @@ fn C.PyModule_AddFunctions(module voidptr, functions voidptr) int
 
 fn C.vpy_is_limited_api() int
 fn C.vpy_call_exec(fn_ptr voidptr, module voidptr) int
+fn C.vpy_hash(self voidptr) isize
+fn C.vpy_hash_bits() isize
+fn C.vpy_type_check(o voidptr, typ voidptr) int
+fn C.vpy_not_implemented() voidptr
 
 fn C.PyModule_AddFunctions(module voidptr, functions voidptr) int
 
@@ -301,6 +305,10 @@ pub const slot_methods = i32(64)
 pub const slot_new = i32(65)
 
 pub const slot_repr = i32(66)
+
+pub const slot_hash = i32(59)
+
+pub const slot_richcompare = i32(67)
 
 pub const slot_members = i32(72)
 

@@ -24,12 +24,18 @@ pub const attr_property = 'vc_property'
 
 pub const attr_static = 'vc_static'
 
+pub const attr_eq = 'vc_eq'
+
+pub const attr_hash = 'vc_hash'
+
 // known_attrs is every annotation the generator reacts to. Anything else in a
 // `vc.` namespace is a typo and is reported rather than ignored, because a
 // silently ignored annotation means a function quietly missing from the module.
 pub const known_attrs = [
 	attr_fn,
 	attr_raw,
+	attr_eq,
+	attr_hash,
 	attr_nogil,
 	attr_class,
 	attr_methods,
@@ -72,6 +78,10 @@ pub mut:
 	property bool
 	// static marks a method that takes no receiver.
 	static bool
+	// eq marks a method used as `tp_richcompare`'s equality. Exactly one per class.
+	eq bool
+	// hash marks a method used as `tp_hash`.
+	hash bool
 	// mangled is the C-level V name of the trampoline, unique within the module.
 	trampoline string
 	// origin, line and column place the declaration, for a diagnostic raised in a
@@ -106,6 +116,13 @@ pub mut:
 	dealloc string
 	// repr is the generated `tp_repr`.
 	repr string
+	// eq_fn and hash_name are the user's methods marked `@[vc_eq]` and `@[vc_hash]`,
+	// empty when the class declares neither.
+	eq_fn     string
+	hash_name string
+	// richcompare and hash_fn are the generated `tp_richcompare` and `tp_hash`.
+	richcompare string
+	hash_fn string
 	// key is the class name folded to snake_case, because V rejects an identifier
 	// with uppercase letters in it.
 	key string
@@ -136,6 +153,20 @@ pub fn (f Field) is_scalar() bool {
 }
 
 // Project is everything the generator found.
+// Operator is a `vc_eq` or `vc_hash` function seen before the class it belongs to.
+//
+// Held rather than resolved on the spot, because the class may be declared later in the
+// same file or in a file that sorts after this one.
+pub struct Operator {
+pub mut:
+	name   string
+	// kind is `eq` or `hash`.
+	kind   string
+	origin string
+	line   int
+	column int
+}
+
 pub struct Project {
 pub mut:
 	// module is the V module the glue will be compiled into. It is the user's own
@@ -144,8 +175,12 @@ pub mut:
 	module string
 	// package is the Python package name, which is what `PyInit_` is named after.
 	package     string
-	funcs       []Func
-	classes     []Class
+	funcs   []Func
+	classes []Class
+	// operators holds `vc_eq` and `vc_hash` functions seen before the class they belong
+	// to. They are free functions, so they are dispatched from the `.fn` arm and the
+	// class may not have been collected yet.
+	operators []Operator
 	// diagnostics are problems found while scanning. They do not stop generation;
 	// the emitter reports them all at once so a project with five mistakes takes
 	// one build to fix rather than five.

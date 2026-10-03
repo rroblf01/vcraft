@@ -39,6 +39,8 @@ fn emit_class(c Class) string {
 	w.write_string(emit_class_new(c))
 	w.write_string(emit_class_dealloc(c))
 	w.write_string(emit_class_repr(c))
+	w.write_string(emit_class_richcompare(c))
+	w.write_string(emit_class_hash(c))
 	return w.str()
 }
 
@@ -219,6 +221,76 @@ fn emit_class_dealloc(c Class) string {
 	mut w := new_builder()
 	w.write_string('fn vcraft_generated__dealloc_${c.key}(self voidptr) voidptr {\n')
 	w.write_string('\treturn vcraft.class_dealloc(self)\n')
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_class_richcompare renders `tp_richcompare`.
+//
+// The user's `@[vc_eq]` method takes two receivers and returns a bool, and CPython's
+// `tp_richcompare` takes the operator as an argument and returns an object. The gap
+// between the two is what this function closes, and it is worth being explicit about:
+// `==` calls the method and returns its answer, `!=` returns its negation, and every
+// other operator returns `NotImplemented`.
+//
+// `NotImplemented` rather than `False` is what lets `a < b` try `b.__gt__(a)` and then
+// fall back to an error naming the type. Returning `False` makes a class that only
+// defines `==` quietly claim to be smaller than everything.
+fn emit_class_richcompare(c Class) string {
+	mut w := new_builder()
+	w.write_string('fn ${c.richcompare}(self voidptr, other voidptr, op int) voidptr {\n')
+	if c.eq_fn.len == 0 {
+		// No `@[vc_eq]`, so the defaults are the identity comparison CPython gives every
+		// other object: `==` and `!=` by address, and nothing else.
+		w.write_string('\treturn vcraft.identity_richcompare(self, other, op)\n')
+		w.write_string('}\n\n')
+		return w.str()
+	}
+	w.write_string('\tif op == vcraft.op_lt || op == vcraft.op_le || op == vcraft.op_gt ' +
+		'|| op == vcraft.op_ge {\n')
+	w.write_string('\t\treturn vcraft.richcompare_not_implemented()\n')
+	w.write_string('\t}\n')
+	// `.ptr` on both: the type handle is a `PyObj` and `is_instance_of` takes the raw
+	// pointer. Passing the struct makes V emit a cast of the wrong thing, and the check
+	// then answers for an address rather than for the type.
+	w.write_string('\tif !vcraft.is_instance_of(other, g_vc_type_${c.key}.ptr) {\n')
+	w.write_string('\t\treturn vcraft.richcompare_not_implemented()\n')
+	w.write_string('\t}\n')
+	// Both operands are passed as the state block's address rather than as a copy of the
+	// struct. A copy would have to be written back afterwards, and a method that panicked
+	// between the load and the store would leave the instance holding a half-written
+	// value. The user reads the fields through `state_from_ptr`, which is what makes the
+	// signature a free function taking two pointers.
+	w.write_string('\tmut same := ${c.eq_fn}(vcraft.instance_storage(self), ' +
+		'vcraft.instance_storage(other))\n')
+	// `!=` is the negation of `==` rather than a call of its own. A V `bool` is not
+	// the same thing as a Python `True`, so the negation happens here rather than in the
+	// user's code, where `a != b` would mean comparing the two answers.
+	w.write_string('\tif op == vcraft.op_ne {\n\t\tsame = !same\n\t}\n')
+	w.write_string('\treturn vcraft.to_py_bool(same).ptr\n')
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_class_hash renders `tp_hash`.
+//
+// A class that defines `__eq__` gets its hash filled from `tp_hash` only when it also
+// defines `__hash__`. That pairing is not optional: Python's dicts assume that two
+// objects which compare equal hash the same, and a value comparison with an
+// identity-based hash breaks every lookup in a set or a dict key without an error.
+fn emit_class_hash(c Class) string {
+	mut w := new_builder()
+	w.write_string('fn ${c.hash_fn}(self voidptr) isize {\n')
+	if c.hash_name.len == 0 {
+		w.write_string('\treturn vcraft.identity_hash(self)\n')
+		w.write_string('}\n\n')
+		return w.str()
+	}
+	// The state block's address rather than a copy, for the same reason `richcompare`
+	// passes one: a copy would have to be written back, and a panic in between would
+	// leave the instance half written.
+	w.write_string('\treturn vcraft.hash_from_int(${c.hash_name}' +
+		'(vcraft.instance_storage(self)))\n')
 	w.write_string('}\n\n')
 	return w.str()
 }

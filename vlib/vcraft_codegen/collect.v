@@ -16,7 +16,20 @@ pub fn collect_file(path string, mut p Project) {
 	ast := astquery.parse(path)
 	for decl in astquery.declarations(ast) {
 		match decl.kind {
-			.fn { collect_fn(path, lines, ast, decl, mut p) }
+			// A `vc_eq` or `vc_hash` function is a free function, not a method: V allows
+			// one receiver per method and a comparison needs both operands. The dispatch
+			// tries the operators before the ordinary function path, so a `counter_eq`
+			// is not also exported as a callable taking two pointers.
+			.fn {
+				// `continue`, not `return`: a `return` here leaves the whole loop over the
+				// declarations, so the first `@[vc_eq]` in a file stops every declaration
+				// after it from being seen -- including the class, whose operators then
+				// cannot be resolved because it was never collected.
+				if collect_operator(path, lines, ast, decl, mut p) {
+					continue
+				}
+				collect_fn(path, lines, ast, decl, mut p)
+			}
 			.method { collect_method(path, lines, ast, decl, mut p) }
 			.struct { collect_struct(path, lines, ast, decl, mut p) }
 			else {}
@@ -149,9 +162,104 @@ fn collect_fn(path string, lines []string, ast &flat.FlatAst, decl astquery.Decl
 	p.funcs << f
 }
 
+// collect_operator records a `vc_eq` or `vc_hash` function and reports whether it took
+// ownership of the declaration.
+//
+// It returns true when the annotation was one of the two, whether or not the name
+// matched a class: in the no-match case a diagnostic has been raised, and the
+// declaration must not then also be exported as an ordinary function.
+fn collect_operator(path string, lines []string, ast &flat.FlatAst,
+	decl astquery.Declaration, mut p Project) bool {
+	block := read_above(lines, decl.line)
+	is_eq := attr_eq in block.attrs
+	is_hash := attr_hash in block.attrs
+	if !is_eq && !is_hash {
+		return false
+	}
+	// The owner is looked up when the function is seen, but a class declared later in
+	// the file is not in `p.classes` yet. `link_classes` fills in anything that was
+	// still unmatched, which is why `eq_fn` can be empty here and correct there.
+	owner := find_eq_owner(decl.name, p.classes)
+	if owner < 0 {
+		p.operators << Operator{
+			name:   decl.name
+			line:   decl.line
+			column: decl.column
+			origin: path
+			kind:   if is_eq { 'eq' } else { 'hash' }
+		}
+		return true
+	}
+	if find_fn_node(ast, decl.name) == none {
+		report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
+		return true
+	}
+	if is_eq {
+		if p.classes[owner].eq_fn.len > 0 {
+			report(mut p, path, decl,
+				'error: a class may have only one @[vc_eq]; `${p.classes[owner].eq_fn}` is already the equality')
+			return true
+		}
+		p.classes[owner].eq_fn = decl.name
+		return true
+	}
+	if p.classes[owner].hash_name.len > 0 {
+		report(mut p, path, decl,
+			'error: a class may have only one @[vc_hash]; `${p.classes[owner].hash_name}` is already the hash')
+		return true
+	}
+	p.classes[owner].hash_name = decl.name
+	return true
+}
+
+// link_operators attaches the operators collected before their class was seen.
+//
+// A function annotated `@[vc_eq]` is free, so it is dispatched from the `.fn` arm and the
+// class it belongs to may not have been collected yet -- a file that declares the struct
+// after the operators, or a second file sorted after this one. Resolving it here, once
+// every class is known, is what makes the order of the file irrelevant.
+fn link_operators(mut p Project) {
+	for o in p.operators {
+		owner := find_eq_owner(o.name, p.classes)
+		if owner < 0 {
+			report(mut p, o.origin, astquery.Declaration{
+				name: o.name
+				line: o.line
+				column: o.column
+			}, 'error: `${o.name}` is annotated @[vc_${o.kind}] but its name does not start with its class in snake case, so the class it belongs to cannot be told')
+			continue
+		}
+		if o.kind == 'eq' {
+			p.classes[owner].eq_fn = o.name
+		} else {
+			p.classes[owner].hash_name = o.name
+		}
+	}
+	p.operators = []Operator{}
+}
+
+// find_eq_owner returns the index of the class a `vc_eq` or `vc_hash` function belongs
+// to, matched by the `class_` prefix V's own snake-casing produces.
+//
+// The name is the only link there is. An operator cannot be a method because V allows one
+// receiver, so it is a free function, and a free function has nothing tying it to a class
+// except its name.
+fn find_eq_owner(fname string, classes []Class) int {
+	for i, c in classes {
+		if fname.starts_with(c.name.to_lower() + '_') {
+			return i
+		}
+	}
+	return -1
+}
+
 fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	decl astquery.Declaration, mut p Project) {
 	block := read_above(lines, decl.line)
+	// `@[vc_eq]` and `@[vc_hash]` stand in for `@[vc_methods]` on the two slots they
+	// fill. They are separate annotations rather than modifiers because the receiver
+	// signature is different -- two receivers for eq, an integer result for hash -- and
+	// a user who writes `@[vc_methods] @[vc_eq]` would get a method *and* an operator.
 	if attr_methods !in block.attrs {
 		return
 	}
@@ -178,8 +286,12 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 			'error: `@[vc_static] ${decl.name}` is not supported yet; a static method still needs a receiver in V')
 		return
 	}
+	// The flag is set before the method is appended. V copies a struct on assignment, so
+	// a field set afterwards is set on the local and the list keeps a copy without it --
+	// which reads as "the annotation was ignored" rather than as a lost assignment.
 	p.classes[target].methods << m
 }
+
 
 fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.Declaration,
 	mut p Project) {
@@ -201,6 +313,8 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 		ctype:     'g_vc_type_${key}'
 		dealloc:   'vcraft_generated__dealloc_${key}'
 		repr:      'vcraft_generated__repr_${key}'
+		richcompare: 'vcraft_generated__richcompare_${key}'
+		hash_fn:     'vcraft_generated__hash_${key}'
 		key:       key
 	}
 	c.fields = collect_fields(path, lines, ast, decl.name, mut p)
@@ -351,6 +465,10 @@ fn find_struct_in(ast &flat.FlatAst, id flat.NodeId, wanted string) ?flat.NodeId
 // A class with no `new_*` is usable from V but cannot be instantiated from Python,
 // which is allowed rather than reported: not every class needs to be constructible.
 fn link_classes(mut p Project) {
+	// First, because a constructor is found by scanning `p.funcs` and the operators are
+	// not in it: they are free functions, dropped from the exported set the moment they
+	// were seen.
+	link_operators(mut p)
 	mut ctors := []string{}
 	for i, c in p.classes {
 		// V spells a constructor `new_TypeName` in snake case, so the lookup
