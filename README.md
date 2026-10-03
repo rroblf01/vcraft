@@ -63,10 +63,10 @@ V compiles to fast native code through a tiny C backend and has no runtime depen
 |                    | Rust ecosystem     | vcraft                          |
 | ------------------ | ------------------ | ------------------------------- |
 | Native bindings    | PyO3               | `vlib/vcraft` (written in V)    |
-| Binding generation | `#[pyfunction]`    | `@[vc.fn]`                      |
-| Class bindings     | `#[pyclass]`       | `@[vc.class]`                   |
+| Binding generation | `#[pyfunction]`    | `@[vc_fn]`                      |
+| Class bindings     | `#[pyclass]`       | `@[vc_class]`                   |
 | Error translation  | `Result<T, E>`     | `!T` / `error` / `recover()`    |
-| GIL handling       | `Python::detach`   | `@[vc.gil]`                     |
+| GIL handling       | `Python::detach`   | `@[vc_gil]`                     |
 | Build tool         | maturin            | `vcraft build`                  |
 | Local install      | `maturin develop`  | `vcraft develop`                |
 | CI                 | `maturin-action`   | `vcraft-action@v1`              |
@@ -189,8 +189,8 @@ file, line and column, not a runtime surprise.
 @[vc_class]
 pub struct Counter {
 mut:
-	@[vc.field] value int
-	@[vc.field] label string
+	@[vc_field] value int
+	@[vc_field] label string
 }
 
 @[vc_methods]
