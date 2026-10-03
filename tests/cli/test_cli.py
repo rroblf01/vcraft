@@ -241,6 +241,139 @@ def main() -> int:
         t.check("the constructor runs", proc.stdout.strip() == "True 1",
                 proc.stdout.strip() or proc.stderr.strip()[-200:])
 
+        print("abi3")
+        # An abi3 build goes through CPython's multi-phase initialisation and the
+        # stable API, neither of which the normal path touches. A refactor that only
+        # ever builds one of them leaves the other broken in a way no other test sees.
+        proc = vcraft("build", "--abi3", "3.12", cwd=project)
+        t.check("an abi3 build succeeds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        abi_wheels = list((project / "dist").glob("*abi3*.whl"))
+        t.check("an abi3 wheel is written", len(abi_wheels) == 1,
+                str([w.name for w in (project / "dist").glob("*.whl")]))
+        if abi_wheels:
+            abi = abi_wheels[0]
+            # PEP 425: the tag names the floor, not the interpreter that built it.
+            # `cp314-cp312-...` is what a naive tag builder produces and every
+            # installer rejects it with "no wheels with a matching Python version tag".
+            # `mypkg-0.1.0-cp312-abi3-linux_x86_64.whl`: five parts, and the
+            # interpreter field is the floor the stable ABI starts at.
+            parts = abi.name[:-len(".whl")].split("-")
+            t.check("the wheel name has five parts", len(parts) == 5, abi.name)
+            t.check("the ABI field is abi3", parts[3] == "abi3", abi.name)
+            t.check("the tag names the floor", parts[2] == "cp312", abi.name)
+            with zipfile.ZipFile(abi) as z:
+                t.check("the extension is named .abi3.so",
+                        any(n.endswith(".abi3.so") for n in z.namelist()),
+                        str(z.namelist()))
+                t.check("the abi3 wheel is a valid archive", z.testzip() is None)
+
+            target = tmp / "venv-abi3"
+            make_venv(target, with_pip=True)
+            proc = subprocess.run(
+                [str(target / "bin" / "python"), "-m", "pip", "install", "--no-index",
+                 "--no-deps", str(abi)],
+                capture_output=True, text=True)
+            t.check("pip installs the abi3 wheel", proc.returncode == 0,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+            proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+                                  capture_output=True, text=True, cwd=tmp)
+            t.check("the abi3 wheel works", proc.returncode == 0,
+                    (proc.stderr or "").strip()[-300:])
+            if proc.returncode == 0:
+                t.check("abi3 functions", "Hello," in proc.stdout, proc.stdout)
+                t.check("abi3 classes",
+                        "Counter(value: 0, step: 1)" in proc.stdout, proc.stdout)
+
+            print("back to a normal build")
+            proc = vcraft("build", cwd=project)
+            t.check("a normal build still succeeds after an abi3 one",
+                    proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-300:])
+            normal = [w for w in (project / "dist").glob("*.whl")
+                      if "abi3" not in w.name]
+            t.check("the normal wheel is written again", len(normal) == 1)
+            proc = subprocess.run(
+                [str(target / "bin" / "python"), "-m", "pip", "install", "--no-index",
+                 "--no-deps", "--force-reinstall", str(normal[0])],
+                capture_output=True, text=True)
+            t.check("and installs over the abi3 one", proc.returncode == 0,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+            proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+                                  capture_output=True, text=True, cwd=tmp)
+            t.check("the normal build still has its classes", proc.returncode == 0
+                    and "Counter(value: 0, step: 1)" in proc.stdout,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+
+        print("sdist")
+        proc = vcraft("sdist", cwd=project)
+        t.check("sdist succeeds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        sdists = list((project / "dist").glob("*.tar.gz"))
+        t.check("an sdist is written", len(sdists) == 1,
+                str([w.name for w in (project / "dist").glob("*.tar.gz")]))
+        if sdists:
+            import tarfile
+            with tarfile.open(sdists[0]) as tf:
+                members = tf.getnames()
+                top = sdists[0].name[:-len(".tar.gz")]
+                # `tarfile` strips the trailing slash from a directory member, so the
+                # name compares equal either way.
+                t.check("the archive unpacks into name-version",
+                        any(m.rstrip("/") == top for m in members), str(members[:3]))
+                t.check("it carries the V manifest", top + "/v.mod" in members)
+                t.check("it carries the packaging manifest",
+                        top + "/vcraft.toml" in members)
+                t.check("it carries the V sources",
+                        top + "/src/mypkg_native.v" in members)
+                # Without these the sdist is a source tree with no way to build it: pip
+                # untars, reads pyproject.toml, and finds nothing.
+                t.check("it carries pyproject.toml", top + "/pyproject.toml" in members)
+                t.check("it carries the build backend",
+                        top + "/vcraft_build.py" in members)
+                t.check("it carries PKG-INFO", top + "/PKG-INFO" in members)
+                dirs = [m for m in tf.getmembers() if m.isdir()]
+                t.check("the top entry is a directory and not a file",
+                        any(m.name.rstrip("/") == top for m in dirs),
+                        str([(m.name, m.type) for m in tf.getmembers()[:2]]))
+                info = tf.extractfile(top + "/PKG-INFO").read().decode()
+                t.check("PKG-INFO names the package", "Name: mypkg" in info, info[:120])
+                t.check("PKG-INFO has a version", "Version: 0.1.0" in info)
+
+        print("pep 517")
+        # `pip install .` goes through the backend rather than through vcraft's own
+        # commands, so it is the only check that the generated backend is right.
+        target = tmp / "venv-backend"
+        make_venv(target, with_pip=True)
+        env = dict(os.environ, VCRAFT_BIN=str(VCRAFT))
+        proc = subprocess.run(
+            [str(target / "bin" / "python"), "-m", "pip", "install", "--no-index",
+             "--no-build-isolation", "--no-deps", "."],
+            cwd=project, env=env, capture_output=True, text=True)
+        t.check("pip install . succeeds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+                              capture_output=True, text=True, cwd=tmp)
+        t.check("the project built by pip works", proc.returncode == 0,
+                (proc.stderr or "").strip()[-300:])
+        if proc.returncode == 0:
+            t.check("pip-installed functions", "Hello," in proc.stdout, proc.stdout)
+
+        print("pip install an sdist")
+        if sdists:
+            target = tmp / "venv-sdist"
+            make_venv(target, with_pip=True)
+            env = dict(os.environ, VCRAFT_BIN=str(VCRAFT))
+            proc = subprocess.run(
+                [str(target / "bin" / "python"), "-m", "pip", "install", "--no-index",
+                 "--no-build-isolation", "--no-deps", str(sdists[0])],
+                env=env, capture_output=True, text=True)
+            t.check("pip installs an sdist", proc.returncode == 0,
+                    (proc.stderr or proc.stdout).strip()[-400:])
+            proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+                                  capture_output=True, text=True, cwd=tmp)
+            t.check("the sdist-built extension works", proc.returncode == 0,
+                    (proc.stderr or "").strip()[-300:])
+
         print("errors")
         proc = vcraft("build", "--out-dir", cwd=project)
         t.check("a missing option value fails", proc.returncode != 0)

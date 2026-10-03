@@ -100,6 +100,87 @@ more than a missing one.
 system Python while the user is in a virtualenv is the most annoying thing a build tool
 can do.
 
+## abi3 is not the same build with a different tag
+
+Building against the stable ABI changes three things that have nothing to do with each
+other, and each one produces a build that installs and then fails.
+
+**The tag names the floor, not the interpreter.** PEP 425 spells an abi3 tag
+`cp<floor>-abi3-<platform>`, so building 3.14 against the 3.12 stable ABI produces
+`cp312-abi3-...`. Writing `cp314-cp312-...` makes every installer reject the wheel with
+"no wheels with a matching Python version tag" — including on the interpreter that built
+it.
+
+**`PyModule_Create2` is not in the limited API.** Single-phase initialisation reads a
+`PyModuleDef`'s fields directly, and the stable ABI hides them. An abi3 build has to use
+multi-phase initialisation: `PyInit_` returns a module *spec* and the interpreter calls
+back through a `Py_mod_exec` slot. The module arrives empty, so the method table has to
+be installed by hand in that callback or every function is silently missing.
+
+**The module cannot be a local of `PyInit_`.** Under multi-phase initialisation the
+definition has to outlive the call that returns it, because the interpreter uses it
+afterwards. A local is a dangling pointer by then.
+
+Two smaller ones:
+
+- `PyModuleDef_Init` is a macro of **one** argument. Declaring it with the two-argument
+  form compiles and hands the interpreter's API version where it expects a definition
+  pointer, so the first call segfaults inside CPython with nothing in the V source to
+  explain it.
+- `sizeof` works under `Py_LIMITED_API` even for a struct the ABI does not expose. A
+  guard that answered "0 because the struct is hidden" looked reasonable and made every
+  class fail with `tp_basicsize ... too small for base 'object'`. A guard that guesses
+  is worse than no guard.
+
+The runtime keeps one source serving both APIs and asks at run time which path to take,
+because V's `$if` cannot see a `-cflags` define.
+
+## The backend is text, not a V module
+
+`pip install .` imports a named object from `pyproject.toml`. That object could be a V
+extension, and it is not, for a reason that took a while to see clearly: a backend in V
+would have to be *compiled* before it could run, so the frontend needs a working V
+toolchain before it can resolve a build requirement — and resolving build requirements
+is the step that decides whether V is needed at all. It cannot be a wheel for the same
+reason.
+
+So `vcraft_build.py` is generated text. It locates the binary, runs it, and returns the
+artefact's name. Every hook does one thing, and the logic is in the binary where it can
+be tested against a real project.
+
+Three things in it are not obvious:
+
+- PEP 517 wants the artefact's **name**, and pip joins it onto the directory it chose.
+  Returning the path makes pip join it twice, and the error names a path with the
+  directory inside itself.
+- `prepare_metadata_for_build_wheel` may be omitted, but pip calls it when it is there
+  and uses the answer without checking that it is a string. Returning `None` gives a
+  `TypeError` inside pip's `os.path.join` with nothing pointing at the return statement.
+- The sdist has to carry `pyproject.toml` and the backend. Without them it is a source
+  tree with no way to build it: pip untars it, reads `pyproject.toml`, and finds
+  nothing.
+
+## A tar member is three things at once
+
+The type flag, the padding and the field offsets each cost an afternoon, and each fails
+in a way that looks like something else.
+
+A directory written with the type flag for a regular file extracts to a zero-byte file
+of the same name. `tar` lists every entry, the archive has the right length, and only
+the frontend notices when it tries to create `pkg-0.1.0/src/` and finds a file there.
+Python says "Not a directory".
+
+Padding computed from the archive's running length rather than the member's own puts
+every header after the first short file at the wrong offset. The reader only checks that
+the checksum adds up before trusting a header, so it lists a file's contents as further
+members.
+
+And every numeric field is octal. Writing the size as decimal produces an archive that
+has the right length and unpacks to files of the wrong size.
+
+The checksum is the one field that covers itself, so it is written as eight spaces while
+the sum is computed.
+
 ## Tests
 
 ```console

@@ -634,10 +634,12 @@ for the ones the generator did.
 - [x] **Wheels**: DEFLATE, ZIP container, `METADATA`, `WHEEL`, `RECORD` with SHA-256,
       tag computation and PEP 427 file names, verified by a real `pip install`
 - [ ] Wheels: `sdist`, editable installs, `.pyc` embedding
-- [x] **CLI**: `vcraft new`, `build`, `develop`, `info`, `clean`, verified against a
-      real project and a real `pip install`
-- [ ] PEP 517 backend, `vcraft sdist` and `publish`
-- [ ] `abi3` and free-threaded builds
+- [x] **CLI**: `vcraft new`, `build`, `develop`, `sdist`, `publish`, `info`, `clean`
+- [x] **abi3**: stable-ABI builds with multi-phase initialisation, verified by a real
+      `pip install`
+- [x] **PEP 517**: `pip install .` and `pip install <sdist>` both work
+- [ ] Free-threaded builds, cross-compilation, `--target`
+- [ ] Free-threaded builds, cross-compilation, `--target`
 - [ ] GitHub Actions: `vcraft-action@v1`, `generate-ci`, manylinux and musllinux
       images
 - [ ] Zero-copy buffers, `@[vc_gil]`, iterators

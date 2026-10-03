@@ -103,15 +103,75 @@ pub fn platform_tag(python string) string {
 
 // abi_tag returns the ABI tag for an interpreter version.
 //
-// A free-threaded build is `cp313t`, a GIL build `cp313`. Getting this wrong produces a
-// wheel that pip installs and then refuses to import, because the interpreter checks
-// the tag against itself before loading anything.
-pub fn abi_tag(version string, free_threading bool) string {
+// A free-threaded build is `cp313t`, a GIL build `cp313`, and an abi3 build is `cp37`
+// or whatever the stable ABI floor is. Getting this wrong produces a wheel that pip
+// installs and then refuses to import, because the interpreter checks the tag against
+// itself before loading anything.
+pub fn abi_tag(version string, free_threading bool, abi3 string) string {
 	clean := version.replace('.', '')
+	// A free-threaded build has no stable ABI, so `abi3` and `free-threading` cannot
+	// both be honoured. The stable ABI floor wins, because it is the one that decides
+	// whether the extension can be loaded at all.
+	if abi3.len > 0 {
+		return 'cp${abi3.replace('.', '')}'
+	}
 	if free_threading {
 		return 'cp${clean}t'
 	}
 	return 'cp${clean}'
+}
+
+// limited_api_defines returns the C defines that select the stable ABI.
+//
+// Without `Py_LIMITED_API` an abi3 wheel compiles against the full headers and then
+// claims an ABI it was not built for: it installs, and the first call into a struct
+// CPython is allowed to move between versions reads at the wrong offset.
+//
+// The value is the hex version the floor asks for, `0x030D0000` for 3.13. CPython's own
+// headers use it to hide the concrete object structs behind the limited API, which is
+// why the runtime already reaches for accessors when it sees this define.
+pub fn limited_api_defines(abi3 string) string {
+	if abi3.len == 0 {
+		return ''
+	}
+	mut parts := abi3.split('.')
+	if parts.len < 2 {
+		return ''
+	}
+	major := parts[0]
+	minor := parts[1].int()
+	// The stable ABI only ever gained members, so a build against an older floor still
+	// loads on a newer interpreter. `Py_LIMITED_API_COMPAT` is what lets the headers keep
+	// the older spelling of a member that was later extended.
+	return '-DPy_LIMITED_API=0x0${major}${minor:02d}0000'
+}
+
+// interpreter_suffix returns the extension suffix for a build.
+//
+// The concrete suffix carries the interpreter's own tag:
+// `.cpython-314-x86_64-linux-gnu.so`. An abi3 build is loaded through the stable ABI
+// machinery instead, so its file name has to say `abi3`. Keeping the concrete suffix is
+// the mistake that produces a wheel pip installs and then treats as built for one
+// specific interpreter, which throws away the entire reason for building against the
+// stable ABI.
+pub fn interpreter_suffix(python string, abi3 string) string {
+	if abi3.len > 0 {
+		return '.abi3.so'
+	}
+	return extension_suffix(python)
+}
+
+// limited_define returns the define that reaches vcraft's own C file.
+//
+// The `Py_LIMITED_API` flag covers CPython's headers, but `vlib/vcraft/c/shim.c` is
+// compiled by the same command yet guarded by its own macro. Without this define the
+// shim compiles its full-API branches against limited-API headers and every accessor
+// that reads a struct field fails to compile.
+pub fn limited_define(abi3 string) string {
+	if abi3.len == 0 {
+		return ''
+	}
+	return '-Dvcraft_limited_api'
 }
 
 // build compiles the project and writes a wheel.
@@ -121,7 +181,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	if version.len == 0 {
 		return error('cannot run ${python}; is it on PATH?')
 	}
-	suffix := extension_suffix(python)
+	suffix := interpreter_suffix(python, p.abi3)
 	include := include_dir(python)
 	if include.len == 0 {
 		return error('cannot find Python.h for ${python}')
@@ -133,7 +193,17 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	// separator between major and minor. A tag of `cp3.14-cp314-...` is not a tag pip
 	// knows, and it rejects the wheel with "no matching distribution".
 	numeric := version.replace('.', '')
-	tag := 'cp${numeric}-${abi_tag(version, p.free_threading)}-${tag_platform}'
+	// An abi3 tag names the *floor*, not the interpreter that built it: PEP 425 spells
+	// it `cp<floor>-abi3-<platform>`. Building 3.14 against the 3.12 stable ABI produces
+	// `cp312-abi3-...`, and writing `cp314-cp312-...` instead makes every installer
+	// reject the wheel with "no wheels with a matching Python version tag" — including
+	// on the very interpreter that built it.
+	tag := if p.abi3.len > 0 {
+		'cp${p.abi3.replace('.', '')}-abi3-${tag_platform}'
+	} else {
+		'cp${numeric}-${abi_tag(version, p.free_threading, p.abi3)}-${tag_platform}'
+	}
+	limited := limited_api_defines(p.abi3)
 
 	mut compiled := opt.out_dir.trim_right('/') + '/build'
 	if !os.exists(compiled) {
@@ -160,6 +230,9 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		return error('the code generator reported errors')
 	}
 	generate_result.write() or { return error('cannot write the generated glue') }
+	// The backend is rewritten on every build so that it always describes the binary
+	// doing the building. A checked-in copy is a copy of whichever version generated it.
+	write_backend(opt.root) or { return error('cannot write the build backend') }
 
 	// Every argument is quoted individually. `-path` takes `dir|@vlib`, and an
 	// unquoted `@` is a shell word the shell tries to run: the error is "not found"
@@ -173,8 +246,16 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		'-path',
 		shell_quote('${opt.v_path}|@vlib'),
 		'-cflags',
-		shell_quote('-I${include}'),
+		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3)),
 	]
+	// vcraft's own C code has to be told which API it is compiling against. Under
+	// `Py_LIMITED_API` CPython hides the concrete object structs behind the stable ABI,
+	// so the runtime reaches for its accessors instead of reading a struct field, and
+	// that switch is a `-d` define rather than a `cflags` one.
+	if limited.len > 0 {
+		args << '-d'
+		args << 'vcraft_limited_api'
+	}
 	if opt.release {
 		args << '-prod'
 	}

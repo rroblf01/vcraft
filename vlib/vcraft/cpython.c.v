@@ -57,12 +57,15 @@ fn C.vpy_ob_size(self voidptr) isize
 
 fn C.vpy_tuple_size(self voidptr) isize
 
-// vcraft passes -d vcraft_limited_api when it builds an abi3 wheel. Under that
-// setting CPython hides the concrete object structs behind the stable ABI, so
-// the runtime has to reach everything through functions. The `?` form keeps one
-// declaration set serving both modes instead of failing when the flag is unset.
+// `Py_LIMITED_API` arrives on the compiler's `-cflags`, set from the project's `abi3`
+// floor, and this file picks it up from there rather than hard-coding a version.
+//
+// Under the limited API CPython hides the concrete object structs behind the stable
+// ABI, so the runtime reaches everything through functions instead of reading struct
+// fields. The `$if` is optional: a full build does not define the symbol at all, and
+// without the `?` V rejects the whole conditional.
 $if vcraft_limited_api ? {
-	#flag -DPY_LIMITED_API=0x03080000
+	#flag -DPy_LIMITED_API=0x030D0000
 }
 
 // ------------------------------------------------------------------ object
@@ -162,6 +165,26 @@ fn C.PyObject_SetAttrString(o voidptr, name voidptr, value voidptr) int
 // ------------------------------------------------------------------ module
 
 fn C.PyModule_Create2(def voidptr, apiver int) voidptr
+
+// The multi-phase initialisation entry points. `PyModule_Create2` is single-phase and
+// is not part of the limited API, so an abi3 build has to declare its own `Py_mod_exec`
+// slot and let the interpreter call it.
+fn C.PyModuleDef_Init(def voidptr) voidptr
+
+fn C.PyModule_AddFunctions(module voidptr, functions voidptr) int
+
+fn C.vpy_is_limited_api() int
+fn C.vpy_call_exec(fn_ptr voidptr, module voidptr) int
+
+fn C.PyModule_AddFunctions(module voidptr, functions voidptr) int
+
+
+
+// Py_mod_exec is the multi-phase slot id, and Py_mod_create is the one before it. Both
+// are stable ABI, unlike the struct fields PyModule_Create2 needs.
+pub const mod_exec = i32(2)
+
+pub const mod_create = i32(1)
 
 fn C.PyModule_GetDict(m voidptr) voidptr
 
@@ -313,6 +336,17 @@ pub mut:
 	m_init    voidptr
 	m_index   isize
 	m_copy    voidptr
+}
+
+// PyModuleDef_Slot is one entry of a multi-phase module's slot table. The two members
+// are the slot id and the function that implements it, both from the stable ABI.
+//
+// Present under `Py_LIMITED_API` as well as without it, so the same mirror serves a
+// build of either kind.
+pub struct PyModuleDefSlot {
+pub mut:
+	slot  i32
+	value voidptr
 }
 
 pub struct PyModuleDef {

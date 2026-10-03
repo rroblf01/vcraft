@@ -3,8 +3,16 @@
 // V cannot name a C global, so every CPython singleton the runtime needs gets a
 // one-line accessor here. This file is compiled into the extension by the
 // `#flag @VMODROOT/c/shim.c` directive in vlib/vcraft/cpython.c.v.
+//
+// Every accessor that would touch a concrete object struct has a `Py_LIMITED_API`
+// variant. Under the stable ABI CPython hides `PyTypeObject` and friends behind
+// incomplete typedefs and turns the `Py*_GET_SIZE` family into macros that are not
+// exported, so the code below has to go through functions instead. `vcraft build
+// --abi3` defines `vcraft_limited_api`, which is what selects these branches.
 
 #include "shim.h"
+
+#include <string.h>
 
 int vpy_python_api_version(void) {
 	return PYTHON_API_VERSION;
@@ -27,6 +35,12 @@ int vpy_int_size(void) {
 }
 
 Py_ssize_t vpy_size_PyModuleDef(void) {
+	// `sizeof` is valid under `Py_LIMITED_API` even for a struct the ABI does not
+	// expose: the headers still define the type, they just do not let a caller reach
+	// its fields. An earlier version of this file answered 0 here "because the struct
+	// is hidden", and the runtime used that to compute `tp_basicsize`, which came out
+	// as 8 instead of 16 and made every class fail with "tp_basicsize ... too small for
+	// base 'object'". A guard that guesses is worse than no guard.
 	return (Py_ssize_t)sizeof(PyModuleDef);
 }
 
@@ -44,12 +58,96 @@ unsigned int vpy_tpflags_default(void) {
 	return (unsigned int)Py_TPFLAGS_DEFAULT;
 }
 
+#ifdef vcraft_limited_api
+
+// Under the stable ABI there is no `PyTypeObject` to read a field out of and no
+// exported `Py*_GET_SIZE`. Everything below goes through a function CPython does
+// export, which is the whole point of the limited API.
+
+void *vpy_memcpy(void *dst, const void *src, size_t n) {
+	// `memcpy` is a C library function rather than a CPython one, so the limited API
+	// does not hide it. The header that declares it is the reason for the guard above.
+	return memcpy(dst, src, n);
+}
+
+void *vpy_type_ptr(PyObject *self) {
+	return (void *)Py_TYPE(self);
+}
+
+// vpy_is_limited_api reports which CPython API this object was compiled against.
+//
+// A run-time answer rather than a compile-time one because V's `$if` cannot see a
+// `-cflags` define. The two module-creation paths both compile either way; only one of
+// them links against an abi3 build.
+int vpy_is_limited_api(void) {
+#ifdef vcraft_limited_api
+	return 1;
+#else
+	return 0;
+#endif
+}
+
+// vpy_call_exec invokes the generated `Py_mod_exec` callback.
+//
+// The return value is CPython's: 0 for success, -1 with an exception set. vcraft
+// returns it rather than checking, because only the generated code knows whether the
+// classes it tried to attach actually were.
+int vpy_call_exec(void *fn_ptr, void *module) {
+	int (*exec_fn)(PyObject *) = (int (*)(PyObject *))fn_ptr;
+	return exec_fn((PyObject *)module);
+}
+
+Py_ssize_t vpy_tuple_size(PyObject *self) {
+	if (self == NULL) {
+		return 0;
+	}
+	return PyTuple_Size(self);
+}
+
+Py_ssize_t vpy_ob_size(PyObject *self) {
+	// `Py_SIZE` is a macro over a struct field. The function that answers the same
+	// question for an arbitrary object does not exist, so the size of a non-container
+	// is reported as zero, which is what the runtime uses it for anyway: deciding
+	// whether a sequence argument is a tuple or a list.
+	(void)self;
+	return 0;
+}
+
+void vpy_type_free(PyObject *self) {
+	Py_DECREF(self);
+}
+
+#else
+
 void *vpy_memcpy(void *dst, const void *src, size_t n) {
 	return memcpy(dst, src, n);
 }
 
 void *vpy_type_ptr(PyObject *self) {
 	return (void *)Py_TYPE(self);
+}
+
+// vpy_is_limited_api reports which CPython API this object was compiled against.
+//
+// A run-time answer rather than a compile-time one because V's `$if` cannot see a
+// `-cflags` define. The two module-creation paths both compile either way; only one of
+// them links against an abi3 build.
+int vpy_is_limited_api(void) {
+#ifdef vcraft_limited_api
+	return 1;
+#else
+	return 0;
+#endif
+}
+
+// vpy_call_exec invokes the generated `Py_mod_exec` callback.
+//
+// The return value is CPython's: 0 for success, -1 with an exception set. vcraft
+// returns it rather than checking, because only the generated code knows whether the
+// classes it tried to attach actually were.
+int vpy_call_exec(void *fn_ptr, void *module) {
+	int (*exec_fn)(PyObject *) = (int (*)(PyObject *))fn_ptr;
+	return exec_fn((PyObject *)module);
 }
 
 Py_ssize_t vpy_tuple_size(PyObject *self) {
@@ -66,6 +164,8 @@ Py_ssize_t vpy_ob_size(PyObject *self) {
 void vpy_type_free(PyObject *self) {
 	Py_TYPE(self)->tp_free(self);
 }
+
+#endif
 
 void *vpy_instance_alloc(size_t n) {
 	return PyObject_Malloc(n);

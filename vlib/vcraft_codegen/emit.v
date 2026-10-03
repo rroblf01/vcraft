@@ -47,22 +47,7 @@ pub fn emit_glue(p Project) string {
 	w.write_string(generated_header)
 	w.write_string('module ${p.module}\n\n')
 	w.write_string('import vcraft\n\n')
-	w.write_string("@[export: 'PyInit_${p.package}']\n")
-	w.write_string('fn vcraft_generated__pyinit() voidptr {\n')
-	w.write_string('\tmut m := vcraft.new_module(\'${p.package}\', ' +
-		'${vstring_literal(module_docstring(p))})\n')
-	for f in p.funcs {
-		flags := if f.params.len == 0 { 'vcraft.meth_noargs' } else { 'vcraft.meth_fastcall' }
-		w.write_string("\tm.add_function_owned('${f.name}', voidptr(${f.trampoline}), " +
-			'${flags},\n\t\t${vstring_literal(python_signature(f))})\n')
-	}
-	// The module has to exist before anything can be attached to it, so `seal`
-	// comes first and the classes go on afterwards.
-	w.write_string('\tmodule := m.seal()\n')
-	for c in p.classes {
-		w.write_string(register_class(c))
-	}
-	w.write_string('\treturn module.ptr\n}\n')
+	w.write_string(glue_module_body(p))
 	for f in p.funcs {
 		w.write_string('\n')
 		w.write_string(emit_trampoline(f))
@@ -86,6 +71,136 @@ pub fn emit_glue(p Project) string {
 // The tables the type needs are module-level globals rather than locals, because
 // CPython keeps reading them: `PyType_FromSpec` copies what it needs, but a
 // PyMethodDef's name and doc pointers are borrowed for the life of the type.
+// glue_module_body renders the module definition and the two entry points.
+//
+// The module under construction is a global rather than a local of `pyinit`.
+//
+// Single-phase initialisation lets `pyinit` build a module and return it: CPython calls
+// `PyInit_` once and is done. Multi-phase initialisation, which an abi3 build has to
+// use, does not: `PyInit_` returns a module *definition*, the interpreter then calls the
+// `Py_mod_exec` slot inside it, and the definition must still be alive at that point. A
+// local in `pyinit` is a dangling pointer by then, and the interpreter reads it as a
+// module and crashes with nothing in the generated source to explain it.
+//
+// So `pyinit` is a thin wrapper that builds into the global and returns whatever this
+// build's API expects, and `exec` does the part that fills the module in. `pyinit` calls
+// `exec` itself on a single-phase build, so there is one copy of that code rather than
+// two that can disagree.
+pub fn glue_module_body(p Project) string {
+	mut w := new_builder()
+	w.write_string('__global (\n')
+	w.write_string("\tg_vc_module = vcraft.new_module('${p.package}', " +
+		'${vstring_literal(module_docstring(p))})\n')
+	w.write_string(')\n\n')
+	w.write_string("@[export: 'PyInit_${p.package}']\n")
+	w.write_string('fn vcraft_generated__pyinit() voidptr {\n')
+	// The `for` is emitted once and the body once per function. Writing the header
+	// inside the generator's loop instead produces one `for` per function, all of them
+	// nested, and the generated file does not compile.
+	//
+	// The loop variable is `fn_` rather than `f` because the generated loops share a
+	// file with the generator's own, and V rejects a redefinition of an iteration
+	// variable in the same scope.
+	//
+	// The header is written once and the body once per function. The signature differs
+	// per function, so it cannot be hoisted out of the loop; the header can, and
+	// writing it inside the generator's loop instead produces one `for` per function,
+	// all of them nested, which does not compile.
+	// One call per function, and the loop variable inside the generated source is
+	// `fn_` because the generated loops share a file with the generator's own and V
+	// rejects a redefinition of an iteration variable in the same scope.
+	for f in p.funcs {
+		flags := if f.params.len == 0 { 'vcraft.meth_noargs' } else {
+			'vcraft.meth_fastcall'
+		}
+		w.write_string('\tg_vc_module.add_function_owned(' + vstring_literal(f.name) +
+			', voidptr(' + f.trampoline + '), ' + flags + ',\n')
+		w.write_string('\t\t${vstring_literal(python_signature(f))})\n')
+	}
+	w.write_string('\tg_vc_module.set_exec(voidptr(vcraft_generated__exec))\n')
+	w.write_string('\tmodule := g_vc_module.seal()\n')
+	w.write_string('\treturn module.ptr\n}\n\n')
+	w.write_string('// vcraft_generated__exec populates the module.\n')
+	w.write_string('//\n')
+	w.write_string("// CPython calls this through the `Py_mod_exec` slot on an abi3 build, and\n")
+	w.write_string('// `pyinit` calls it directly otherwise, so the same code fills the module in\n')
+	w.write_string('// either way.\n')
+	w.write_string('fn vcraft_generated__exec(module voidptr) int {\n')
+	// The method table has to be installed here rather than left to module creation:
+	// under multi-phase initialisation the module arrives empty.
+	w.write_string('\tg_vc_module.install_functions(module) or { return -1 }\n')
+	for c in p.classes {
+		w.write_string(render_class_exec(c))
+	}
+	w.write_string('\t_ = module\n')
+	w.write_string('\treturn 0\n}\n')
+	return w.str()
+}
+
+// pyinterp renders a `${name}` the way it must appear in generated V source.
+//
+// V has no spelling for a literal `${` inside a double-quoted string, so a generator
+// that emits interpolated code cannot write one directly. Splitting the string around
+// the interpolation is the way out: the pieces are plain text and only the middle is
+// this generator's own substitution.
+// interp renders a `${name}` as it must appear in generated V source.
+//
+// V has no spelling for a literal `${` inside a double-quoted string, so a generator
+// that emits interpolated code cannot write one directly: unescaped, V tries to
+// interpolate the name here, where it is not in scope. Splitting the literal into the
+// pieces around the interpolation is the way out — `'${'` and `'}'` are ordinary text.
+pub fn interp(name string) string {
+	// The dollar is written as a byte rather than as `${`, because a `${` inside a
+	// double-quoted V string is an interpolation and V tries to evaluate it here.
+	return '$' + '{' + name + '}'
+}
+
+// render_class_exec renders a class's registration for inside `exec`.
+//
+// Indented one level deeper than `register_class` because it runs in the callback
+// rather than in `pyinit`, so the two take their indentation as a parameter.
+pub fn render_class_exec(c Class) string {
+	// Rendered at generation time rather than as a `for` in the output: every value
+	// here is known now, and a generated `for` over the classes would need its own
+	// interpolation trick for no benefit.
+	mut w := new_builder()
+	w.write_string('\t' + c.ctype + ' := vcraft.new_type(')
+	w.write_string(vstring_literal(c.qualified) + ',\n')
+	w.write_string('\t\t' + vstring_literal(c.doc) + ',\n')
+	w.write_string('\t\tvoidptr(' + c.ctor + '),\n')
+	// `tp_init` is left null: the constructor runs in `tp_new`, so a subclass that
+	// overrides `__init__` still gets a chance to add to it.
+	w.write_string('\t\tunsafe { nil },\n')
+	w.write_string('\t\tvoidptr(' + c.dealloc + '),\n')
+	// Taking the address of a mutable array element needs an unsafe block, and both
+	// tables are module-level globals that the type borrows for its lifetime.
+	if c.methods.any(it.property == false) {
+		w.write_string('\t\tunsafe { voidptr(&g_vc_methods_' + c.key + '[0]) },\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+	}
+	if c.fields.len > 0 || c.methods.any(it.property) {
+		w.write_string('\t\tunsafe { voidptr(&g_vc_getsets_' + c.key + '[0]) },\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+	}
+	w.write_string('\t\tvoidptr(' + c.repr + '),\n')
+	w.write_string('\t)\n')
+	// The error check is here rather than inside `new_type` because a class that fails
+	// to build is a generator-level problem: the interpreter reports "raised
+	// unreported exception" and nothing else, so the reason has to be surfaced while
+	// there is still a name to attach it to.
+	w.write_string('\tif vcraft.error_is_set() {\n')
+	w.write_string('\t\teprintln(' + vstring_literal('vcraft: cannot create the type ' +
+		c.name) + ')\n')
+	w.write_string('\t\treturn -1\n')
+	w.write_string('\t}\n')
+	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.name) + ', ' +
+		c.ctype + ')\n')
+	return w.str()
+}
+
+// register_class renders a class's registration for inside `pyinit`.
 fn register_class(c Class) string {
 	mut w := new_builder()
 	w.write_string('\t${c.ctype} := vcraft.new_type(')
@@ -110,7 +225,8 @@ fn register_class(c Class) string {
 	}
 	w.write_string('\t\tvoidptr(${c.repr}),\n')
 	w.write_string('\t)\n')
-	w.write_string("\tvcraft.add_object_ref_on(module, '${c.name}', ${c.ctype})\n")
+	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.name) +
+		', ${c.ctype})\n')
 	return w.str()
 }
 

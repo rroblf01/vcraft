@@ -44,6 +44,16 @@ pub fn scaffold(p Project) []ScaffoldFile {
 		path:    '.gitignore'
 		content: '/build/\n/dist/\n/src/_vcraft_generated.v\n*.so\n'
 	}
+	// The PEP 517 backend, so that `pip install .` works from a fresh checkout without
+	// the project having to know anything about it.
+	files << ScaffoldFile{
+		path:    'pyproject.toml'
+		content: pyproject_toml()
+	}
+	files << ScaffoldFile{
+		path:    backend_py()
+		content: backend_source()
+	}
 	return files
 }
 

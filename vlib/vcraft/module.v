@@ -21,7 +21,18 @@ pub mut:
 	def     PyModuleDef
 	name    voidptr
 	doc     voidptr
+	// slots is the multi-phase slot table, used only by an abi3 build. It holds a
+	// `Py_mod_exec` entry pointing at the same function that `seal` runs, so the
+	// interpreter calls back into the generated code rather than vcraft doing the work
+	// itself.
+	slots []PyModuleDefSlot
+	// exec_fn is that callback. It cannot be a method value, because a V method value
+	// has a receiver and CPython calls it with one argument.
+	exec_fn voidptr
 }
+
+// The multi-phase exec callback's signature: a module, and a status to set on failure.
+pub type PyModuleExecFunc = fn (voidptr) int
 
 // The two calling conventions a generated trampoline can use. CPython stores
 // both in the same PyMethodDef field, so they are kept as raw pointers here.
@@ -37,6 +48,27 @@ pub fn new_module(name string, docstring string) Module {
 		name: cstring(name)
 		doc:  cstring(docstring)
 	}
+}
+
+// install_functions copies the method table into the module.
+//
+// Single-phase initialisation does this itself, inside `PyModule_Create2`. Multi-phase
+// initialisation does not: the module is created empty and filled by `Py_mod_exec`, so
+// the table has to be installed by hand or every function is missing.
+//
+// `PyModule_AddFunctions` is the stable-ABI call that does it, and it is what makes one
+// generated source serve both APIs: the loop here runs under `Py_mod_exec` on an abi3
+// build and is never reached on a normal one, where `seal` has already done the work.
+pub fn (m Module) install_functions(module voidptr) ! {
+	if m.methods.len <= 1 {
+		return
+	}
+	unsafe {
+		if C.PyModule_AddFunctions(module, voidptr(&m.methods[0])) != 0 {
+			return error('vcraft: cannot install the module functions')
+		}
+	}
+	return
 }
 
 // add_function appends a function to the table.
@@ -65,6 +97,18 @@ pub fn (mut m Module) add_function_owned(name string, trampoline voidptr, flags 
 
 // seal finishes construction: it terminates the method table, creates the module
 // and returns it with a new reference that the caller owns.
+//
+// Two paths, because CPython has two module initialisation APIs and only one of them is
+// in the limited API.
+//
+// `PyModule_Create2` is single-phase: it takes a `PyModuleDef` whose fields are filled
+// in here and hands back a finished module. That is the cheaper path and it is what a
+// normal build uses, but the struct it needs is a concrete type the stable ABI hides,
+// so an abi3 build cannot call it at all.
+//
+// Under `Py_LIMITED_API` the module declares a `Py_mod_exec` slot instead, and the
+// interpreter calls it to populate the module. That is multi-phase initialisation, and
+// it is the only form available to an abi3 extension.
 pub fn (mut m Module) seal() PyObj {
 	unsafe {
 		m.methods << PyMethodDef{}
@@ -72,8 +116,87 @@ pub fn (mut m Module) seal() PyObj {
 		m.def.m_doc = m.doc
 		m.def.m_size = -1
 		m.def.m_methods = if m.methods.len > 1 { voidptr(&m.methods[0]) } else { nil }
+		if is_limited_api() {
+			// The module definition carries a `Py_mod_exec` slot and the interpreter
+			// calls back through it. `m_size` must be 0 rather than -1 here: a
+			// multi-phase module declares its state through `Py_mod_create` instead,
+			// and CPython rejects a definition that claims single-phase state *and*
+			// slots.
+			m.def.m_size = 0
+			// The method table is cleared because under multi-phase initialisation the
+			// module's contents are added by `Py_mod_exec`, not by the creation call.
+			// Leaving the table in place makes CPython install the functions twice: once
+			// from here and once from the callback. What is worse, the second install
+			// fails, and the module comes out with no functions at all — the `for` loop
+			// below reports success while every attribute is missing.
+			m.def.m_methods = unsafe { nil }
+			m.slots << PyModuleDefSlot{
+				slot:  mod_exec
+				value: m.exec_fn
+			}
+			m.slots << PyModuleDefSlot{}
+			m.def.m_slots = voidptr(&m.slots[0])
+			// `PyInit_` returns the module *spec* under multi-phase initialisation, and
+			// `PyModuleDef_Init` is what produces it. Returning the definition itself
+			// instead gives CPython something that is neither a module nor a spec, and it
+			// reports "returned uninitialized object" — a message that names neither of
+			// the two mistakes that lead to it.
+			return steal(C.PyModuleDef_Init(voidptr(&m.def)))
+		}
 		m.obj = steal(C.PyModule_Create2(voidptr(&m.def), python_api_version()))
+		// Single-phase initialisation creates the module with its functions already in
+		// it, so `seal` returns a finished module and nothing calls `exec`. The classes
+		// live in the callback, so on this path the callback has to be called here.
+		//
+		// Two shapes rather than one shared helper, because the two APIs disagree about
+		// what the module is at this point: here it is an object, under multi-phase it
+		// is a definition the interpreter will call back into. Calling the same code
+		// with the wrong one installs the classes on nothing and reports success.
+		if m.exec_fn != unsafe { nil } {
+			C.vpy_call_exec(m.exec_fn, m.obj.ptr)
+		}
 		return m.obj
+	}
+}
+
+// set_exec records the callback the interpreter invokes through `Py_mod_exec`.
+//
+// An abi3 build cannot populate the module from `pyinit`, because `pyinit` returns a
+// definition rather than a module and the interpreter calls back afterwards. The
+// callback is a plain function pointer rather than a V method value, since CPython
+// calls it with one argument and no receiver.
+pub fn (mut m Module) set_exec(fn_ptr voidptr) {
+	m.exec_fn = fn_ptr
+}
+
+// is_limited_api reports whether this build targets the stable ABI.
+//
+// A C define rather than a V one, because the two builds differ in which CPython
+// functions exist at all: asking at run time would work, and asking at compile time
+// keeps the single-phase code out of an abi3 binary entirely.
+fn is_limited_api() bool {
+	return C.vpy_is_limited_api() != 0
+}
+
+// module_create_multi_phase creates a module using only stable-ABI functions.
+//
+// `PyModule_Create2` is single-phase initialisation and reads a `PyModuleDef`'s fields
+// directly, which the limited API does not expose. The equivalent available to an abi3
+// build is to hand the interpreter a module definition carrying a `Py_mod_exec` slot and
+// let it call back: that is multi-phase initialisation, and `PyModuleDef_Init` returning
+// the spec is the whole of it.
+//
+// `PyModuleDef_Init` is a macro of one argument, not a function of two, and that is not
+// a detail: declaring it with the two-argument form compiles and then hands the
+// interpreter's API version where it expects a definition pointer, so the first call
+// segfaults inside CPython with nothing in the V sources to explain it.
+//
+// The definition stays in the caller's `Module`, so its address outlives this call.
+// CPython keeps the definition rather than copying it, which is why the `Module` may not
+// be a temporary.
+fn module_create_multi_phase(def voidptr) voidptr {
+	unsafe {
+		return C.PyModuleDef_Init(def)
 	}
 }
 
@@ -90,13 +213,14 @@ pub fn (m Module) add_object(name string, value PyObj) {
 // add_object_ref_on installs an attribute on a finished module without stealing the
 // reference, which is the safer choice when the caller keeps using the value.
 //
-// It takes the module as a `PyObj` rather than a `Module`, because by the time
-// anything is attached the module is already sealed and `Module.obj` is what the
-// generated glue holds.
-pub fn add_object_ref_on(module PyObj, name string, value PyObj) {
+// It takes the module as a `voidptr` rather than a `Module`, because by the time anything
+// is attached the module is already sealed: under multi-phase initialisation the caller
+// is the interpreter's `Py_mod_exec` callback, which receives the module as a plain
+// pointer and never sees the `Module` at all.
+pub fn add_object_ref_on(module voidptr, name string, value PyObj) {
 	namep := cstring(name)
 	unsafe {
-		C.PyModule_AddObjectRef(module.ptr, namep, value.ptr)
+		C.PyModule_AddObjectRef(module, namep, value.ptr)
 	}
 	free_cstring(namep)
 }

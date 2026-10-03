@@ -17,6 +17,8 @@ usage:
   vcraft new <name>            scaffold a project
   vcraft build [options]       build a wheel
   vcraft develop               build and install into the active virtualenv
+  vcraft sdist                 build a source distribution
+  vcraft publish               upload the built distributions to PyPI
   vcraft info                  show what vcraft resolved for this project
   vcraft version               print the version
 
@@ -122,6 +124,8 @@ fn main() {
 		// Help goes to stdout: it is what someone asked for, not a diagnostic, and
 		// `vcraft help | less` has to work.
 		'help', '--help', '-h' { print(usage) }
+		'sdist' { cmd_sdist(args) }
+		'publish' { cmd_publish(args) }
 		'clean' { cmd_clean(args) }
 		else {
 			eprintln('error: unknown command `${args.command}`')
@@ -231,6 +235,62 @@ fn cmd_info(args Args) {
 	println('environment      ${vcraft_project.active_environment()}')
 	println('dependencies     ${p.dependencies.str()}')
 	println('classifiers      ${p.classifiers.str()}')
+}
+
+// cmd_sdist builds a source distribution.
+fn cmd_sdist(args Args) {
+	p := vcraft_project.load('.') or {
+		eprintln('error: ${err.msg()}')
+		exit(1)
+	}
+	out_dir := if args.options['out-dir'] != '' { args.options['out-dir'] } else { 'dist' }
+	path := vcraft_project.write_sdist(p, '.', out_dir) or {
+		eprintln('error: ${err.msg()}')
+		exit(1)
+	}
+	println('built ${path}')
+}
+
+// cmd_publish delegates the upload.
+//
+// vcraft writes the distributions and knows how to build them; how they are uploaded is
+// PyPI's business and its authentication has changed twice in two years. Delegating to
+// `twine` or `uv` means this tool does not carry a copy of a protocol that changes.
+fn cmd_publish(args Args) {
+	p := vcraft_project.load('.') or {
+		eprintln('error: ${err.msg()}')
+		exit(1)
+	}
+	if !os.exists('dist') {
+		eprintln('error: nothing in dist/; run `vcraft build` first')
+		exit(1)
+	}
+	mut uploader := ''
+	if os.exists('uv') || command_exists('uv') {
+		uploader = 'uv'
+	} else if command_exists('twine') {
+		uploader = 'twine'
+	} else {
+		eprintln('error: neither uv nor twine is available')
+		eprintln('upload it yourself with `twine upload dist/*`')
+		exit(1)
+	}
+	mut result := os.execute('uv publish dist/*')
+	if uploader == 'twine' {
+		result = os.execute('twine upload dist/*')
+	}
+	if result.output.len > 0 {
+		eprintln(result.output)
+	}
+	if result.exit_code != 0 {
+		exit(result.exit_code)
+	}
+	_ = p
+}
+
+// command_exists reports whether a program is on PATH.
+fn command_exists(name string) bool {
+	return os.execute('command -v ' + name).exit_code == 0
 }
 
 // cmd_clean removes build output.
