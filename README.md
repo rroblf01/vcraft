@@ -34,8 +34,10 @@ vcraft build --release
 
 ## Table of contents
 
+- [Table of contents](#table-of-contents)
 - [Why](#why)
 - [How it works](#how-it-works)
+- [Try it](#try-it)
 - [The annotation vocabulary](#the-annotation-vocabulary)
 - [Type marshalling](#type-marshalling)
 - [Classes and properties](#classes-and-properties)
@@ -426,10 +428,28 @@ target-dir = "build"
 
 ---
 
+## Try it
+
+The repository ships a working example. A CPython extension module written in V,
+built with `v -shared`, imported by CPython 3.14:
+
+```console
+$ ./scripts/build-probe.sh
+$ python3 examples/probe/test_probe.py
+...
+gate 0 passed
+```
+
+It is built by hand rather than by `vcraft`, because it predates it. Its purpose
+is to keep the central assumption of this project under test: read
+[`examples/probe/README.md`](examples/probe/README.md) for what it proves and for
+the three compiler behaviours it uncovered.
+
+---
+
 ## Roadmap
 
-- [x] Compiling a V shared object that CPython imports (`PyInit_` export, ELF
-      constructor lifecycle, unresolved `Py*` symbols)
+- [x] **Gate 0**: a V shared object that CPython imports as an extension module
 - [ ] Runtime: `PyObject` wrapper, module construction, scalar and string
       marshalling, argument parsing
 - [ ] Code generator: annotations, docstrings, signatures, `.pyi` stubs
@@ -449,11 +469,33 @@ See [Status](#status) for what actually works today.
 
 ## Status
 
-Early development. The plan this README describes is agreed and the feasibility
-of the central bet has been verified against V 0.5.2, but the components are
-being written now. The [Roadmap](#roadmap) tracks the order.
+Early development. The central bet is **verified**: see
+[`examples/probe`](examples/probe) for a CPython extension module written in V,
+built with `v -shared` and imported from CPython 3.14. It exercises module
+creation, `METH_NOARGS` and `METH_FASTCALL` builtins, argument marshalling,
+error propagation and docstrings, and it checks that the dynamic symbol table
+exposes only `PyInit_probe`.
 
-Do not depend on this yet.
+```
+$ ./scripts/build-probe.sh
+$ python3 examples/probe/test_probe.py
+...
+gate 0 passed
+```
+
+Getting that far already produced three findings that shape the runtime, all
+written up in [`examples/probe/README.md`](examples/probe/README.md):
+
+1. The V C backend emits no prototypes for `fn C.` declarations, so a module
+   that binds to CPython **must** `#include <Python.h>`. Without it gcc applies
+   the implicit `int` return rule, truncates the returned `PyObject *` to 32
+   bits, and the interpreter segfaults on a module that loaded cleanly.
+2. A sibling `.c.v` file only exports its declarations to the module named by
+   its own `module` line.
+3. CPython's builtin exception types are data symbols, so the runtime needs a
+   small C accessor file, with a header, for each one it uses.
+
+The remaining components are being written. Do not depend on this yet.
 
 ---
 
@@ -476,6 +518,21 @@ On a normal Linux install the CPython headers are usually already present:
 
 A few decisions worth knowing about, and why they were made.
 
+**The generated glue is V, not a foreign language.** Since the generated file is
+compiled by V alongside your code, it can call your functions with their real
+types. There is no tagged union, no serialisation step and no reflection at
+runtime, so the cost of a call is a C call plus the conversions you asked for.
+
+**The CPython headers are included, never re-declared.** V does not emit
+prototypes for `fn C.` declarations, so any module that binds to CPython must
+`#include <Python.h>` rather than rely on V to declare them. See finding 1 in
+[`examples/probe/README.md`](examples/probe/README.md).
+
+**`METH_FASTCALL` is the default calling convention.** It is the cheapest way
+CPython can pass positional arguments, and it lets the generated wrapper read the
+arguments as a borrowed pointer array. Keyword arguments fall back to
+`METH_FASTCALL | METH_KEYWORDS`.
+
 **Annotations come from the source text.** V's parse tree does not keep
 declaration attributes; they live in the type checker. V's own `v.astquery`
 module documents the same limitation and advises reading the source. `vcraft`
@@ -483,10 +540,14 @@ therefore parses declarations with `v.astquery` and then reads the `@[...]` bloc
 immediately above each one. It works on files that do not compile, which keeps
 error messages about broken annotations useful.
 
-**The generator emits V, not a foreign language.** Since the generated file is
-compiled by V alongside your code, it can call your functions with their real
-types. There is no tagged union, no serialisation step and no reflection at
-runtime, so the cost of a call is a C call plus the conversions you asked for.
+**C struct mirrors use `voidptr` and `mut:`.** V's ownership rules would demand
+initialisers for reference-typed fields, and a zero-initialised literal has to be
+able to produce C's all-zero sentinels such as the `PyMethodDef` terminator.
+Describing pointers as `voidptr` inside a `mut:` section sidesteps both.
+
+**CPython data symbols get C accessors.** `PyExc_TypeError` and friends are
+data, not functions, and V cannot name a C global. The runtime ships a small C
+file of accessors with a header, pulled in with `#flag @VMODROOT/c/...`.
 
 **The V garbage collector runs inside CPython.** V uses Boehm–Demers–Weiser by
 default. It is statically linked into the extension, it does not replace the C
