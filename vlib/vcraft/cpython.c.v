@@ -179,6 +179,8 @@ fn C.vpy_hash(self voidptr) isize
 fn C.vpy_hash_bits() isize
 fn C.vpy_type_check(o voidptr, typ voidptr) int
 fn C.vpy_not_implemented() voidptr
+fn C.PyTuple_New(size isize) voidptr
+fn C.PyTuple_SET_ITEM(tuple voidptr, index isize, item voidptr)
 
 fn C.PyModule_AddFunctions(module voidptr, functions voidptr) int
 
@@ -305,6 +307,8 @@ pub const slot_methods = i32(64)
 pub const slot_new = i32(65)
 
 pub const slot_repr = i32(66)
+
+pub const slot_bases = i32(49)
 
 pub const slot_hash = i32(59)
 

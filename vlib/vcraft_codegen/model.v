@@ -24,6 +24,10 @@ pub const attr_property = 'vc_property'
 
 pub const attr_static = 'vc_static'
 
+// attr_base marks a class as inheriting another one. Its value is the base's name,
+// which is why it is a name rather than a boolean like the rest.
+pub const attr_base = 'vc_base'
+
 pub const attr_eq = 'vc_eq'
 
 pub const attr_hash = 'vc_hash'
@@ -36,6 +40,7 @@ pub const known_attrs = [
 	attr_raw,
 	attr_eq,
 	attr_hash,
+	attr_base,
 	attr_nogil,
 	attr_class,
 	attr_methods,
@@ -112,10 +117,27 @@ pub mut:
 	ctype string
 	// size_fn is the generated helper reporting the struct's size in bytes.
 	size_fn string
+	// newstate_fn is the generated constructor of the whole state block. It is recursive:
+	// a class with a base calls the base's newstate and assigns the result to its `base`
+	// field, so a chain of any depth is built without knowing the depth in advance.
+	newstate_fn string
 	// dealloc is the generated `tp_dealloc`.
 	dealloc string
 	// repr is the generated `tp_repr`.
 	repr string
+	// base is the name of the class this one inherits, empty when it has none.
+	base string
+	// state_fields is every field the instance holds: this class's plus, when it has a
+	// base, the base's. It is what the state block is laid out from.
+	//
+	// V has no struct inheritance, so a subclass names only its own fields and the
+	// generated state is a struct holding the base followed by the subclass. A method
+	// defined on the base therefore reads the same bytes it would on an instance of the
+	// base, and one defined on the subclass sees its own fields.
+	state_fields []Field
+	// base_index is that class's position, resolved once every class is known. Negative
+	// when there is no base or when the name did not resolve.
+	base_index int = -1
 	// eq_fn and hash_name are the user's methods marked `@[vc_eq]` and `@[vc_hash]`,
 	// empty when the class declares neither.
 	eq_fn     string
@@ -126,9 +148,50 @@ pub mut:
 	// key is the class name folded to snake_case, because V rejects an identifier
 	// with uppercase letters in it.
 	key string
+	// origin, line and column place the declaration, for a diagnostic raised in a later
+	// pass than the one that found it. A `@[vc_base]` naming a class that does not exist
+	// can only be reported once every class is known, which is after the declaration has
+	// been collected.
+	origin string
+	line   int
+	column int
 }
 
 // Field is one exposed struct field.
+// state_name is the name of the generated struct holding a subclass's state.
+pub fn (c Class) state_name() string {
+	return c.name + 'State'
+}
+
+// self_access is the path to the class's own struct inside the state block, with a
+// trailing dot. Empty for a class with no base, `self.` for one that has.
+pub fn (c Class) self_access() string {
+	if c.base_index >= 0 {
+		return 'self.'
+	}
+	return ''
+}
+
+// field_access is the expression that reaches a field from the state block.
+//
+// `self` for a class with a base, because its own fields live in the nested struct. A
+// base's fields are reached the same way, so a method written against either class
+// indexes the same struct.
+pub fn (c Class) field_access(field string) string {
+	if c.base_index >= 0 {
+		return 'self.' + field
+	}
+	return field
+}
+
+// state_type is the type the state block is laid out from.
+pub fn (c Class) state_type() string {
+	if c.base_index >= 0 {
+		return c.state_name()
+	}
+	return c.name
+}
+
 pub struct Field {
 pub mut:
 	name string
@@ -137,6 +200,17 @@ pub mut:
 	v_type string
 	// setter is empty for a read-only field.
 	setter string
+	// path is the member path of this field within the *state block* of the class that
+	// declares it, without the leading `state.`. Only set on the flattened list: a field
+	// of the class itself is just its name, and one inherited from a base is reached
+	// through the `base` half of the block, or through a further `self` for each
+	// generation between the two.
+	//
+	// `state.<path>` is what a generated renderer reads. A field accessor does not use
+	// it: an accessor is emitted once per declaring class and reads its own struct
+	// directly, because the layout puts every generation at a fixed offset from the
+	// start of the block.
+	path string
 }
 
 // is_scalar reports whether a field type is safe to hold in CPython-owned memory.

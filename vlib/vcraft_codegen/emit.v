@@ -53,7 +53,7 @@ pub fn emit_glue(p Project) string {
 		w.write_string(emit_trampoline(f))
 	}
 	for c in p.classes {
-		w.write_string(emit_class(c))
+		w.write_string(emit_class(p, c))
 		for m in c.methods {
 			// `@[vc_eq]` and `@[vc_hash]` fill the type's slots rather than the method
 			// table, and they are called from `richcompare` and `hash` rather than from
@@ -64,9 +64,9 @@ pub fn emit_glue(p Project) string {
 			}
 			w.write_string('\n')
 			if m.property {
-				w.write_string(emit_property_trampoline(c, m))
+				w.write_string(emit_property_trampoline(p, c, m))
 			} else {
-				w.write_string(emit_method_trampoline(c, m))
+				w.write_string(emit_method_trampoline(p, c, m))
 			}
 		}
 	}
@@ -105,6 +105,15 @@ pub fn glue_module_body(p Project) string {
 		// mutability and the value in separate places, and a `mut` here is rejected with
 		// "unexpected token `=`, expecting name".
 		w.write_string('\t' + c.ctype + ' = vcraft.PyObj{}\n')
+	}
+	// The base tuple is a global because `PyType_FromSpec` borrows the tuple for the
+	// duration of its call and the type keeps a reference to the base types afterwards. A
+	// local would be freed before the interpreter could subclass anything.
+	for c in p.classes {
+		if c.base_index < 0 {
+			continue
+		}
+		w.write_string('\tg_vc_bases_' + c.key + ' = vcraft.PyObj{}\n')
 	}
 	w.write_string(')\n\n')
 	w.write_string("@[export: 'PyInit_${p.package}']\n")
@@ -151,7 +160,7 @@ pub fn glue_module_body(p Project) string {
 	// compares identity because the slot was never filled.
 	w.write_string('\tg_vc_module.install_functions(module) or { return -1 }\n')
 	for c in p.classes {
-		w.write_string(render_class_exec(c))
+		w.write_string(render_class_exec(p, c))
 	}
 	w.write_string('\t_ = module\n')
 	w.write_string('\treturn 0\n}\n')
@@ -180,11 +189,18 @@ pub fn interp(name string) string {
 //
 // Indented one level deeper than `register_class` because it runs in the callback
 // rather than in `pyinit`, so the two take their indentation as a parameter.
-pub fn render_class_exec(c Class) string {
+pub fn render_class_exec(p Project, c Class) string {
 	// Rendered at generation time rather than as a `for` in the output: every value
 	// here is known now, and a generated `for` over the classes would need its own
 	// interpolation trick for no benefit.
 	mut w := new_builder()
+	if c.base_index >= 0 {
+		// Filled here rather than in the global's initialiser, because the base type is
+		// created earlier in this same function and a global initialiser would run before
+		// it exists.
+		w.write_string('\tg_vc_bases_' + c.key + ' = vcraft.tuple_of_one(' +
+			p.classes[c.base_index].ctype + ')\n')
+	}
 	w.write_string('\t' + c.ctype + ' = vcraft.new_type(')
 	w.write_string(vstring_literal(c.qualified) + ',\n')
 	w.write_string('\t\t' + vstring_literal(c.doc) + ',\n')
@@ -208,6 +224,11 @@ pub fn render_class_exec(c Class) string {
 	w.write_string('\t\tvoidptr(' + c.repr + '),\n')
 	w.write_string('\t\tvoidptr(' + c.richcompare + '),\n')
 	w.write_string('\t\tvoidptr(' + c.hash_fn + '),\n')
+	if c.base_index < 0 {
+		w.write_string('\t\tunsafe { nil },\n')
+	} else {
+		w.write_string('\t\tvoidptr(g_vc_bases_' + c.key + '.ptr),\n')
+	}
 	w.write_string('\t)\n')
 	// The error check is here rather than inside `new_type` because a class that fails
 	// to build is a generator-level problem: the interpreter reports "raised
@@ -257,7 +278,7 @@ fn register_class(c Class) string {
 //
 // It is the ordinary trampoline wrapped in the two statements that move the V value
 // in and out of the instance's state block.
-pub fn emit_method_trampoline(c Class, f Func) string {
+pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
 	signature := if f.params.len == 0 {
 		'self voidptr, args voidptr'
@@ -279,9 +300,10 @@ pub fn emit_method_trampoline(c Class, f Func) string {
 		w.write_string("\tvcraft.reject_extra_args('${f.name}', ${f.params.len}, int(nargs))\n")
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	}
-	w.write_string('\tmut state := ${c.name}{}\n')
+	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
 	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
 		'${c.size_fn}())\n')
+	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
 	has_value := ret != .void
 	if has_value {
@@ -292,11 +314,13 @@ pub fn emit_method_trampoline(c Class, f Func) string {
 	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
 	w.write_string('\t\t}\n')
 	w.write_string('\t}\n')
-	call := if f.params.len == 0 { 'state.${f.name}()' } else { 'state.${f.name}(${names.join(', ')})' }
+	call := if f.params.len == 0 { 'state.' + c.self_access() + '${f.name}()' } else { 'state.' + c.self_access() + '${f.name}(${names.join(', ')})' }
 	if f.returns_result {
 		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
 		if has_value {
-			w.write_string('\tresult := ${call} or {\n\t\t${inner}\n\t}\n')
+			// Assigned, not declared: `mut result` was emitted above when the method
+			// returns a value, and `:=` here redefines it, which V rejects outright.
+			w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
 		} else {
 			w.write_string('\t${call} or {\n\t\t${inner}\n\t}\n')
 		}
@@ -323,25 +347,43 @@ pub fn emit_method_trampoline(c Class, f Func) string {
 //
 // A getter is called with the instance and the descriptor closure, not with an
 // argument tuple, and it must take no arguments.
-pub fn emit_property_trampoline(c Class, f Func) string {
+pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
 	w.write_string('fn ${f.trampoline}(self voidptr, closure voidptr) voidptr {\n')
-	w.write_string('\tmut state := ${c.name}{}\n')
+	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
 	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
 		'${c.size_fn}())\n')
+	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
 	w.write_string('\tdefer {\n')
 	w.write_string('\t\tif message := recover() {\n')
 	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
 	w.write_string('\t\t}\n')
 	w.write_string('\t}\n')
+	if ret != .void {
+		// A property getter declares its own `result`. It has no argument tuple, so it
+		// does not go through the path that declares one for a method, and without this
+		// the return statement at the end refers to a variable that was never declared.
+		w.write_string('\tmut result := ${zero_value(ret, f.v_ret)}\n')
+	}
 	if f.returns_result {
 		inner := 'vcraft.raise_from_error(err)\n\treturn unsafe { nil }'
-		w.write_string('\tresult := state.${f.name}() or {\n\t${inner}\n\t}\n')
+		// Assigned, not declared: `mut result` is emitted above when the method returns
+		// a value, and `:=` here would shadow it -- or rather, redefine it, which V
+		// rejects outright.
+		w.write_string('\tresult = state.' + c.self_access() + '${f.name}() or {\n\t${inner}\n\t}\n')
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+	} else if ret != .void {
+		// A plain getter: the call is assigned to the `result` declared above. Without
+		// this the value is computed and dropped on the floor, and the getter returns the
+		// zero value it was initialised with.
+		w.write_string('\tresult = state.' + c.self_access() + '${f.name}()\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
 	} else {
-		w.write_string('\tresult := state.${f.name}()\n')
+		// A property returning nothing has no `result` to assign: it was never declared,
+		// and assigning to it is a compile error rather than a warning.
+		w.write_string('\tstate.' + c.self_access() + '${f.name}()\n')
 		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
 	}
 	w.write_string('}\n')
@@ -409,10 +451,11 @@ pub fn emit_trampoline(f Func) string {
 	ret := lookup(f.v_ret)
 	has_value := f.raw || ret != .void
 
-	// The result is declared before the guard so that the call has somewhere to
-	// assign even when the guard unwinds past it. A `!T` function declares it with
-	// `:=` further down, where the `or` block needs to introduce it.
-	if has_value && !f.returns_result {
+	// The result is declared before the guard so that the call has somewhere to assign
+	// even when the guard unwinds past it. Declared for a `!T` function too: the call
+	// below assigns to it rather than introducing it with `:=`, because `:=` on an
+	// existing name is a redefinition and V rejects that outright.
+	if has_value {
 		w.write_string('\tmut result := ${zero_value(ret, f.v_ret)}\n')
 	}
 	// A raw function's result is a pointer the V side already owns, so it is
@@ -431,7 +474,9 @@ pub fn emit_trampoline(f Func) string {
 		// exception before returning.
 		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
 		if has_value {
-			w.write_string('\tresult := ${call} or {\n\t\t${inner}\n\t}\n')
+			// Assigned, not declared: `mut result` was emitted above when the method
+			// returns a value, and `:=` here redefines it, which V rejects outright.
+			w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
 		} else {
 			w.write_string('\t${call} or {\n\t\t${inner}\n\t}\n')
 		}
@@ -631,10 +676,18 @@ pub fn emit_stubs(p Project) string {
 		if c.doc.len > 0 {
 			w.write_string('${indent_doc(c.doc)}\n')
 		}
-		w.write_string('class ${c.name}:\n')
+		// The base is in the declaration because it is in the type: a stub that said
+		// `class BoundedCounter:` would type-check `b.value` as an error, since the stub
+		// has no base to inherit the field from.
+		if c.base_index >= 0 {
+			w.write_string('class ${c.name}(${c.base}):\n')
+		} else {
+			w.write_string('class ${c.name}:\n')
+		}
 		// Fields come first and are attributes rather than methods: that is what they
 		// are at runtime, and a stub that declared them as methods would type-check
-		// `c.value` as a bound method.
+		// `c.value` as a bound method. Only this class's own fields: the stub's base
+		// declaration already accounts for the inherited ones.
 		for field in c.fields {
 			w.write_string('    ${field.name}: ${describe(field.v_type)}\n')
 		}

@@ -212,6 +212,215 @@ fn collect_operator(path string, lines []string, ast &flat.FlatAst,
 	return true
 }
 
+// link_bases resolves each class's `@[vc_base]` to the index of the class it names,
+// reporting the three ways it can be wrong.
+//
+// Resolved here rather than at collection for the same reason the operators are: a base
+// may be declared later in the file, or in a file that sorts after this one.
+fn link_bases(mut p Project) {
+	for i, c in p.classes {
+		if c.base.len == 0 {
+			continue
+		}
+		owner := class_index(p, c.base)
+		if owner < 0 {
+			report(mut p, c.origin, astquery.Declaration{
+				name: c.name
+				line: c.line
+				column: c.column
+			}, 'error: `${c.name}` inherits `${c.base}`, which is not a class in this project')
+			continue
+		}
+		if owner == i {
+			report(mut p, c.origin, astquery.Declaration{
+				name: c.name
+				line: c.line
+				column: c.column
+			}, 'error: `${c.name}` cannot inherit from itself')
+			continue
+		}
+		if creates_cycle(p, i, owner) {
+			report(mut p, c.origin, astquery.Declaration{
+				name: c.name
+				line: c.line
+				column: c.column
+			}, 'error: the inheritance chain through `${c.base}` is a cycle; Python cannot create the type and would fail at import with no message about which class')
+			continue
+		}
+		p.classes[i].base_index = owner
+	}
+	check_chain_depth(mut p)
+	// The list is reordered before anything reads it, so `base_index` is recomputed after
+	// the sort rather than carried through it.
+	sort_classes(mut p)
+	// Filled in a second pass, because a subclass's state needs its base's fields and
+	// the base may itself have one. A chain is flattened from the root down, so the
+	// layout is the same whatever order the classes were declared in.
+	for i in 0 .. p.classes.len {
+		p.classes[i].state_fields = flatten_fields(mut p, i)
+	}
+}
+
+// max_state_chain is the number of generations the runtime can publish.
+//
+// Duplicated from `vcraft.state_chain_max` rather than imported: `vcraft` binds to
+// CPython, and importing it into the generator would pull `Python.h` into a build that has
+// no include path for it. The two have to agree, and this is the place to change if the
+// runtime's array grows.
+const max_state_chain = 8
+
+// check_chain_depth reports a chain deeper than the runtime can publish.
+//
+// The runtime holds one pointer per generation, in a fixed array, so a chain past its
+// length has nowhere to put the top of it. Reported here rather than silently truncated:
+// a truncated chain compiles, imports, and then hands a method a nil where it expected an
+// ancestor, which is a segfault at some later line with nothing to connect it to this.
+fn check_chain_depth(mut p Project) {
+	for i, c in p.classes {
+		mut depth := 0
+		for base := c.base_index; base >= 0; base = p.classes[base].base_index {
+			depth++
+			if depth > max_state_chain {
+				report(mut p, c.origin, astquery.Declaration{
+					name: c.name
+					line: c.line
+					column: c.column
+				}, 'error: `${c.name}` inherits ${depth} levels deep; vcraft can publish at most ${max_state_chain}')
+				p.classes[i].base_index = -1
+				break
+			}
+		}
+	}
+}
+
+// sort_classes puts every class after the one it inherits.
+//
+// Not an optimisation but a requirement, and of two separate things:
+//
+//   - V needs a function declared before the one that calls it. A subclass's generated
+//     state constructor calls its base's, and a base's type must already exist when the
+//     subclass's `Py_tp_bases` tuple names it.
+//   - CPython refuses a type whose base is not ready, and with `Py_tp_bases` it fails at
+//     import with a message that names no class of ours.
+//
+// A declaration order of subclass-first is perfectly ordinary V, so the generator has to
+// cope with it rather than report it.
+//
+// The sort is stable: classes that do not depend on each other keep the order they were
+// written in, so a generated file reads in the author's order where it can.
+fn sort_classes(mut p Project) {
+	mut sorted := []Class{}
+	// The index each class had before the sort, carried alongside it. Remapping the old
+	// indices is what keeps `link_bases`' decisions intact: a class whose base was
+	// rejected has no `base_index` to remap, and resolving the name again here would
+	// hand back the very base that was just reported as impossible -- and then walk the
+	// chain into itself.
+	mut origin := []int{}
+	mut done := []bool{}
+	size := p.classes.len
+	for _ in 0 .. size {
+		done << false
+	}
+	mut placed := 0
+	for placed < size {
+		mut moved := false
+		for i in 0 .. size {
+			if done[i] {
+				continue
+			}
+			// A class is ready once its base has been placed. A base that could not be
+			// resolved, and so has no `base_index`, is ready by default: the diagnostic
+			// has already been reported and the class is left as a root.
+			if p.classes[i].base_index >= 0 && !done[p.classes[i].base_index] {
+				continue
+			}
+			sorted << p.classes[i]
+			origin << i
+			done[i] = true
+			placed++
+			moved = true
+		}
+		if !moved {
+			// Only a cycle can get here, and `link_bases` has already reported it. The
+			// rest is appended in declaration order so the generator produces something
+			// the V compiler can complain about rather than looping.
+			for i in 0 .. size {
+				if !done[i] {
+					sorted << p.classes[i]
+					origin << i
+					done[i] = true
+				}
+			}
+		}
+	}
+	mut remap := []int{}
+	for _ in 0 .. size {
+		remap << -1
+	}
+	for i, old in origin {
+		remap[old] = i
+	}
+	p.classes = sorted
+	for i in 0 .. p.classes.len {
+		old_base := p.classes[i].base_index
+		if old_base < 0 {
+			continue
+		}
+		p.classes[i].base_index = remap[old_base]
+	}
+}
+
+// flatten_fields returns the fields of the class at `index` and of everything above it,
+// each carrying the member path that reaches it inside that class's state block.
+//
+// The path is what a generated renderer needs: `state.value` for a field of the class
+// itself when it has no base, `state.self.limit` for one of its own when it does, and
+// `state.base.value` for one it inherited. A chain accumulates `base.self.` per
+// generation, because the state of a class with a base holds the base's whole state
+// followed by its own struct.
+//
+// Base fields come first so a repr reads in inheritance order, and so the declared order
+// of a subclass does not push the fields it inherited to the end.
+fn flatten_fields(mut p Project, index int) []Field {
+	if p.classes[index].base_index >= 0 {
+		mut out := []Field{}
+		for mut f in flatten_fields(mut p, p.classes[index].base_index) {
+			// The base's own paths are relative to the base's state block, which is the
+			// first field of this one.
+			f.path = 'base.' + f.path
+			out << f
+		}
+		for mut f in p.classes[index].fields {
+			f.path = 'self.' + f.name
+			out << f
+		}
+		return out
+	}
+	mut out := []Field{}
+	for mut f in p.classes[index].fields {
+		f.path = f.name
+		out << f
+	}
+	return out
+}
+
+// creates_cycle reports whether following `base_index` from `start` comes back to it.
+fn creates_cycle(p Project, start int, initial int) bool {
+	mut at := initial
+	for _ in 0 .. p.classes.len {
+		if at == start {
+			return true
+		}
+		next := p.classes[at].base_index
+		if next < 0 {
+			return false
+		}
+		at = next
+	}
+	// A chain longer than the number of classes cannot be acyclic.
+	return true
+}
+
 // link_operators attaches the operators collected before their class was seen.
 //
 // A function annotated `@[vc_eq]` is free, so it is dispatched from the `.fn` arm and the
@@ -304,12 +513,28 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 		return
 	}
 	key := decl.name.to_lower()
+	// `@[vc_base(Name)]` names the class this one inherits. The argument is a name and
+	// not a flag, so the scan keeps arguments as well as annotation names.
+	mut base := ''
+	if attr_base in block.attrs {
+		base = block.args[attr_base]
+		if base.len == 0 {
+			report(mut p, path, decl,
+				'error: `@[vc_base]` needs the name of the class to inherit, as in `@[vc_base(Base)]`')
+			return
+		}
+	}
 	mut c := Class{
 		name:      decl.name
 		doc:       block.doc
+		base:      base
+		origin:    path
+		line:      decl.line
+		column:    decl.column
 		qualified: '${p.module}.${decl.name}'
 		ctor:      'vcraft_generated__new_${key}'
 		size_fn:   'vcraft_generated__sizeof_${key}'
+		newstate_fn: 'vcraft_generated__newstate_${key}'
 		ctype:     'g_vc_type_${key}'
 		dealloc:   'vcraft_generated__dealloc_${key}'
 		repr:      'vcraft_generated__repr_${key}'
@@ -469,6 +694,7 @@ fn link_classes(mut p Project) {
 	// not in it: they are free functions, dropped from the exported set the moment they
 	// were seen.
 	link_operators(mut p)
+	link_bases(mut p)
 	mut ctors := []string{}
 	for i, c in p.classes {
 		// V spells a constructor `new_TypeName` in snake case, so the lookup

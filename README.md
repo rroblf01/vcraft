@@ -41,6 +41,7 @@ vcraft build --release
 - [The annotation vocabulary](#the-annotation-vocabulary)
 - [Type marshalling](#type-marshalling)
 - [Classes and properties](#classes-and-properties)
+  - [Inheritance](#inheritance)
 - [Errors and panics](#errors-and-panics)
 - [The command line](#the-command-line)
 - [Generated project layout](#generated-project-layout)
@@ -130,13 +131,12 @@ that immediately precedes each declaration. Any name works; these are the ones
 
 | Annotation      | Applies to      | Effect                                                     |
 | --------------- | --------------- | ---------------------------------------------------------- |
-| Annotation      | Applies to      | Effect                                                     |
-| --------------- | --------------- | ---------------------------------------------------------- |
 | `@[vc_fn]`      | `pub fn`        | Exports the function as a module-level Python callable      |
 | `@[vc_class]`   | `pub struct`    | Creates a Python type backed by the V struct                |
 | `@[vc_methods]` | methods         | Adds the method to the class of its receiver                |
 | `@[vc_field]`   | struct fields   | Exposes the field as an attribute of the instance           |
 | `@[vc_property]`| methods         | Registers the method as a Python `property`                 |
+| `@[vc_base]`    | `pub struct`    | Makes the class inherit the named one                       |
 | `@[vc_static]`  | methods         | Registers the method as a `staticmethod`                    |
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
 | `@[vc_gil]`     | `pub fn`        | Runs the call with the GIL released                         |
@@ -294,6 +294,74 @@ in sync with a V constructor that could change shape. Give the constructor
 parameters and you would have to keep two signatures aligned by hand.
 
 Docstrings reach `__doc__` on the type, its methods, its properties and its fields.
+
+### Inheritance
+
+`@[vc_base(Name)]` makes a class inherit another. Declaration order does not
+matter: a subclass may be written before its base, or in a file that sorts
+earlier, and the generator orders the classes itself.
+
+```v
+@[vc_class]
+@[vc_base(Counter)]
+pub struct BoundedCounter {
+mut:
+	@[vc_field] limit int
+}
+
+// bump adds `by`, refusing to pass the limit.
+//
+// The receiver is `BoundedCounter`, which names only `limit`: V has no struct
+// inheritance, so `c.value` does not compile here. `vcraft.state_at(1)` is the
+// base's own struct inside the live state of the instance the method is running
+// on.
+@[vc_methods]
+pub fn (mut c BoundedCounter) bump(by int) !int {
+	mut base := unsafe { &Counter(vcraft.state_at(1)) }
+	if base.value + by > c.limit {
+		return vcraft.raise_domain(.value_error, 'the counter would pass its limit')
+	}
+	base.value += by
+	return base.value
+}
+```
+
+What Python sees is ordinary single inheritance: one base, the base's fields,
+methods and properties on the subclass, the subclass's own alongside them,
+`isinstance` in both directions behaving as it should, and a Python subclass on
+top of it working too.
+
+Two details are worth knowing.
+
+`state_at` takes a level, not a name. Level 1 is the immediate base, level 2 the
+one above it, and so on, so a chain three deep can reach its root from the
+grandchild. It is a level rather than a base because the offsets are not uniform:
+each generation's state is its own base followed by its own struct, so where a
+generation's struct sits depends on how many generations are above it. The
+generator computes the address and publishes it; a method asks for the level it
+wants. Eight levels is the cap, and a deeper chain is reported as an error rather
+than silently truncated.
+
+The pointer is only valid while the method runs. It points into the state block
+the trampoline holds, which the trampoline writes back when the method returns.
+There is nowhere to put it on the receiver: `&c` is a copy of the subclass struct
+and does not contain the base's bytes, so a method cannot tell from it whether it
+is holding the whole state or half of it.
+
+```pycon
+>>> b = BoundedCounter()
+>>> b.value, b.step, b.limit
+(0, 1, 0)
+>>> b.limit = 10
+>>> b.bump(4)
+4
+>>> b.increment()          # a method of the base
+5
+>>> repr(b)
+'BoundedCounter(value: 5, step: 1, limit: 10)'
+>>> isinstance(b, Counter)
+True
+```
 
 Cycles are not yet collected. Nothing in a class holds a reference back to its
 instance, so an instance is freed as soon as Python drops it; a class that grew a
@@ -660,12 +728,14 @@ for the ones the generator did.
 - [x] **Runtime**: `PyObj`, module construction, marshalling, argument parsing,
       error and panic translation, covered by 36 checks
 - [x] **Code generator**: annotations, docstrings, signatures, `.pyi` stubs,
-      covered by 92 checks against a working example
+      covered by 143 checks against a working example
 - [x] **Classes**: instances, scalar fields as read/write attributes, methods,
       properties, `__repr__`, docstrings and `__dealloc__`
 - [x] **Class operators**: `__eq__`, `__ne__` and `__hash__`, with `NotImplemented` for
       the ordering operators
-- [ ] Classes: ordering operators, inheritance from V, cycle collection
+- [x] **Inheritance**: `@[vc_base]`, any order of declaration, chains of any depth up to
+      the runtime's published levels, and a diagnostic for each way it can be wrong
+- [ ] Classes: cycle collection
 - [x] **Errors**: `!T` translation, `raise_domain` for a specific Python exception,
       `recover()`-based panic capture
 - [ ] Errors: custom V error types carrying an exception class

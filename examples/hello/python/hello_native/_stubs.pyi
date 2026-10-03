@@ -59,3 +59,19 @@ class Counter:
     def double(self) -> None: ...
     @property
     def is_zero(self) -> bool: ...
+
+"""BoundedCounter inherits Counter's state and adds a limit.
+	
+	A subclass declares `@[vc_base(Name)]`. Its instances get the base's fields, methods
+	and properties as well as its own, and the state block is one value holding the base
+	struct followed by this one.
+	
+	V has no struct inheritance, so `BoundedCounter` names only `limit` and a method of
+	the subclass cannot write `c.value`. A method that needs the base's fields reads them
+	through `vcraft.load_state`, which is what the generated accessors do.
+"""
+class BoundedCounter(Counter):
+    limit: int
+    @property
+    def at_limit(self) -> bool: ...
+    def bump(self, by: int) -> int: ...

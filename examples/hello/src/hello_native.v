@@ -137,6 +137,62 @@ pub fn (mut c Counter) double() {
 	c.value *= 2
 }
 
+// BoundedCounter inherits Counter's state and adds a limit.
+//
+// A subclass declares `@[vc_base(Name)]`. Its instances get the base's fields, methods
+// and properties as well as its own, and the state block is one value holding the base
+// struct followed by this one.
+//
+// V has no struct inheritance, so `BoundedCounter` names only `limit` and a method of
+// the subclass cannot write `c.value`. A method that needs the base's fields reads them
+// through `vcraft.load_state`, which is what the generated accessors do.
+@[vc_class]
+@[vc_base(Counter)]
+pub struct BoundedCounter {
+mut:
+	@[vc_field] limit int
+}
+
+// base_of is the inherited Counter of the instance a method is running on.
+//
+// `vcraft.state_at(1)` is the generation one step below the running method's class, and
+// the trampoline has published the address of that struct there. It points into the live
+// state block, so writing through it updates the instance: the trampoline writes the whole
+// block back when the method returns.
+//
+// This is the shape a method of a subclass takes when it touches the base's fields. V
+// gives the subclass no field access to them, and the receiver vcraft passes is the
+// subclass struct, which does not even contain those bytes.
+fn base_of() &Counter {
+	return unsafe { &Counter(vcraft.state_at(1)) }
+}
+
+// at_limit reports whether the counter has reached its limit.
+@[vc_methods]
+@[vc_property]
+pub fn (mut c BoundedCounter) at_limit() bool {
+	return base_of().value >= c.limit
+}
+
+// bump adds `by` and refuses to pass the limit.
+//
+// Reading and writing the inherited `value` goes through `base_of`, because V gives a
+// subclass no field access to its base's struct.
+//
+// The name is not `step` because that is a field of the base: a method on the subclass
+// shadows an inherited attribute of the same name, so `b.step` would reach this method
+// rather than the field. That is Python's rule, not vcraft's, and the example would be a
+// poor advertisement for a shadowing nobody asked for.
+@[vc_methods]
+pub fn (mut c BoundedCounter) bump(by int) !int {
+	mut base := base_of()
+	if base.value + by > c.limit {
+		return vcraft.raise_domain(.value_error, 'the counter would pass its limit')
+	}
+	base.value += by
+	return base.value
+}
+
 // counter_eq reports whether two counters hold the same state.
 //
 // `@[vc_eq]` makes this the class's `__eq__`. The operator is not a parameter: `==` and

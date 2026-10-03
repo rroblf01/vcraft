@@ -108,6 +108,96 @@ def main() -> int:
         t.check("new refuses to overwrite", proc.returncode != 0, proc.stdout)
         t.check("and says why", "already exists" in proc.stderr, proc.stderr.strip())
 
+        # Inheritance, on a project of its own: a chain three deep, declared
+        # subclass-first, which is the order that breaks anything relying on declaration
+        # order, and the diagnostics for the ways `@[vc_base]` can be wrong.
+        inh = tmp / "inh"
+        (inh / "src").mkdir(parents=True)
+        (inh / "v.mod").write_text(
+            'Module {\n\tname: "inh_native"\n\tbase_url: "src"\n'
+            '\trequires: ["vcraft"]\n}\n')
+        (inh / "vcraft.toml").write_text(
+            '[package]\nname = "inh"\nversion = "0.1.0"\n'
+            'description = "inheritance"\n\n[build]\nmodule = "inh_native"\n'
+            'source = "src"\noutput = "python"\n')
+        source = inh / "src" / "inh_native.v"
+
+        def chain_source(extra: str = "") -> str:
+            return (
+                "module inh_native\n\nimport vcraft\n\n"
+                "@[vc_class]\n@[vc_base(Mid)]\npub struct Grandchild {\nmut:\n"
+                "\t@[vc_field] depth int\n}\n\n"
+                "@[vc_class]\n@[vc_base(Root)]\npub struct Mid {\nmut:\n"
+                "\t@[vc_field] mid int\n}\n\n"
+                "@[vc_class]\npub struct Root {\nmut:\n\t@[vc_field] root int\n}\n\n"
+                "@[vc_fn]\npub fn new_root() &Root {\n\treturn &Root{ root: 1 }\n}\n\n"
+                "@[vc_fn]\npub fn new_mid() &Mid {\n\treturn &Mid{ mid: 2 }\n}\n\n"
+                "@[vc_fn]\npub fn new_grandchild() &Grandchild {\n"
+                "\treturn &Grandchild{ depth: 3 }\n}\n\n"
+                "@[vc_methods]\npub fn (mut g Grandchild) total() int {\n"
+                "\tmut mid := unsafe { &Mid(vcraft.state_at(1)) }\n"
+                "\tmut root := unsafe { &Root(vcraft.state_at(2)) }\n"
+                "\treturn mid.mid + root.root\n}\n\n"
+                "@[vc_methods]\npub fn (mut g Grandchild) bump_root() {\n"
+                "\tmut root := unsafe { &Root(vcraft.state_at(2)) }\n"
+                "\troot.root += 10\n}\n" + extra)
+
+        print("inheritance")
+        source.write_text(chain_source(), encoding="utf-8")
+        proc = vcraft("build", cwd=inh)
+        t.check("a chain declared subclass-first builds", proc.returncode == 0,
+                proc.stderr.strip()[-500:])
+        if proc.returncode == 0:
+            built = sorted(inh.glob("dist/build/*.so"))
+            t.check("the extension is written", len(built) == 1, built)
+            if built:
+                probe = subprocess.run(
+                    [sys.executable, "-c",
+                     "import sys\n"
+                     "sys.path.insert(0, sys.argv[1])\n"
+                     "import inh_native as m\n"
+                     "g = m.Grandchild()\n"
+                     "print(g.total(), g.root, g.mid, g.depth)\n"
+                     "g.bump_root()\n"
+                     "print(g.total(), g.root, repr(g))\n"
+                     "print([t.__name__ for t in m.Grandchild.__mro__])\n",
+                     str(built[0].parent)], capture_output=True, text=True)
+                t.check("the chain imports and runs", probe.returncode == 0,
+                        probe.stderr.strip()[-400:])
+                lines = probe.stdout.splitlines()
+                t.check("both generations are reachable from a method",
+                        lines[:1] == ["3 1 2 3"], probe.stdout)
+                t.check("a write to the root's state reaches the instance",
+                        lines[1:2] == ["13 11 Grandchild(root: 11, mid: 2, depth: 3)"],
+                        probe.stdout)
+                t.check("the mro is the whole chain",
+                        lines[2:3] == ["['Grandchild', 'Mid', 'Root', 'object']"],
+                        probe.stdout)
+
+        def diagnostic(label: str, source_text: str, needle: str) -> None:
+            source.write_text(source_text, encoding="utf-8")
+            out = vcraft("build", cwd=inh)
+            t.check(f"{label} fails", out.returncode != 0, out.stdout[-200:])
+            t.check(f"{label} says why", needle in out.stderr, out.stderr.strip()[-300:])
+
+        diagnostic("a base that is not a class",
+                   chain_source().replace("@[vc_base(Root)]", "@[vc_base(Nope)]"),
+                   "is not a class in this project")
+        diagnostic("two classes inheriting from each other",
+                   chain_source().replace("@[vc_base(Root)]", "@[vc_base(Grandchild)]"),
+                   "is a cycle")
+        diagnostic("a class inheriting from itself",
+                   chain_source().replace("@[vc_base(Mid)]", "@[vc_base(Grandchild)]", 1),
+                   "cannot inherit from itself")
+        deep = "module inh_native\n\nimport vcraft\n\n"
+        for i in range(11):
+            deep += "@[vc_class]\n"
+            if i:
+                deep += f"@[vc_base(C{i - 1})]\n"
+            deep += f"pub struct C{i} {{\nmut:\n\t@[vc_field] f{i} int\n}}\n\n"
+        diagnostic("a chain deeper than the runtime publishes", deep,
+                   "vcraft can publish at most 8")
+
         print("info")
         proc = vcraft("info", cwd=project)
         t.check("info succeeds", proc.returncode == 0, proc.stderr.strip())

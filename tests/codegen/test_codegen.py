@@ -263,6 +263,96 @@ def main() -> int:
         t.check("ordering raises TypeError", False, "no exception")
     t.check("a subclass is still an instance", isinstance(h.Counter(), h.Counter))
 
+    print("inheritance")
+    # A subclass declares `@[vc_base(Name)]`. What Python sees has to be ordinary
+    # inheritance: one base, the base's attributes present, the subclass's own present too,
+    # and a method that reaches the base's state and writes through to the instance.
+    t.check("the subclass exists", hasattr(h, "BoundedCounter"))
+    bounded = h.BoundedCounter()
+    t.check("the base is the declared one",
+            [t.__name__ for t in h.BoundedCounter.__mro__] ==
+            ["BoundedCounter", "Counter", "object"],
+            [t.__name__ for t in h.BoundedCounter.__mro__])
+    t.check("__bases__ names it", h.BoundedCounter.__bases__ == (h.Counter,),
+            h.BoundedCounter.__bases__)
+    t.check("an instance is an instance of the base", isinstance(bounded, h.Counter))
+    t.check("and not the other way round", not isinstance(h.Counter(), h.BoundedCounter))
+    t.check("issubclass agrees", issubclass(h.BoundedCounter, h.Counter))
+
+    t.check("inherited field reads", bounded.value == 0 and bounded.step == 1,
+            (bounded.value, bounded.step))
+    t.check("own field reads", bounded.limit == 0, bounded.limit)
+    t.check("the base's constructor ran", bounded.step == 1, bounded.step)
+
+    t.check("inherited setter writes", (setattr(bounded, "step", 3), bounded.step == 3)[1])
+    t.check("own setter writes", (setattr(bounded, "limit", 10), bounded.limit == 10)[1])
+    # step was set to 3 and value is still 0, so the base's own arithmetic is what
+    # decides these numbers: increment adds step, double doubles, bump adds its argument.
+    t.check("inherited method mutates the base's field",
+            bounded.increment() == 3, bounded.value)
+    t.check("inherited method sees its own write", bounded.double() is None
+            and bounded.value == 6, bounded.value)
+    t.check("inherited property", bounded.is_zero is False)
+
+    t.check("the subclass's own method reads its own field",
+            bounded.bump(4) == 10, bounded.value)
+    t.check("and the base's field through it", bounded.value == 10, bounded.value)
+    t.check("the subclass's own property", bounded.at_limit is True)
+    t.raises("the subclass's method can fail", ValueError, "would pass its limit",
+             lambda: bounded.bump(99))
+    t.check("a refused call changes nothing", bounded.value == 10, bounded.value)
+
+    t.check("repr lists the inherited fields first",
+            repr(bounded) == "BoundedCounter(value: 10, step: 3, limit: 10)", repr(bounded))
+
+    # The interesting failure mode: a method of a subclass that writes the base's state
+    # through the published pointer. If the trampoline wrote the state back before the
+    # write, or never wrote it back, this is where it shows.
+    other = h.BoundedCounter()
+    other.limit = 4
+    other.bump(4)
+    t.check("the write reaches the instance", other.value == 4, other.value)
+    t.check("and does not touch the first instance", bounded.value == 10, bounded.value)
+    t.check("the base's field survives a repr", repr(other).endswith("limit: 4)"), repr(other))
+
+    # A subclass of a subclass, and one written in Python on top of both.
+    class PySub(h.BoundedCounter):
+        pass
+
+    py = PySub()
+    py.limit = 6
+    t.check("a Python subclass is an instance of the V base",
+            isinstance(py, h.Counter) and isinstance(py, h.BoundedCounter))
+    t.check("it runs the base's constructor", py.step == 1, py.step)
+    py.increment()
+    t.check("it can call the base's method", py.value == 1, py.value)
+    t.check("it can call the subclass's method", py.bump(2) == 3, py.value)
+    t.check("the subclass's field survives too", py.limit == 6, py.limit)
+    t.raises("and its errors reach Python", ValueError, "would pass its limit",
+             lambda: py.bump(99))
+
+    print("inheritance in the generated file")
+    t.check("the state struct nests the base", "struct BoundedCounterState {" in glue,
+            "no BoundedCounterState")
+    t.check("the base's state is the type of the base field",
+            "base Counter" in glue, "the base field is not the base's state")
+    t.check("the subclass's own struct is the other half",
+            "self BoundedCounter" in glue)
+    t.check("the base tuple is built at run time",
+            "vcraft.tuple_of_one(g_vc_type_counter)" in glue)
+    t.check("the base level is published", "vcraft.publish_base(1," in glue)
+    t.check("the chain is restored on the way out", "vcraft.leave_state(previous)" in glue)
+    # One per trampoline that loads a subclass's state, and none in a trampoline of a
+    # class with no base: there is no generation above it to point at. The generated state
+    # constructor is the one that does not publish, because it builds the block rather
+    # than running a method against it.
+    loaders = glue.count("mut state := BoundedCounterState{}") - 1
+    t.check("one published level per subclass trampoline",
+            glue.count("publish_base(1,") == loaders,
+            f"{glue.count('publish_base(1,')} published, {loaders} trampolines")
+    t.check("the stub declares the base",
+            "class BoundedCounter(Counter):" in stub, stub[-600:])
+
     print("class stress")
     batch = [h.Counter() for _ in range(20000)]
     for item in batch:

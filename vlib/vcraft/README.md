@@ -265,6 +265,42 @@ scalars may live in it. A V `string` is a pointer into V's heap, and V's collect
 does not scan memory CPython allocated, so the string would be reclaimed while
 Python still holds it. A class that needs strings marshals them through a method.
 
+## Inherited state is published, not reachable from the receiver
+
+A subclass's state block is the base's state followed by the subclass's own struct. V
+copies a receiver in before a method call and out after it, so a method of a subclass is
+handed a copy of the subclass struct, and the base's bytes are not in it. `&c` is
+therefore not the address of the instance's state, and there is no way for a method to
+tell from the receiver whether it holds the whole state or half of it.
+
+So every generated trampoline publishes the block it loaded, plus one pointer per
+generation above the class it belongs to, and a method asks for the level it wants:
+
+```v
+@[vc_methods]
+pub fn (mut c BoundedCounter) bump(by int) !int {
+	mut base := unsafe { &Counter(vcraft.state_at(1)) }
+	// ...
+}
+```
+
+A level rather than a base pointer because the offsets are not uniform. Each generation's
+state is its own base followed by its own struct, so where a generation's struct sits
+depends on how many generations are above it: the immediate base of `BoundedCounter` is
+at `state.base`, and the immediate base of a class whose base has a base of its own is at
+`state.base.self`. The generator computes those addresses, which is the only place that
+knows the layout.
+
+The chain is a fixed array of eight and is saved and restored whole around each call. One
+chain is enough because an extension module's Python calls hold the GIL, and restoring it
+is what keeps a nested call -- a method reaching another instance, or a property read
+from inside a method -- from leaving the outer trampoline pointing at the inner one's
+state.
+
+`fn inherited[T]() &T` would be the tidier spelling and does not compile from a user's
+module, for constraint 4 above: no forward declaration is emitted for a generic. The cast
+is what is left, and it costs the reader one `unsafe`.
+
 ## Tests
 
 ```console

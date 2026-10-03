@@ -135,6 +135,115 @@ pub fn noop() voidptr {
 	}
 }
 
+// The state block of the running trampoline, and one pointer per generation above it.
+//
+// A method's receiver is the class's own struct, copied in before the call and out after
+// it. For a subclass that struct does *not* contain the base's half of the state: the
+// state of a class with a base is the base's whole state followed by its own struct, so
+// the receiver reaches its own half and nothing else. Without these pointers a method of a
+// subclass has no way at all to read an inherited field, because `&c` is not the address
+// of the instance's state.
+//
+// A chain is a list rather than a single "base" pointer because the offsets are not
+// uniform. The root of a chain is always at the start of the block, but the immediate base
+// of a class whose base is itself derived sits after that base's own base, and so on down.
+// The generator knows the chain, so it publishes each generation's own struct by address
+// and a method asks for the level it wants.
+//
+// Eight levels is the cap. Nothing in V suggests a deeper chain is common, and a fixed
+// array keeps the save and restore a copy rather than an allocation on every call.
+pub const state_chain_max = 8
+
+__global (
+	// Initialised inside `unsafe` because it is an array of references, and V insists on
+	// that for a fixed array. The values are nil, so nothing is actually unchecked here.
+	g_vc_chain = unsafe { [state_chain_max]voidptr{} }
+)
+
+// enter_state publishes `block` as level 0 of the running trampoline's state and returns
+// the chain it replaced, so the caller can put it back.
+//
+// The whole chain is saved rather than just the block: a nested call -- a method reaching
+// another instance, or a property read from inside a method -- would otherwise leave the
+// outer trampoline's levels pointing at the inner one's instance. There is no thread-local
+// storage here, and an extension module's Python calls hold the GIL, so one chain is
+// enough.
+pub fn enter_state(block voidptr) [state_chain_max]voidptr {
+	previous := unsafe { g_vc_chain }
+	unsafe {
+		g_vc_chain = [state_chain_max]voidptr{}
+		g_vc_chain[0] = block
+	}
+	return previous
+}
+
+// publish_base records the own struct of one generation of the chain.
+//
+// Level 1 is the immediate base, level 2 the one above it, and so on. The generator emits
+// one call per generation with the address it computes from the state struct, so nothing
+// here has to know the layout.
+pub fn publish_base(level int, ptr voidptr) {
+	if level < 1 || level >= state_chain_max {
+		return
+	}
+	unsafe {
+		g_vc_chain[level] = ptr
+	}
+}
+
+// leave_state restores the chain saved by `enter_state`.
+pub fn leave_state(previous [state_chain_max]voidptr) {
+	unsafe {
+		g_vc_chain = previous
+	}
+}
+
+// A method of a subclass reaches an inherited field with a cast on `state_at`:
+//
+//	@[vc_methods]
+//	pub fn (mut c BoundedCounter) bump(by int) !int {
+//		mut base := unsafe { &Counter(vcraft.state_at(1)) }
+//		if base.value + by > c.limit {
+//			return vcraft.raise_domain(.value_error, 'the counter would pass its limit')
+//		}
+//		base.value += by
+//		return base.value
+//	}
+//
+// A pointer rather than a copy, and that is the whole point. V hands the method a copy of
+// the subclass struct, and the base's bytes are not in it, so a copy taken here would be
+// written to and then thrown away. This points into the state block the trampoline holds,
+// which the trampoline writes back when the method returns.
+//
+// The cast rather than a generic on purpose. `fn inherited[T]() &T` is the obvious
+// spelling and it does not compile from a user's module: V emits no forward declaration for
+// a generic, so the call fails with "unknown function: vcraft.inherited[Counter]".
+//
+// Written to a local rather than assigned through, because V cannot assign through a call
+// result: `vcraft.state_at(1).value = 1` is rejected, `base.value = 1` on the local is not.
+//
+// The pointer is only good for the duration of the call. Outside a trampoline the level is
+// nil and dereferencing it is a segfault, which is why this is not a method on the receiver:
+// there would be no way to tell from `&c` whether the receiver is the whole state or just
+// the subclass's half of it.
+//
+// state_at returns the address of one generation of the running trampoline's state, nil if
+// that level is not there.
+//
+// Level 0 is the whole block, 1 the immediate base's own struct, 2 the next one up. Nil
+// outside a trampoline and for a level deeper than the class's chain, so a method of a
+// class with no base that asks gets nil rather than a wild pointer. Dereferencing nil is
+// still the caller's mistake to make, and no spelling of this API can be both zero-cost
+// and checked.
+pub fn state_at(level int) voidptr {
+	if level < 0 || level >= state_chain_max {
+		return unsafe { nil }
+	}
+	unsafe {
+		return g_vc_chain[level]
+	}
+}
+
 // set_state copies a Python value into a single field of the state block.
 //
 // `size` is the size of that field, so a field is addressed the same way a V struct
@@ -200,9 +309,24 @@ pub fn type_from_spec(name string, basicsize int, slots voidptr) PyObj {
 //
 // `doc` becomes `__doc__` on the type. It may be empty, in which case CPython leaves
 // the attribute absent rather than set to an empty string.
+// `bases` is the tuple a type inherits from, or nil for none. It is passed as the
+// address of a one-element or n-element tuple object, which is what `Py_tp_bases` takes.
+//
+// The slot exists under the stable ABI and is how a type without multi-phase
+// initialisation declares a base. A single base is enough for a V class, and V's
+// embedding has no use for more than one: a second base would need its state laid out
+// after the first's, and vcraft's layout is one block of V values.
+//
+// `bases` is required rather than defaulting to nil because V allows only a constant as
+// a default value, and `unsafe { nil }` is an expression.
 pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voidptr,
-	methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr,
-	hash voidptr) PyObj {
+	methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr, hash voidptr,
+	bases voidptr) PyObj {
+	// The instance size is the larger of this class's own header plus its storage
+	// pointer, and whatever its base already needs. A subclass that is smaller than its
+	// base is rejected by CPython with "tp_basicsize ... too small for base", and the
+	// number it compares against is the base's, not a constant.
+	mut basicsize := instance_basicsize()
 	mut slots := [PyTypeSlot{
 		slot:  slot_new
 		value: new_
@@ -246,6 +370,15 @@ pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voi
 			value: hash
 		}
 	}
+	// The base tuple has to outlive this call: CPython reads it and keeps a reference to
+	// the base types, and the tuple itself is only borrowed for the call. The caller
+	// makes it a module global for exactly this reason.
+	if bases != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_bases
+			value: bases
+		}
+	}
 	// The docstring is a slot, not a member of PyType_Spec. An empty one is left out
 	// so CPython keeps `__doc__` absent instead of setting it to "".
 	if doc.len > 0 {
@@ -259,7 +392,7 @@ pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voi
 	unsafe {
 		spec := &PyTypeSpec{
 			name:      namep
-			basicsize: i32(instance_basicsize())
+			basicsize: i32(basicsize)
 			itemsize:  0
 			flags:     type_flags()
 			slots:     voidptr(&slots[0])
@@ -374,5 +507,40 @@ pub fn hash_from_int(value int) isize {
 fn hash_mask() isize {
 	unsafe {
 		return isize(C.vpy_hash_bits())
+	}
+}
+
+// base_tuple packs one type into a tuple, which is what `Py_tp_bases` takes.
+//
+// A tuple rather than the type itself, and the difference is not cosmetic: the slot
+// stores the tuple and CPython takes a new reference to the base from it, so a type
+// passed directly would be read as the first element of a tuple that does not exist.
+pub fn base_tuple(types []PyObj) voidptr {
+	unsafe {
+		return C.PyTuple_New(isize(types.len))
+	}
+}
+
+// tuple_of_one builds the one-element tuple a single-base class declares.
+//
+// A class inherits from exactly one V class. V's embedding lays out an instance as one
+// block of V values, so a second base would have to be placed after the first's, and
+// there is no way to express that through `@[vc_base]` without the user writing the
+// offsets by hand.
+pub fn tuple_of_one(t PyObj) PyObj {
+	unsafe {
+		tuple := C.PyTuple_New(1)
+		if tuple == nil {
+			return PyObj{}
+		}
+		// Stolen into the tuple, which is what makes the caller keep its own reference.
+		// A new reference, because `PyTuple_SET_ITEM` steals what it is given and the
+		// caller keeps using its own handle afterwards.
+		C.PyTuple_SET_ITEM(tuple, 0, t.new_ref().ptr)
+		// Returned as a `PyObj` rather than a bare pointer because the caller stores it in
+		// a global and a global has to own its handle.
+		return PyObj{
+			ptr: tuple
+		}
 	}
 }

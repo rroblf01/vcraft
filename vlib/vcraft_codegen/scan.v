@@ -25,6 +25,11 @@ pub struct AttrBlock {
 pub mut:
 	// attrs are the annotation names, in source order, without arguments.
 	attrs []string
+	// args maps an annotation that takes one to its argument, and an annotation that
+	// takes none to an empty string. The names in `attrs` are kept separately because
+	// most of them carry nothing and this would double the size of every block for a
+	// field that has two annotations on it.
+	args map[string]string
 	// doc is the doc comment with its `//` markers and one space of indent
 	// removed, or empty when there was none.
 	doc string
@@ -43,6 +48,7 @@ pub fn read_inline(lines []string, line int) AttrBlock {
 		return block
 	}
 	block.attrs = parse_attr_names(lines[line - 1])
+	block.args = parse_attr_args(lines[line - 1])
 	block.doc = doc_above(lines, line)
 	return block
 }
@@ -118,6 +124,9 @@ pub fn read_above(lines []string, line int) AttrBlock {
 		for name in parse_attr_names(block_text) {
 			attrs_acc.prepend(name)
 		}
+		for name, value in parse_attr_args(block_text) {
+			block.args[name] = value
+		}
 		i = start - 1
 	}
 	block.attrs = attrs_acc
@@ -166,6 +175,78 @@ fn join_lines(lines []string) string {
 // containing brackets does not end the block early. Anything it cannot make sense
 // of is skipped rather than guessed at, because a wrong name here means a missing
 // export.
+// parse_attrs reads the names and the single argument of an annotation block.
+pub fn parse_attrs(text string) AttrBlock {
+	mut out := AttrBlock{}
+	out.attrs = parse_attr_names(text)
+	out.args = parse_attr_args(text)
+	return out
+}
+
+// parse_attr_args returns the argument each annotation was written with.
+fn parse_attr_args(text string) map[string]string {
+	mut out := map[string]string{}
+	mut i := 0
+	for i < text.len {
+		if text[i] != `@` {
+			i++
+			continue
+		}
+		i++
+		if i >= text.len || text[i] != `[` {
+			continue
+		}
+		i++
+		mut depth := 1
+		mut start := i
+		for i < text.len && depth > 0 {
+			if text[i] == `[` {
+				depth++
+			} else if text[i] == `]` {
+				depth--
+				if depth == 0 {
+					break
+				}
+			}
+			i++
+		}
+		body := text[start..i].trim_space()
+		i++
+		// Both spellings of an argument: `@[name(value)]` and `@[name = value]`.
+		mut sep := -1
+		mut sep_len := 0
+		for k in 0 .. body.len {
+			if body[k] == `=` || body[k] == `(` {
+				sep = k
+				if body[k] == `(` {
+					sep_len = 1
+				}
+				break
+			}
+		}
+		if sep >= 0 {
+			name := body[..sep].trim_space()
+			mut value := body[sep + sep_len..].trim_space()
+			if value.ends_with(')') {
+				value = value[..value.len - 1].trim_space()
+			}
+			out[name] = unquote_attr(value)
+		}
+	}
+	return out
+}
+
+// unquote_attr removes quotes from an annotation argument.
+fn unquote_attr(text string) string {
+	if text.len >= 2 && text[0] == `"` && text[text.len - 1] == `"` {
+		return text[1..text.len - 1]
+	}
+	if text.len >= 2 && text[0] == `'` && text[text.len - 1] == `'` {
+		return text[1..text.len - 1]
+	}
+	return text
+}
+
 pub fn parse_attr_names(text string) []string {
 	mut names := []string{}
 	mut i := 0
@@ -216,7 +297,23 @@ pub fn parse_attr_names(text string) []string {
 // flush_attr records a candidate name, discarding an empty one and any argument
 // text left over from a `name: value` pair.
 fn flush_attr(mut names []string, mut current strings.Builder) {
-	raw := current.str().trim_space()
+	mut raw := current.str().trim_space()
+	if raw == '' {
+		return
+	}
+	// `@[vc_base(Counter)]` is written with parentheses, so the name arrives as
+	// `vc_base(Counter)` and a lookup for `vc_base` misses. The name is everything up
+	// to the argument.
+	mut paren := -1
+	for i in 0 .. raw.len {
+		if raw[i] == `(` {
+			paren = i
+			break
+		}
+	}
+	if paren >= 0 {
+		raw = raw[..paren].trim_space()
+	}
 	if raw == '' {
 		return
 	}
