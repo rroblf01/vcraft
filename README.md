@@ -11,7 +11,7 @@ There is **no Rust and no C++ in the pipeline**. A `.v` file compiles to a CPyth
 module mi_extension_nativa
 
 // Adds two integers and returns the result.
-@[vc.fn]
+@[vc_fn]
 pub fn add(a int, b int) int {
 	return a + b
 }
@@ -130,18 +130,24 @@ that immediately precedes each declaration. Any name works; these are the ones
 
 | Annotation      | Applies to      | Effect                                                     |
 | --------------- | --------------- | ---------------------------------------------------------- |
-| `@[vc.fn]`      | `pub fn`        | Exports the function as a module-level Python callable      |
-| `@[vc.class]`   | `pub struct`    | Creates a Python type backed by the V struct                |
-| `@[vc.methods]` | methods         | Adds the method to the class of its receiver                |
-| `@[vc.field]`   | struct fields   | Exposes the field as an attribute of the instance           |
-| `@[vc.property]`| methods         | Registers the method as a Python `property`                 |
-| `@[vc.static]`  | methods         | Registers the method as a `staticmethod`                    |
-| `@[vc.raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
-| `@[vc.gil]`     | `pub fn`        | Runs the call with the GIL released                         |
+| Annotation      | Applies to      | Effect                                                     |
+| --------------- | --------------- | ---------------------------------------------------------- |
+| `@[vc_fn]`      | `pub fn`        | Exports the function as a module-level Python callable      |
+| `@[vc_class]`   | `pub struct`    | Creates a Python type backed by the V struct                |
+| `@[vc_methods]` | methods         | Adds the method to the class of its receiver                |
+| `@[vc_field]`   | struct fields   | Exposes the field as an attribute of the instance           |
+| `@[vc_property]`| methods         | Registers the method as a Python `property`                 |
+| `@[vc_static]`  | methods         | Registers the method as a `staticmethod`                    |
+| `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
+| `@[vc_gil]`     | `pub fn`        | Runs the call with the GIL released                         |
 
-Names are taken from the V declaration, verbatim. Doc comments become `__doc__`,
-and the marshalled signature becomes `__text_signature__`, so `help()` works
-without a hand-written stub.
+Names are taken from the V declaration, verbatim. Doc comments become `__doc__`, the
+marshalled signature becomes `__text_signature__`, and the same source also produces
+a `.pyi` stub, so `help()` and a type checker see the same thing.
+
+The prefix is part of the name rather than a namespace because V rejects two
+annotations sharing one: `@[vc.fn]` and `@[vc.raw]` on the same declaration is
+`duplicate attribute 'vc'`.
 
 ---
 
@@ -180,26 +186,26 @@ file, line and column, not a runtime surprise.
 ## Classes and properties
 
 ```v
-@[vc.class]
+@[vc_class]
 pub struct Counter {
 mut:
 	@[vc.field] value int
 	@[vc.field] label string
 }
 
-@[vc.methods]
+@[vc_methods]
 pub fn new_counter(label string) &Counter {
 	return &Counter{ label: label }
 }
 
-@[vc.methods]
+@[vc_methods]
 pub fn (c &Counter) increment(by int) int {
 	c.value += by
 	return c.value
 }
 
-@[vc.methods]
-@[vc.property]
+@[vc_methods]
+@[vc_property]
 pub fn (c &Counter) doubled int {
 	return c.value * 2
 }
@@ -228,7 +234,7 @@ descriptors for faster reads than `__dict__`.
 V error propagation and Python exceptions map onto each other directly:
 
 ```v
-@[vc.fn]
+@[vc_fn]
 pub fn greet(name string) !string {
 	if name.len == 0 {
 		return error('name must not be empty')
@@ -265,7 +271,7 @@ The panic is caught, enriched with the V file and line, and raised as a
 `RuntimeError`. Panic state is thread-local in V, so this remains correct when the
 extension is used from a free-threaded interpreter.
 
-`@[vc.gil]` marks a function as pure V with no Python interaction. The GIL is
+`@[vc_gil]` marks a function as pure V with no Python interaction. The GIL is
 released around the call, so long-running V code runs in parallel the way
 `py.allow_threads` does in PyO3.
 
@@ -453,12 +459,27 @@ $ python3 tests/runtime/test_runtime.py
 all 36 checks passed
 ```
 
+And the code generator, end to end: it runs the real generator, checks the shape of
+the glue it produced, then runs the real compiler and exercises the module:
+
+```console
+$ ./scripts/build-example.sh hello hello_native
+$ python3 tests/codegen/test_codegen.py
+...
+all 47 checks passed
+```
+
+`examples/hello` is a working project with seven annotated functions covering scalars,
+strings, a sequence, a void return, error propagation and the raw escape hatch. You
+write the seven functions; the generator writes the rest.
+
 That second one covers module construction, `METH_NOARGS` and `METH_FASTCALL`,
 integers and floats and strings and bytes and lists in both directions, docstrings,
 `error` and `panic` translation, and reference counting. Read
 [`examples/probe/README.md`](examples/probe/README.md) for what the first one proves
-and [`vlib/vcraft/README.md`](vlib/vcraft/README.md) for the compiler behaviours both
-of them uncovered.
+and [`vlib/vcraft/README.md`](vlib/vcraft/README.md) for the compiler behaviours the
+runtime uncovered, and [`vlib/vcraft_codegen/README.md`](vlib/vcraft_codegen/README.md)
+for the ones the generator did.
 
 ---
 
@@ -467,7 +488,8 @@ of them uncovered.
 - [x] **Gate 0**: a V shared object that CPython imports as an extension module
 - [x] **Runtime**: `PyObj`, module construction, marshalling, argument parsing,
       error and panic translation, covered by 36 checks
-- [ ] Code generator: annotations, docstrings, signatures, `.pyi` stubs
+- [x] **Code generator**: annotations, docstrings, signatures, `.pyi` stubs,
+      covered by 47 checks against a working example
 - [ ] Classes: instances, fields, methods, properties, `__repr__`/`__eq__`
 - [ ] Errors: `!T` translation and `recover()`-based panic capture
 - [ ] Wheels: ZIP writer with DEFLATE, `METADATA`, `RECORD`, tag computation
@@ -475,7 +497,7 @@ of them uncovered.
 - [ ] `abi3` and free-threaded builds
 - [ ] GitHub Actions: `vcraft-action@v1`, `generate-ci`, manylinux and musllinux
       images
-- [ ] Zero-copy buffers, `@[vc.gil]`, iterators
+- [ ] Zero-copy buffers, `@[vc_gil]`, iterators
 - [ ] Apple Silicon, Windows and musllinux verification
 
 See [Status](#status) for what actually works today.
