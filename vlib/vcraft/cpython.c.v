@@ -133,6 +133,8 @@ fn C.PyFloat_AsDouble(o voidptr) f64
 // ----------------------------------------------------------------- strings
 
 fn C.PyUnicode_FromStringAndSize(s voidptr, len isize) voidptr
+fn C.PyUnicode_FromString(s voidptr) voidptr
+fn C.PyErr_SetObject(exc voidptr, value voidptr)
 
 fn C.PyUnicode_AsUTF8AndSize(o voidptr, len voidptr) voidptr
 

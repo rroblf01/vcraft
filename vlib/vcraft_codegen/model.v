@@ -28,6 +28,10 @@ pub const attr_static = 'vc_static'
 // which is why it is a name rather than a boolean like the rest.
 pub const attr_base = 'vc_base'
 
+// attr_error marks a struct as a V error type: a `!T` function's error carrying a Python
+// exception class rather than a bare message.
+pub const attr_error = 'vc_error'
+
 // attr_ref marks a field as holding a strong reference to another instance. Its value
 // is the class it accepts, empty when it accepts any vcraft instance, so it is a name
 // where `@[vc_field]` is a boolean.
@@ -47,6 +51,7 @@ pub const known_attrs = [
 	attr_hash,
 	attr_base,
 	attr_ref,
+	attr_error,
 	attr_nogil,
 	attr_class,
 	attr_methods,
@@ -258,6 +263,26 @@ pub fn (f Field) is_reference() bool {
 	return f.ref
 }
 
+// ErrorType is a struct annotated `@[vc_error]`.
+//
+// V erases an error to `IError` by the time a wrapper sees it, so nothing in the error
+// value can be read on the far side. What the generator can do is check the type is
+// usable as an error and emit a raiser for it, which sets the pending Python exception
+// from the struct's own field before the value is returned.
+pub struct ErrorType {
+pub mut:
+	name string
+	// exc_field is the field holding the Python exception class. Empty when the type
+	// carries no class and names a builtin one through `code()` instead.
+	exc_field string
+	doc       string
+	origin    string
+	line      int
+	// raiser is the generated function that turns a value of this type into an error with
+	// its exception set.
+	raiser string
+}
+
 // Project is everything the generator found.
 // Operator is a `vc_eq` or `vc_hash` function seen before the class it belongs to.
 //
@@ -275,6 +300,8 @@ pub mut:
 
 pub struct Project {
 pub mut:
+	// errors are the `@[vc_error]` types found, in declaration order.
+	errors []ErrorType
 	// module is the V module the glue will be compiled into. It is the user's own
 	// module, so the generated file calls their functions directly with no module
 	// prefix and no cross-module edge.

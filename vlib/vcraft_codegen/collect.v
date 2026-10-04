@@ -31,7 +31,13 @@ pub fn collect_file(path string, mut p Project) {
 				collect_fn(path, lines, ast, decl, mut p)
 			}
 			.method { collect_method(path, lines, ast, decl, mut p) }
-			.struct { collect_struct(path, lines, ast, decl, mut p) }
+			// A `@[vc_error]` struct is collected before the class path, which would
+			// otherwise reject it for not being annotated `@[vc_class]`.
+			.struct {
+				if !collect_error_type(path, lines, ast, decl, mut p) {
+					collect_struct(path, lines, ast, decl, mut p)
+				}
+			}
 			else {}
 		}
 	}
@@ -582,16 +588,60 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 		hash_fn:     'vcraft_generated__hash_${key}'
 		key:       key
 	}
-	c.fields = collect_fields(path, lines, ast, decl.name, mut p)
+	c.fields = collect_fields(path, lines, ast, decl.name, mut p, false)
 	p.classes << c
+}
+
+// find_method_of_struct reports whether a struct declares a method of that name.
+//
+// The receiver is part of the method node's value, so a `msg` on some other struct in the
+// same file would otherwise satisfy the check.
+fn find_method_of_struct(ast &flat.FlatAst, struct_name string, method string) bool {
+	for raw in ast.file_node_ids {
+		if method_in_struct(ast, flat.NodeId(raw), struct_name, method) {
+			return true
+		}
+	}
+	return false
+}
+
+fn method_in_struct(ast &flat.FlatAst, id flat.NodeId, struct_name string, method string) bool {
+	node := ast.node(id)
+	if node.kind == .fn_decl {
+		receiver, name := split_receiver(node.value)
+		if name == method && receiver == struct_name {
+			return true
+		}
+	}
+	for child in ast.children_of(node) {
+		if method_in_struct(ast, child, struct_name, method) {
+			return true
+		}
+	}
+	return false
+}
+
+// split_receiver splits a method node's `Receiver.name` into its two parts. A free
+// function has no receiver and comes back with an empty one.
+fn split_receiver(value string) (string, string) {
+	if dot := value.last_index('.') {
+		return value[..dot], value[dot + 1..]
+	}
+	return '', value
 }
 
 // collect_fields reads the `@[vc_field]` fields of a class.
 //
 // A field's annotation is written on the field's own line, so it is read from there
 // rather than from the line above, and its type comes from the tree.
+//
+// `every_field` returns the struct's fields as declared, with no annotation filter and no
+// scalar check. The class path wants the exposed ones; the `@[vc_error]` path wants to know
+// which field could hold an exception class, and that is a question about the declaration
+// rather than about what is exposed. Reading them through one walker keeps the two field
+// shapes -- `pub` marker plus type node, or a plain node with both -- handled once.
 fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name string,
-	mut p Project) []Field {
+	mut p Project, every_field bool) []Field {
 	mut out := []Field{}
 	id := find_struct_node(ast, struct_name) or { return out }
 	node := ast.node(id)
@@ -639,6 +689,10 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 	mut exposed := []Field{}
 	for _, original in out {
 		mut f := original
+		if every_field {
+			exposed << f
+			continue
+		}
 		block := read_inline(lines, field_line(ast, f.name))
 		if attr_field !in block.attrs && attr_ref !in block.attrs {
 			continue
@@ -674,6 +728,74 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 		exposed << f
 	}
 	return exposed
+}
+
+// collect_error_type collects a struct annotated `@[vc_error]`.
+//
+// Reports it and returns false when the annotation is on something that cannot be an
+// error type, so the caller can try the ordinary paths and produce the diagnostic they
+// would have anyway.
+fn collect_error_type(path string, lines []string, ast &flat.FlatAst,
+	decl astquery.Declaration, mut p Project) bool {
+	block := read_above(lines, decl.line)
+	if attr_error !in block.attrs {
+		return false
+	}
+	key := decl.name.to_lower()
+	for existing in p.errors {
+		if existing.name == decl.name {
+			report(mut p, path, decl, 'error: `@[vc_error] ${decl.name}` is declared twice')
+			return true
+		}
+	}
+	// V's error interface is `msg()` and `code()`, and V rejects a `!T` return whose type
+	// does not have both. The message here names the two rather than leaving the reader
+	// to work it out from V's own error.
+	mut has_msg := false
+	mut has_code := false
+	for method in ['msg', 'code'] {
+		if find_method_of_struct(ast, decl.name, method) {
+			if method == 'msg' {
+				has_msg = true
+			} else {
+				has_code = true
+			}
+		}
+	}
+	if !has_msg {
+		report(mut p, path, decl, 'error: `@[vc_error] ${decl.name}` has no `msg()` method, so it cannot be returned from a `!T` function: the error interface V requires is `msg()` and `code()`')
+		return true
+	}
+	if !has_code {
+		report(mut p, path, decl, 'error: `@[vc_error] ${decl.name}` has no `code()` method, so it cannot be returned from a `!T` function: the error interface V requires is `msg()` and `code()`. Return a `vcraft.PyExc` value from it to choose the Python exception')
+		return true
+	}
+	// The exception class travels in one `PyObj` field. More than one and there is no way
+	// to tell which is the class, so the raiser is not emitted and the type falls back to
+	// naming a builtin exception through `code()`.
+	mut excs := []string{}
+	for field in collect_fields(path, lines, ast, decl.name, mut p, true) {
+		if field.is_pyobj() {
+			excs << field.name
+		}
+	}
+	if excs.len > 1 {
+		report(mut p, path, decl, 'error: `@[vc_error] ${decl.name}` has ${excs.len} `PyObj` fields (${excs.join(', ')}), so which one holds the Python exception is ambiguous. Keep one, or name the exception from `code()` instead')
+		return true
+	}
+	mut exc_field := ''
+	if excs.len == 1 {
+		exc_field = excs[0]
+	}
+	p.errors << ErrorType{
+		name:      decl.name
+		exc_field: exc_field
+		doc:       block.doc
+		origin:    path
+		line:      decl.line
+		raiser:    'vcraft_generated__raise_${key}'
+	}
+	return true
 }
 
 // is_identifier reports whether a name could be a V declaration name, which is how

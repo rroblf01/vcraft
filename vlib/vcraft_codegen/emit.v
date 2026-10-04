@@ -52,6 +52,10 @@ pub fn emit_glue(p Project) string {
 		w.write_string('\n')
 		w.write_string(emit_trampoline(f))
 	}
+	for e in p.errors {
+		w.write_string('\n')
+		w.write_string(emit_error_raiser(e))
+	}
 	for c in p.classes {
 		w.write_string(emit_class(p, c))
 		for m in c.methods {
@@ -248,6 +252,62 @@ pub fn render_class_exec(p Project, c Class) string {
 	w.write_string('\t}\n')
 	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.name) + ', ' +
 		c.ctype + ')\n')
+	return w.str()
+}
+
+// emit_error_raiser renders the raiser for one `@[vc_error]` type.
+//
+// V erases an error to `IError` by the time a wrapper sees it, so nothing but the message
+// survives the trip out of a `!T` function. The exception class therefore has to be set
+// *before* the value is returned, and this is the function that does it: it takes the
+// user's own value, sets the pending Python exception from it, and hands back an error
+// carrying the same message.
+//
+//	// generated
+//	pub fn vcraft_generated__raise_configerror(e ConfigError) IError {
+//		return vcraft.raise_custom(e.exc.ptr, e.msg())
+//	}
+//
+// so the V side reads:
+//
+//	if !ok {
+//		return vcraft_generated__raise_configerror(ConfigError{
+//			exc: vcraft.borrow(class_ptr),
+//			detail: 'no such section',
+//		})
+//	}
+//
+// A type with no `PyObj` field gets a raiser that names a builtin exception from the
+// `code()` it already has, which `raise_from_error` reads on the far side:
+//
+//	pub fn vcraft_generated__raise_configerror(e ConfigError) IError {
+//		return error(e.msg())
+//	}
+//
+// and needs nothing at all from the generator to work: any struct with `msg()` and
+// `code()` reaches Python as whatever `code()` names. The raiser exists for the type whose
+// exception is not one of the builtin ones.
+fn emit_error_raiser(e ErrorType) string {
+	mut w := new_builder()
+	w.write_string('// ---- ${e.name}\n\n')
+	w.write_string('// ${e.name} is a V error type, so it can be returned from a `!T` function.\n')
+	if e.doc.len > 0 {
+		w.write_string('//\n')
+		for line in e.doc.split('\n') {
+			w.write_string('// ' + line.trim_right(' \t') + '\n')
+		}
+	}
+	w.write_string('fn ${e.raiser}(e ${e.name}) IError {\n')
+	if e.exc_field.len > 0 {
+		// The exception class is borrowed from the value and CPython keeps its own
+		// reference on the exception it builds, so nothing is released here.
+		w.write_string('\treturn vcraft.raise_custom(e.${e.exc_field}.ptr, e.msg())\n')
+	} else {
+		w.write_string('\t// No `PyObj` field, so this type names a builtin exception from\n')
+		w.write_string('\t// `code()` and the raiser only has to carry the message.\n')
+		w.write_string('\treturn error(e.msg())\n')
+	}
+	w.write_string('}\n\n')
 	return w.str()
 }
 

@@ -133,8 +133,16 @@ pub fn pyexc_obj(kind PyExc) PyObj {
 }
 
 // raise raises one of the builtin exceptions.
+//
+// `.none` is not one of them -- `pyexc_obj` resolves it to the null pointer -- so it
+// becomes a RuntimeError rather than being passed on. `PyErr_SetString` does not check for
+// a null type: it writes through it, and the crash lands inside CPython on a line that
+// mentions neither V nor the code that asked for it.
 pub fn raise(kind PyExc, message string) {
-	set_error(pyexc_obj(kind), message)
+	// A local rather than a rewritten parameter: a `mut` parameter would make every one
+	// of the thirty-odd call sites in the runtime pass `mut .type_error`.
+	resolved := if kind == .none { PyExc.runtime_error } else { kind }
+	set_error(pyexc_obj(resolved), message)
 }
 
 // raise_type_error reports a value of the wrong Python type.
@@ -181,20 +189,104 @@ pub fn raise_domain(kind PyExc, message string) IError {
 	return error(message)
 }
 
+// set_error_object sets an arbitrary Python exception class with a message.
+//
+// `exc` is the class, not an instance: CPython instantiates it. That is what
+// `PyErr_SetObject` takes and what lets a V error name an exception the user defined in
+// Python, which no `PyExc` member can.
+//
+// The reference is borrowed. CPython stores the class on the exception it builds, which
+// increments it, so there is nothing for the caller to release.
+pub fn set_error_object(exc voidptr, message string) {
+	if exc == unsafe { nil } {
+		raise(.runtime_error, message)
+		return
+	}
+	unsafe {
+		// `PyErr_SetObject` with a `str` rather than `PyErr_SetString`, because the
+		// latter hardcodes the class and this is the whole point: a class the caller
+		// chose. The message is built first so a failure to build it is reported as
+		// itself instead of leaving no exception set at all.
+		text := C.PyUnicode_FromString(message.str)
+		if text == nil {
+			raise(.runtime_error, message)
+			return
+		}
+		C.PyErr_SetObject(exc, text)
+	}
+}
+
+// raise_custom raises an arbitrary Python exception class and returns an error carrying
+// the same message.
+//
+// The counterpart of `raise_domain` for an exception vcraft has no name for:
+//
+//	pub fn parse(text string) !int {
+//		if !is_digits(text) {
+//			return vcraft.raise_custom(python_error_class('BadNumber'), 'not a number')
+//		}
+//		...
+//	}
+//
+// The class is borrowed and the error value cannot carry it, for the same reason
+// `raise_domain` sets the exception here rather than inside it: V erases an error to
+// `IError` by the time the wrapper sees it, and everything but the message is gone.
+pub fn raise_custom(exc voidptr, message string) IError {
+	set_error_object(exc, message)
+	return error(message)
+}
+
+// pyexc_from_code turns an error's `code()` back into the exception it names.
+//
+// The inverse of the enum's own numbering, which is what lets a custom V error type
+// choose its exception with no wrapper code at all:
+//
+//	@[vc_error]
+//	pub struct ConfigError {
+//	pub:
+//		message string
+//	}
+//
+//	pub fn (e ConfigError) msg() string { return e.message }
+//
+//	// The code *is* the exception: `PyExc.value_error` is 2.
+//	pub fn (e ConfigError) code() int { return int(vcraft.PyExc(.value_error)) }
+//
+// A code outside the enum is not an exception choice at all -- it is an ordinary error
+// code, and those are common -- so it falls back to `.runtime_error` rather than being
+// read as one.
+pub fn pyexc_from_code(code int) PyExc {
+	// One through thirteen, which is every member of `PyExc` that names a class. Zero is
+	// `.none`, whose object is the null pointer, and it is deliberately not in the list:
+	// `code()` is 0 for every anonymous `error('...')`, so mapping it would send every
+	// plain V error to a null exception type. `PyErr_SetString(NULL, msg)` does not
+	// complain about that; it dereferences it, and the interpreter dies inside the call
+	// with a message about nothing at all.
+	return match code {
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 { unsafe { PyExc(code) } }
+		else { .runtime_error }
+	}
+}
+
 // raise_from_error turns a V error value into a Python exception.
 //
-// IError is V's builtin error interface, so this accepts any error a `!T` function
-// can produce, including the anonymous ones `error('...')` creates. Those become a
-// RuntimeError, since a bare message says nothing about which exception was meant.
-// A DomainError carries the choice instead.
+// IError is V's builtin error interface, so this accepts any error a `!T` function can
+// produce: the anonymous ones `error('...')` creates, and any struct implementing `msg()`
+// and `code()`.
+//
+// Three ways an error can name its exception, in the order they are consulted:
+//
+//   - An exception already set. `raise_domain` and `raise_custom` set one at the point of
+//     failure, and it wins: replacing it would undo the choice the V code made.
+//   - A `code()` that is one of the `PyExc` values. This is how a custom error type
+//     carries a builtin exception with no help from the generator.
+//   - Otherwise a RuntimeError, because a bare message says nothing about which exception
+//     was meant.
 pub fn raise_from_error(err IError) {
-	// An exception already set means `raise_domain` named the right one at the point
-	// of failure. Replacing it here would undo that choice and turn every domain
-	// failure into a RuntimeError, which is the one thing the caller was avoiding.
 	if error_is_set() {
 		return
 	}
-	raise(.runtime_error, err.str())
+	raise(pyexc_from_code(err.code()), err.msg())
 }
 
 // Panic guard.

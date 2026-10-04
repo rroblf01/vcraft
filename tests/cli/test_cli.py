@@ -394,6 +394,108 @@ def main() -> int:
                     and "Counter(value: 0, step: 1)" in proc.stdout,
                     (proc.stderr or proc.stdout).strip()[-300:])
 
+        print("error type diagnostics")
+        # `@[vc_error]` on something that cannot be one has to be reported, because a
+        # silently ignored annotation means a `!T` function that compiles and fails as a
+        # RuntimeError, which is exactly the mistake the annotation exists to prevent.
+        err = tmp / "errtypes"
+        (err / "src").mkdir(parents=True)
+        (err / "v.mod").write_text(
+            'Module {\n\tname: "errtypes_native"\n\tbase_url: "src"\n'
+            '\trequires: ["vcraft"]\n}\n')
+        (err / "vcraft.toml").write_text(
+            '[package]\nname = "errtypes"\nversion = "0.1.0"\n'
+            'description = "error types"\n\n[build]\nmodule = "errtypes_native"\n'
+            'source = "src"\noutput = "python"\n')
+        err_source = err / "src" / "errtypes_native.v"
+
+        def err_project(body: str) -> str:
+            return "module errtypes_native\n\nimport vcraft\n\n" + body
+
+        def err_diagnostic(label: str, body: str, needle: str) -> None:
+            err_source.write_text(err_project(body), encoding="utf-8")
+            out = vcraft("build", cwd=err)
+            t.check(f"{label} fails", out.returncode != 0, out.stdout[-200:])
+            t.check(f"{label} says why", needle in out.stderr,
+                    out.stderr.strip()[-300:])
+
+        err_diagnostic("an error type with no msg()", """
+@[vc_error]
+pub struct NoMsg {
+pub:
+	detail string
+}
+
+pub fn (e NoMsg) code() int { return 0 }
+""", "has no `msg()` method")
+
+        err_diagnostic("an error type with no code()", """
+@[vc_error]
+pub struct NoCode {
+pub:
+	detail string
+}
+
+pub fn (e NoCode) msg() string { return e.detail }
+""", "has no `code()` method")
+
+        err_diagnostic("an error type with two candidate fields", """
+@[vc_error]
+pub struct Ambiguous {
+pub:
+	exc    vcraft.PyObj
+	other  vcraft.PyObj
+	detail string
+}
+
+pub fn (e Ambiguous) msg() string { return e.detail }
+pub fn (e Ambiguous) code() int { return 0 }
+""", "which one holds the Python exception is ambiguous")
+
+        # And the two that have to work.
+        err_source.write_text(err_project("""
+@[vc_error]
+pub struct Rejected {
+pub:
+	detail string
+}
+
+pub fn (e Rejected) msg() string { return e.detail }
+pub fn (e Rejected) code() int { return int(vcraft.PyExc(.value_error)) }
+
+@[vc_fn]
+pub fn parse(text string) !int {
+	if text.len == 0 {
+		return Rejected{ detail: 'nothing to parse' }
+	}
+	return text.len
+}
+"""), encoding="utf-8")
+        proc = vcraft("build", cwd=err)
+        t.check("an error type builds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        if proc.returncode == 0:
+            built = sorted(err.glob("dist/build/*.so"))
+            t.check("the extension is written", len(built) == 1, built)
+            if built:
+                probe = subprocess.run(
+                    [sys.executable, "-c",
+                     "import sys\n"
+                     "sys.path.insert(0, sys.argv[1])\n"
+                     "import errtypes_native as m\n"
+                     "print(m.parse('abc'))\n"
+                     "try:\n"
+                     "    m.parse('')\n"
+                     "except ValueError as exc:\n"
+                     "    print(type(exc).__name__, exc)\n",
+                     str(built[0].parent)], capture_output=True, text=True)
+                t.check("and runs", probe.returncode == 0,
+                        probe.stderr.strip()[-400:])
+                # `splitlines`, not `split`: the message has a space in it.
+                t.check("code() names the exception Python sees",
+                        probe.stdout.splitlines() == ["3", "ValueError nothing to parse"],
+                        probe.stdout)
+
         print("abi3 with cycles")
         # `Py_TPFLAGS_HAVE_GC` reaches CPython differently under the stable ABI: the type
         # object's own traverse has to come through `PyType_GetSlot`, because

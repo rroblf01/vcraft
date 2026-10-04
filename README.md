@@ -43,6 +43,7 @@ vcraft build --release
 - [Classes and properties](#classes-and-properties)
   - [Inheritance](#inheritance)
   - [Reference fields and cycles](#reference-fields-and-cycles)
+  - [Custom error types](#custom-error-types)
 - [Errors and panics](#errors-and-panics)
 - [The command line](#the-command-line)
 - [Generated project layout](#generated-project-layout)
@@ -139,6 +140,7 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_property]`| methods         | Registers the method as a Python `property`                 |
 | `@[vc_base]`    | `pub struct`    | Makes the class inherit the named one                       |
 | `@[vc_ref]`     | struct fields   | Exposes the field as a strong reference to another instance  |
+| `@[vc_error]`   | `pub struct`    | Makes the struct usable as the error of a `!T` function      |
 | `@[vc_static]`  | methods         | Registers the method as a `staticmethod`                    |
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
 | `@[vc_gil]`     | `pub fn`        | Runs the call with the GIL released                         |
@@ -415,6 +417,99 @@ borrowed, so the field counts its own rather than adopting CPython's.
 
 Weak references are not supported yet: that needs a `tp_weaklistoffset` inside the
 instance and registration in `tp_traverse`.
+
+### Custom error types
+
+`@[vc_error]` marks a struct as the error of a `!T` function. V requires `msg()` and
+`code()`, and the generator reports the annotation on a struct that has not got both rather
+than letting it fail at the V compiler with a message about an interface.
+
+There are three ways for such an error to name its Python exception, and they are not
+equivalent.
+
+**`code()` is the exception.** The enum's own numbering is the channel, so nothing else is
+needed:
+
+```v
+@[vc_error]
+pub struct ConfigError {
+pub:
+	detail string
+	line   int
+}
+
+pub fn (e ConfigError) msg() string {
+	return 'line ${e.line}: ${e.detail}'
+}
+
+// The code *is* the exception: `PyExc.value_error` is 2.
+pub fn (e ConfigError) code() int {
+	return int(vcraft.PyExc(.value_error))
+}
+
+@[vc_fn]
+pub fn load(text string) !string {
+	// ...
+	return ConfigError{ detail: 'not a name=value line', line: 1 }
+}
+```
+
+A code outside the enum is an ordinary error code rather than an exception choice, and
+those are common, so anything unrecognised becomes a `RuntimeError`. `code() == 0`, which
+is every anonymous `error('...')`, is a `RuntimeError` too: `0` is `PyExc.none`, whose
+object is the null pointer, and `PyErr_SetString` writes through it rather than checking.
+
+**`raise_custom` sets an arbitrary class.** For an exception vcraft has no name for,
+including one the caller defined in Python:
+
+```v
+@[vc_fn]
+pub fn parse(text string, missing voidptr) !int {
+	if !is_digits(text) {
+		return vcraft.raise_custom(missing, 'not a number')
+	}
+	// ...
+}
+```
+
+**A `PyObj` field plus the generated raiser.** To keep the class in the error value rather
+than passing it around, one `PyObj` field and the raiser the generator emits:
+
+```v
+@[vc_error]
+pub struct Rejected {
+pub:
+	exc    vcraft.PyObj
+	detail string
+}
+
+pub fn (e Rejected) msg() string { return e.detail }
+pub fn (e Rejected) code() int { return 0 }
+
+// generated:
+//   fn vcraft_generated__raise_rejected(e Rejected) IError {
+//       return vcraft.raise_custom(e.exc.ptr, e.msg())
+//   }
+
+@[vc_fn]
+pub fn checked(value int, exc voidptr) !int {
+	if value < 0 {
+		return vcraft_generated__raise_rejected(Rejected{
+			exc:    vcraft.borrow(exc)
+			detail: 'value must not be negative'
+		})
+	}
+	return value * 2
+}
+```
+
+Two `PyObj` fields are reported rather than guessed at, since there is no way to tell which
+one is the class.
+
+What none of these can do is carry the choice *inside* the error and have the wrapper read
+it there: V erases an error to `IError` by the time the wrapper sees it, and an `IError`
+has a message and nothing else. That is why `raise_domain` sets the exception at the point
+of failure, and why the raiser exists.
 
 ---
 
@@ -789,7 +884,8 @@ for the ones the generator did.
       in both a normal and an abi3 build
 - [x] **Errors**: `!T` translation, `raise_domain` for a specific Python exception,
       `recover()`-based panic capture
-- [ ] Errors: custom V error types carrying an exception class
+- [x] **Custom error types**: `@[vc_error]`, an exception chosen from `code()`, an
+      arbitrary class through `raise_custom`, and a generated raiser for the rest
 - [x] **Wheels**: DEFLATE, ZIP container, `METADATA`, `WHEEL`, `RECORD` with SHA-256,
       tag computation and PEP 427 file names, verified by a real `pip install`
 - [ ] Wheels: editable installs, `.pyc` embedding

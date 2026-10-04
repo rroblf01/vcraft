@@ -279,3 +279,95 @@ pub fn (p &Pair) other() vcraft.PyObj {
 	}
 	return vcraft.incref(p.peer)
 }
+
+// A V error type, so a `!T` function can fail in a way Python names precisely.
+//
+// V's error interface is `msg()` and `code()`, and this struct has both, which is all V
+// requires to be returned from a `!T` function. What vcraft adds is the Python exception:
+// `code()` returning a `PyExc` value *is* the choice, and `raise_from_error` reads it on
+// the far side of the call, where the error value has been erased to `IError` and the
+// message is all that is left.
+//
+// No generated code is involved in that path, and none is needed: the choice travels in the
+// error itself. The raiser below is for the case the code cannot express -- an exception
+// class that is not one of CPython's builtins.
+@[vc_error]
+pub struct ConfigError {
+pub:
+	// detail is what the caller would have written in the message.
+	detail string
+	// line is where it went wrong, kept as data rather than folded into the message so a
+	// caller in V can read it.
+	line int
+}
+
+pub fn (e ConfigError) msg() string {
+	return 'line ${e.line}: ${e.detail}'
+}
+
+// code is the exception, not an error code: `PyExc.value_error` is 2, and
+// `raise_from_error` turns it into the class Python sees.
+pub fn (e ConfigError) code() int {
+	return int(vcraft.PyExc(.value_error))
+}
+
+// A custom exception class, defined by the caller rather than by vcraft.
+//
+// This one carries a Python exception object, so the generator emits a raiser for it and
+// `code()` has nothing to say: the class is not one of the `PyExc` values.
+@[vc_error]
+pub struct CustomError {
+pub:
+	exc    vcraft.PyObj
+	detail string
+}
+
+pub fn (e CustomError) msg() string {
+	return e.detail
+}
+
+pub fn (e CustomError) code() int {
+	return 0
+}
+
+// load_config reads a `name=value` line out of some configuration text.
+//
+// Two failure modes, two exception classes: a malformed line is the caller's mistake and
+// is a ValueError, while a name that is not there is a LookupError.
+@[vc_fn]
+pub fn load_config(text string, name string, missing voidptr) !string {
+	for line in text.split('\n') {
+		trimmed := line.trim_space()
+		if trimmed.len == 0 || trimmed.starts_with('#') {
+			continue
+		}
+		mut parts := trimmed.split('=')
+		if parts.len != 2 {
+			return ConfigError{
+				detail: 'not a name=value line'
+				line:   1
+			}
+		}
+		if parts[0].trim_space() == name {
+			return parts[1].trim_space()
+		}
+	}
+	// The class is borrowed and CPython keeps its own reference on the exception it
+	// builds. `raise_custom` sets it and returns an error carrying the message.
+	return vcraft.raise_custom(missing, 'no setting named ${name}')
+}
+
+// checked reports a custom error for a caller-defined exception class.
+//
+// This is the shape the generated raiser exists for: the V code names the class, and the
+// exception reaches Python as that class rather than as a RuntimeError.
+@[vc_fn]
+pub fn checked(value int, exc voidptr) !int {
+	if value < 0 {
+		return vcraft_generated__raise_customerror(CustomError{
+			exc:    vcraft.borrow(exc)
+			detail: 'value must not be negative'
+		})
+	}
+	return value * 2
+}

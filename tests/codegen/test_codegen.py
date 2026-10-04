@@ -75,7 +75,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 9,
+            glue.count("add_function_owned") == 11,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -430,6 +430,44 @@ def main() -> int:
     t.check("a repr of a cycle is guarded", "vcraft.repr_enter(self)" in glue)
     t.check("and only for a class that can recurse", glue.count("repr_enter") == 1,
             glue.count("repr_enter"))
+
+    print("error types")
+    # Three ways for a `!T` function to name its Python exception, and they are not
+    # equivalent: one is erased by V before the wrapper sees it, one travels out of band,
+    # and one is set at the point of failure by a raiser the generator emitted.
+    t.equal("a config line is read", h.load_config("a = 1", "a", KeyError), "1")
+    t.equal("comments and blanks are skipped",
+            h.load_config("# c\n\nb = two\n", "b", KeyError), "two")
+
+    t.raises("an error type's code() names the exception", ValueError,
+             "line 1: not a name=value line", lambda: h.load_config("nonsense", "a", KeyError))
+    t.raises("and a builtin class can be passed in", LookupError, "no setting named zz",
+             lambda: h.load_config("b = 2", "zz", KeyError))
+
+    class Rejected(Exception):
+        pass
+
+    t.raises("a caller-defined exception class", Rejected, "no setting named zz",
+             lambda: h.load_config("b = 2", "zz", Rejected))
+    t.raises("through the generated raiser", Rejected, "must not be negative",
+             lambda: h.checked(-1, Rejected))
+    t.raises("and it can be a builtin one too", ValueError, "must not be negative",
+             lambda: h.checked(-1, ValueError))
+    t.equal("the same function succeeds when it can", h.checked(21, Rejected), 42)
+
+    print("error types in the generated file")
+    t.check("a raiser is emitted for the type with a class",
+            "fn vcraft_generated__raise_customerror(e CustomError) IError {" in glue)
+    t.check("and it raises the class the value carries",
+            "vcraft.raise_custom(e.exc.ptr, e.msg())" in glue)
+    t.check("a type without one gets a message-only raiser",
+            "fn vcraft_generated__raise_configerror(e ConfigError) IError {" in glue)
+    t.check("which says why",
+            "return error(e.msg())" in glue)
+    t.check("the raisers are not exported as callables",
+            "vcraft_generated__raise_customerror" not in stubs)
+    t.check("and neither is the error type", "class CustomError" not in stubs)
+    t.check("an error type is not a class", "class CustomError" not in stubs)
 
     print("class stress")
     batch = [h.Counter() for _ in range(20000)]

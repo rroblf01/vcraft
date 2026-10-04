@@ -44,6 +44,20 @@ def total(values: Sequence[Any]) -> int: ...
 """Takes any Python object and returns it unchanged."""
 def passthrough(obj: Any) -> Any: ...
 
+"""load_config reads a `name=value` line out of some configuration text.
+	
+	Two failure modes, two exception classes: a malformed line is the caller's mistake and
+	is a ValueError, while a name that is not there is a LookupError.
+"""
+def load_config(text: str, name: str, missing: Any) -> str: ...
+
+"""checked reports a custom error for a caller-defined exception class.
+	
+	This is the shape the generated raiser exists for: the V code names the class, and the
+	exception reaches Python as that class rather than as a RuntimeError.
+"""
+def checked(value: int, exc: Any) -> int: ...
+
 """A counter with state.
 	
 	Fields must be scalars. A V string inside a Python object would be a pointer

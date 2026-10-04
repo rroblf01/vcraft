@@ -343,6 +343,28 @@ reference Python has already dropped, and the next allocation reuses that memory
 symptom is an instance that appears to have a peer, whose peer then turns out to be a
 different object that happens to sit at the same address.
 
+## Errors carry the exception out of band, because V erases them
+
+V's error interface is `msg()` and `code()`, and a struct implementing both can be returned
+from a `!T` function -- verified, not assumed. But by the time a wrapper sees the value it
+is an `IError`, and an `IError` has a message and nothing else. Anything else the error
+carried is gone by then.
+
+Three channels exist because of that, and all three go around the erasure rather than
+through it:
+
+| Channel                    | Carries                                    | Needs |
+| -------------------------- | ------------------------------------------ | ----- |
+| `code()` returning `PyExc`  | any builtin exception                      | nothing |
+| `raise_custom`             | any Python exception class                 | nothing |
+| a `PyObj` field + raiser   | any Python exception class, kept in the value | the generated raiser |
+
+`PyExc.none` is not one of the builtin exceptions -- `pyexc_obj` resolves it to the null
+pointer -- so `raise` maps it to a `RuntimeError` and `pyexc_from_code` starts at 1. This
+is not defensive: `PyErr_SetString(NULL, msg)` does not check its first argument, it writes
+through it, and the interpreter dies inside CPython on a line that mentions neither V nor
+the code that asked for it.
+
 ## Tests
 
 ```console
