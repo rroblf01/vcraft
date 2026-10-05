@@ -614,8 +614,10 @@ released around the call, so long-running V code runs in parallel the way
 
 ```
 vcraft new <name>            scaffold a V project ready for Python
-vcraft develop               build and install into the active virtualenv
+vcraft develop [options]     build and install an editable pointer by default
+vcraft develop --copy        install a plain extension copy instead
 vcraft build [options]       build a distributable wheel
+vcraft build --editable      build a local-only wheel that points at build output
 
     --release                compile with -prod
     --abi3 <version>         build one wheel usable from CPython <version> onwards
@@ -688,6 +690,13 @@ The details that are easy to get wrong are written up in
 - The extension goes at the archive root. A directory named after the module is a
   namespace package, and Python resolves one without opening the files inside it, so
   the wheel installs and then imports as an empty module with `__file__` of `None`.
+
+Hand-written Python under a project's `python/` directory is packaged under the same
+relative names; `embed-pyc = true` ships sourceless `.pyc` files instead. `vcraft
+develop` is editable by default: it installs a `.pth` pointing at the build output and
+the project's Python sources, plus distribution metadata, while `develop --copy`
+installs a plain extension copy. `pip install -e .` uses the generated PEP 660 backend.
+Editable wheels point at the local build tree and are refused by `vcraft publish`.
 
 ## Generated project layout
 
@@ -887,8 +896,8 @@ for the ones the generator did.
 - [x] **Custom error types**: `@[vc_error]`, an exception chosen from `code()`, an
       arbitrary class through `raise_custom`, and a generated raiser for the rest
 - [x] **Wheels**: DEFLATE, ZIP container, `METADATA`, `WHEEL`, `RECORD` with SHA-256,
-      tag computation and PEP 427 file names, verified by a real `pip install`
-- [ ] Wheels: editable installs, `.pyc` embedding
+      tag computation and PEP 427 file names, editable installs with PEP 660, and
+      sourceless `.pyc` packaging, verified by real installs
 - [x] **CLI**: `vcraft new`, `build`, `develop`, `sdist`, `publish`, `info`, `clean`
 - [x] **abi3**: stable-ABI builds with multi-phase initialisation, verified by a real
       `pip install`

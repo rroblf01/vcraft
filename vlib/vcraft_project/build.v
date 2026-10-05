@@ -20,6 +20,9 @@ pub mut:
 	out_dir string
 	// release compiles with `-prod`.
 	release bool
+	// editable builds a wheel that points at this build's output rather than carrying a
+	// copy of the extension, so a rebuild is picked up without reinstalling.
+	editable bool
 	// interpreter is the Python to build against, or empty for the running one.
 	interpreter string
 	// platform overrides the platform tag, for cross builds.
@@ -293,12 +296,48 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	}
 	binary := os.read_file(output) or { return error('cannot read ${output}') }
 
+	// Hand-written Python travels with a wheel from the project's `python/` directory.
+	// That is where generated stubs live and where a shim belongs, so it is the one
+	// place worth looking. An editable wheel does not copy it: the wheel's `.pth` points
+	// at the source tree, so a change is picked up without reinstalling.
+	python_root := os.join_path(opt.root, 'python')
+	mut extras := []vcraft_wheel.ExtraFile{}
+	mut editable_paths := []string{}
+	if opt.editable {
+		editable_paths << absolute(compiled)
+		if os.exists(python_root) {
+			editable_paths << absolute(python_root)
+		}
+	} else if os.exists(python_root) {
+		for name in python_files(python_root) {
+			source_path := python_root.trim_right('/') + '/' + name
+			source := os.read_file(source_path) or {
+				return error('cannot read ${source_path}')
+			}
+			if !p.embed_pyc {
+				extras << vcraft_wheel.ExtraFile{
+					name: name
+					data: source.bytes()
+				}
+				continue
+			}
+			compiled_pyc := compile_pyc(python, python_root, name) or { return err }
+			extras << vcraft_wheel.ExtraFile{
+				name: pyc_name(name)
+				data: compiled_pyc
+			}
+		}
+	}
+
 	mut wheel := vcraft_wheel.build(vcraft_wheel.BuildInput{
 		distribution:    p.name
 		version:         p.version
 		module:          p.module
 		extension:       p.module + suffix
 		binary:          binary.bytes()
+		extras:          extras
+		editable_paths:  editable_paths
+		direct_url:      if opt.editable { direct_url_json(absolute(opt.root)) } else { '' }
 		tags:            [tag]
 		summary:         p.description
 		description:     p.description
@@ -322,6 +361,110 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		tag:       tag
 		python:    version
 	}
+}
+
+// absolute makes a path absolute, which the `.pth` of an editable install needs.
+//
+// `site` reads a `.pth` line as a directory to put on `sys.path`, and a relative one is
+// resolved against whatever the process's working directory happens to be when the
+// import happens -- which is not the project directory.
+fn absolute(path string) string {
+	if os.is_abs_path(path) {
+		return path
+	}
+	// `.`, the project root `vcraft build` uses, resolves to the working directory rather
+	// than to `working-directory/.`, so the paths written into editable metadata do not
+	// carry a trailing dot.
+	if path == '.' {
+		return os.getwd()
+	}
+	cwd := os.getwd()
+	return cwd.trim_right('/') + '/' + path
+}
+
+// direct_url_json identifies the editable source tree in PEP 610 form.
+//
+// The URL is what makes `pip show -f` and installers treat the wheel as a pointer to a
+// checkout rather than as a copy. Backslashes become forward slashes and quotes are
+// percent-encoded, because a JSON string with a raw quote is not JSON and a Windows path
+// is not a URL.
+fn direct_url_json(root string) string {
+	url := root.replace('\\', '/').replace('"', '%22')
+	return '{"dir_info":{"editable":true},"url":"file://' + url + '"}\n'
+}
+
+// python_files lists the `.py` files under a project's Python directory, relative to it.
+//
+// The stub is `.pyi` and is skipped: a type stub is not imported, and shipping it inside
+// a wheel tells an installer nothing. Sorted, because a wheel whose contents move between
+// builds is a wheel nobody can reproduce.
+fn python_files(dir string) []string {
+	mut out := []string{}
+	collect_files_with_suffixes(dir, '', mut out, ['.py'])
+	out.sort()
+	return out
+}
+
+fn python_sources(dir string) []string {
+	mut out := []string{}
+	collect_files_with_suffixes(dir, '', mut out, ['.py', '.pyi'])
+	out.sort()
+	return out
+}
+
+fn collect_files_with_suffixes(dir string, prefix string, mut out []string, suffixes []string) {
+	mut entries := os.ls(dir) or { return }
+	entries.sort()
+	for entry in entries {
+		path := dir.trim_right('/') + '/' + entry
+		rel := if prefix.len == 0 { entry } else { prefix + '/' + entry }
+		if os.is_dir(path) {
+			collect_files_with_suffixes(path, rel, mut out, suffixes)
+			continue
+		}
+		for suffix in suffixes {
+			if entry.ends_with(suffix) {
+				out << rel
+				break
+			}
+		}
+	}
+}
+
+// pyc_name is where a source file's compiled form goes in a sourceless wheel.
+//
+// `foo.py` becomes `foo.pyc` beside it, and not `__pycache__/foo.cpython-314.pyc`. The
+// cached form is keyed to the interpreter that wrote it and is only importable when the
+// source is there to validate it; a `.pyc` at the top level is imported directly, which
+// is what a distribution without sources needs.
+fn pyc_name(name string) string {
+	return name[..name.len - 3] + '.pyc'
+}
+
+// compile_pyc compiles one `.py` to a `.pyc` and returns the bytes.
+//
+// Through the interpreter rather than by writing the bytecode format here: the header
+// carries a magic number that changes with every CPython release, and the marshalled
+// code below it is a stack of opcodes whose format is not documented at all. Getting
+// either wrong produces a file CPython rejects with "bad magic number", which says
+// nothing about which of the two was wrong.
+//
+// Unchecked-hash invalidation, because the source will not be there to check against. The
+// default records the source's mtime and size, and CPython then recompiles the module --
+// from a source that was never shipped -- on first import, once per interpreter start.
+fn compile_pyc(python string, dir string, name string) ![]u8 {
+	target := dir.trim_right('/') + '/' + pyc_name(name)
+	script := "import py_compile,sys;" +
+		"py_compile.compile(sys.argv[1],cfile=sys.argv[2],doraise=True," +
+		'invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)'
+	quoted := shell_quote(dir.trim_right('/') + '/' + name) + ' ' + shell_quote(target)
+	result := os.execute(shell_quote(python) + ' -c "' + script + '" ' + quoted)
+	if result.exit_code != 0 {
+		return error('cannot compile ${name}: ${result.output}')
+	}
+	data := os.read_file(target) or { return error('cannot read ${target}') }
+	os.rm(target) or {}
+	return data.bytes()
 }
 
 // shell_quote renders a shell argument safely.

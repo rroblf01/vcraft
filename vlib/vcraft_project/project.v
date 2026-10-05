@@ -53,6 +53,12 @@ pub mut:
 	free_threading bool
 	// strip removes symbols from the extension.
 	strip bool
+	// embed_pyc ships the project's Python files compiled rather than as source.
+	//
+	// A sourceless distribution: the wheel carries `foo.pyc` where a source install would
+	// carry `foo.py`, and CPython imports that directly. It is smaller, and it keeps the
+	// wheel's contents from being the one thing in it a reader can read.
+	embed_pyc bool
 }
 
 // default_project returns what `vcraft new` writes.
@@ -107,6 +113,7 @@ pub fn load(root string) !Project {
 	p.abi3 = table.string_of('abi3', '')
 	p.free_threading = table.bool_of('free-threading', false)
 	p.strip = table.bool_of('strip', false)
+	p.embed_pyc = table.bool_of('embed-pyc', false)
 	return p
 }
 
@@ -127,6 +134,9 @@ pub fn (p Project) render() string {
 	}
 	if p.free_threading {
 		out += 'free-threading = true\n'
+	}
+	if p.embed_pyc {
+		out += 'embed-pyc = true\n'
 	}
 	if p.strip {
 		out += 'strip = true\n'

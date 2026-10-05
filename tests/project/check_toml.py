@@ -42,6 +42,7 @@ def build_driver(tmp: Path) -> Path:
         "\tprintln('minimum=' + table.string_of('minimum-version', '<none>'))\n"
         "\tprintln('free=' + table.bool_of('free-threading', false).str())\n"
         "\tprintln('strip=' + table.bool_of('strip', false).str())\n"
+        "\tprintln('embed=' + table.bool_of('embed-pyc', false).str())\n"
         "\tprintln('classifiers=' + pkg.string_list_of('classifiers').str())\n"
         "\tprintln('deps=' + pkg.string_list_of('dependencies').str())\n"
         "\tprintln('classifier0=' + table.subtable('classifier').string_of('text', '<none>'))\n"
@@ -118,11 +119,13 @@ def main() -> int:
         got = parse(driver, tmp,
                     "free-threading = true\n"
                     "strip = false\n"
+                    "embed-pyc = true\n"
                     "\n"
                     "[package]\n"
                     'name = "x"\n')
         t.equal("a true boolean", got.get("free"), "true")
         t.equal("a false boolean", got.get("strip"), "false")
+        t.equal("a packaging boolean", got.get("embed"), "true")
 
         print("arrays")
         got = parse(driver, tmp,

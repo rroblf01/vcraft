@@ -94,7 +94,96 @@ pub fn develop(p Project, result BuildResult) ! {
 	os.write_file(path, extracted.bytestr()) or {
 		return error('cannot write ${path}')
 	}
+	// A copy must not leave an editable pointer behind. It would not shadow this file,
+	// because site-packages is searched first, but two ways of reaching a build from one
+	// environment is how a later `pip uninstall` leaves files nobody owns.
+	os.rm(target.trim_right('/') + '/' + vcraft_wheel.editable_pth_name(p.name)) or {}
 	return
+}
+
+// develop_editable points the active environment at this build instead of copying it.
+//
+// What lands in `site-packages` is a `.pth` file naming the build directory, which is the
+// same shape a PEP 660 editable wheel installs. `site` reads it at interpreter start-up
+// and puts the directory on `sys.path`, so `import mypkg_native` finds the extension where
+// the build left it: the next `vcraft develop` is picked up with nothing reinstalled.
+//
+// The `.dist-info` goes in as well, so `importlib.metadata` can answer for the
+// distribution. Without it the extension imports perfectly and every tool that asks what
+// version is installed reports the package as missing, which is a confusing way to find
+// out that an editable install is a real thing.
+pub fn develop_editable(p Project, result BuildResult) ! {
+	python := python_in_environment()
+	if !os.exists(python) {
+		return error('no interpreter at ${python}; activate a virtualenv first')
+	}
+	script := "import sysconfig;print(sysconfig.get_paths()['platlib'])"
+	site := os.execute(python + ' -c "' + script + '"')
+	target := site.output.trim_space()
+	if site.exit_code != 0 || target.len == 0 {
+		return error('cannot find site-packages for ${python}')
+	}
+	dir := target.trim_right('/')
+	// An editable install must win over a copied extension left by an earlier
+	// `develop --copy`. Site-packages itself comes before a `.pth` directory on
+	// `sys.path`, so a stale copy shadows the build output and a rebuild is silently
+	// ignored.
+	os.rm(dir + '/' + result.extension) or {}
+	// The build wrote the wheel with the path already in it, so the bytes come from
+	// there rather than being assembled twice.
+	pth := extract(result, vcraft_wheel.editable_pth_name(p.name)) or {
+		return error('the wheel does not contain the editable path file')
+	}
+	os.write_file(dir + '/' + vcraft_wheel.editable_pth_name(p.name), pth.bytestr()) or {
+		return error('cannot write the path file into ${dir}')
+	}
+	// The metadata files, extracted from the same wheel. They are the distribution's own
+	// METADATA and WHEEL plus a RECORD naming what was installed.
+	//
+	// The dist-info name is escaped and normalised, exactly as the wheel builder names
+	// it: a raw project name with dots or dashes does not match the directory in the
+	// archive, and the installer would write metadata pip cannot find.
+	dist_info := '${vcraft_wheel.escape(p.name)}-${vcraft_wheel.normalize_version(p.version)}.dist-info'
+	os.mkdir_all(dir + '/' + dist_info) or {
+		return error('cannot create ${dir}/${dist_info}')
+	}
+	for name in ['METADATA', 'WHEEL', 'RECORD', 'direct_url.json'] {
+		data := extract(result, '${dist_info}/${name}') or { continue }
+		os.write_file(dir + '/' + dist_info + '/' + name, data.bytestr()) or {
+			return error('cannot write ${name} into ${dist_info}')
+		}
+	}
+	return
+}
+
+// is_editable_wheel reports whether a wheel points at local build output.
+//
+// It looks for a `.pth` entry, which is the shape `vcraft build --editable` writes.
+// The scan stops at the central directory, because local headers are what this tool
+// writes and reads: a general ZIP reader would be code that exists only to undo what
+// the writer just did. Uploading one would publish a pointer to the builder's disk
+// rather than a copy anyone else can install, so `publish` refuses them.
+pub fn is_editable_wheel(path string) !bool {
+	data := os.read_file(path) or { return error('cannot read ${path}') }.bytes()
+	mut at := 0
+	for at + 30 <= data.len {
+		signature := u32le(data, at)
+		if signature == 0x0201_4b50 {
+			return false
+		}
+		if signature != 0x0403_4b50 {
+			return error('${path} is not a ZIP wheel')
+		}
+		name_len := int(u16le(data, at + 26))
+		extra_len := int(u16le(data, at + 28))
+		compressed := int(u32le(data, at + 18))
+		entry_name := data[at + 30..at + 30 + name_len].bytestr()
+		if entry_name.ends_with('.pth') {
+			return true
+		}
+		at = at + 30 + name_len + extra_len + compressed
+	}
+	return false
 }
 
 // extract returns one entry's bytes from a wheel.

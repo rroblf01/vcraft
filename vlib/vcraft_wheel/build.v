@@ -19,6 +19,22 @@ pub mut:
 	extension string
 	// binary is the compiled module's bytes.
 	binary []u8
+	// extras are further files to ship, each already under the name it should have in
+	// the archive. Used for the compiled Python a project carries and for the `.pth` an
+	// editable install needs.
+	extras []ExtraFile
+	// direct_url is PEP 610 JSON identifying the source tree an editable wheel points
+	// at. Empty for an ordinary wheel, which is a copy rather than a pointer.
+	direct_url string
+	// editable_paths are directories holding the build output, and make the wheel point
+	// at them instead of carrying a copy. Empty for an ordinary wheel.
+	//
+	// PEP 660's shape: the wheel contains a `.pth` file naming each directory, and the
+	// installer puts them on `sys.path`. The extension is then imported from where the
+	// build left it, so a rebuild is picked up with no reinstall. A project can expose
+	// more than one directory because the compiled extension and hand-written Python
+	// helpers do not have to live together.
+	editable_paths []string
 	// tags are the compatibility tags, e.g. `cp314-cp314-manylinux_2_17_x86_64`.
 	// Several are listed when one wheel serves more than one.
 	tags []string
@@ -28,6 +44,23 @@ pub mut:
 	requires_python string
 	classifiers     []string
 	requires_dist   []string
+}
+
+// editable_pth_name is the file an editable wheel points at build output with.
+//
+// It has to start with an underscore and end in `.pth` so `import` skips it, and it is
+// named after the distribution so two editable installs in one environment do not
+// collide. Escaped, because a distribution name can contain runs of separators that are
+// not valid together in a file name.
+pub fn editable_pth_name(distribution string) string {
+	return '_${escape(distribution)}_editable.pth'
+}
+
+// ExtraFile is one file to add to a wheel under a chosen name.
+pub struct ExtraFile {
+pub mut:
+	name string
+	data []u8
 }
 
 // build writes the wheel and returns its bytes.
@@ -53,7 +86,27 @@ pub fn build(input BuildInput) ![]u8 {
 	// cleanly and then imports as an empty namespace package whose only member is a
 	// submodule. The symptom is a module with no attributes and a `__file__` of None,
 	// which looks like a build that produced an empty extension.
-	archive.add_file(input.extension, input.binary)
+	if input.editable_paths.len > 0 {
+		// An editable wheel ships no extension. It ships a `.pth` naming each directory
+		// the build wrote importable files to, and the installer puts those directories
+		// on `sys.path`, so imports find the files that are there rather than copies
+		// made when the wheel was installed.
+		//
+		// One absolute directory per line, and the file has to end in a newline: `site`
+		// reads a `.pth` line by line and a last line without one is still processed,
+		// but some tools that write `.pth` files by hand get this wrong and it is not
+		// worth the risk.
+		mut paths := ''
+		for path in input.editable_paths {
+			paths += path + '\n'
+		}
+		archive.add_file(editable_pth_name(input.distribution), paths.bytes())
+	} else {
+		archive.add_file(input.extension, input.binary)
+	}
+	for e in input.extras {
+		archive.add_file(e.name, e.data)
+	}
 
 	mut metadata := MetaData{
 		name:            name
@@ -69,6 +122,10 @@ pub fn build(input BuildInput) ![]u8 {
 		render_metadata(metadata).bytes())
 	archive.add_file('${escape(name)}-${normalize_version(input.version)}.dist-info/WHEEL',
 		render_wheel(input.tags.join(','), 'vcraft ${input.version}').bytes())
+	if input.direct_url.len > 0 {
+		archive.add_file('${escape(name)}-${normalize_version(input.version)}.dist-info/direct_url.json',
+			input.direct_url.bytes())
+	}
 
 	// RECORD lists every file with its hash, and lists itself without one, because a
 	// file cannot contain its own hash.

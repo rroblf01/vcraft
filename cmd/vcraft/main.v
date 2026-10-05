@@ -17,7 +17,7 @@ const usage = 'vcraft: Python extensions in V
 usage:
   vcraft new <name>            scaffold a project
   vcraft build [options]       build a wheel
-  vcraft develop               build and install into the active virtualenv
+  vcraft develop [options]     build and install into the active virtualenv
   vcraft sdist                 build a source distribution
   vcraft generate-ci           emit a GitHub Actions workflow into .github/workflows/
   vcraft publish               upload the built distributions to PyPI
@@ -34,6 +34,8 @@ build options:
   --strip                      strip symbols
   --skip-audit                 do not validate the resulting wheel
   --jobs <n>                   compiler parallelism
+  --editable                   point the environment at this build instead of copying
+  --copy                       install a copy, which is the opposite of --editable
 '
 
 // Args is the parsed command line.
@@ -198,6 +200,10 @@ fn cmd_build(args Args, develop bool) {
 		jobs:        args.options['jobs'].int()
 		v_path:      vcraft_project.vlib_path()
 		v:           vcraft_project.v_compiler()
+		// `develop` is editable unless `--copy` says otherwise, which is what the name
+		// means: the point of a development install is that a rebuild is picked up. `build`
+		// is never editable, because a wheel is a thing you upload.
+		editable:    (develop || args.flags['editable']) && !args.flags['copy']
 	}
 	result := vcraft_project.build(p, opt) or {
 		eprintln('error: ${err.msg()}')
@@ -217,6 +223,14 @@ fn cmd_build(args Args, develop bool) {
 	println('  extension ${result.extension}')
 	println('  size      ${result.wheel.len} bytes')
 	if !develop {
+		return
+	}
+	if opt.editable {
+		vcraft_project.develop_editable(p, result) or {
+			eprintln('error: ${err.msg()}')
+			exit(1)
+		}
+		println('installed into ${vcraft_project.active_environment()} (editable)')
 		return
 	}
 	vcraft_project.develop(p, result) or {
@@ -307,6 +321,27 @@ fn cmd_publish(args Args) {
 		eprintln('error: nothing in dist/; run `vcraft build` first')
 		exit(1)
 	}
+	mut editable := []string{}
+	for entry in os.ls('dist') or { []string{} } {
+		if !entry.ends_with('.whl') {
+			continue
+		}
+		if vcraft_project.is_editable_wheel('dist/' + entry) or { false } {
+			editable << entry
+		}
+	}
+	editable.sort()
+	if editable.len > 0 {
+		// An editable wheel is a pointer to the machine that built it, not a copy
+		// anyone else can install. Refusing it here is what stops a local path from
+		// reaching PyPI, where the install would succeed and the import would fail.
+		eprintln('error: dist/ holds editable wheels, which cannot be uploaded:')
+		for name in editable {
+			eprintln('  dist/${name}')
+		}
+		eprintln('  build a regular wheel first: `vcraft build`')
+		exit(1)
+	}
 	mut uploader := ''
 	if os.exists('uv') || command_exists('uv') {
 		uploader = 'uv'
@@ -337,7 +372,7 @@ fn command_exists(name string) bool {
 
 // cmd_clean removes build output.
 fn cmd_clean(args Args) {
-	for dir in ['build', 'dist'] {
+	for dir in ['build', 'dist', '.vcraft'] {
 		if os.exists(dir) {
 			os.rmdir_all(dir) or {
 				eprintln('error: cannot remove ${dir}')

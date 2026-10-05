@@ -87,14 +87,24 @@ The compiler is invoked through the shell, because `-cflags` takes several value
 once. `-path` takes `dir|@vlib`, and an unquoted `@` is a word the shell tries to run:
 the error is "not found", naming a directory that exists. Every argument is quoted.
 
-## `develop` copies rather than installs
+## `develop` points by default and copies on request
 
-It writes the extension into the active environment's `platlib` rather than running
-`pip install` on the wheel. A local wheel install needs a build-isolation environment
-for a package with no dependencies, which is more moving parts than copying one file.
-The `.dist-info` is deliberately left out: `develop` is for working on an extension, not
-for a dependency graph, and a half-written `dist-info` confuses `importlib.metadata`
-more than a missing one.
+`vcraft develop` builds an editable wheel and writes its `.pth` plus `.dist-info`
+into the active environment's `platlib`, rather than running `pip install` on the
+wheel. A local wheel install needs a build-isolation environment for a package with
+no dependencies, which is more moving parts than writing two files, and a rebuild is
+picked up without reinstalling because the pointer names the build output.
+
+The `.dist-info` is included, unlike the old copy-only behaviour: it is the
+distribution's own METADATA and WHEEL plus a RECORD naming what was installed, and
+`direct_url.json` marks the install editable. Without it the extension imports
+perfectly and every tool that asks what version is installed reports the package as
+missing, which is a confusing way to find out that an editable install is a real
+thing.
+
+`develop --copy` keeps the old behaviour: it copies the extension from the wheel
+and removes the editable pointer, so a stale `.pth` cannot combine a copied binary
+with another build's sources.
 
 `VIRTUAL_ENV` is read rather than inferred, because a `develop` that installs into the
 system Python while the user is in a virtualenv is the most annoying thing a build tool
@@ -159,6 +169,28 @@ Three things in it are not obvious:
 - The sdist has to carry `pyproject.toml` and the backend. Without them it is a source
   tree with no way to build it: pip untars it, reads `pyproject.toml`, and finds
   nothing.
+- `build_editable` builds into `.vcraft/editable` under the source tree, not into the
+  frontend-chosen wheel directory. An editable wheel points at build output by absolute
+  path, and output in a temporary directory would point at a directory the installer
+  has already removed.
+
+## Python helpers live in `python/`
+
+Hand-written `.py` files under a project's `python/` directory travel in a regular
+wheel under the same relative names. Type stubs do not: a `.pyi` is for a checker,
+not for import. With `embed-pyc = true`, each `.py` is compiled with the interpreter
+being built against and shipped as sourceless `foo.pyc` instead, using unchecked-hash
+invalidation because there is no source to check. An invalid helper fails the build
+when compilation is requested; silently omitting it would make the import fail later,
+far from the file that caused it.
+
+Editable installs do not copy or compile those helpers. The generated `.pth` names
+both the compiled-extension directory and the `python/` source directory, so edits to
+either side are picked up on the next import or rebuild.
+
+`vcraft clean` also removes `.vcraft/`, which is where PEP 660 builds stage their
+output. Cleaning breaks an installed editable pointer until the next build, which is
+why that directory is in the scaffold's `.gitignore` rather than in the repository.
 
 ## A tar member is three things at once
 

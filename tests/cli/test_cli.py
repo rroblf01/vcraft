@@ -89,6 +89,9 @@ def main() -> int:
         t.check("the V source", (project / "src" / "mypkg_native.v").exists())
         t.check("the README", (project / "README.md").exists())
         t.check(".gitignore", (project / ".gitignore").exists())
+        t.check("editable build output is ignored",
+                "/.vcraft/" in (project / ".gitignore").read_text(),
+                (project / ".gitignore").read_text())
         t.check("no glue is scaffolded",
                 not (project / "src" / "_vcraft_generated.v").exists(),
                 "the glue is regenerated on every build and would go stale")
@@ -264,6 +267,89 @@ def main() -> int:
             t.check("the wheel is not pure Python",
                     "Root-Is-Purelib: false" in wheel_meta, wheel_meta)
 
+        print("python helpers")
+        helper = project / "python" / "mypkg_helper.py"
+        helper.write_text(
+            '"""A helper shipped with the wheel."""\n\n\n'
+            'def marker() -> str:\n'
+            '    return "helper-source"\n')
+        manifest = project / "vcraft.toml"
+        original_manifest = manifest.read_text()
+        try:
+            source_out = tmp / "out-source"
+            proc = vcraft("build", "--out-dir", str(source_out), cwd=project)
+            t.check("a build with Python succeeds", proc.returncode == 0,
+                    (proc.stderr or proc.stdout).strip()[-400:])
+            source_wheels = sorted(source_out.glob("*.whl"))
+            t.check("a source wheel is written", len(source_wheels) == 1,
+                    str(list(source_out.glob("*"))))
+            if source_wheels:
+                with zipfile.ZipFile(source_wheels[0]) as z:
+                    entries = z.namelist()
+                    t.check("source Python is packaged",
+                            "mypkg_helper.py" in entries, str(entries))
+                    t.check("type stubs are not packaged",
+                            not any(n.endswith(".pyi") for n in entries),
+                            str(entries))
+                source_target = tmp / "venv-source"
+                make_venv(source_target, with_pip=True)
+                proc = subprocess.run(
+                    [str(source_target / "bin" / "python"), "-m", "pip", "install",
+                     "--no-index", "--no-deps", str(source_wheels[0])],
+                    capture_output=True, text=True)
+                t.check("pip installs source Python", proc.returncode == 0,
+                        (proc.stderr or proc.stdout).strip()[-300:])
+                proc = subprocess.run(
+                    [str(source_target / "bin" / "python"), "-c",
+                     "import mypkg_helper\nprint(mypkg_helper.marker())"],
+                    capture_output=True, text=True, cwd=tmp)
+                t.check("packaged source imports", proc.returncode == 0
+                        and proc.stdout.strip() == "helper-source",
+                        (proc.stderr or proc.stdout).strip()[-300:])
+
+            print("sourceless python")
+            manifest.write_text(original_manifest.replace(
+                'minimum-version = "3.12"\n',
+                'minimum-version = "3.12"\nembed-pyc = true\n'))
+            pyc_out = tmp / "out-pyc"
+            proc = vcraft("build", "--out-dir", str(pyc_out), cwd=project)
+            t.check("a sourceless build succeeds", proc.returncode == 0,
+                    (proc.stderr or proc.stdout).strip()[-400:])
+            pyc_wheels = sorted(pyc_out.glob("*.whl"))
+            t.check("a sourceless wheel is written", len(pyc_wheels) == 1,
+                    str(list(pyc_out.glob("*"))))
+            if pyc_wheels:
+                with zipfile.ZipFile(pyc_wheels[0]) as z:
+                    entries = z.namelist()
+                    t.check("compiled Python is packaged",
+                            "mypkg_helper.pyc" in entries, str(entries))
+                    t.check("source Python is omitted",
+                            "mypkg_helper.py" not in entries, str(entries))
+                    data = z.read("mypkg_helper.pyc")
+                    t.check("the bytecode has a header", len(data) > 16,
+                            str(len(data)))
+                pyc_target = tmp / "venv-pyc"
+                make_venv(pyc_target, with_pip=True)
+                proc = subprocess.run(
+                    [str(pyc_target / "bin" / "python"), "-m", "pip", "install",
+                     "--no-index", "--no-deps", str(pyc_wheels[0])],
+                    capture_output=True, text=True)
+                t.check("pip installs sourceless Python", proc.returncode == 0,
+                        (proc.stderr or proc.stdout).strip()[-300:])
+                proc = subprocess.run(
+                    [str(pyc_target / "bin" / "python"), "-c",
+                     "import mypkg_helper\n"
+                     "print(mypkg_helper.marker())\n"
+                     "print(mypkg_helper.__file__)"],
+                    capture_output=True, text=True, cwd=tmp)
+                t.check("sourceless Python imports", proc.returncode == 0
+                        and "helper-source" in proc.stdout
+                        and proc.stdout.strip().endswith(".pyc"),
+                        (proc.stderr or proc.stdout).strip()[-300:])
+        finally:
+            manifest.write_text(original_manifest)
+            helper.unlink(missing_ok=True)
+
         print("build twice")
         first = wheel.read_bytes()
         proc = vcraft("build", cwd=project)
@@ -310,9 +396,27 @@ def main() -> int:
                 (proc.stderr or proc.stdout).strip()[-400:])
         t.check("develop says where it installed",
                 "installed into" in proc.stdout, proc.stdout)
+        t.check("develop is editable by default", "(editable)" in proc.stdout,
+                proc.stdout)
+        platlib = next((target / "lib").glob("python*/site-packages"))
+        pth = platlib / "_mypkg_editable.pth"
+        t.check("an editable pointer is installed", pth.exists(),
+                str(list(platlib.glob("*.pth"))))
         installed = list((target / "lib").rglob("mypkg_native*.so"))
-        t.check("the extension is in site-packages", len(installed) == 1,
+        t.check("no copied extension shadows the editable build", not installed,
                 str([str(p) for p in (target / "lib").rglob("*.so")]))
+        dist_info = next(platlib.glob("mypkg-0.1.0.dist-info"))
+        t.check("editable metadata is installed", dist_info.is_dir(),
+                str(list(platlib.glob("mypkg*"))))
+        t.check("the installed metadata names the pointer",
+                "_mypkg_editable.pth" in (dist_info / "RECORD").read_text(),
+                (dist_info / "RECORD").read_text())
+        t.check("the install is marked editable",
+                '"editable":true' in (dist_info / "direct_url.json").read_text().replace(" ", ""),
+                (dist_info / "direct_url.json").read_text())
+        t.check("the pointer names the build output",
+                str(project / "dist" / "build") in pth.read_text(),
+                pth.read_text())
         proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
                               capture_output=True, text=True, cwd=tmp)
         t.check("the developed extension works", proc.returncode == 0,
@@ -330,6 +434,29 @@ def main() -> int:
             capture_output=True, text=True, cwd=tmp)
         t.check("the constructor runs", proc.stdout.strip() == "True 1",
                 proc.stdout.strip() or proc.stderr.strip()[-200:])
+
+        print("develop --copy")
+        copy_target = tmp / "venv-develop-copy"
+        make_venv(copy_target)
+        copy_env = dict(os.environ, VIRTUAL_ENV=str(copy_target))
+        proc = subprocess.run([str(VCRAFT), "develop", "--copy"], cwd=project,
+                              env=copy_env, capture_output=True, text=True)
+        t.check("a copy install succeeds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        t.check("a copy install says where it installed",
+                "installed into" in proc.stdout and "(editable)" not in proc.stdout,
+                proc.stdout)
+        copy_platlib = next((copy_target / "lib").glob("python*/site-packages"))
+        t.check("a copy installs the extension",
+                len(list(copy_platlib.glob("mypkg_native*.so"))) == 1,
+                str(list(copy_platlib.glob("*.so"))))
+        t.check("a copy removes the editable pointer",
+                not list(copy_platlib.glob("*_editable.pth")),
+                str(list(copy_platlib.glob("*.pth"))))
+        proc = subprocess.run([str(copy_target / "bin" / "python"), "-c", script],
+                              capture_output=True, text=True, cwd=tmp)
+        t.check("the copied extension works", proc.returncode == 0,
+                (proc.stderr or "").strip()[-300:])
 
         print("abi3")
         # An abi3 build goes through CPython's multi-phase initialisation and the
@@ -580,6 +707,9 @@ pub fn (mut n Node) link(other voidptr) {
                         top + "/vcraft.toml" in members)
                 t.check("it carries the V sources",
                         top + "/src/mypkg_native.v" in members)
+                t.check("it carries Python sources",
+                        top + "/python/mypkg_native/_stubs.pyi" in members,
+                        str(members))
                 # Without these the sdist is a source tree with no way to build it: pip
                 # untars, reads pyproject.toml, and finds nothing.
                 t.check("it carries pyproject.toml", top + "/pyproject.toml" in members)
@@ -612,6 +742,70 @@ pub fn (mut n Node) link(other voidptr) {
                 (proc.stderr or "").strip()[-300:])
         if proc.returncode == 0:
             t.check("pip-installed functions", "Hello," in proc.stdout, proc.stdout)
+
+        print("pip install -e .")
+        # PEP 660 goes through `build_editable`, not `build`, so this is the only
+        # check that the generated backend has the editable hooks and that the
+        # resulting wheel points at build output which survives the install.
+        editable_target = tmp / "venv-editable"
+        make_venv(editable_target, with_pip=True)
+        proc = subprocess.run(
+            [str(editable_target / "bin" / "python"), "-m", "pip", "install",
+             "--no-index", "--no-build-isolation", "--no-deps", "-e", "."],
+            cwd=project, env=env, capture_output=True, text=True)
+        t.check("pip install -e . succeeds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        proc = subprocess.run([str(editable_target / "bin" / "python"), "-c", script],
+                              capture_output=True, text=True, cwd=tmp)
+        t.check("the editable project works", proc.returncode == 0,
+                (proc.stderr or "").strip()[-300:])
+        proc = subprocess.run(
+            [str(editable_target / "bin" / "python"), "-c",
+             "import importlib.metadata\n"
+             "import json\n"
+             "import mypkg_native as m\n"
+             "direct = json.loads(importlib.metadata.distribution('mypkg').read_text('direct_url.json'))\n"
+             "print(m.__file__)\n"
+             "print(direct['dir_info']['editable'])\n"
+             "print(direct['url'])\n"],
+            capture_output=True, text=True, cwd=tmp)
+        t.check("editable metadata is readable", proc.returncode == 0,
+                (proc.stderr or "").strip()[-300:])
+        if proc.returncode == 0:
+            lines = proc.stdout.splitlines()
+            t.check("the editable extension resolves to stable build output",
+                    lines[0].startswith(str(project / ".vcraft" / "editable" / "build")),
+                    proc.stdout)
+            t.check("editable metadata marks the source tree",
+                    lines[1:] == ["True", project.as_uri()], proc.stdout)
+
+        print("editable wheels are not publishable")
+        # An editable wheel points at the builder's disk. `publish` has to refuse it
+        # before choosing an uploader, because the refusal is the only thing standing
+        # between a local path and PyPI.
+        editable_wheels = sorted((project / ".vcraft" / "editable").glob("*.whl"))
+        t.check("an editable wheel was staged", len(editable_wheels) == 1,
+                str(list((project / ".vcraft" / "editable").glob("*"))))
+        if editable_wheels:
+            backup = tmp / "wheel-backup"
+            backup.mkdir(exist_ok=True)
+            saved = []
+            try:
+                for wheel_path in (project / "dist").glob("*.whl"):
+                    saved.append((wheel_path, backup / wheel_path.name))
+                    wheel_path.rename(backup / wheel_path.name)
+                shutil.copy(editable_wheels[0], project / "dist" / editable_wheels[0].name)
+                proc = vcraft("publish", cwd=project)
+                t.check("publish refuses an editable wheel", proc.returncode != 0,
+                        (proc.stdout or proc.stderr).strip()[-300:])
+                t.check("and says why",
+                        "cannot be uploaded" in (proc.stderr or proc.stdout),
+                        (proc.stderr or proc.stdout).strip()[-300:])
+            finally:
+                for wheel_path in (project / "dist").glob("*.whl"):
+                    wheel_path.unlink()
+                for original, staged in saved:
+                    staged.rename(original)
 
         print("pip install an sdist")
         if sdists:
@@ -683,6 +877,8 @@ pub fn (mut n Node) link(other voidptr) {
         proc = vcraft("clean", cwd=project)
         t.check("clean succeeds", proc.returncode == 0, proc.stderr.strip())
         t.check("clean removes dist", not (project / "dist").exists())
+        t.check("clean removes editable build output",
+                not (project / ".vcraft").exists())
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

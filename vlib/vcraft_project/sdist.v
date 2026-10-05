@@ -37,6 +37,17 @@ pub fn sdist(p Project, root string) ![]u8 {
 		tar.add_file('${base_name(p)}/' + name, data.bytes()) or { return err }
 	}
 	tar.add_file('${base_name(p)}/PKG-INFO', pkg_info(p).bytes()) or { return err }
+	// Project Python travels as source: the wheel builder compiles it when `embed-pyc`
+	// is set, so an sdist that omits it builds a wheel without the helpers. Type stubs
+	// travel as well, because they are the interface a type checker reads.
+	python_root := root.trim_right('/') + '/python'
+	if os.exists(python_root) {
+		for name in python_sources(python_root) {
+			path := python_root + '/' + name
+			data := os.read_file(path) or { return error('cannot read ${path}') }
+			tar.add_file('${base_name(p)}/python/' + name, data.bytes()) or { return err }
+		}
+	}
 	// Gzipped, because that is what the `.tar.gz` in the file name promises and what
 	// pip's sdist handling expects. A stored tar under that name is rejected by the
 	// first read.

@@ -42,7 +42,7 @@ pub fn scaffold(p Project) []ScaffoldFile {
 	}
 	files << ScaffoldFile{
 		path:    '.gitignore'
-		content: '/build/\n/dist/\n/src/_vcraft_generated.v\n*.so\n'
+		content: '/build/\n/dist/\n/.vcraft/\n/src/_vcraft_generated.v\n*.so\n'
 	}
 	// The PEP 517 backend, so that `pip install .` works from a fresh checkout without
 	// the project having to know anything about it.
