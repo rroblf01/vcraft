@@ -56,6 +56,8 @@ fn C.vpy_gc_untrack(self voidptr)
 fn C.Py_ReprLeave(self voidptr)
 fn C.vpy_allow_threads() voidptr
 fn C.vpy_end_allow_threads(state voidptr)
+fn C.vpy_mod_gil_not_used() voidptr
+fn C.vpy_module_set_gil(m voidptr, gil voidptr) int
 fn C.vpy_buffer_new() voidptr
 fn C.vpy_buffer_get(obj voidptr, view voidptr) int
 fn C.vpy_buffer_ptr(view voidptr) voidptr

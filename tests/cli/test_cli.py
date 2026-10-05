@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1009,6 +1010,8 @@ pub fn (mut n Node) link(other voidptr) {
             t.check("versions are quoted", 'python: "3.12"' in text, text[:800])
             t.check("the matrix has cells",
                     text.count("- target:") >= 4, str(text.count("- target:")))
+            t.check("the plain matrix tags macOS honestly too",
+                    "macosx-arm64" in text and "universal2" not in text, text[:600])
             t.check("linux cells build in containers",
                     "ghcr.io/rroblf01/vcraft-manylinux" in text, text)
 
@@ -1045,8 +1048,13 @@ pub fn (mut n Node) link(other voidptr) {
                         t.check(f"{workflow_file} parses", False, str(exc))
             ci = yaml.safe_load(
                 (ROOT / ".github" / "workflows" / "ci.yml").read_text())
-            runners = [cell.get("os", "") for cell in
-                       ci["jobs"]["tests"]["strategy"]["matrix"]["include"]]
+            matrix = ci["jobs"]["tests"]["strategy"]["matrix"]
+            # Either an `include:` list of cells or a plain list of runners;
+            # both spellings mean the same thing and the check accepts both so
+            # the workflow stays editable.
+            runners = [cell.get("os", "") for cell in matrix.get("include", [])
+                       if isinstance(cell, dict)]
+            runners += [os for os in matrix.get("os", []) if isinstance(os, str)]
             t.check("CI runs where the developers cannot",
                     "macos-14" in runners, str(runners))
             t.check("CI runs every suite",
@@ -1057,6 +1065,23 @@ pub fn (mut n Node) link(other voidptr) {
                                      "tests/codegen/test_codegen.py",
                                      "tests/cli/test_cli.py"]),
                     "a suite CI never runs is a suite that rots")
+            ci_text = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+            t.check("CI builds V from a pinned commit, not a release",
+                    "V_COMMIT" in ci_text and "releases/download" not in ci_text,
+                    "no V release is newer than the flags vcraft passes")
+            t.check("CI covers free-threading with the GIL disabled",
+                    "PYTHON_GIL=0" in ci_text and "3.13t" in ci_text, ci_text[-500:])
+            images = yaml.safe_load(
+                (ROOT / ".github" / "workflows" / "release-images.yml").read_text())
+            dockerfiles = set()
+            for match in re.finditer(r"dockerfile:\s*(\S+)",
+                                     (ROOT / ".github" / "workflows" / "release-images.yml").read_text()):
+                dockerfiles.add(match.group(1))
+            t.check("every image the release builds is a file here",
+                    dockerfiles == {"docker/manylinux.Dockerfile",
+                                    "docker/musllinux.Dockerfile"} and
+                    all((ROOT / name).exists() for name in dockerfiles),
+                    str(sorted(dockerfiles)))
 
         print("abi3 changes the matrix")
         manifest = project / "vcraft.toml"
@@ -1072,8 +1097,12 @@ pub fn (mut n Node) link(other voidptr) {
         text = workflow.read_text()
         # One wheel covers every interpreter from the floor up, so one cell per platform
         # is the whole matrix rather than one per interpreter.
-        t.check("the abi3 matrix covers linux, macos and windows",
-                text.count("- target:") == 6, str(text.count("- target:")))
+        t.check("the abi3 matrix covers linux and macos, not windows",
+                text.count("- target:") == 5, str(text.count("- target:")))
+        t.check("no windows cell is emitted",
+                "windows-latest" not in text, text[:600])
+        t.check("macOS is tagged with the architecture actually built",
+                "macosx-arm64" in text and "universal2" not in text, text[:600])
         t.check("the abi3 matrix names the abi3 tag", "cp312-abi3-" in text, text[:600])
         # Quoted values only: the action step itself has an unquoted `container:`
         # line passing the matrix value through.
@@ -1085,6 +1114,25 @@ pub fn (mut n Node) link(other voidptr) {
                 "--target linux-x86_64-musl --musllinux 1_2" in text, text)
         t.check("aarch64 cells run on arm runners",
                 text.count("ubuntu-24.04-arm") == 2, str(text.count("ubuntu-24.04-arm")))
+        manifest.write_text(original)
+
+        print("free-threading changes the matrix")
+        # A free-threaded cell without an interpreter is a cell that fails: the
+        # build refuses to guess which `python3` is free-threaded, so the matrix
+        # names setup-python's free-threaded interpreter and passes it explicitly.
+        manifest.write_text(original.replace('minimum-version = "3.12"',
+                                             'minimum-version = "3.12"\nfree-threading = true'))
+        proc = vcraft("generate-ci", cwd=project)
+        t.check("generate-ci succeeds with free-threading", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        text = workflow.read_text()
+        t.check("the free-threaded matrix is one cell per platform",
+                text.count("- target:") == 2, str(text.count("- target:")))
+        t.check("free-threaded cells name a free-threaded interpreter",
+                text.count('python: "3.13t"') == 2, text[:800])
+        t.check("and pass it to the build",
+                text.count("--free-threading --interpreter python3") == 2,
+                text[:800])
         manifest.write_text(original)
 
         print("errors")

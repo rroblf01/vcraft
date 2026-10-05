@@ -1,14 +1,13 @@
 # vcraft-action
 
 Build a Python extension written in V, as a GitHub Action. It mirrors
-`maturin-action`: it downloads pinned `vcraft` and V releases and runs any
-`vcraft` command, and it can do it inside a manylinux container.
+`maturin-action`: it installs a pinned `vcraft` release and runs any `vcraft`
+command, and it can do it inside a manylinux container.
 
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
     vcraft-version: v0.1.0
-    v-version: '0.5.2'
     args: build --release
 ```
 
@@ -28,12 +27,24 @@ jobs:
 
 ## Inputs
 
-| Input               | Default        | Meaning                                    |
-| ------------------- | -------------- | ------------------------------------------ |
-| `vcraft-version`    | `v0.1.0`       | The vcraft release to download             |
-| `v-version`         | `0.5.2`        | The V compiler release to download         |
+| Input               | Default           | Meaning                                 |
+| ------------------- | ----------------- | --------------------------------------- |
+| `vcraft-version`    | `v0.1.0`          | The vcraft release to download          |
 | `args`              | `build --release` | The vcraft command to run               |
-| `working-directory` | `.`            | The project directory to run vcraft in     |
+| `container`         | `''`              | An image to build inside instead        |
+| `working-directory` | `.`               | The project directory to run vcraft in  |
+
+## Supported runners
+
+Linux and macOS (arm64). The vcraft release is downloaded per runner OS, and
+the V compiler is built from a pinned source commit on both: no V release is
+newer than the flags vcraft passes, so a release binary is not an option yet.
+When V cuts a newer release this goes back to downloading it; until then the
+source build adds several minutes, and the `container` input skips the installs
+entirely.
+
+Windows runners are refused with a clear error: vcraft quotes its compiler
+arguments for a POSIX shell and has never compiled there.
 
 ## Releases
 

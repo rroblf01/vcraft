@@ -826,10 +826,12 @@ Editable wheels point at the local build tree and are refused by `vcraft publish
 
 `--target` names the machine a wheel is built for rather than the one building it.
 The canonical form is `<os>-<arch>-<libc>` -- `linux-aarch64-gnu`,
-`linux-x86_64-musl`, `macos-universal2`, `windows-amd64` -- and Rust-style triples
-like `aarch64-unknown-linux-gnu` are accepted as aliases. A Linux policy is claimed
-separately and explicitly, because the tag is a statement about the libc the binary
-was linked against:
+`linux-x86_64-musl`, `macos-arm64`, `windows-amd64` -- and Rust-style triples
+like `aarch64-unknown-linux-gnu` are accepted as aliases. There is deliberately
+no `universal2`: a fat binary needs two architectures linked together and one
+build makes one, so the tag always names the architecture actually built. A Linux
+policy is claimed separately and explicitly, because the tag is a statement about
+the libc the binary was linked against:
 
 ```console
 $ vcraft build --target linux-aarch64-gnu --manylinux 2_17
@@ -929,14 +931,16 @@ each image and importing the result -- see [`docker/README.md`](docker/README.md
 for why V is compiled from source in both.
 
 For the one-liner experience, `vcraft-action@v1` mirrors `maturin-action`: it
-downloads pinned `vcraft` and V releases, runs any `vcraft` command, and can do it
-inside a manylinux container.
+installs a pinned `vcraft` release, builds the V compiler from a pinned source
+commit -- no V release is newer than the flags vcraft passes -- and runs any
+`vcraft` command. It can also do it inside a manylinux container, in which case
+nothing is installed at all. Linux and macOS (arm64) runners are supported;
+Windows runners are refused with a clear error.
 
 ```yaml
 - uses: vcraft/vcraft-action@v1
   with:
     vcraft-version: v0.1.0
-    v-version: '0.5.2'
     args: build --release
 ```
 
@@ -1057,6 +1061,8 @@ for the ones the generator did.
 - [x] **PEP 517**: `pip install .` and `pip install <sdist>` both work
 - [x] **Free-threading**: checked against the interpreter rather than assumed, so a
       `cp314t` wheel cannot be produced from a GIL build; the object-header mirror
+      follows the 32-byte free-threaded layout, the module declares itself GIL-free,
+      and both are verified by importing with the GIL disabled; the object-header mirror
       follows the 32-byte free-threaded layout, verified by importing on 3.14t
 - [x] **Cross-compilation**: `--target` with canonical names and Rust-style
       aliases, `--manylinux`/`--musllinux` policies, `--cc`/`--cflags`/`--ldflags`,
@@ -1072,8 +1078,12 @@ for the ones the generator did.
 - [x] **Zero-copy buffers, `@[vc_gil]`, iterators**: buffer-protocol `[]u8` parameters
       that alias instead of copying, GIL release with exact pairing on every path and
       per-thread state, and `@[vc_iter]`/`@[vc_next]` slots
-- [ ] Apple Silicon, Windows and aarch64 verification (matrix covers them in CI;
-      musllinux x86_64 is verified locally in its image)
+- [ ] Apple Silicon and aarch64 verification (covered by `ci.yml` on macos-14 and
+      by the native-arm image builds; musllinux x86_64 is verified locally in
+      its image)
+- [ ] Windows support (explicitly out of scope for now: the compiler arguments
+      are quoted for a POSIX shell, the action refuses Windows runners, and no
+      Windows wheel has ever been built)
 
 See [Status](#status) for what actually works today.
 
@@ -1134,9 +1144,14 @@ this yet.
 
 ## Requirements
 
-- V compiler 0.5.2 or newer
-- CPython 3.10 or newer
-- A C toolchain: gcc, clang or MSVC, plus the CPython development headers
+- A V compiler newer than the 0.5.2 release: vcraft passes flags 0.5.2 predates
+  (`-new-compiler` fails there with "Unknown argument"), so build V from source
+  at the commit pinned in `docker/` -- the images, the action and CI all do
+  exactly that, and the pins are the documented minimum
+- CPython 3.10 or newer (3.13+ for free-threaded builds)
+- A C toolchain: gcc or clang, plus the CPython development headers (MSVC is
+  untested: vcraft quotes its compiler arguments for a POSIX shell and Windows
+  builds are explicitly unsupported for now)
 - Docker, only for manylinux wheels
 
 On a normal Linux install the CPython headers are usually already present:

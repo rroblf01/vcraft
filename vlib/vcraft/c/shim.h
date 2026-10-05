@@ -102,6 +102,16 @@ void vpy_type_clear(void *self);
 void *vpy_allow_threads(void);
 void vpy_end_allow_threads(void *state);
 
+// Declaring that a module runs without the GIL.
+//
+// `Py_MOD_GIL_NOT_USED` is a macro, which V cannot read, and
+// `PyUnstable_Module_SetGIL` only exists when compiling against free-threaded
+// headers, so both go through here. The V side calls them only under
+// `$if vcraft_free_threaded`, which the build passes exactly when the interpreter
+// is free-threaded.
+void *vpy_mod_gil_not_used(void);
+int vpy_module_set_gil(void *module, void *gil);
+
 // The buffer protocol.
 //
 // `Py_buffer` is opaque under the limited API, so V cannot hold one, read its `buf`

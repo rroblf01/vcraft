@@ -9,10 +9,6 @@ inputs:
     description: The vcraft release to download, e.g. v0.1.0.
     required: false
     default: v0.1.0
-  v-version:
-    description: The V compiler release the extension is compiled with.
-    required: false
-    default: 0.5.2
   args:
     description: The vcraft command to run, e.g. "build --release".
     required: false
@@ -32,28 +28,56 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: refuse Windows explicitly
+      # Nothing below works there: the V release has no Windows binary in this
+      # shape, `ln -sf` has nowhere to land, and vcraft quotes its compiler
+      # arguments for a POSIX shell. Failing here names the limitation instead
+      # of failing ten steps later inside a C compiler error.
+      if: ${{ runner.os == 'Windows' }}
+      shell: bash
+      run: |
+        echo "error: vcraft-action does not support Windows runners yet" >&2
+        exit 1
+
     - name: install the V compiler
-      # Skipped for container builds: the image already carries both, and
-      # installing them on the runner as well would only slow the job down.
       if: ${{ inputs.container == '' }}
       shell: bash
-      # A release binary rather than a source build: the workflow needs a compiler in
-      # seconds, and the release is what CI pins. vcraft itself always builds V from
-      # source inside its images, which is the path that cannot assume a release runs.
+      # Built from source at a pinned commit, because no V release is newer
+      # than the flags vcraft passes: the 0.5.2 release predates `-new-compiler`
+      # and fails every build with "Unknown argument". Same pins as docker/* and
+      # .github/workflows/ci.yml; when a newer V release exists this goes back
+      # to downloading it.
+      env:
+        V_COMMIT: 0137eb5d8ebc5d183259309ed08ea06ba9bc27d6
+        VC_COMMIT: 8af812feb76c678abd86a8e682fd9ab2790e519c
       run: |
-        curl -fsSL -o /tmp/v_linux.zip \
-          "https://github.com/vlang/v/releases/download/${{ inputs.v-version }}/v_linux.zip"
-        unzip -q /tmp/v_linux.zip -d /opt
-        rm /tmp/v_linux.zip
-        ln -sf /opt/v/v /usr/local/bin/v
-        echo "/usr/local/bin" >> "$GITHUB_PATH"
+        git init -q /tmp/v-src
+        cd /tmp/v-src
+        git remote add origin https://github.com/vlang/v.git
+        git fetch -q --depth 1 origin "$V_COMMIT"
+        git checkout -q FETCH_HEAD
+        git clone https://github.com/vlang/vc.git vc
+        (cd vc && git checkout -q "$VC_COMMIT")
+        make fresh_tcc
+        make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+        echo "/tmp/v-src" >> "$GITHUB_PATH"
 
     - name: install vcraft
       if: ${{ inputs.container == '' }}
       shell: bash
       run: |
+        # One release asset per runner OS. macOS is arm64 only: Intel runners are
+        # retired, and no Intel vcraft binary is published.
+        case "$(uname -s)" in
+          Linux) ASSET="vcraft-${{ inputs.vcraft-version }}-linux-x86_64.tar.gz" ;;
+          Darwin) ASSET="vcraft-${{ inputs.vcraft-version }}-macos-arm64.tar.gz" ;;
+          *)
+            echo "error: no vcraft release asset for $(uname -s)" >&2
+            exit 1
+            ;;
+        esac
         curl -fsSL -o /tmp/vcraft.tar.gz \
-          "https://github.com/rroblf01/vcraft/releases/download/${{ inputs.vcraft-version }}/vcraft-${{ inputs.vcraft-version }}-linux-x86_64.tar.gz"
+          "https://github.com/rroblf01/vcraft/releases/download/${{ inputs.vcraft-version }}/${ASSET}"
         mkdir -p /opt/vcraft
         # The release packs a top-level directory, which is stripped so the binary
         # lands at the documented `/opt/vcraft/bin/vcraft` whatever the version is.

@@ -504,6 +504,45 @@ void vpy_end_allow_threads(void *state) {
 	PyEval_RestoreThread((PyThreadState *)state);
 }
 
+// vpy_mod_gil_not_used returns the `Py_MOD_GIL_NOT_USED` slot value.
+//
+// Through an accessor because it is a macro, and because it only exists where the
+// headers know about free threading. Compiles everywhere -- on a GIL build it is
+// just `(void *)1` -- and is only ever passed to `PyUnstable_Module_SetGIL`.
+void *vpy_mod_gil_not_used(void) {
+#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 >= 0x030d0000
+	return Py_MOD_GIL_NOT_USED;
+#else
+	// The value is `(void *)1` in every version that defines the macro; it is only
+	// hidden behind the limited API before 3.13, and an abi3 build at floor 3.12
+	// still compiles this file.
+	return (void *)1;
+#endif
+}
+
+// vpy_module_set_gil declares whether a module needs the GIL.
+//
+// Single-phase modules cannot carry slots -- `PyModule_Create2` refuses a definition
+// with any -- so this is the only way to declare them GIL-free. Returns CPython's
+// status, so the caller decides what a failure means.
+//
+// `PyUnstable_Module_SetGIL` is only declared when the headers know about free
+// threading, so on a GIL build this is a stub that reports failure. That branch never
+// runs: the V side calls it only under `$if vcraft_free_threaded`, which the build
+// passes exactly when the interpreter is free-threaded. A stub rather than `#ifdef`-
+// ing the function away, because a missing symbol fails the link with a message
+// about `vpy_module_set_gil` instead of failing the compile with one about
+// `PyUnstable_Module_SetGIL`.
+int vpy_module_set_gil(void *module, void *gil) {
+#ifdef Py_GIL_DISABLED
+	return PyUnstable_Module_SetGIL((PyObject *)module, gil);
+#else
+	(void)module;
+	(void)gil;
+	return -1;
+#endif
+}
+
 // vpy_buffer_new allocates a view for one buffer acquisition.
 //
 // Zeroed, because `PyBuffer_Release` on a view whose acquisition failed must find

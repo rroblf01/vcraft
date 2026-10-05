@@ -252,6 +252,12 @@ directions: a free-threaded request against a GIL interpreter fails, and so does
 build against a free-threaded one, because a `cp314` wheel built from a `cp314t`
 interpreter is wrong in the same way.
 
+A free-threaded build also declares the module GIL-free through
+`PyUnstable_Module_SetGIL`: single-phase initialisation refuses a definition carrying
+slots, so the `Py_mod_gil` slot is not an option and the call after creation is the
+documented mechanism instead. Without it the interpreter enables the GIL on import
+with a warning and every `@[vc_gil]` release is pointless.
+
 ## CI: the matrix follows the ABI choice
 
 `vcraft generate-ci` derives the matrix from the project rather than emitting one fixed

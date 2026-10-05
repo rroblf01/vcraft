@@ -8,18 +8,47 @@ on:
 permissions:
   contents: write
 
+# The V compiler is built from source at a pinned commit on every runner: no V
+# release is newer than the flags vcraft passes, so a release binary fails every
+# build with "Unknown argument". Same pins as docker/* and the vcraft-action;
+# when V cuts a newer release these steps go back to downloading it.
+env:
+  V_COMMIT: 0137eb5d8ebc5d183259309ed08ea06ba9bc27d6
+  VC_COMMIT: 8af812feb76c678abd86a8e682fd9ab2790e519c
+
 jobs:
   release:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: linux-x86_64
+          - os: macos-14
+            asset: macos-arm64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: install the V compiler
+      - name: set up Python
+        # The suites build venvs, so the interpreter needs ensurepip. Runner
+        # Pythons do not guarantee that; a pinned CPython does.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: build the V compiler from source
         run: |
-          curl -fsSL -o /tmp/v_linux.zip \
-            "https://github.com/vlang/v/releases/download/0.5.2/v_linux.zip"
-          unzip -q /tmp/v_linux.zip -d /opt
-          sudo ln -s /opt/v/v /usr/local/bin/v
+          git init -q /tmp/v-src
+          cd /tmp/v-src
+          git remote add origin https://github.com/vlang/v.git
+          git fetch -q --depth 1 origin "$V_COMMIT"
+          git checkout -q FETCH_HEAD
+          git clone https://github.com/vlang/vc.git vc
+          (cd vc && git checkout -q "$VC_COMMIT")
+          make fresh_tcc
+          make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+          echo "/tmp/v-src" >> "$GITHUB_PATH"
 
       - name: build vcraft
         run: ./scripts/build-vcraft.sh && bin/vcraft version
@@ -33,14 +62,17 @@ jobs:
           python3 tests/cli/test_cli.py
 
       - name: pack the release
+        # The tarball holds the binary and the V modules it was built with, under
+        # one top-level directory. The action strips that directory on install,
+        # so the layout here and the `--strip-components=1` there have to agree.
         run: |
           VERSION="${GITHUB_REF_NAME#vcraft/}"
-          mkdir -p "vcraft-${VERSION}-linux-x86_64/bin"
-          cp bin/vcraft "vcraft-${VERSION}-linux-x86_64/bin/"
-          cp -r vlib "vcraft-${VERSION}-linux-x86_64/"
-          tar -czf "vcraft-${VERSION}-linux-x86_64.tar.gz" "vcraft-${VERSION}-linux-x86_64"
+          mkdir -p "vcraft-${VERSION}-${{ matrix.asset }}/bin"
+          cp bin/vcraft "vcraft-${VERSION}-${{ matrix.asset }}/bin/"
+          cp -r vlib "vcraft-${VERSION}-${{ matrix.asset }}/"
+          tar -czf "vcraft-${VERSION}-${{ matrix.asset }}.tar.gz" "vcraft-${VERSION}-${{ matrix.asset }}"
 
       - name: publish the release
         uses: softprops/action-gh-release@v2
         with:
-          files: vcraft-*-linux-x86_64.tar.gz
+          files: vcraft-*-${{ matrix.asset }}.tar.gz

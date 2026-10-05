@@ -144,6 +144,16 @@ pub fn (mut m Module) seal() PyObj {
 			return steal(C.PyModuleDef_Init(voidptr(&m.def)))
 		}
 		m.obj = steal(C.PyModule_Create2(voidptr(&m.def), python_api_version()))
+		$if vcraft_free_threaded ? {
+			// Declared GIL-free, so the interpreter keeps the GIL disabled for this
+			// module instead of enabling it on import with a warning. A slot cannot do
+			// this: single-phase initialisation refuses a definition carrying any.
+			if C.vpy_module_set_gil(m.obj.ptr, C.vpy_mod_gil_not_used()) != 0 {
+				C.Py_DecRef(m.obj.ptr)
+				C.PyErr_SetString(C.vpy_exc_runtime_error(), c'vcraft: cannot mark the module GIL-free')
+				return PyObj{}
+			}
+		}
 		// Single-phase initialisation creates the module with its functions already in
 		// it, so `seal` returns a finished module and nothing calls `exec`. The classes
 		// live in the callback, so on this path the callback has to be called here.

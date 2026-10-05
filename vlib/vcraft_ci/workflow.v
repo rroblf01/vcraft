@@ -142,8 +142,13 @@ fn image_names(kind string) string {
 //
 // Two combinations that look plausible are deliberately absent: an abi3 build and a
 // free-threaded build are mutually exclusive, because the free-threaded runtime has no
-// stable ABI; and there is no macOS arm64 cell paired with macOS x86_64, because a
-// universal2 wheel is built once on one of them rather than twice.
+// stable ABI; and there is no Windows cell at all, because `vcraft build` quotes its
+// compiler arguments for a POSIX shell and has never compiled on one.
+//
+// macOS cells are tagged with the architecture actually built, `arm64` on today's
+// runners, and not `universal2`: a fat binary needs two architectures linked together
+// and one build makes one, so the old universal2 label described a wheel nobody
+// produced.
 //
 // Linux cells build inside the published images, each on a native runner for its
 // architecture. Emulation is nowhere in this matrix: an emulated compiler is how a
@@ -153,18 +158,22 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 	if free_threading {
 		// A free-threaded build has no stable ABI, so the matrix is one cell per
 		// platform and each names its own interpreter rather than a version the runner
-		// might provide with the GIL.
+		// might provide with the GIL. The interpreter is passed explicitly because the
+		// build refuses to guess: without `--interpreter` a GIL `python3` earlier on
+		// PATH would produce a `cp313t`-tagged wheel full of GIL code.
 		out << Target{
 			os:             'ubuntu-latest'
+			python:         '3.13t'
 			target:         'cp3.13t-cp313t-manylinux-x86_64'
 			free_threading: true
-			args:           'build --release --free-threading'
+			args:           'build --release --free-threading --interpreter python3'
 		}
 		out << Target{
 			os:             'macos-14'
+			python:         '3.13t'
 			target:         'cp3.13t-cp313t-macosx-arm64'
 			free_threading: true
-			args:           'build --release --free-threading'
+			args:           'build --release --free-threading --interpreter python3'
 		}
 		return out
 	}
@@ -208,13 +217,7 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 		out << Target{
 			os:     'macos-14'
 			abi3:   p.abi3
-			target: 'cp' + compact(p.abi3) + '-abi3-macosx-universal2'
-			args:   'build --release --abi3 ' + p.abi3
-		}
-		out << Target{
-			os:     'windows-latest'
-			abi3:   p.abi3
-			target: 'cp' + compact(p.abi3) + '-abi3-win_amd64'
+			target: 'cp' + compact(p.abi3) + '-abi3-macosx-arm64'
 			args:   'build --release --abi3 ' + p.abi3
 		}
 		return out
@@ -240,7 +243,7 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 		out << Target{
 			os:     'macos-14'
 			python: version
-			target: 'cp' + floor + '-macosx-universal2'
+			target: 'cp' + floor + '-macosx-arm64'
 			args:   'build --release'
 		}
 	}

@@ -12,16 +12,20 @@ on:
 # matrix and the published images instead: the test scripts are bash and the
 # toolchain expectations are POSIX, so running them there would test the port
 # rather than the product.
+
+# V comes from source at a pinned commit, not from a release: no V release is
+# newer than the flags vcraft passes, so a release binary fails every build.
+# Same pins as docker/*, the vcraft-action and release-vcraft.yml.
+env:
+  V_COMMIT: 0137eb5d8ebc5d183259309ed08ea06ba9bc27d6
+  VC_COMMIT: 8af812feb76c678abd86a8e682fd9ab2790e519c
+
 jobs:
   tests:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            v: v_linux.zip
-          - os: macos-14
-            v: v_macos_arm64.zip
+        os: [ubuntu-latest, macos-14]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -31,16 +35,18 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: install the V compiler
-        # A release binary rather than a source build: CI needs a compiler in
-        # seconds. The images build V from source instead, which is the path
-        # that cannot assume a release runs.
+      - name: build the V compiler from source
         run: |
-          curl -fsSL -o /tmp/v.zip \
-            "https://github.com/vlang/v/releases/download/0.5.2/${{ matrix.v }}"
-          sudo unzip -q /tmp/v.zip -d /opt || unzip -q /tmp/v.zip -d /opt
-          rm /tmp/v.zip
-          echo "/opt/v" >> "$GITHUB_PATH"
+          git init -q /tmp/v-src
+          cd /tmp/v-src
+          git remote add origin https://github.com/vlang/v.git
+          git fetch -q --depth 1 origin "$V_COMMIT"
+          git checkout -q FETCH_HEAD
+          git clone https://github.com/vlang/vc.git vc
+          (cd vc && git checkout -q "$VC_COMMIT")
+          make fresh_tcc
+          make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+          echo "/tmp/v-src" >> "$GITHUB_PATH"
 
       - name: run the test suites
         # Every suite, in dependency order: the wheel and CLI suites build on
@@ -52,3 +58,66 @@ jobs:
           python3 tests/runtime/test_runtime.py
           python3 tests/codegen/test_codegen.py
           python3 tests/cli/test_cli.py
+
+  free-threaded:
+    # The one configuration nothing else exercises: a free-threaded interpreter
+    # with the GIL actually disabled. A build that merely tags `cp314t` but
+    # crashes, warns, or serialises on import fails here rather than on a
+    # user's machine.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up a free-threaded Python
+        id: ft-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13t"
+
+      - name: build the V compiler from source
+        run: |
+          git init -q /tmp/v-src
+          cd /tmp/v-src
+          git remote add origin https://github.com/vlang/v.git
+          git fetch -q --depth 1 origin "$V_COMMIT"
+          git checkout -q FETCH_HEAD
+          git clone https://github.com/vlang/vc.git vc
+          (cd vc && git checkout -q "$VC_COMMIT")
+          make fresh_tcc
+          make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+          echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      - name: build the vcraft binary
+        run: ./scripts/build-vcraft.sh && bin/vcraft version
+
+      - name: build a free-threaded wheel
+        run: |
+          ./bin/vcraft new ftcheck /tmp/ftcheck
+          cd /tmp/ftcheck
+          "$GITHUB_WORKSPACE/bin/vcraft" build --free-threading \
+            --interpreter "${{ steps.ft-python.outputs.python-path }}" \
+            --out-dir dist
+
+      - name: import it with the GIL disabled
+        # `PYTHON_GIL=0` is the whole test, and `-W error::RuntimeWarning` makes
+        # the assertion exact: without the `Py_mod_gil` declaration the
+        # interpreter re-enables the GIL with a warning instead, which becomes
+        # an error here. Threads prove the `@[vc_gil]` release is paired on
+        # every path rather than merely present.
+        working-directory: /tmp/ftcheck
+        run: |
+          PYTHON_GIL=0 "${{ steps.ft-python.outputs.python-path }}" -W error::RuntimeWarning -c "
+          import sys, threading, glob
+          sys.path.insert(0, glob.glob('dist/build/*.so')[0].rsplit('/', 1)[0])
+          import ftcheck_native as m
+          assert m.add(2, 3) == 5
+          seen = []
+          def burn():
+              for _ in range(3):
+                  seen.append(m.greet('threads'))
+          threads = [threading.Thread(target=burn) for _ in range(4)]
+          [t.start() for t in threads]
+          [t.join() for t in threads]
+          assert len(seen) == 12, seen
+          print('free-threaded import and threads ok')
+          "

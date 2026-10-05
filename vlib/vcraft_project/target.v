@@ -21,7 +21,8 @@ pub mut:
 	name string
 	// os is `linux`, `macos` or `windows`.
 	os string
-	// arch is the wheel architecture: `x86_64`, `aarch64`, `universal2` or `amd64`.
+	// arch is the wheel architecture: `x86_64`, `aarch64` or `amd64`. Always the
+	// architecture actually built -- never `universal2`, which needs two of them.
 	arch string
 	// libc is `gnu`, `musl`, or empty where there is no choice to make.
 	libc string
@@ -66,10 +67,10 @@ pub fn parse_target(name string) !CrossTarget {
 			arch = 'aarch64'
 			libc = 'musl'
 		}
-		'macos-universal2', 'universal2-apple-darwin' {
-			os_ = 'macos'
-			arch = 'universal2'
-		}
+		// No `universal2`: a fat binary needs two architectures linked together and
+		// this builds one, so tagging one architecture's output `universal2` would
+		// be the same lie as a guessed platform tag. macos-arm64 and macos-x86_64
+		// name what is actually built.
 		'macos-arm64', 'aarch64-apple-darwin' {
 			os_ = 'macos'
 			arch = 'arm64'
@@ -129,9 +130,8 @@ pub fn default_target() CrossTarget {
 	$if arm64 {
 		arch = 'aarch64'
 	}
-	$if macos {
-		arch = 'universal2'
-	}
+	// The host's own architecture, not `universal2`: one build makes one
+	// architecture's binary, and the tag says which.
 	$if windows {
 		arch = 'amd64'
 	}
