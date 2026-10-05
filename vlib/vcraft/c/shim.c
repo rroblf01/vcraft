@@ -348,6 +348,112 @@ void vpy_type_clear(void *self) {
 	fn((PyObject *)self);
 }
 
+// The state chain key. Created once at module import, which runs under the import
+// lock, so there is no race to create it: by the time any trampoline runs, the key
+// exists.
+static Py_tss_t *vpy_state_key = NULL;
+
+#define VPY_STATE_LEVELS 8
+
+// vpy_state_init creates the thread-local key for the state chain.
+//
+// Called from the generated module initialiser, which runs once per import under the
+// import lock. A second call is a no-op rather than a second key, because re-creating
+// it would orphan every thread's chain.
+void vpy_state_init(void) {
+	if (vpy_state_key != NULL) {
+		return;
+	}
+	vpy_state_key = PyThread_tss_alloc();
+	if (vpy_state_key == NULL) {
+		return;
+	}
+	if (PyThread_tss_create(vpy_state_key) != 0) {
+		PyThread_tss_free(vpy_state_key);
+		vpy_state_key = NULL;
+	}
+}
+
+// vpy_chain returns the calling thread's eight state slots, creating them zeroed on
+// first use.
+//
+// The array is never freed, which leaks eight pointers per thread that ever ran a
+// trampoline. Sixty-four bytes per thread is what thread-local storage costs here, and
+// CPython offers no hook to free a TSS value at thread exit, so the alternative would
+// be a global registry with a lock on every call.
+static void **vpy_chain(void) {
+	void *slots;
+	if (vpy_state_key == NULL) {
+		return NULL;
+	}
+	slots = PyThread_tss_get(vpy_state_key);
+	if (slots == NULL) {
+		slots = PyMem_Calloc(VPY_STATE_LEVELS, sizeof(void *));
+		if (slots == NULL) {
+			return NULL;
+		}
+		if (PyThread_tss_set(vpy_state_key, slots) != 0) {
+			PyMem_Free(slots);
+			return NULL;
+		}
+	}
+	return (void **)slots;
+}
+
+// vpy_enter_state publishes `block` as level 0 of the calling thread's chain and
+// returns the chain it replaced, so the caller can put it back.
+//
+// The previous chain is a fresh copy the caller owns: it is written back verbatim by
+// `vpy_leave_state`, which frees it. A trampoline that never calls back into Python
+// between the two sees exactly what it published, whatever other threads do.
+void *vpy_enter_state(void *block) {
+	void **chain = vpy_chain();
+	void *previous = PyMem_Malloc(VPY_STATE_LEVELS * sizeof(void *));
+	if (previous == NULL) {
+		return NULL;
+	}
+	if (chain != NULL) {
+		memcpy(previous, chain, VPY_STATE_LEVELS * sizeof(void *));
+		memset(chain, 0, VPY_STATE_LEVELS * sizeof(void *));
+		chain[0] = block;
+	} else {
+		memset(previous, 0, VPY_STATE_LEVELS * sizeof(void *));
+	}
+	return previous;
+}
+
+// vpy_leave_state restores the chain `vpy_enter_state` returned and frees it.
+void vpy_leave_state(void *previous) {
+	void **chain = vpy_chain();
+	if (chain != NULL && previous != NULL) {
+		memcpy(chain, previous, VPY_STATE_LEVELS * sizeof(void *));
+	}
+	PyMem_Free(previous);
+}
+
+// vpy_publish_state records one generation of the chain: level 1 is the immediate
+// base, level 2 the one above it, and so on. Out-of-range levels are ignored rather
+// than reported, because the generator emits exactly the levels the chain has.
+void vpy_publish_state(int level, void *ptr) {
+	void **chain = vpy_chain();
+	if (chain == NULL || level < 1 || level >= VPY_STATE_LEVELS) {
+		return;
+	}
+	chain[level] = ptr;
+}
+
+// vpy_state_at returns one generation of the calling thread's chain, or null when the
+// level is not there. Null outside a trampoline and past the end of the class's chain,
+// so a method asking for a generation above its own gets null rather than a pointer
+// into another thread's call.
+void *vpy_state_at(int level) {
+	void **chain = vpy_chain();
+	if (chain == NULL || level < 0 || level >= VPY_STATE_LEVELS) {
+		return NULL;
+	}
+	return chain[level];
+}
+
 // vpy_gc_untrack removes an instance from the collector's list.
 //
 // The first step of any `tp_dealloc` for a type with `Py_TPFLAGS_HAVE_GC`. Skipping it
@@ -377,6 +483,76 @@ void vpy_gc_track(void *self) {
 	if (type != NULL && PyType_HasFeature(type, Py_TPFLAGS_HAVE_GC)) {
 		PyObject_GC_Track((PyObject *)self);
 	}
+}
+
+// vpy_allow_threads releases the GIL and returns the thread state to restore.
+//
+// The state is opaque to the caller on purpose: restoring anything but the state this
+// returned corrupts the interpreter's thread bookkeeping, and a void pointer gives the
+// caller nothing to mistake for something else.
+void *vpy_allow_threads(void) {
+	return (void *)PyEval_SaveThread();
+}
+
+// vpy_end_allow_threads restores the thread state a matching `vpy_allow_threads`
+// returned, which re-acquires the GIL.
+//
+// Paired exactly once per release. Restoring twice, or restoring a state from another
+// release, leaves the GIL count wrong and the next thread switch crashes inside
+// CPython rather than anywhere near the call that unbalanced it.
+void vpy_end_allow_threads(void *state) {
+	PyEval_RestoreThread((PyThreadState *)state);
+}
+
+// vpy_buffer_new allocates a view for one buffer acquisition.
+//
+// Zeroed, because `PyBuffer_Release` on a view whose acquisition failed must find
+// nothing to release rather than a half-written pointer. The zeroing is the contract
+// that makes releasing unconditionally safe.
+void *vpy_buffer_new(void) {
+	return PyMem_Calloc(1, sizeof(Py_buffer));
+}
+
+// vpy_buffer_get acquires a simple view of an object's buffer.
+//
+// Returns 0 on success and -1 with a Python exception set on failure, which is
+// CPython's own convention: a `TypeError` naming that a bytes-like object was
+// required. The caller releases the view when it is done, on every path, including
+// the error paths after it.
+int vpy_buffer_get(void *obj, void *view) {
+	if (obj == NULL || view == NULL) {
+		return -1;
+	}
+	return PyObject_GetBuffer((PyObject *)obj, (Py_buffer *)view, PyBUF_SIMPLE);
+}
+
+// vpy_buffer_ptr returns the address of the viewed bytes.
+void *vpy_buffer_ptr(void *view) {
+	if (view == NULL) {
+		return NULL;
+	}
+	return ((Py_buffer *)view)->buf;
+}
+
+// vpy_buffer_len returns how many bytes the view holds.
+long vpy_buffer_len(void *view) {
+	if (view == NULL) {
+		return 0;
+	}
+	return (long)((Py_buffer *)view)->len;
+}
+
+// vpy_buffer_release releases a view and frees it.
+//
+// Safe on a view whose acquisition failed, because the view is zeroed on allocation
+// and `PyBuffer_Release` finds a null object in it. Safe on null itself, because a
+// reader that never acquired has nothing to give back.
+void vpy_buffer_release(void *view) {
+	if (view == NULL) {
+		return;
+	}
+	PyBuffer_Release((Py_buffer *)view);
+	PyMem_Free(view);
 }
 
 PyObject *vpy_none(void) {

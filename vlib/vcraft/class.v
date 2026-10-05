@@ -145,12 +145,11 @@ pub fn noop() voidptr {
 
 // The state block of the running trampoline, and one pointer per generation above it.
 //
-// A method's receiver is the class's own struct, copied in before the call and out after
-// it. For a subclass that struct does *not* contain the base's half of the state: the
-// state of a class with a base is the base's whole state followed by its own struct, so
-// the receiver reaches its own half and nothing else. Without these pointers a method of a
-// subclass has no way at all to read an inherited field, because `&c` is not the address
-// of the instance's state.
+// A method's receiver is the class's own struct, copied in before the call and out
+// after it. For a subclass that struct does *not* contain the base's half of the state:
+// the state is the base followed by the subclass, so the receiver reaches the subclass's
+// half and nothing else. Without these pointers a method of a subclass has no way at all
+// to read an inherited field, because `&c` is not the address of the instance's state.
 //
 // A chain is a list rather than a single "base" pointer because the offsets are not
 // uniform. The root of a chain is always at the start of the block, but the immediate base
@@ -160,29 +159,37 @@ pub fn noop() voidptr {
 //
 // Eight levels is the cap. Nothing in V suggests a deeper chain is common, and a fixed
 // array keeps the save and restore a copy rather than an allocation on every call.
+//
+// One chain per thread rather than one for the process. Every trampoline used to publish
+// into a single global, which is correct exactly as long as the GIL serialises the
+// trampolines -- and a `@[vc_gil]` call runs without it, so two threads in two
+// trampolines would publish into the same slots and each would read the other's
+// instance. The chain lives in thread-local storage instead, keyed once at import.
 pub const state_chain_max = 8
 
-__global (
-	// Initialised inside `unsafe` because it is an array of references, and V insists on
-	// that for a fixed array. The values are nil, so nothing is actually unchecked here.
-	g_vc_chain = unsafe { [state_chain_max]voidptr{} }
-)
+// init_state creates the thread-local key the state chain lives in.
+//
+// Called from the generated module initialiser, which runs once per import under the
+// import lock. Everything after that -- every trampoline of every thread -- assumes the
+// key exists.
+pub fn init_state() {
+	unsafe {
+		C.vpy_state_init()
+	}
+}
 
-// enter_state publishes `block` as level 0 of the running trampoline's state and returns
+// enter_state publishes `block` as level 0 of the calling thread's chain and returns
 // the chain it replaced, so the caller can put it back.
 //
 // The whole chain is saved rather than just the block: a nested call -- a method reaching
 // another instance, or a property read from inside a method -- would otherwise leave the
-// outer trampoline's levels pointing at the inner one's instance. There is no thread-local
-// storage here, and an extension module's Python calls hold the GIL, so one chain is
-// enough.
-pub fn enter_state(block voidptr) [state_chain_max]voidptr {
-	previous := unsafe { g_vc_chain }
+// outer trampoline's levels pointing at the inner one's instance. There is no
+// thread-local storage here beyond the chain itself, and an extension module's Python
+// calls hold the GIL, so one chain per thread is enough.
+pub fn enter_state(block voidptr) voidptr {
 	unsafe {
-		g_vc_chain = [state_chain_max]voidptr{}
-		g_vc_chain[0] = block
+		return C.vpy_enter_state(block)
 	}
-	return previous
 }
 
 // publish_base records the own struct of one generation of the chain.
@@ -191,20 +198,26 @@ pub fn enter_state(block voidptr) [state_chain_max]voidptr {
 // one call per generation with the address it computes from the state struct, so nothing
 // here has to know the layout.
 pub fn publish_base(level int, ptr voidptr) {
-	if level < 1 || level >= state_chain_max {
-		return
-	}
 	unsafe {
-		g_vc_chain[level] = ptr
+		C.vpy_publish_state(level, ptr)
 	}
 }
 
 // leave_state restores the chain saved by `enter_state`.
-pub fn leave_state(previous [state_chain_max]voidptr) {
+pub fn leave_state(previous voidptr) {
 	unsafe {
-		g_vc_chain = previous
+		C.vpy_leave_state(previous)
 	}
 }
+
+// state_at returns the address of one generation of the calling thread's state, nil if
+// that level is not there.
+//
+// Level 0 is the whole block, 1 the immediate base's own struct, 2 the next one up. Nil
+// outside a trampoline and for a level deeper than the class's chain, so a method of a
+// class with no base that asks gets nil rather than a wild pointer. Dereferencing nil is
+// still the caller's mistake to make, and no spelling of this API can be both zero-cost
+// and checked.
 
 // A method of a subclass reaches an inherited field with a cast on `state_at`:
 //
@@ -237,18 +250,9 @@ pub fn leave_state(previous [state_chain_max]voidptr) {
 //
 // state_at returns the address of one generation of the running trampoline's state, nil if
 // that level is not there.
-//
-// Level 0 is the whole block, 1 the immediate base's own struct, 2 the next one up. Nil
-// outside a trampoline and for a level deeper than the class's chain, so a method of a
-// class with no base that asks gets nil rather than a wild pointer. Dereferencing nil is
-// still the caller's mistake to make, and no spelling of this API can be both zero-cost
-// and checked.
 pub fn state_at(level int) voidptr {
-	if level < 0 || level >= state_chain_max {
-		return unsafe { nil }
-	}
 	unsafe {
-		return g_vc_chain[level]
+		return C.vpy_state_at(level)
 	}
 }
 
@@ -528,7 +532,7 @@ pub fn type_from_spec(name string, basicsize int, slots voidptr) PyObj {
 // Callers that have nothing to pass write `unsafe { nil }`.
 pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voidptr,
 	methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr, hash voidptr,
-	bases voidptr, traverse voidptr, clear voidptr) PyObj {
+	bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr, next_fn voidptr) PyObj {
 	// The instance size is the larger of this class's own header plus its storage
 	// pointer, and whatever its base already needs. A subclass that is smaller than its
 	// base is rejected by CPython with "tp_basicsize ... too small for base", and the
@@ -588,6 +592,20 @@ pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voi
 		slots << PyTypeSlot{
 			slot:  slot_clear
 			value: clear
+		}
+	}
+	// `tp_iter` and `tp_iternext` go together like traverse and clear do: an iterator
+	// that cannot produce items fails at the first `next()`, and items without an
+	// iterator are unreachable. The generator only passes both or neither, so a half
+	// pair here would be a generator bug rather than a user error.
+	if iter_fn != unsafe { nil } && next_fn != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_iter
+			value: iter_fn
+		}
+		slots << PyTypeSlot{
+			slot:  slot_iternext
+			value: next_fn
 		}
 	}
 	// The base tuple has to outlive this call: CPython reads it and keeps a reference to

@@ -684,6 +684,93 @@ pub fn parse(text string) !int {
                         probe.stdout.splitlines() == ["3", "ValueError nothing to parse"],
                         probe.stdout)
 
+        print("iterator and nogil diagnostics")
+        # A half pair compiles and then fails at the call, with nothing pointing at
+        # the missing annotation, so each half is reported where it is declared.
+        it = tmp / "itertypes"
+        (it / "src").mkdir(parents=True)
+        (it / "v.mod").write_text(
+            'Module {\n\tname: "it_native"\n\tbase_url: "src"\n'
+            '\trequires: ["vcraft"]\n}\n')
+        (it / "vcraft.toml").write_text(
+            '[package]\nname = "ittypes"\nversion = "0.1.0"\n'
+            'description = "iterators"\n\n[build]\nmodule = "it_native"\n'
+            'source = "src"\noutput = "python"\n')
+        it_source = it / "src" / "it_native.v"
+
+        def it_project(body: str) -> str:
+            return "module it_native\n\nimport vcraft\n\n" + body
+
+        def it_diagnostic(label: str, body: str, needle: str) -> None:
+            it_source.write_text(it_project(body), encoding="utf-8")
+            out = vcraft("build", cwd=it)
+            t.check(f"{label} fails", out.returncode != 0, out.stdout[-200:])
+            t.check(f"{label} says why", needle in out.stderr,
+                    out.stderr.strip()[-300:])
+
+        it_diagnostic("next without iter", """
+@[vc_class]
+pub struct Lonely {
+mut:
+\t@[vc_field] current int
+}
+
+@[vc_methods]
+@[vc_next]
+pub fn (mut c Lonely) advance() int {
+\treturn c.current
+}
+""", "no `@[vc_iter]`")
+
+        it_diagnostic("iter without next", """
+@[vc_class]
+pub struct Stuck {
+mut:
+\t@[vc_field] current int
+}
+
+@[vc_methods]
+@[vc_iter]
+pub fn (mut c Stuck) rewind() {
+}
+""", "no `@[vc_next]`")
+
+        it_diagnostic("an iterator with arguments", """
+@[vc_class]
+pub struct Nosy {
+mut:
+\t@[vc_field] current int
+}
+
+@[vc_methods]
+@[vc_iter]
+pub fn (mut c Nosy) rewind(from int) {
+}
+""", "takes none")
+
+        it_diagnostic("an iterator with a return value", """
+@[vc_class]
+pub struct Greedy {
+mut:
+\t@[vc_field] current int
+}
+
+@[vc_methods]
+@[vc_iter]
+pub fn (mut c Greedy) rewind() int {
+\treturn c.current
+}
+""", "must return nothing")
+
+        it_diagnostic("nogil on a raw function", """
+@[vc_fn]
+@[vc_raw]
+@[vc_gil]
+pub fn touch(ptr voidptr) voidptr {
+\treturn ptr
+}
+""", "contradicts `@[vc_raw]`")
+
         print("abi3 with cycles")
         # `Py_TPFLAGS_HAVE_GC` reaches CPython differently under the stable ABI: the type
         # object's own traverse has to come through `PyType_GetSlot`, because

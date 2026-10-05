@@ -39,6 +39,14 @@ pub const attr_ref = 'vc_ref'
 
 pub const attr_eq = 'vc_eq'
 
+// attr_iter marks a method as the class's `__iter__`: the instance is its own iterator,
+// so the slot returns the instance itself after running the method for its side effects.
+pub const attr_iter = 'vc_iter'
+
+// attr_next marks a method as the class's `__next__`: each call returns the next item,
+// and a V error ends the iteration -- cleanly for `StopIteration`, loudly otherwise.
+pub const attr_next = 'vc_next'
+
 pub const attr_hash = 'vc_hash'
 
 // known_attrs is every annotation the generator reacts to. Anything else in a
@@ -49,6 +57,8 @@ pub const known_attrs = [
 	attr_raw,
 	attr_eq,
 	attr_hash,
+	attr_iter,
+	attr_next,
 	attr_base,
 	attr_ref,
 	attr_error,
@@ -98,6 +108,12 @@ pub mut:
 	eq bool
 	// hash marks a method used as `tp_hash`.
 	hash bool
+	// is_iter marks a method used as `tp_iter`. Exactly one per class, paired with one
+	// `is_next`: an iterator that cannot produce items is a trap, and items without an
+	// iterator are unreachable.
+	is_iter bool
+	// is_next marks a method used as `tp_iternext`.
+	is_next bool
 	// mangled is the C-level V name of the trampoline, unique within the module.
 	trampoline string
 	// origin, line and column place the declaration, for a diagnostic raised in a
@@ -156,6 +172,10 @@ pub mut:
 	// richcompare and hash_fn are the generated `tp_richcompare` and `tp_hash`.
 	richcompare string
 	hash_fn string
+	// iter_fn and next_fn are the generated `tp_iter` and `tp_iternext`, empty when the
+	// class declares no `@[vc_iter]` and `@[vc_next]` pair.
+	iter_fn string
+	next_fn string
 	// key is the class name folded to snake_case, because V rejects an identifier
 	// with uppercase letters in it.
 	key string

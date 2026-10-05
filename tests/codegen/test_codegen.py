@@ -75,7 +75,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 11,
+            glue.count("add_function_owned") == 15,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -468,6 +468,130 @@ def main() -> int:
             "vcraft_generated__raise_customerror" not in stubs)
     t.check("and neither is the error type", "class CustomError" not in stubs)
     t.check("an error type is not a class", "class CustomError" not in stubs)
+
+    print("buffers do not copy on the way in")
+    # A `[]u8` parameter takes anything bytes-like through the buffer protocol, and
+    # the V slice aliases the caller's memory for exactly the call. `bytearray` and
+    # `memoryview` prove it is the protocol and not the type: an exact-`bytes` check
+    # would reject both.
+    t.equal("bytes", h.checksum(b"hello"), 532)
+    t.equal("bytearray", h.checksum(bytearray(b"hello")), 532)
+    t.equal("memoryview", h.checksum(memoryview(b"hello")), 532)
+    t.equal("empty", h.checksum(b""), 0)
+    t.raises("str is not bytes-like", TypeError, "bytes-like",
+             lambda: h.checksum("hello"))
+    t.raises("int is not bytes-like", TypeError, "bytes-like",
+             lambda: h.checksum(42))
+    blob = bytearray(b"\x01\x02\x03\x04")
+    t.equal("every byte counts", h.checksum(blob), 10)
+    blob[0] = 10
+    t.equal("and the caller sees its own memory", h.checksum(blob), 19)
+
+    t.equal("a bytes return copies", h.echoed(b"abc"), b"abc")
+    t.check("as immutable bytes", type(h.echoed(b"abc")) is bytes)
+
+    print("buffers in the generated file")
+    t.check("the view is acquired",
+            "vcraft.buffer_view(args, 0, 'checksum', 'data')" in glue)
+    t.check("and released on every path",
+            "defer { vcraft.buffer_release(arg0_view) }" in glue)
+    t.check("the slice aliases it", "vcraft.buffer_bytes(arg0_view)" in glue)
+    t.check("a return copies out", "vcraft.to_py_bytes_slice(result)" in glue)
+
+    print("the GIL is released")
+    # `@[vc_gil]` marks a function as pure V, and the wrapper releases the GIL around
+    # the call. Four threads burning CPU each get their own core instead of queuing
+    # behind one lock; on a GIL build without the release this would take four times
+    # as long, and with an unbalanced release it would crash the interpreter.
+    import threading
+    import time
+
+    t.equal("a nogil call computes", h.spin(100000), 639911632)
+    t.raises("a nogil failure raises after re-acquiring", RuntimeError,
+             "must not be negative", lambda: h.spin_checked(-1))
+    t.equal("a nogil success still works", h.spin_checked(100), h.spin(100))
+
+    seen = []
+    failures = []
+
+    def burn() -> None:
+        try:
+            for _ in range(3):
+                seen.append(h.spin(2000000))
+        except Exception as exc:  # noqa: BLE001
+            failures.append(exc)
+
+    threads = [threading.Thread(target=burn) for _ in range(4)]
+    start = time.perf_counter()
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    elapsed = time.perf_counter() - start
+    t.check("no thread failed", not failures, str(failures[:1]))
+    t.check("every thread computed", len(seen) == 12 and len(set(seen)) == 1,
+            f"{len(seen)} results, {len(set(seen))} distinct")
+    print(f"    (four threads burned for {elapsed:.2f}s without crashing)")
+
+    print("the release is paired in the generated file")
+    t.check("the call releases", "mut saved := vcraft.allow_threads()" in glue)
+    t.check("and re-acquires on the fall-through path",
+            "vcraft.end_allow_threads(saved)" in glue)
+    t.check("the deferred restore is guarded",
+            "if saved != unsafe { nil }" in glue)
+    t.check("a failure re-acquires before it raises",
+            "vcraft.end_allow_threads(saved)\n\t\tsaved = unsafe { nil }\n\t\tvcraft.raise_from_error(err)"
+            in glue)
+
+    print("iterators")
+    # `@[vc_iter]` runs for its side effects and the slot returns the instance;
+    # `@[vc_next]` produces one item per call. The instance is its own iterator, so
+    # there is no separate iterator object to get wrong.
+    down = h.Countdown()
+    down.start = 3
+    down.current = 3
+    t.equal("iterating yields each value once", list(down), [3, 2, 1])
+    t.equal("the countdown is spent", list(down), [3, 2, 1])
+    # Spent only until `rewind`: every `list()` calls `__iter__` first, which resets.
+    # That is the documented shape of this example, not a leak: exhaustion is visible
+    # through a single iterator held across calls.
+    it = iter(down)
+    t.check("iter() is the instance itself", it is down)
+    t.equal("first item", next(it), 3)
+    t.equal("second item", next(it), 2)
+    t.equal("third item", next(it), 1)
+    try:
+        next(it)
+    except StopIteration as exc:
+        t.check("exhaustion raises StopIteration", True)
+        t.check("with the message the V code chose", str(exc) == "no more values",
+                repr(str(exc)))
+    else:
+        t.check("exhaustion raises StopIteration", False, "no exception")
+    t.equal("and stays exhausted", list(down), [3, 2, 1])
+    down.rewind()
+    t.equal("rewind restores it", list(down), [3, 2, 1])
+
+    fresh = h.Countdown()
+    fresh.start = 2
+    fresh.current = 2
+    t.equal("a for loop consumes it", [x for x in fresh], [2, 1])
+    # `tuple()` calls `__iter__` first, which rewinds: nothing here stays spent.
+    t.equal("tuple() rewinds and consumes it too", tuple(fresh), (2, 1))
+
+    print("iterators in the generated file")
+    t.check("tp_iter is emitted",
+            "fn vcraft_generated__iter_countdown(self voidptr) voidptr {" in glue)
+    t.check("tp_iternext is emitted",
+            "fn vcraft_generated__next_countdown(self voidptr) voidptr {" in glue)
+    t.check("the slots are filled",
+            "voidptr(vcraft_generated__iter_countdown)" in glue
+            and "voidptr(vcraft_generated__next_countdown)" in glue)
+    t.check("a class without the pair gets neither slot",
+            "vcraft_generated__iter_counter" not in glue)
+    t.check("the stub keeps both as methods",
+            "    def rewind(self) -> None: ..." in stub
+            and "    def advance(self) -> int: ..." in stub, stub[-600:])
 
     print("class stress")
     batch = [h.Counter() for _ in range(20000)]

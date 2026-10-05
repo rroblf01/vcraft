@@ -371,3 +371,102 @@ pub fn checked(value int, exc voidptr) !int {
 	}
 	return value * 2
 }
+
+// spin burns time in pure V, so threads can prove the GIL is really released.
+//
+// `@[vc_gil]` is a promise, not a hint: nothing in here touches Python, raises, or
+// allocates in a way the collector would need the interpreter for. The wrapper releases
+// the GIL around the call, so N threads each burn their own core instead of queuing
+// behind one lock.
+@[vc_fn]
+@[vc_gil]
+pub fn spin(iterations int) int {
+	mut total := 0
+	for i in 0 .. iterations {
+		total = (total + i * 7) & 0x7fffffff
+	}
+	return total
+}
+
+// spin_checked is the same shape with a failure mode, so the error path without the
+// GIL is exercised too: the wrapper re-acquires before it raises.
+//
+// A plain `error(...)`, not `raise_domain`: setting a Python exception is touching
+// Python, which a `@[vc_gil]` function must never do. The wrapper turns the value into
+// a RuntimeError after it holds the GIL again.
+@[vc_fn]
+@[vc_gil]
+pub fn spin_checked(iterations int) !int {
+	if iterations < 0 {
+		return error('iterations must not be negative')
+	}
+	return spin(iterations)
+}
+
+// checksum adds every byte it is given.
+//
+// The parameter is `[]u8`, so any bytes-like object works: `bytes`, `bytearray`,
+// `memoryview`. Nothing is copied on the way in -- the wrapper aliases the caller's
+// buffer for exactly the call's duration -- and the `bytes` returned the other way
+// is a copy, because an immutable Python object cannot alias V memory.
+@[vc_fn]
+pub fn checksum(data []u8) int {
+	mut total := 0
+	for b in data {
+		total = (total + int(b)) & 0xffffff
+	}
+	return total
+}
+
+// echoed returns its argument as immutable bytes, which copies.
+//
+// The copy is the point of this function existing next to `checksum`: reads alias
+// and writes copy, and a test that asserts both proves the asymmetry rather than
+// assuming it.
+@[vc_fn]
+pub fn echoed(data []u8) []u8 {
+	return data.clone()
+}
+
+// A countdown that yields its values one at a time.
+//
+// The instance is its own iterator: `@[vc_iter]` runs for its side effects and the
+// slot returns the instance, and `@[vc_next]` produces one item per call. A V error
+// ends the iteration -- cleanly for `StopIteration`, loudly for anything else, which
+// is CPython's own contract for the slot rather than something vcraft invented.
+@[vc_class]
+pub struct Countdown {
+mut:
+	// current is what is left to yield.
+	@[vc_field] current int
+	// start is what `rewind` restores it to.
+	@[vc_field] start int
+}
+
+// A countdown starts from the given value... almost: constructors take no arguments,
+// so it starts from zero and the caller sets `current` itself.
+@[vc_fn]
+pub fn new_countdown() &Countdown {
+	return &Countdown{}
+}
+
+// rewind resets the countdown, so the same instance can be iterated twice.
+@[vc_methods]
+@[vc_iter]
+pub fn (mut c Countdown) rewind() {
+	c.current = c.start
+}
+
+// next yields the current value and steps down, refusing past zero.
+//
+// `StopIteration` is raised the way every domain failure is: at the point of failure,
+// with the pending exception set before the error value travels out.
+@[vc_methods]
+@[vc_next]
+pub fn (mut c Countdown) advance() !int {
+	if c.current <= 0 {
+		return vcraft.raise_domain(.stop_iteration, 'no more values')
+	}
+	c.current--
+	return c.current + 1
+}

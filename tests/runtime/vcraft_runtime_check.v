@@ -14,6 +14,7 @@ import vcraft
 
 @[export: 'PyInit_vcraft_runtime_check']
 fn pyinit_vcraft_runtime_check() voidptr {
+	vcraft.init_state()
 	mut m := vcraft.new_module('vcraft_runtime_check', 'Hand-written glue over the vcraft runtime.')
 	m.add_function_owned('answer', voidptr(answer_trampoline), vcraft.meth_noargs,
 		'Return the answer.')

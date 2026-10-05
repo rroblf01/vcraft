@@ -339,6 +339,57 @@ fn field_line_of(p Project, class_index int, field string) int {
 	return p.classes[class_index].line
 }
 
+// link_iterators pairs each class's `@[vc_iter]` with its `@[vc_next]`.
+//
+// Deferred to here because both halves have to be seen before either means anything:
+// an iterator that cannot produce items is a trap, and items without an iterator are
+// unreachable, so a half pair is reported rather than emitted. Each half alone would
+// compile and then fail at the call -- `iter()` succeeding and `next()` missing, or
+// the reverse -- with nothing pointing at the missing annotation.
+fn link_iterators(mut p Project) {
+	for i, c in p.classes {
+		mut iters := []Func{}
+		mut nexts := []Func{}
+		for m in c.methods {
+			if m.is_iter {
+				iters << m
+			}
+			if m.is_next {
+				nexts << m
+			}
+		}
+		if iters.len == 0 && nexts.len == 0 {
+			continue
+		}
+		if iters.len == 0 {
+			report(mut p, c.origin, astquery.Declaration{
+				name:   c.name
+				line:   c.line
+				column: c.column
+			}, 'error: `${c.name}` has `@[vc_next]` but no `@[vc_iter]`: items without an iterator are unreachable from Python')
+			continue
+		}
+		if nexts.len == 0 {
+			report(mut p, c.origin, astquery.Declaration{
+				name:   c.name
+				line:   c.line
+				column: c.column
+			}, 'error: `${c.name}` has `@[vc_iter]` but no `@[vc_next]`: an iterator that cannot produce items fails at the first `next()`')
+			continue
+		}
+		if iters.len > 1 || nexts.len > 1 {
+			report(mut p, c.origin, astquery.Declaration{
+				name:   c.name
+				line:   c.line
+				column: c.column
+			}, 'error: `${c.name}` has ${iters.len} `@[vc_iter]` and ${nexts.len} `@[vc_next]`; a type has one iterator and one item source')
+			continue
+		}
+		p.classes[i].iter_fn = 'vcraft_generated__iter_${c.key}'
+		p.classes[i].next_fn = 'vcraft_generated__next_${c.key}'
+	}
+}
+
 // sort_classes puts every class after the one it inherits.
 //
 // Not an optimisation but a requirement, and of two separate things:
@@ -536,6 +587,33 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	}
 	mut m := build_func(decl, ast, block, true)
 	m.property = attr_property in block.attrs
+	m.is_iter = attr_iter in block.attrs
+	m.is_next = attr_next in block.attrs
+	if (m.is_iter || m.is_next) && m.property {
+		report(mut p, path, decl,
+			'error: `@[vc_iter]` and `@[vc_next]` are calls, not properties: `${decl.name}` cannot also be `@[vc_property]`')
+		return
+	}
+	if m.is_iter && m.params.len > 0 {
+		report(mut p, path, decl,
+			'error: `@[vc_iter] ${decl.name}` takes ${m.params.len} argument(s); `__iter__` takes none')
+		return
+	}
+	if m.is_next && m.params.len > 0 {
+		report(mut p, path, decl,
+			'error: `@[vc_next] ${decl.name}` takes ${m.params.len} argument(s); `__next__` takes none')
+		return
+	}
+	if m.is_iter && ((m.v_ret.len > 0 && m.v_ret != 'void') || m.returns_result) {
+		report(mut p, path, decl,
+			'error: `@[vc_iter] ${decl.name}` must return nothing; the instance is its own iterator, so the slot returns the instance and a method return would go nowhere')
+		return
+	}
+	if m.is_next && m.v_ret.len > 0 && lookup(m.v_ret) == .unsupported {
+		report(mut p, path, decl,
+			'error: `@[vc_next] ${decl.name}` returns `${m.v_ret}`, which has no marshalling rule')
+		return
+	}
 	if attr_static in block.attrs {
 		report(mut p, path, decl,
 			'error: `@[vc_static] ${decl.name}` is not supported yet; a static method still needs a receiver in V')
@@ -876,6 +954,7 @@ fn link_classes(mut p Project) {
 	link_operators(mut p)
 	link_bases(mut p)
 	link_refs(mut p)
+	link_iterators(mut p)
 	mut ctors := []string{}
 	for i, c in p.classes {
 		// V spells a constructor `new_TypeName` in snake case, so the lookup
@@ -899,6 +978,7 @@ fn link_classes(mut p Project) {
 	if ctors.len == 0 {
 		return
 	}
+	link_iterators(mut p)
 	// A `new_X` function is the class's `tp_new`, not a module-level callable. It
 	// returns `&X`, which has no marshalling rule of its own, so it is dropped from
 	// the exported set along with any diagnostic raised for its signature.
@@ -945,6 +1025,16 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule')
 			return
 		}
+	}
+	// `@[vc_gil]` promises the call touches no Python, and `@[vc_raw]` promises the
+	// opposite: the function handles `PyObject *` itself. Both together would release
+	// the GIL around code that reads the objects it was given, which corrupts the
+	// interpreter rather than failing loudly, so the combination is refused here where
+	// the message can name both annotations.
+	if f.nogil && f.raw {
+		report(mut p, path, decl,
+			'error: `@[vc_gil]` on `${decl.name}` contradicts `@[vc_raw]`: raw means the function handles `PyObject *` itself, and touching one without the GIL corrupts the interpreter')
+		return
 	}
 	if f.raw {
 		return

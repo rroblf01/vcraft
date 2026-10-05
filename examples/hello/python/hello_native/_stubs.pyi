@@ -12,21 +12,21 @@ def add(a: int, b: int) -> int: ...
 def greet(name: str) -> str: ...
 
 """Divides two floats, refusing a zero divisor.
-	
+
 	The failure is a ZeroDivisionError rather than a RuntimeError, because Python
 	code dividing by zero expects to catch that. See vcraft/errors.v.
 """
 def divide(a: float, b: float) -> float: ...
 
 """Parses an integer, refusing anything else.
-	
+
 	An out-of-range value is an OverflowError and a non-digit is a ValueError, which
 	are what int() raises for the same inputs.
 """
 def parse_int(text: str) -> int: ...
 
 """Reads past the end of a slice, to show what a V panic looks like from Python.
-	
+
 	A V panic would call exit(1) and take the interpreter with it. The generated
 	wrapper recovers it and raises RuntimeError instead, so the process survives.
 """
@@ -45,21 +45,56 @@ def total(values: Sequence[Any]) -> int: ...
 def passthrough(obj: Any) -> Any: ...
 
 """load_config reads a `name=value` line out of some configuration text.
-	
+
 	Two failure modes, two exception classes: a malformed line is the caller's mistake and
 	is a ValueError, while a name that is not there is a LookupError.
 """
 def load_config(text: str, name: str, missing: Any) -> str: ...
 
 """checked reports a custom error for a caller-defined exception class.
-	
+
 	This is the shape the generated raiser exists for: the V code names the class, and the
 	exception reaches Python as that class rather than as a RuntimeError.
 """
 def checked(value: int, exc: Any) -> int: ...
 
+"""spin burns time in pure V, so threads can prove the GIL is really released.
+
+	`@[vc_gil]` is a promise, not a hint: nothing in here touches Python, raises, or
+	allocates in a way the collector would need the interpreter for. The wrapper releases
+	the GIL around the call, so N threads each burn their own core instead of queuing
+	behind one lock.
+"""
+def spin(iterations: int) -> int: ...
+
+"""spin_checked is the same shape with a failure mode, so the error path without the
+	GIL is exercised too: the wrapper re-acquires before it raises.
+
+	A plain `error(...)`, not `raise_domain`: setting a Python exception is touching
+	Python, which a `@[vc_gil]` function must never do. The wrapper turns the value into
+	a RuntimeError after it holds the GIL again.
+"""
+def spin_checked(iterations: int) -> int: ...
+
+"""checksum adds every byte it is given.
+
+	The parameter is `[]u8`, so any bytes-like object works: `bytes`, `bytearray`,
+	`memoryview`. Nothing is copied on the way in -- the wrapper aliases the caller's
+	buffer for exactly the call's duration -- and the `bytes` returned the other way
+	is a copy, because an immutable Python object cannot alias V memory.
+"""
+def checksum(data: bytes) -> int: ...
+
+"""echoed returns its argument as immutable bytes, which copies.
+
+	The copy is the point of this function existing next to `checksum`: reads alias
+	and writes copy, and a test that asserts both proves the asymmetry rather than
+	assuming it.
+"""
+def echoed(data: bytes) -> bytes: ...
+
 """A counter with state.
-	
+
 	Fields must be scalars. A V string inside a Python object would be a pointer
 	that V's collector cannot see, because it does not scan memory CPython
 	allocated, so the string would be reclaimed while Python still held it. Reach a
@@ -75,11 +110,11 @@ class Counter:
     def is_zero(self) -> bool: ...
 
 """BoundedCounter inherits Counter's state and adds a limit.
-	
+
 	A subclass declares `@[vc_base(Name)]`. Its instances get the base's fields, methods
 	and properties as well as its own, and the state block is one value holding the base
 	struct followed by this one.
-	
+
 	V has no struct inheritance, so `BoundedCounter` names only `limit` and a method of
 	the subclass cannot write `c.value`. A method that needs the base's fields reads them
 	through `vcraft.load_state`, which is what the generated accessors do.
@@ -91,11 +126,11 @@ class BoundedCounter(Counter):
     def bump(self, by: int) -> int: ...
 
 """A node in a chain, and the class that exists to show a cycle being collected.
-	
+
 	`peer` is a strong reference: Node holds it, and a Node can hold one of these back.
 	Neither instance is reachable from Python once both names are dropped, so only the
 	collector can free them, and only a type with `Py_TPFLAGS_HAVE_GC` is ever a candidate.
-	
+
 	The field is declared `PyObj` because that is what it holds: a pointer and a reference
 	count, and nothing V's collector would recognise. Declaring it as `&Pair` would put a
 	V-visible reference to memory CPython allocated into a V-local copy of the state, and
@@ -106,3 +141,16 @@ class Pair:
     peer: int
     def link(self, other: Any) -> None: ...
     def other(self) -> None: ...
+
+"""A countdown that yields its values one at a time.
+
+	The instance is its own iterator: `@[vc_iter]` runs for its side effects and the
+	slot returns the instance, and `@[vc_next]` produces one item per call. A V error
+	ends the iteration -- cleanly for `StopIteration`, loudly for anything else, which
+	is CPython's own contract for the slot rather than something vcraft invented.
+"""
+class Countdown:
+    current: int
+    start: int
+    def rewind(self) -> None: ...
+    def advance(self) -> int: ...

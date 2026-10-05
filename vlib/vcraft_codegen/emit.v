@@ -153,6 +153,11 @@ pub fn glue_module_body(p Project) string {
 	w.write_string('// `pyinit` calls it directly otherwise, so the same code fills the module in\n')
 	w.write_string('// either way.\n')
 	w.write_string('fn vcraft_generated__exec(module voidptr) int {\n')
+	// The state chain lives in thread-local storage, keyed once here. `exec` runs once
+	// per import under the import lock on every path -- single-phase through `pyinit`,
+	// multi-phase through the interpreter -- so by the time any trampoline runs, on any
+	// thread, the key exists.
+	w.write_string('\tvcraft.init_state()\n')
 	// The method table has to be installed here rather than left to module creation:
 	// under multi-phase initialisation the module arrives empty.
 	//
@@ -240,6 +245,16 @@ pub fn render_class_exec(p Project, c Class) string {
 		w.write_string('\t\tunsafe { nil },\n')
 		w.write_string('\t\tunsafe { nil },\n')
 	}
+	// `tp_iter` and `tp_iternext`, only for a class that declares the pair. The slots
+	// are what make `iter()` and `next()` work; without them the methods are ordinary
+	// attributes that happen to be named `iter` and `next`.
+	if c.iter_fn.len > 0 {
+		w.write_string('\t\tvoidptr(' + c.iter_fn + '),\n')
+		w.write_string('\t\tvoidptr(' + c.next_fn + '),\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+		w.write_string('\t\tunsafe { nil },\n')
+	}
 	w.write_string('\t)\n')
 	// The error check is here rather than inside `new_type` because a class that fails
 	// to build is a generator-level problem: the interpreter reports "raised
@@ -311,6 +326,53 @@ fn emit_error_raiser(e ErrorType) string {
 	return w.str()
 }
 
+// emit_nogil_open renders the GIL release and its guards for a `@[vc_gil]` call.
+//
+// The release is paired in a `defer` rather than only on the fall-through path, because
+// a panic unwinds past the explicit release. The `saved != nil` guard is what keeps that
+// from double-restoring: the fall-through path restores and nulls the handle, so the
+// deferred restore on the way out finds nothing to do, while a panic unwinds straight
+// into a restore of the handle that is still set.
+//
+// The `recover` defer is registered *before* the restore defer. Defers run last in,
+// first out, so the restore runs first on a panic and the raise that follows it already
+// holds the GIL. Registered the other way round, the raise would run without it.
+fn emit_nogil_open() string {
+	mut w := new_builder()
+	w.write_string('\tmut saved := vcraft.allow_threads()\n')
+	w.write_string('\tdefer {\n')
+	w.write_string("\t\tif message := recover() {\n")
+	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+	w.write_string('\t\t}\n')
+	w.write_string('\t}\n')
+	w.write_string('\tdefer {\n')
+	w.write_string('\t\tif saved != unsafe { nil } {\n')
+	w.write_string('\t\t\tvcraft.end_allow_threads(saved)\n')
+	w.write_string('\t\t}\n')
+	w.write_string('\t}\n')
+	return w.str()
+}
+
+// emit_nogil_close renders the re-acquire after a `@[vc_gil]` call returns.
+//
+// Paired with the `nil` assignment: without it the deferred restore would fire on the
+// way out and restore twice, which leaves the GIL count wrong and crashes the next
+// thread switch inside CPython rather than anywhere near the call that unbalanced it.
+fn emit_nogil_close() string {
+	return '\tvcraft.end_allow_threads(saved)\n' + '\tsaved = unsafe { nil }\n'
+}
+
+// emit_nogil_failure renders the failure path of a `@[vc_gil]` call that returns `!T`.
+//
+// The error is raised here rather than captured because the GIL is re-acquired first:
+// raising touches Python, and the whole point of the release is that nothing between
+// the two does. The handle is nulled for the same reason as on the success path, so
+// the deferred restore finds nothing to do.
+fn emit_nogil_failure(inner string) string {
+	return '\t\tvcraft.end_allow_threads(saved)\n' + '\t\tsaved = unsafe { nil }\n' +
+		'\t\t' + inner + '\n'
+}
+
 // emit_method_trampoline renders a method of a class.
 //
 // It is the ordinary trampoline wrapped in the two statements that move the V value
@@ -346,25 +408,49 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	if has_value {
 		w.write_string('\tmut result := ${zero_value(ret, f.v_ret)}\n')
 	}
-	w.write_string('\tdefer {\n')
-	w.write_string('\t\tif message := recover() {\n')
-	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
-	w.write_string('\t\t}\n')
-	w.write_string('\t}\n')
+	if f.nogil {
+		w.write_string(emit_nogil_open())
+	} else {
+		w.write_string('\tdefer {\n')
+		w.write_string('\t\tif message := recover() {\n')
+		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t}\n')
+		w.write_string('\t}\n')
+	}
 	call := if f.params.len == 0 { 'state.' + c.self_access() + '${f.name}()' } else { 'state.' + c.self_access() + '${f.name}(${names.join(', ')})' }
 	if f.returns_result {
 		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
 		if has_value {
 			// Assigned, not declared: `mut result` was emitted above when the method
 			// returns a value, and `:=` here redefines it, which V rejects outright.
-			w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
+			if f.nogil {
+				w.write_string('\tresult = ${call} or {\n' + emit_nogil_failure(inner) +
+					'\t}\n')
+			} else {
+				w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
+			}
 		} else {
-			w.write_string('\t${call} or {\n\t\t${inner}\n\t}\n')
+			if f.nogil {
+				w.write_string('\t${call} or {\n' + emit_nogil_failure(inner) + '\t}\n')
+			} else {
+				w.write_string('\t${call} or {\n\t\t${inner}\n\t}\n')
+			}
+		}
+		// Re-acquired before the state is written back and the error is checked: the
+		// check touches Python, and without the GIL it races the next thread switch.
+		if f.nogil {
+			w.write_string(emit_nogil_close())
 		}
 	} else if has_value {
 		w.write_string('\tresult = ${call}\n')
+		if f.nogil {
+			w.write_string(emit_nogil_close())
+		}
 	} else {
 		w.write_string('\t${call}\n')
+		if f.nogil {
+			w.write_string(emit_nogil_close())
+		}
 	}
 	// The instance is written back before anything can fail, so a method that
 	// raises leaves the object consistent.
@@ -392,11 +478,15 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		'${c.size_fn}())\n')
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
-	w.write_string('\tdefer {\n')
-	w.write_string('\t\tif message := recover() {\n')
-	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
-	w.write_string('\t\t}\n')
-	w.write_string('\t}\n')
+	if f.nogil {
+		w.write_string(emit_nogil_open())
+	} else {
+		w.write_string('\tdefer {\n')
+		w.write_string('\t\tif message := recover() {\n')
+		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t}\n')
+		w.write_string('\t}\n')
+	}
 	if ret != .void {
 		// A property getter declares its own `result`. It has no argument tuple, so it
 		// does not go through the path that declares one for a method, and without this
@@ -408,7 +498,15 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		// Assigned, not declared: `mut result` is emitted above when the method returns
 		// a value, and `:=` here would shadow it -- or rather, redefine it, which V
 		// rejects outright.
-		w.write_string('\tresult = state.' + c.self_access() + '${f.name}() or {\n\t${inner}\n\t}\n')
+		if f.nogil {
+			w.write_string('\tresult = state.' + c.self_access() +
+				'${f.name}() or {\n' + emit_nogil_failure(inner) + '\t}\n')
+		} else {
+			w.write_string('\tresult = state.' + c.self_access() + '${f.name}() or {\n\t${inner}\n\t}\n')
+		}
+		if f.nogil {
+			w.write_string(emit_nogil_close())
+		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
 	} else if ret != .void {
@@ -416,11 +514,17 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		// this the value is computed and dropped on the floor, and the getter returns the
 		// zero value it was initialised with.
 		w.write_string('\tresult = state.' + c.self_access() + '${f.name}()\n')
+		if f.nogil {
+			w.write_string(emit_nogil_close())
+		}
 		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
 	} else {
 		// A property returning nothing has no `result` to assign: it was never declared,
 		// and assigning to it is a compile error rather than a warning.
 		w.write_string('\tstate.' + c.self_access() + '${f.name}()\n')
+		if f.nogil {
+			w.write_string(emit_nogil_close())
+		}
 		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
 	}
 	w.write_string('}\n')
@@ -497,11 +601,20 @@ pub fn emit_trampoline(f Func) string {
 	}
 	// A raw function's result is a pointer the V side already owns, so it is
 	// handed back without touching the reference count.
-	w.write_string('\tdefer {\n')
-	w.write_string('\t\tif message := recover() {\n')
-	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
-	w.write_string('\t\t}\n')
-	w.write_string('\t}\n')
+	//
+	// `@[vc_gil]` replaces the guard with the release and its own pair of guards: the
+	// recover defer first so it runs last, already holding the GIL, and the restore
+	// defer second so it runs first. Everything between them runs without the GIL and
+	// must not touch Python.
+	if f.nogil {
+		w.write_string(emit_nogil_open())
+	} else {
+		w.write_string('\tdefer {\n')
+		w.write_string('\t\tif message := recover() {\n')
+		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t}\n')
+		w.write_string('\t}\n')
+	}
 
 	call := if f.params.len == 0 { '${f.name}()' } else { '${f.name}(${names.join(', ')})' }
 
@@ -513,9 +626,25 @@ pub fn emit_trampoline(f Func) string {
 		if has_value {
 			// Assigned, not declared: `mut result` was emitted above when the method
 			// returns a value, and `:=` here redefines it, which V rejects outright.
-			w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
+			if f.nogil {
+				w.write_string('\tresult = ${call} or {\n' + emit_nogil_failure(inner) +
+					'\t}\n')
+			} else {
+				w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
+			}
 		} else {
-			w.write_string('\t${call} or {\n\t\t${inner}\n\t}\n')
+			if f.nogil {
+				w.write_string('\t${call} or {\n' + emit_nogil_failure(inner) + '\t}\n')
+			} else {
+				w.write_string('\t${call} or {\n\t\t${inner}\n\t}\n')
+			}
+		}
+		// The success path re-acquires here rather than in the deferred restore: everything
+		// below touches Python (`error_is_set`, boxing the result), and running any of it
+		// without the GIL races the next thread switch and dies inside `PyErr_Occurred`
+		// with nothing in the frame pointing back at the missing re-acquire.
+		if f.nogil {
+			w.write_string(emit_nogil_close())
 		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	} else {
@@ -523,6 +652,9 @@ pub fn emit_trampoline(f Func) string {
 			w.write_string('\tresult = ${call}\n')
 		} else {
 			w.write_string('\t${call}\n')
+		}
+		if f.nogil {
+			w.write_string(emit_nogil_close())
 		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 		if has_value {
@@ -567,7 +699,10 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 		.bool { 'false' }
 		.int, .uint { '0' }
 		.float { '0.0' }
-		.str, .bytes { "''" }
+		.str { "''" }
+		// `.bytes` is always a `[]u8`: a string literal would not compile where a slice
+		// is declared.
+		.bytes { '[]u8{}' }
 		.pyref { 'vcraft.null' }
 		.seq { '${v_type}{}' }
 		.pyobj, .unsupported { 'unsafe { nil }' }
@@ -588,7 +723,15 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 		.uint { "vcraft.from_py_uint_arg(args, ${index}, '${func}', '${param}')" }
 		.float { "vcraft.from_py_f64_arg(args, ${index}, '${func}', '${param}')" }
 		.str { "vcraft.from_py_string_arg(args, ${index}, '${func}', '${param}')" }
-		.bytes { "vcraft.from_py_bytes_arg(args, ${index}, '${func}', '${param}')" }
+		// A `[]u8` parameter takes any bytes-like object without copying it. Three
+		// statements rather than one: the view is acquired, its release is deferred so
+		// every path gives it back, and the slice aliases it for the call. The slice
+		// must not outlive the call, because the release drops the exporter's reference.
+		.bytes {
+			"\t${local}_view := vcraft.buffer_view(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }\n" +
+				'\tdefer { vcraft.buffer_release(${local}_view) }\n' +
+				'\t${local} := vcraft.buffer_bytes(${local}_view)'
+		}
 		.seq {
 			element := element_type(param_type)
 			match lookup(element) {
@@ -611,7 +754,10 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 				'\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}'
 		}
 	}
-	if strategy == .pyobj || strategy == .pyref || strategy == .unsupported {
+	// `.bytes` renders its own statements -- acquire, deferred release, alias -- so
+	// like the other multi-line readers it is returned whole rather than wrapped in an
+	// assignment it already contains.
+	if strategy == .pyobj || strategy == .pyref || strategy == .bytes || strategy == .unsupported {
 		return call
 	}
 	return '${local} := ${call} or { return unsafe { nil } }'
@@ -639,7 +785,9 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 		.uint { 'vcraft.to_py_uint(' + value + ')' }
 		.float { 'vcraft.to_py_f64(' + value + ')' }
 		.str { 'vcraft.to_py_string(' + value + ')' }
-		.bytes { 'vcraft.to_py_bytes(' + value + ')' }
+		// Copying: a Python `bytes` owns immutable storage, so there is nothing to
+		// alias a V slice into. Reads cost nothing; writes pay for the type.
+		.bytes { 'vcraft.to_py_bytes_slice(' + value + ')' }
 		.seq { 'vcraft.to_py_list(' + value + ')' }
 		.pyobj { value }
 		// The V value owns a reference and CPython steals the one a getter returns, so
@@ -774,7 +922,9 @@ fn indent_doc(doc string) string {
 	}
 	mut out := '"""${lines[0]}\n'
 	for line in lines[1..] {
-		out += if line.len > 0 { '\t${line}' } else { '\t' }
+		// No trailing whitespace on empty lines: a `\t` alone is invisible in the
+		// file, breaks `git diff --check`, and says nothing to a reader.
+		out += if line.len > 0 { '\t${line}' } else { '' }
 		out += '\n'
 	}
 	return out + '"""'

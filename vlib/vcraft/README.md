@@ -365,6 +365,40 @@ is not defensive: `PyErr_SetString(NULL, msg)` does not check its first argument
 through it, and the interpreter dies inside CPython on a line that mentions neither V nor
 the code that asked for it.
 
+## The GIL release pairs exactly once on every path
+
+`allow_threads` and `end_allow_threads` are `PyEval_SaveThread` and
+`PyEval_RestoreThread` through the shim, because both are macros V cannot spell. The
+generated wrapper guards the deferred restore with a nil check: the fall-through path
+restores and nulls the handle, so the deferred restore finds nothing to do, while a
+panic unwinds straight into a restore of the handle that is still set. An unbalanced
+pair leaves the GIL count wrong and crashes the next thread switch inside CPython --
+found the hard way, as a segfault in `PyErr_Occurred` with nothing in the frame
+pointing back at the missing re-acquire.
+
+## The state chain is per-thread because of `@[vc_gil]`
+
+With the GIL held, one global chain would do. A released call runs concurrently with a
+held one, so two threads in two trampolines would publish into the same slots and each
+would read the other's instance. The chain lives in `PyThread_tss_*` storage instead,
+keyed once at import under the import lock.
+
+## Buffers alias; the view is what owns the reference
+
+`Py_buffer` is opaque under the limited API, so V never sees one: the shim allocates
+it zeroed, acquires with `PyBUF_SIMPLE`, and hands back the pointer and length. The
+`[]u8` aliases that memory, and the wrapper's deferred release drops the exporter's
+reference on every path. A V slice cannot be built from a pointer by indexing --
+`(&u8(p))[..n]` is rejected -- so the slice is assembled by writing `.data` directly,
+which is the one field a slice exposes for exactly this.
+
+## Iterators are two slots and a pair rule
+
+`tp_iter` returns the instance itself after running the `@[vc_iter]` method for its
+side effects; `@[vc_next]` produces one item per call and a V error ends it. The two
+are required together, because each half alone compiles and then fails at the call
+with nothing pointing at the missing annotation.
+
 ## Tests
 
 ```console

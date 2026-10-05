@@ -20,6 +20,8 @@ int main(void) {
 	printf("slot_bases %d\n", Py_tp_bases);
 	printf("slot_clear %d\n", Py_tp_clear);
 	printf("slot_traverse %d\n", Py_tp_traverse);
+	printf("slot_iter %d\n", Py_tp_iter);
+	printf("slot_iternext %d\n", Py_tp_iternext);
 	printf("slot_dealloc %d\n", Py_tp_dealloc);
 	printf("slot_init %d\n", Py_tp_init);
 	printf("slot_methods %d\n", Py_tp_methods);
@@ -53,6 +55,8 @@ slot_members 72
 slot_getset 73
 slot_richcompare 67
 slot_traverse 71
+slot_iter 62
+slot_iternext 63
 slot_hash 59
 slot_str 70
 sizeof_type_spec 32

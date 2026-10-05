@@ -54,6 +54,18 @@ fn C.vpy_visit(obj voidptr, visit voidptr, arg voidptr) int
 fn C.vpy_traverse_ref(field voidptr, visit voidptr, arg voidptr) int
 fn C.vpy_gc_untrack(self voidptr)
 fn C.Py_ReprLeave(self voidptr)
+fn C.vpy_allow_threads() voidptr
+fn C.vpy_end_allow_threads(state voidptr)
+fn C.vpy_buffer_new() voidptr
+fn C.vpy_buffer_get(obj voidptr, view voidptr) int
+fn C.vpy_buffer_ptr(view voidptr) voidptr
+fn C.vpy_buffer_len(view voidptr) int
+fn C.vpy_buffer_release(view voidptr)
+fn C.vpy_state_init()
+fn C.vpy_enter_state(block voidptr) voidptr
+fn C.vpy_leave_state(previous voidptr)
+fn C.vpy_publish_state(level int, ptr voidptr)
+fn C.vpy_state_at(level int) voidptr
 fn C.vpy_is_type_object(self voidptr) int
 fn C.vpy_type_traverse(self voidptr, visit voidptr, arg voidptr) int
 fn C.vpy_type_clear(self voidptr)
@@ -323,6 +335,10 @@ pub const slot_traverse = i32(71)
 pub const slot_bases = i32(49)
 
 pub const slot_clear = i32(51)
+
+pub const slot_iter = i32(62)
+
+pub const slot_iternext = i32(63)
 
 pub const slot_hash = i32(59)
 

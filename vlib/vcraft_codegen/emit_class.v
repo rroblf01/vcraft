@@ -41,6 +41,7 @@ fn emit_class(p Project, c Class) string {
 	w.write_string(emit_class_methods(c))
 	w.write_string(emit_field_accessors(p, c))
 	w.write_string(emit_class_new(c))
+	w.write_string(emit_class_iterators(p, c))
 	w.write_string(emit_class_traverse(p, c))
 	w.write_string(emit_class_clear(p, c))
 	w.write_string(emit_class_dealloc(p, c))
@@ -265,6 +266,136 @@ fn method_flags(m Func) string {
 // The first argument CPython passes is the type, so the instance is allocated here
 // with tp_alloc. Storing the state without allocating first writes over the type
 // object and makes `Class()` hand back the class itself.
+// emit_iter_trampoline renders `tp_iter`.
+//
+// The instance is its own iterator, so the slot returns the instance itself: a new
+// reference, because CPython steals whatever a slot returns and the instance keeps the
+// one it already has. The user's `@[vc_iter]` method runs first, for its side effects --
+// resetting a cursor, for example -- and its return value is ignored, which is why the
+// collector refuses a method that declares one.
+//
+// The state is written back like in an ordinary method: an `__iter__` that mutates is
+// the normal case, not the exception.
+fn emit_iter_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${c.iter_fn}(self voidptr) voidptr {\n')
+	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
+	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
+		'${c.size_fn}())\n')
+	w.write_string(emit_enter_state(p, c))
+	if f.nogil {
+		w.write_string(emit_nogil_open())
+	} else {
+		w.write_string('\tdefer {\n')
+		w.write_string('\t\tif message := recover() {\n')
+		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t}\n')
+		w.write_string('\t}\n')
+	}
+	w.write_string('\tstate.' + c.self_access() + '${f.name}()\n')
+	if f.nogil {
+		w.write_string(emit_nogil_close())
+	}
+	w.write_string('\tvcraft.store_state(voidptr(&state), vcraft.instance_storage(self), ' +
+		'${c.size_fn}())\n')
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	w.write_string('\treturn vcraft.incref(vcraft.borrow(self)).ptr\n')
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_next_trampoline renders `tp_iternext`.
+//
+// One call produces one item, which is an ordinary no-argument method call with the
+// state moved in and out around it. A V error becomes whatever Python exception is set
+// when it arrives: `StopIteration` ends the iteration cleanly, and anything else
+// propagates to the caller, which is exactly CPython's own contract for the slot.
+fn emit_next_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${c.next_fn}(self voidptr) voidptr {\n')
+	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
+	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
+		'${c.size_fn}())\n')
+	w.write_string(emit_enter_state(p, c))
+	ret := lookup(f.v_ret)
+	has_value := ret != .void
+	if has_value {
+		w.write_string('\tmut result := ${zero_value(ret, f.v_ret)}\n')
+	}
+	if f.nogil {
+		w.write_string(emit_nogil_open())
+	} else {
+		w.write_string('\tdefer {\n')
+		w.write_string('\t\tif message := recover() {\n')
+		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t}\n')
+		w.write_string('\t}\n')
+	}
+	call := 'state.' + c.self_access() + '${f.name}()'
+	if f.returns_result {
+		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
+		if has_value {
+			if f.nogil {
+				w.write_string('\tresult = ${call} or {\n' + emit_nogil_failure(inner) +
+					'\t}\n')
+			} else {
+				w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
+			}
+		} else {
+			if f.nogil {
+				w.write_string('\t${call} or {\n' + emit_nogil_failure(inner) + '\t}\n')
+			} else {
+				w.write_string('\t${call} or {\n\t\t${inner}\n\t}\n')
+			}
+		}
+		if f.nogil {
+			w.write_string(emit_nogil_close())
+		}
+		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	} else if has_value {
+		w.write_string('\tresult = ${call}\n')
+		if f.nogil {
+			w.write_string(emit_nogil_close())
+		}
+	} else {
+		w.write_string('\t${call}\n')
+		if f.nogil {
+			w.write_string(emit_nogil_close())
+		}
+	}
+	w.write_string('\tvcraft.store_state(voidptr(&state), vcraft.instance_storage(self), ' +
+		'${c.size_fn}())\n')
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	if has_value {
+		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+	} else {
+		w.write_string('\treturn vcraft.to_py_none().ptr\n')
+	}
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_class_iterators renders both trampolines when the class declares the pair.
+fn emit_class_iterators(p Project, c Class) string {
+	if c.iter_fn.len == 0 {
+		return ''
+	}
+	mut iter_method := Func{}
+	mut next_method := Func{}
+	for m in c.methods {
+		if m.is_iter {
+			iter_method = m
+		}
+		if m.is_next {
+			next_method = m
+		}
+	}
+	mut w := new_builder()
+	w.write_string(emit_iter_trampoline(p, c, iter_method))
+	w.write_string(emit_next_trampoline(p, c, next_method))
+	return w.str()
+}
+
 fn emit_class_new(c Class) string {
 	mut w := new_builder()
 	w.write_string('fn ${c.ctor}(type_obj voidptr, args voidptr, kwds voidptr) voidptr {\n')

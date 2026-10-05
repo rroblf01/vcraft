@@ -67,6 +67,22 @@ int vpy_traverse_ref(void *ref, void *visit, void *arg);
 void vpy_gc_untrack(void *self);
 void vpy_gc_track(void *self);
 
+// The state chain, one per thread.
+//
+// Every generated trampoline publishes the state block it loaded so a method of a
+// subclass can reach what it inherited. With the GIL held that could be one global,
+// but a `@[vc_gil]` call runs without it: two threads in two trampolines would publish
+// into the same slots and each would read the other's instance. So the chain lives in
+// thread-local storage, keyed once at module import.
+//
+// `enter_state` and `leave_state` move eight pointers, which is what `vcraft` passes
+// around opaquely; the level accessors read and write single slots.
+void vpy_state_init(void);
+void *vpy_enter_state(void *block);
+void vpy_leave_state(void *previous);
+void vpy_publish_state(int level, void *ptr);
+void *vpy_state_at(int level);
+
 // The type object itself.
 //
 // A heap type with `Py_TPFLAGS_HAVE_GC` is tracked by the collector too, so `tp_traverse`
@@ -76,6 +92,26 @@ void vpy_gc_track(void *self);
 int vpy_is_type_object(void *self);
 int vpy_type_traverse(void *self, void *visit, void *arg);
 void vpy_type_clear(void *self);
+
+// Releasing the global interpreter lock.
+//
+// `Py_BEGIN_ALLOW_THREADS` is a macro over `PyEval_SaveThread`, so V cannot spell it:
+// the backend emits no prototype for a macro and calling it blind passes the wrong
+// shape. These two do the calling instead. The saved thread state travels as a void
+// pointer because V cannot name `PyThreadState *` either, for the same reason.
+void *vpy_allow_threads(void);
+void vpy_end_allow_threads(void *state);
+
+// The buffer protocol.
+//
+// `Py_buffer` is opaque under the limited API, so V cannot hold one, read its `buf`
+// and `len`, or pass `PyBUF_SIMPLE`. These five do all of that in C, and V only ever
+// sees the view as an opaque pointer it hands back.
+void *vpy_buffer_new(void);
+int vpy_buffer_get(void *obj, void *view);
+void *vpy_buffer_ptr(void *view);
+long vpy_buffer_len(void *view);
+void vpy_buffer_release(void *view);
 
 PyObject *vpy_none(void);
 PyObject *vpy_notimplemented(void);

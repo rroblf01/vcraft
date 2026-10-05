@@ -44,6 +44,8 @@ vcraft build --release
   - [Inheritance](#inheritance)
   - [Reference fields and cycles](#reference-fields-and-cycles)
   - [Custom error types](#custom-error-types)
+  - [Buffers without copying](#buffers-without-copying)
+  - [Iterators](#iterators)
 - [Errors and panics](#errors-and-panics)
 - [The command line](#the-command-line)
 - [Generated project layout](#generated-project-layout)
@@ -144,6 +146,8 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_static]`  | methods         | Registers the method as a `staticmethod`                    |
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
 | `@[vc_gil]`     | `pub fn`        | Runs the call with the GIL released                         |
+| `@[vc_iter]`    | methods         | Makes the instance its own iterator (`__iter__`)            |
+| `@[vc_next]`    | methods         | Produces one item per call (`__next__`)                     |
 
 Names are taken from the V declaration, verbatim. Doc comments become `__doc__`, the
 marshalled signature becomes `__text_signature__`, and the same source also produces
@@ -511,6 +515,80 @@ it there: V erases an error to `IError` by the time the wrapper sees it, and an 
 has a message and nothing else. That is why `raise_domain` sets the exception at the point
 of failure, and why the raiser exists.
 
+
+
+### Buffers without copying
+
+A `[]u8` parameter accepts anything bytes-like through the buffer protocol:
+
+```v
+// checksum adds every byte it is given.
+//
+// `bytes`, `bytearray`, `memoryview`: nothing is copied on the way in.
+@[vc_fn]
+pub fn checksum(data []u8) int {
+	mut total := 0
+	for b in data {
+		total = (total + int(b)) & 0xffffff
+	}
+	return total
+}
+```
+
+The wrapper acquires a view, aliases it as a V slice for exactly the call, and
+releases it on the way out -- including the error paths, which is why the release
+is deferred rather than written after the call. The slice must not outlive the
+call: the release drops the exporter's reference, and a stored slice would point
+at memory nobody owns. Returns copy the other way, because an immutable Python
+`bytes` cannot alias V memory.
+
+### Iterators
+
+`@[vc_iter]` and `@[vc_next]` always come as a pair: an iterator that cannot produce
+items fails at the first `next()`, and items without an iterator are unreachable,
+so a half pair is reported rather than emitted.
+
+```v
+@[vc_class]
+pub struct Countdown {
+mut:
+	@[vc_field] current int
+	@[vc_field] start int
+}
+
+// rewind resets the countdown, so the same instance can be iterated twice.
+@[vc_methods]
+@[vc_iter]
+pub fn (mut c Countdown) rewind() {
+	c.current = c.start
+}
+
+// next yields the current value and steps down, refusing past zero.
+@[vc_methods]
+@[vc_next]
+pub fn (mut c Countdown) advance() !int {
+	if c.current <= 0 {
+		return vcraft.raise_domain(.stop_iteration, 'no more values')
+	}
+	c.current--
+	return c.current + 1
+}
+```
+
+```pycon
+>>> c = Countdown()
+>>> c.start = 3
+>>> c.current = 3
+>>> list(c)
+[3, 2, 1]
+```
+
+The instance is its own iterator: `@[vc_iter]` runs for its side effects and the
+slot returns the instance itself. `@[vc_next]` produces one item per call, and a V
+error ends the iteration -- cleanly for `StopIteration`, loudly for anything else,
+which is CPython's own contract for the slot rather than something vcraft
+invented.
+
 ---
 
 ## Errors and panics
@@ -606,7 +684,44 @@ wrapper fails to compile with an implicit-declaration error.
 
 `@[vc_gil]` marks a function as pure V with no Python interaction. The GIL is
 released around the call, so long-running V code runs in parallel the way
-`py.allow_threads` does in PyO3.
+`py.allow_threads` does in PyO3:
+
+```v
+// spin burns time in pure V, so threads can prove the GIL is really released.
+//
+// Nothing in here touches Python, raises, or allocates in a way the collector would
+// need the interpreter for.
+@[vc_fn]
+@[vc_gil]
+pub fn spin(iterations int) int {
+	mut total := 0
+	for i in 0 .. iterations {
+		total = (total + i * 7) & 0x7fffffff
+	}
+	return total
+}
+```
+
+```pycon
+>>> import threading
+>>> threads = [threading.Thread(target=lambda: spin(3000000)) for _ in range(4)]
+>>> [t.start() for t in threads]
+>>> [t.join() for t in threads]  # each burns its own core
+```
+
+The annotation is a promise, not a hint, and the generator cannot verify purity. No
+Python calls, no `raise_domain`, no touching a `PyObj` while released:
+`raise_domain` sets a Python exception, which without the GIL corrupts the
+interpreter state rather than reporting anything. A `!T` function fails with a plain
+`error(...)` instead, and the wrapper turns it into an exception after it holds the
+GIL again. `@[vc_gil]` on a `@[vc_raw]` function is refused outright: raw means the
+function handles `PyObject *` itself, which is the opposite of pure.
+
+The pairing is exact on every path -- success, `!T` failure, and panic -- because an
+unbalanced release corrupts the GIL count and crashes the next thread switch inside
+CPython rather than anywhere near the call. And the per-thread state chain (see [reference fields and cycles](#reference-fields-and-cycles)) is what keeps two threads in two
+trampolines from publishing into each other's slots: with the GIL held one global
+would do, and without it each thread needs its own.
 
 ---
 
@@ -952,7 +1067,9 @@ for the ones the generator did.
       from source, published as multi-arch manifests and verified by building inside
       each one; the action builds locally or in a container, released with floating
       `v1` tags
-- [ ] Zero-copy buffers, `@[vc_gil]`, iterators
+- [x] **Zero-copy buffers, `@[vc_gil]`, iterators**: buffer-protocol `[]u8` parameters
+      that alias instead of copying, GIL release with exact pairing on every path and
+      per-thread state, and `@[vc_iter]`/`@[vc_next]` slots
 - [ ] Apple Silicon, Windows and musllinux verification
 
 See [Status](#status) for what actually works today.
