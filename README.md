@@ -808,7 +808,10 @@ jobs:
 Linux wheels are built inside `ghcr.io/vcraft/manylinux`, an image derived from
 `quay.io/pypa/manylinux_2_28` with the V compiler and `vcraft` already present, so
 `CIBW_BEFORE_ALL_LINUX` has nothing left to install. A musllinux image based on
-Alpine covers the musl targets.
+Alpine covers the musl targets. Both are built from `docker/`, published by
+`.github/workflows/release-images.yml`, and verified by building a project inside
+each image and importing the result -- see [`docker/README.md`](docker/README.md)
+for why V is compiled from source in both.
 
 For the one-liner experience, `vcraft-action@v1` mirrors `maturin-action`: it
 downloads pinned `vcraft` and V releases, runs any `vcraft` command, and can do it
@@ -945,7 +948,10 @@ for the ones the generator did.
       `--dry-run` planning, and a toolchain check that fails before compiling
 - [x] **CI**: `vcraft generate-ci` emits a matrix derived from the project's ABI
       choice, with `vcraft-action@v1`
-- [ ] CI: published manylinux and musllinux images, and the action's own releases
+- [x] **CI images and action releases**: manylinux and musllinux images with V built
+      from source, published as multi-arch manifests and verified by building inside
+      each one; the action builds locally or in a container, released with floating
+      `v1` tags
 - [ ] Zero-copy buffers, `@[vc_gil]`, iterators
 - [ ] Apple Silicon, Windows and musllinux verification
 

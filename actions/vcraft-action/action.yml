@@ -1,0 +1,79 @@
+name: vcraft-action
+description: Build a Python extension written in V with vcraft
+branding:
+  icon: package
+  color: blue
+
+inputs:
+  vcraft-version:
+    description: The vcraft release to download, e.g. v0.1.0.
+    required: false
+    default: v0.1.0
+  v-version:
+    description: The V compiler release the extension is compiled with.
+    required: false
+    default: 0.5.2
+  args:
+    description: The vcraft command to run, e.g. "build --release".
+    required: false
+    default: build --release
+  container:
+    description: >
+      An image to run the build inside, e.g. a manylinux image. When set,
+      nothing is installed on the runner: the image already carries the
+      toolchain, the interpreters, V and vcraft.
+    required: false
+    default: ''
+  working-directory:
+    description: The project directory to run vcraft in.
+    required: false
+    default: .
+
+runs:
+  using: composite
+  steps:
+    - name: install the V compiler
+      # Skipped for container builds: the image already carries both, and
+      # installing them on the runner as well would only slow the job down.
+      if: ${{ inputs.container == '' }}
+      shell: bash
+      # A release binary rather than a source build: the workflow needs a compiler in
+      # seconds, and the release is what CI pins. vcraft itself always builds V from
+      # source inside its images, which is the path that cannot assume a release runs.
+      run: |
+        curl -fsSL -o /tmp/v_linux.zip \
+          "https://github.com/vlang/v/releases/download/${{ inputs.v-version }}/v_linux.zip"
+        unzip -q /tmp/v_linux.zip -d /opt
+        rm /tmp/v_linux.zip
+        ln -sf /opt/v/v /usr/local/bin/v
+        echo "/usr/local/bin" >> "$GITHUB_PATH"
+
+    - name: install vcraft
+      if: ${{ inputs.container == '' }}
+      shell: bash
+      run: |
+        curl -fsSL -o /tmp/vcraft.tar.gz \
+          "https://github.com/rroblf01/vcraft/releases/download/${{ inputs.vcraft-version }}/vcraft-${{ inputs.vcraft-version }}-linux-x86_64.tar.gz"
+        mkdir -p /opt/vcraft
+        # The release packs a top-level directory, which is stripped so the binary
+        # lands at the documented `/opt/vcraft/bin/vcraft` whatever the version is.
+        tar -xzf /tmp/vcraft.tar.gz -C /opt/vcraft --strip-components=1
+        rm /tmp/vcraft.tar.gz
+        echo "/opt/vcraft/bin" >> "$GITHUB_PATH"
+
+    - name: run vcraft
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [ -n "${{ inputs.container }}" ]; then
+          # The project goes in at /work, which is also where vcraft writes `dist/`,
+          # so the upload step finds the wheels where it always has.
+          docker run --rm -v "$PWD:/work" -w /work \
+            "${{ inputs.container }}" vcraft ${{ inputs.args }}
+        else
+          # Split on purpose: `${{ inputs.args }}` is words the caller chose, and
+          # quoting it would hand vcraft one argument containing spaces rather
+          # than several.
+          # shellcheck disable=SC2086
+          vcraft ${{ inputs.args }}
+        fi

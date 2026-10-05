@@ -34,7 +34,12 @@ export V_C_ERROR_BUG_REPORT_DISABLED=1
 
 command -v v >/dev/null || { echo "the V compiler is not on PATH" >&2; exit 1; }
 
-if command -v systemd-run >/dev/null && [ -z "${VCRAFT_NO_MEMORY_LIMIT:-}" ]; then
+# systemd-run is only used when it understands every option below: an older
+# systemd-run accepts the command but rejects `--working-directory`, and the build
+# then fails on the wrapper rather than on anything it compiled. Checking the help
+# text detects that, because the version number alone does not say which options a
+# distribution built in.
+if command -v systemd-run >/dev/null && systemd-run --help 2>&1 | grep -q -- '--working-directory' && [ -z "${VCRAFT_NO_MEMORY_LIMIT:-}" ]; then
 	exec systemd-run --user --wait --collect --pipe --quiet \
 		--working-directory="$PWD" \
 		-p "MemoryMax=$memory_max" \

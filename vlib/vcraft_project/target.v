@@ -1,5 +1,7 @@
 module vcraft_project
 
+import os
+
 // Cross-compilation targets.
 //
 // A target names an operating system, an architecture and, on Linux, a C library. It is
@@ -113,8 +115,8 @@ pub fn (t CrossTarget) default_platform_tag() string {
 //
 // Compile-time `$if`, because that is the only thing that cannot lie about the host: an
 // environment variable can be exported wrongly, and `uname -m` reports the kernel rather
-// than the toolchain. The libc is `gnu` on the assumption the host links glibc, which is
-// true of every machine this has been built on; a musl host passes its own `--target`.
+// than the toolchain. The libc comes from `host_libc` below rather than an assumption,
+// because assuming glibc is how a musl build gets a gnu tag.
 pub fn default_target() CrossTarget {
 	mut os_ := 'linux'
 	$if macos {
@@ -135,7 +137,7 @@ pub fn default_target() CrossTarget {
 	}
 	mut libc := ''
 	if os_ == 'linux' {
-		libc = 'gnu'
+		libc = host_libc()
 	}
 	mut host := CrossTarget{
 		name: 'host'
@@ -145,6 +147,22 @@ pub fn default_target() CrossTarget {
 	}
 	host.platform_tag = host.default_platform_tag()
 	return host
+}
+
+// host_libc reports the C library of this machine: `musl` on a musl host, `gnu`
+// otherwise.
+//
+// By asking `ldd`, which on musl is the dynamic loader itself and prints its own name,
+// rather than by reading release files whose format is a per-distribution sprawl. Only
+// the output is read, not the exit code: musl's `ldd --version` prints its name and
+// then exits 1 with a usage message, so requiring success would report gnu on the one
+// host this exists to detect.
+fn host_libc() string {
+	out := os.execute('ldd --version')
+	if out.output.contains('musl') {
+		return 'musl'
+	}
+	return 'gnu'
 }
 
 // with_policy returns the target with a Linux distribution policy applied.

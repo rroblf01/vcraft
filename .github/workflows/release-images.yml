@@ -1,0 +1,93 @@
+name: release-images
+
+on:
+  push:
+    tags:
+      - images/v*
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: manylinux
+            dockerfile: docker/manylinux.Dockerfile
+            base: quay.io/pypa/manylinux_2_28_x86_64
+            runner: ubuntu-latest
+            arch: x86_64
+          - image: manylinux
+            dockerfile: docker/manylinux.Dockerfile
+            base: quay.io/pypa/manylinux_2_28_aarch64
+            runner: ubuntu-24.04-arm
+            arch: aarch64
+          - image: musllinux
+            dockerfile: docker/musllinux.Dockerfile
+            runner: ubuntu-latest
+            arch: x86_64
+          - image: musllinux
+            dockerfile: docker/musllinux.Dockerfile
+            runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: smoke-test the image definition
+        # `docker build --check` parses the Dockerfile without building anything, so
+        # a broken instruction fails here in seconds rather than after the V source
+        # build an hour in.
+        run: docker build --check -f ${{ matrix.dockerfile }} .
+
+      - name: log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build and push the architecture tag
+        # One tag per architecture, e.g. `vcraft-manylinux:0.1.0-x86_64`. The
+        # version-less manifest below points at these, so republishing it never
+        # rebuilds anything.
+        run: |
+          VERSION="${GITHUB_REF_NAME#images/}"
+          docker build \
+            --build-arg BASE=${{ matrix.base }} \
+            --build-arg VCRAFT_REF=${{ github.sha }} \
+            -f ${{ matrix.dockerfile }} \
+            -t "ghcr.io/${{ github.repository_owner }}/vcraft-${{ matrix.image }}:${VERSION}-${{ matrix.arch }}" \
+            --push .
+
+      - name: verify the image builds a wheel
+        # The image is not done when it builds: it is done when a project built
+        # inside it imports. A fresh project exercises the whole toolchain --
+        # V, the C compiler, the headers -- with nothing cached to hide behind.
+        run: |
+          VERSION="${GITHUB_REF_NAME#images/}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/vcraft-${{ matrix.image }}:${VERSION}-${{ matrix.arch }}"
+          docker run --rm "$IMAGE" vcraft new verify
+          docker run --rm -v "$PWD/verify:/work" -w /work "$IMAGE" \
+            vcraft build --target linux-${{ matrix.arch }}-${{ matrix.image == 'musllinux' && 'musl' || 'gnu' }}
+
+  merge:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: merge the per-architecture tags into one manifest
+        # `imagetools create` only rearranges pointers, so this takes seconds and
+        # cannot break a wheel: the bytes it names are the ones the matrix verified.
+        run: |
+          VERSION="${GITHUB_REF_NAME#images/}"
+          for IMAGE in manylinux musllinux; do
+            docker buildx imagetools create \
+              -t "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${VERSION}" \
+              "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${VERSION}-x86_64" \
+              "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${VERSION}-aarch64"
+          done

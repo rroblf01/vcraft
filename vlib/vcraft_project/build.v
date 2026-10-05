@@ -220,9 +220,19 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	// The target is resolved before anything else, because every error it can report is
 	// cheaper than compiling: an unknown name, a policy on the wrong libc, and a
 	// `--platform` that disagrees with the target all fail here.
+	// An explicit target, or a policy which implies this machine's own. Everything below
+	// keys off this rather than off `opt.target` alone, so `--musllinux 1_2` on a
+	// musllinux host takes the same path as `--target linux-x86_64-musl` would.
+	explicit := opt.target.len > 0 || opt.manylinux.len > 0 || opt.musllinux.len > 0
 	mut target := default_target()
 	if opt.target.len > 0 {
 		target = parse_target(opt.target)!
+		target = target.with_policy(opt.manylinux, opt.musllinux)!
+	} else if opt.manylinux.len > 0 || opt.musllinux.len > 0 {
+		// A policy without a target means this machine: on a musllinux image
+		// `--musllinux 1_2` builds natively, and on a manylinux image `--manylinux`
+		// claims the policy the image was made for. Refused when the host cannot
+		// satisfy it, e.g. a musl policy on a glibc machine.
 		target = target.with_policy(opt.manylinux, opt.musllinux)!
 	}
 	// The free-threaded build is whatever interpreter the caller named, and this is
@@ -242,7 +252,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 			return error('${python} is a free-threaded build; set free-threading in vcraft.toml or pass --free-threading')
 		}
 	}
-	suffix := if opt.target.len > 0 {
+	suffix := if explicit {
 		target.extension_suffix(version, p.abi3)
 	} else {
 		interpreter_suffix(python, p.abi3)
@@ -254,11 +264,11 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	tag_platform := if opt.platform.len > 0 {
 		// An explicit tag that disagrees with an explicit target is a wheel that lies
 		// about what it contains, so it is refused rather than warned about.
-		if opt.target.len > 0 && opt.platform != target.platform_tag {
+		if explicit && opt.platform != target.platform_tag {
 			return error('--platform `${opt.platform}` does not match --target `${opt.target}`, which implies `${target.platform_tag}`')
 		}
 		opt.platform
-	} else if opt.target.len > 0 {
+	} else if explicit {
 		target.platform_tag
 	} else {
 		platform_tag(python)
@@ -326,7 +336,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		args << '-ldflags'
 		args << shell_quote(opt.ldflags)
 	}
-	if opt.target.len > 0 {
+	if explicit {
 		// An explicit target is spelled out even when it matches the host, so `--dry-run`
 		// shows what the defaults resolve to and a build log says what was built.
 		args << '-os'

@@ -1,0 +1,46 @@
+name: release-vcraft
+
+on:
+  push:
+    tags:
+      - vcraft/v*
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install the V compiler
+        run: |
+          curl -fsSL -o /tmp/v_linux.zip \
+            "https://github.com/vlang/v/releases/download/0.5.2/v_linux.zip"
+          unzip -q /tmp/v_linux.zip -d /opt
+          sudo ln -s /opt/v/v /usr/local/bin/v
+
+      - name: build vcraft
+        run: ./scripts/build-vcraft.sh && bin/vcraft version
+
+      - name: run the test suites
+        run: |
+          python3 tests/codegen/test_codegen.py
+          python3 tests/runtime/test_runtime.py
+          python3 tests/wheel/test_wheel.py
+          python3 tests/project/check_toml.py
+          python3 tests/cli/test_cli.py
+
+      - name: pack the release
+        run: |
+          VERSION="${GITHUB_REF_NAME#vcraft/}"
+          mkdir -p "vcraft-${VERSION}-linux-x86_64/bin"
+          cp bin/vcraft "vcraft-${VERSION}-linux-x86_64/bin/"
+          cp -r vlib "vcraft-${VERSION}-linux-x86_64/"
+          tar -czf "vcraft-${VERSION}-linux-x86_64.tar.gz" "vcraft-${VERSION}-linux-x86_64"
+
+      - name: publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: vcraft-*-linux-x86_64.tar.gz

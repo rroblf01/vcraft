@@ -1,0 +1,35 @@
+name: release-action
+
+on:
+  push:
+    tags:
+      - vcraft-action/v*
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: validate the action definition
+        # A composite action with a typo fails every consumer with a message about
+        # their workflow, not about this file. Parsing it here keeps the failure
+        # where the typo is.
+        run: python3 -c "import yaml,sys; d=yaml.safe_load(open('actions/vcraft-action/action.yml')); assert d['runs']['using']=='composite', d; print('action ok:', d['name'])"
+
+      - name: move the floating tags
+        # `v1` tracks the action and `v1.0` tracks its minor line, so `@v1` follows
+        # releases and a full version pins. Forced forward, because that is what a
+        # floating tag is.
+        run: |
+          VERSION="${GITHUB_REF_NAME#vcraft-action/}"
+          MAJOR="${VERSION%%.*}"
+          MINOR="${VERSION%.*}"
+          git tag -fa "$MAJOR" -m "vcraft-action $MAJOR"
+          git tag -fa "$MINOR" -m "vcraft-action $MINOR"
+          git push origin "$MAJOR" "$MINOR" --force
