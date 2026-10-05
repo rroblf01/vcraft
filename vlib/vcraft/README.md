@@ -29,7 +29,7 @@ time except what a module's own `PyInit_` asks for.
 | `module.v`        | Building the module object, and the layout self-check           |
 | `c/shim.h`, `c/shim.c` | Accessors for CPython's data symbols                      |
 
-## Six constraints from the compiler, not from CPython
+## Seven constraints from the compiler, not from CPython
 
 Each of these shaped the design, and each cost real debugging time. They are the
 kind of thing that is invisible until it produces a wrong answer rather than an
@@ -88,8 +88,27 @@ V treats any file matching `*_test.v` as a test file: it is compiled with the te
 harness and its module export is silently dropped. The build appears to succeed and
 `import` then fails with "dynamic module does not define module export function".
 
-`vcraft new` must reject a project name ending in `_test`, and the generator should
-say so rather than let it produce an empty shared object.
+ `vcraft new` must reject a project name ending in `_test`, and the generator should
+ say so rather than let it produce an empty shared object.
+
+### 7. The object header is 16 bytes with the GIL and 32 without it
+
+Free-threaded CPython keeps a thread id, flags, a per-object lock and split
+reference counts where the GIL build keeps one count, so `PyObject_HEAD` is twice
+the size. Every struct mirrored from a header therefore has two shapes, selected
+with `-d vcraft_free_threaded`, which the build passes when the interpreter is
+free-threaded.
+
+The failure is a misaligned mirror: `m_name` reads 16 bytes off, the module
+imports on a GIL interpreter and segfaults on a free-threaded one inside
+`PyUnicode_FromString`, called on what the code believes is the module name and
+is really the `m_size` field. Nothing in the frame points at the mirror, which is
+why `check_layout` runs on both generated entry points: a drifted mirror becomes
+a named SystemError at import instead of a wild pointer.
+
+Related: `$if` in struct-field position is silently ignored by this V version --
+both branches vanish and only the remaining fields exist -- so the two shapes are
+whole structs under a top-level `$if`, not conditional fields.
 
 ## Reference counting
 

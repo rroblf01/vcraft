@@ -377,6 +377,24 @@ pub mut:
 }
 
 // PyObject_HEAD plus the three single-phase fields.
+//
+// The header is 16 bytes with the GIL and 32 without it: free-threaded CPython
+// keeps a thread id, flags, a per-object lock and split reference counts where the
+// GIL build keeps one count. A mirror with the wrong header puts `m_name` 16 bytes
+// off, and the module then imports on a GIL interpreter and segfaults on a
+// free-threaded one inside `PyUnicode_FromString`, with nothing in the frame
+// pointing at the mirror. Nothing reads these fields -- only their total size
+// matters -- so the free-threaded half is opaque bytes, and `check_layout` proves
+// the size against the headers on every import.
+$if vcraft_free_threaded ? {
+pub struct PyModuleDefBase {
+pub mut:
+	head_pad [32]u8
+	m_init voidptr
+	m_index isize
+	m_copy voidptr
+}
+} $else {
 pub struct PyModuleDefBase {
 pub mut:
 	ob_refcnt isize
@@ -384,6 +402,7 @@ pub mut:
 	m_init    voidptr
 	m_index   isize
 	m_copy    voidptr
+}
 }
 
 // PyModuleDef_Slot is one entry of a multi-phase module's slot table. The two members

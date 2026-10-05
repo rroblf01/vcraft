@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# The platforms no developer machine in this project can cover. Linux x86_64 is
+# verified locally in containers; macOS runs here, on a hosted runner, with the
+# same suites. Windows and aarch64 Linux are covered by the generated build
+# matrix and the published images instead: the test scripts are bash and the
+# toolchain expectations are POSIX, so running them there would test the port
+# rather than the product.
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            v: v_linux.zip
+          - os: macos-14
+            v: v_macos_arm64.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: install the V compiler
+        # A release binary rather than a source build: CI needs a compiler in
+        # seconds. The images build V from source instead, which is the path
+        # that cannot assume a release runs.
+        run: |
+          curl -fsSL -o /tmp/v.zip \
+            "https://github.com/vlang/v/releases/download/0.5.2/${{ matrix.v }}"
+          sudo unzip -q /tmp/v.zip -d /opt || unzip -q /tmp/v.zip -d /opt
+          rm /tmp/v.zip
+          echo "/opt/v" >> "$GITHUB_PATH"
+
+      - name: run the test suites
+        # Every suite, in dependency order: the wheel and CLI suites build on
+        # what the earlier ones prove, so a failure early in this list explains
+        # the ones after it.
+        run: |
+          python3 tests/project/check_toml.py
+          python3 tests/wheel/test_wheel.py
+          python3 tests/runtime/test_runtime.py
+          python3 tests/codegen/test_codegen.py
+          python3 tests/cli/test_cli.py

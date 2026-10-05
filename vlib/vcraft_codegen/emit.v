@@ -121,6 +121,13 @@ pub fn glue_module_body(p Project) string {
 	w.write_string(')\n\n')
 	w.write_string("@[export: 'PyInit_${p.package}']\n")
 	w.write_string('fn vcraft_generated__pyinit() voidptr {\n')
+	// The mirrors of CPython's structs are checked before anything is built with
+	// them. A drifted mirror reads and writes at the wrong offsets, and every later
+	// symptom is a wild pointer inside the interpreter -- un-diagnosable -- while
+	// this names the struct. The free-threaded object header is the case that
+	// motivated it: the wrong `PyModuleDef` mirror segfaults in `PyUnicode_FromString`
+	// on import with nothing pointing at the mirror.
+	w.write_string('\tvcraft.check_layout() or { return unsafe { nil } }\n')
 	// The `for` is emitted once and the body once per function. Writing the header
 	// inside the generator's loop instead produces one `for` per function, all of them
 	// nested, and the generated file does not compile.
@@ -153,6 +160,9 @@ pub fn glue_module_body(p Project) string {
 	w.write_string('// `pyinit` calls it directly otherwise, so the same code fills the module in\n')
 	w.write_string('// either way.\n')
 	w.write_string('fn vcraft_generated__exec(module voidptr) int {\n')
+	// Checked here as well as in `pyinit`: multi-phase initialisation never runs
+	// `pyinit`'s body, so without this an abi3 build would skip the check entirely.
+	w.write_string('\tvcraft.check_layout() or { return -1 }\n')
 	// The state chain lives in thread-local storage, keyed once here. `exec` runs once
 	// per import under the import lock on every path -- single-phase through `pyinit`,
 	// multi-phase through the interpreter -- so by the time any trampoline runs, on any

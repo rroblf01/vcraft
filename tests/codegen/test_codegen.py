@@ -607,6 +607,61 @@ def main() -> int:
                            capture_output=True, text=True)
     t.check("slot ids match the headers", slots.returncode == 0, slots.stdout.strip())
 
+    print("struct mirrors")
+    # The `PyModuleDef` mirror has two shapes: the GIL object header is 16 bytes
+    # and the free-threaded one is 32, so `m_name` sits 16 bytes further along
+    # without the GIL. The wrong shape imports on one interpreter and segfaults on
+    # the other inside `PyUnicode_FromString`, with nothing pointing at the mirror,
+    # so the sizes are checked here rather than trusted.
+    import tempfile
+    mirror_tmp = Path(tempfile.mkdtemp(prefix="vcraft-mirror-"))
+    try:
+        (mirror_tmp / "v.mod").write_text(
+            "Module {\n\tname: 'mirrorcheck'\n\tbase_url: 'src'\n}\n")
+        (mirror_tmp / "src").mkdir()
+        (mirror_tmp / "src" / "main.v").write_text(
+            "module main\n\nimport vcraft\n\n"
+            "fn main() {\n\tunsafe { println(sizeof(vcraft.PyModuleDef)) }\n}\n")
+        sizes = {}
+        include = sysconfig.get_paths()["include"]
+        libdir = sysconfig.get_config_var("LIBDIR") or "/usr/lib"
+        pylib = f"python{sys.version_info[0]}.{sys.version_info[1]}"
+        for label, extra in (("gil", []), ("free-threaded", ["-d", "vcraft_free_threaded"])):
+            out = mirror_tmp / f"mirror-{label}"
+            # Linked against libpython: the probe only prints a `sizeof`, but the
+            # runtime's C file references the interpreter throughout, and an
+            # executable resolves everything at link time while an extension
+            # leaves it to the import.
+            proc = subprocess.run(
+                [str(ROOT / "scripts" / "vcraft-v.sh"),
+                 "-enable-globals", "-o", str(out),
+                 "-path", f"{ROOT}/vlib|@vlib",
+                 "-cflags", f"-I{include}",
+                 "-ldflags", f"-L{libdir} -l{pylib}",
+                 *extra, str(mirror_tmp)],
+                capture_output=True, text=True)
+            t.check(f"the {label} mirror compiles", proc.returncode == 0,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+            if proc.returncode == 0:
+                probe = subprocess.run([str(out)], capture_output=True, text=True)
+                sizes[label] = probe.stdout.strip()
+        if len(sizes) == 2:
+            t.check("the free-threaded header is 16 bytes wider",
+                    int(sizes["free-threaded"]) - int(sizes["gil"]) == 16,
+                    str(sizes))
+    finally:
+        import shutil
+        shutil.rmtree(mirror_tmp, ignore_errors=True)
+
+    print("layout is checked at import")
+    # `check_layout` turns a drifted mirror into a named SystemError instead of a
+    # wild pointer inside the interpreter. It has to run on both entry points:
+    # multi-phase initialisation never runs `pyinit`'s body.
+    t.check("pyinit checks the layout",
+            "vcraft.check_layout() or { return unsafe { nil } }" in glue)
+    t.check("exec checks the layout too",
+            "vcraft.check_layout() or { return -1 }" in glue)
+
     print("symbol table")
     import subprocess as sp
 

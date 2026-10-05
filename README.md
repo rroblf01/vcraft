@@ -1056,11 +1056,13 @@ for the ones the generator did.
       `pip install`
 - [x] **PEP 517**: `pip install .` and `pip install <sdist>` both work
 - [x] **Free-threading**: checked against the interpreter rather than assumed, so a
-      `cp314t` wheel cannot be produced from a GIL build
-- [ ] Cross-compilation, `--target`, aarch64 and musllinux verification
-- [x] **Cross-compilation planning**: `--target` with canonical names and Rust-style
+      `cp314t` wheel cannot be produced from a GIL build; the object-header mirror
+      follows the 32-byte free-threaded layout, verified by importing on 3.14t
+- [x] **Cross-compilation**: `--target` with canonical names and Rust-style
       aliases, `--manylinux`/`--musllinux` policies, `--cc`/`--cflags`/`--ldflags`,
-      `--dry-run` planning, and a toolchain check that fails before compiling
+      `--dry-run` planning, a toolchain check that fails before compiling, real
+      manylinux and musllinux wheels built and imported in their images, an exact
+      `manylinux_2_17` auditwheel match, and an abi3 wheel imported on 3.12–3.14
 - [x] **CI**: `vcraft generate-ci` emits a matrix derived from the project's ABI
       choice, with `vcraft-action@v1`
 - [x] **CI images and action releases**: manylinux and musllinux images with V built
@@ -1070,7 +1072,8 @@ for the ones the generator did.
 - [x] **Zero-copy buffers, `@[vc_gil]`, iterators**: buffer-protocol `[]u8` parameters
       that alias instead of copying, GIL release with exact pairing on every path and
       per-thread state, and `@[vc_iter]`/`@[vc_next]` slots
-- [ ] Apple Silicon, Windows and musllinux verification
+- [ ] Apple Silicon, Windows and aarch64 verification (matrix covers them in CI;
+      musllinux x86_64 is verified locally in its image)
 
 See [Status](#status) for what actually works today.
 
@@ -1092,7 +1095,7 @@ $ python3 examples/probe/test_probe.py
 gate 0 passed
 ```
 
-Building it produced six compiler constraints that shaped the design. They are the
+Building it produced seven compiler constraints that shaped the design. They are the
 kind that produce a wrong answer rather than an error, so they are written up in
 full in [`vlib/vcraft/README.md`](vlib/vcraft/README.md) and summarised here:
 
@@ -1111,6 +1114,10 @@ full in [`vlib/vcraft/README.md`](vlib/vcraft/README.md) and summarised here:
    object with a cursor, and is why the argument helpers take an explicit index.
 6. A file matching `*_test.v` is compiled as a V test file and its module export is
    silently dropped.
+7. The object header is 16 bytes with the GIL and 32 without it, so every struct
+   mirrored from a header has two shapes. The wrong one imports on a GIL
+   interpreter and segfaults on a free-threaded one with nothing pointing at the
+   mirror.
 
 One further note on running the compiler at all. A bare `v` invocation is not safe
 unattended: when a C compilation fails, V retries by bootstrapping the whole V

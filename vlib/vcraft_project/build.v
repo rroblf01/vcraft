@@ -179,7 +179,12 @@ pub fn limited_api_defines(abi3 string) string {
 	// The stable ABI only ever gained members, so a build against an older floor still
 	// loads on a newer interpreter. `Py_LIMITED_API_COMPAT` is what lets the headers keep
 	// the older spelling of a member that was later extended.
-	return '-DPy_LIMITED_API=0x0${major}${minor:02d}0000'
+	// The floor as two hex digits: `Py_LIMITED_API` is a hex version, so 3.12 is
+	// `0x030c0000` and not `0x03120000`. Decimal here compiles, links, and then fails
+	// to import on every interpreter older than 3.14, because the headers read a floor
+	// of 3.18 and use the function form of `Py_TYPE`, which only 3.14 exports.
+	hex_minor := if minor < 16 { '0' + minor.hex() } else { minor.hex() }
+	return '-DPy_LIMITED_API=0x0${major}${hex_minor}0000'
 }
 
 // interpreter_suffix returns the extension suffix for a build.
@@ -385,6 +390,15 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	if limited.len > 0 {
 		args << '-d'
 		args << 'vcraft_limited_api'
+	}
+	// The object header is 16 bytes with the GIL and 32 without it, so the V mirrors
+	// of CPython's structs have a free-threaded shape selected the same way. Keyed
+	// off the project flag rather than the interpreter, because a cross build cannot
+	// ask a foreign interpreter anything; the flag and the interpreter are checked
+	// against each other above whenever the interpreter can run here.
+	if p.free_threading {
+		args << '-d'
+		args << 'vcraft_free_threaded'
 	}
 	if opt.release {
 		args << '-prod'

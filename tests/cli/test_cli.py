@@ -545,6 +545,23 @@ def main() -> int:
                         any(n.endswith(".abi3.so") for n in z.namelist()),
                         str(z.namelist()))
                 t.check("the abi3 wheel is a valid archive", z.testzip() is None)
+                # The floor is hex, not decimal: `Py_LIMITED_API` for 3.12 is
+                # `0x030c0000`, and `0x03120000` reads as a 3.18 floor. The headers
+                # then use the function form of `Py_TYPE`, which only 3.14 exports,
+                # so the wheel imports on 3.14 and fails everywhere older. `nm` sees
+                # what the import would hit, without needing the older interpreters.
+                if sys.platform.startswith("linux") and shutil.which("nm"):
+                    so_name = next(n for n in z.namelist() if n.endswith(".abi3.so"))
+                    unpacked = tmp / "abi3-unpacked"
+                    unpacked.mkdir(exist_ok=True)
+                    (unpacked / "ext.so").write_bytes(z.read(so_name))
+                    undefined = subprocess.run(
+                        ["nm", "-D", str(unpacked / "ext.so")],
+                        capture_output=True, text=True).stdout
+                    t.check("no 3.14-only Py_TYPE reference",
+                            not any(line.split()[-1] == "Py_TYPE" and " U " in line
+                                    for line in undefined.splitlines()),
+                            "U Py_TYPE in the abi3 extension")
 
             target = tmp / "venv-abi3"
             make_venv(target, with_pip=True)
@@ -1014,7 +1031,8 @@ pub fn (mut n Node) link(other voidptr) {
             t.check("the action takes args",
                     "args" in definition["inputs"], str(definition["inputs"]))
             for workflow_file in [
-                    "release-images.yml", "release-action.yml", "release-vcraft.yml"]:
+                    "ci.yml", "release-images.yml", "release-action.yml",
+                    "release-vcraft.yml"]:
                 path = ROOT / ".github" / "workflows" / workflow_file
                 t.check(f"{workflow_file} exists", path.exists(), str(path))
                 if path.exists():
@@ -1025,6 +1043,20 @@ pub fn (mut n Node) link(other voidptr) {
                                 str(list(parsed)))
                     except Exception as exc:  # noqa: BLE001
                         t.check(f"{workflow_file} parses", False, str(exc))
+            ci = yaml.safe_load(
+                (ROOT / ".github" / "workflows" / "ci.yml").read_text())
+            runners = [cell.get("os", "") for cell in
+                       ci["jobs"]["tests"]["strategy"]["matrix"]["include"]]
+            t.check("CI runs where the developers cannot",
+                    "macos-14" in runners, str(runners))
+            t.check("CI runs every suite",
+                    all(path in (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+                        for path in ["tests/project/check_toml.py",
+                                     "tests/wheel/test_wheel.py",
+                                     "tests/runtime/test_runtime.py",
+                                     "tests/codegen/test_codegen.py",
+                                     "tests/cli/test_cli.py"]),
+                    "a suite CI never runs is a suite that rots")
 
         print("abi3 changes the matrix")
         manifest = project / "vcraft.toml"
