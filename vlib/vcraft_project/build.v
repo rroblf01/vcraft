@@ -27,6 +27,23 @@ pub mut:
 	interpreter string
 	// platform overrides the platform tag, for cross builds.
 	platform string
+	// target selects a cross-compilation target, e.g. `linux-aarch64-gnu`. Empty means
+	// the host, which is what every build before this flag did.
+	target string
+	// manylinux claims a manylinux policy, e.g. `2_17`, for a Linux gnu target.
+	manylinux string
+	// musllinux claims a musllinux policy, e.g. `1_2`, for a Linux musl target.
+	musllinux string
+	// cc overrides the C compiler V invokes. Needed for a cross target whose toolchain
+	// V does not know, e.g. a wrapper around `zig cc`.
+	cc string
+	// cflags are passed to the C compiler after vcraft's own flags.
+	cflags string
+	// ldflags are passed to the C compiler after every other C option.
+	ldflags string
+	// dry_run prints the resolved build plan and writes nothing. It is how a target is
+	// verified without its toolchain: planning is pure, compiling is not.
+	dry_run bool
 	// jobs is the parallelism, or 0 for the wrapper's default.
 	jobs int
 	// v_path is the directory holding vcraft's V modules, passed to `v -path`.
@@ -200,23 +217,50 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	if version.len == 0 {
 		return error('cannot run ${python}; is it on PATH?')
 	}
+	// The target is resolved before anything else, because every error it can report is
+	// cheaper than compiling: an unknown name, a policy on the wrong libc, and a
+	// `--platform` that disagrees with the target all fail here.
+	mut target := default_target()
+	if opt.target.len > 0 {
+		target = parse_target(opt.target)!
+		target = target.with_policy(opt.manylinux, opt.musllinux)!
+	}
 	// The free-threaded build is whatever interpreter the caller named, and this is
 	// the check: a GIL interpreter produces a `cp314t`-tagged wheel full of GIL code,
 	// which the installer accepts and the free-threaded runtime then refuses to load.
 	// Asking the interpreter is the only reliable answer, because the tag suffix
 	// depends on how it was configured rather than on its version.
-	if p.free_threading && !interpreter_is_free_threaded(python) {
-		return error('free-threading is set but ${python} is not a free-threaded build; pass --interpreter for one')
+	//
+	// Skipped for a cross target, where the interpreter that answers cannot be the one
+	// the wheel runs on. A foreign interpreter cannot execute here, so there is nothing
+	// to ask; the flags are trusted instead.
+	if target.is_host() {
+		if p.free_threading && !interpreter_is_free_threaded(python) {
+			return error('free-threading is set but ${python} is not a free-threaded build; pass --interpreter for one')
+		}
+		if !p.free_threading && interpreter_is_free_threaded(python) {
+			return error('${python} is a free-threaded build; set free-threading in vcraft.toml or pass --free-threading')
+		}
 	}
-	if !p.free_threading && interpreter_is_free_threaded(python) {
-		return error('${python} is a free-threaded build; set free-threading in vcraft.toml or pass --free-threading')
+	suffix := if opt.target.len > 0 {
+		target.extension_suffix(version, p.abi3)
+	} else {
+		interpreter_suffix(python, p.abi3)
 	}
-	suffix := interpreter_suffix(python, p.abi3)
 	include := include_dir(python)
 	if include.len == 0 {
 		return error('cannot find Python.h for ${python}')
 	}
-	tag_platform := if opt.platform.len > 0 { opt.platform } else {
+	tag_platform := if opt.platform.len > 0 {
+		// An explicit tag that disagrees with an explicit target is a wheel that lies
+		// about what it contains, so it is refused rather than warned about.
+		if opt.target.len > 0 && opt.platform != target.platform_tag {
+			return error('--platform `${opt.platform}` does not match --target `${opt.target}`, which implies `${target.platform_tag}`')
+		}
+		opt.platform
+	} else if opt.target.len > 0 {
+		target.platform_tag
+	} else {
 		platform_tag(python)
 	}
 	// `version` arrives as `3.14` and the tag wants `314`: the interpreter tag has no
@@ -276,8 +320,54 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		'-path',
 		shell_quote('${opt.v_path}|@vlib'),
 		'-cflags',
-		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3)),
+		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + opt.cflags),
 	]
+	if opt.ldflags.len > 0 {
+		args << '-ldflags'
+		args << shell_quote(opt.ldflags)
+	}
+	if opt.target.len > 0 {
+		// An explicit target is spelled out even when it matches the host, so `--dry-run`
+		// shows what the defaults resolve to and a build log says what was built.
+		args << '-os'
+		args << target.v_os()
+		if target.v_arch().len > 0 {
+			args << '-arch'
+			args << target.v_arch()
+		}
+		if target.libc_flag().len > 0 {
+			args << target.libc_flag()
+		}
+	}
+	cc := if opt.cc.len > 0 { opt.cc } else { target.default_cc() }
+	if cc.len > 0 {
+		args << '-cc'
+		args << shell_quote(cc)
+	}
+	if opt.dry_run {
+		// Before the toolchain check: planning is pure and has to work where the
+		// compiler does not exist, which is the whole point of verifying a target
+		// without its toolchain.
+		println(describe_plan(p, opt, target, tag, suffix, output, args))
+		return BuildResult{
+			wheel:     []
+			filename:  ''
+			path:      ''
+			extension: p.module + suffix
+			tag:       ''
+			python:    version
+		}
+	}
+	if cc.len > 0 {
+		// Before compiling, because a missing cross compiler otherwise fails after V has
+		// generated all of the C, and the error names a file in a temporary directory
+		// rather than the compiler that is not installed.
+		if !cc_exists(cc) {
+			return error('target `${target.name}` needs a C compiler named `${cc}`, which is not on PATH; pass --cc for the one to use')
+		}
+	} else if !target.is_host() {
+		return error('target `${target.name}` is not this machine; pass --cc for the cross compiler to use')
+	}
 	// vcraft's own C code has to be told which API it is compiling against. Under
 	// `Py_LIMITED_API` CPython hides the concrete object structs behind the stable ABI,
 	// so the runtime reaches for its accessors instead of reading a struct field, and
@@ -361,6 +451,36 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		tag:       tag
 		python:    version
 	}
+}
+
+// cc_exists reports whether a C compiler is available.
+//
+// The first word is the executable and the rest are its arguments, which is how a
+// wrapper like `zig cc` is spelled. Only the executable has to exist; the arguments
+// are the wrapper's own business.
+fn cc_exists(cc string) bool {
+	fields := cc.split(' ')
+	if fields.len == 0 || fields[0].len == 0 {
+		return false
+	}
+	if fields[0].contains('/') {
+		return os.exists(fields[0])
+	}
+	return os.execute('command -v ' + shell_quote(fields[0])).exit_code == 0
+}
+
+// describe_plan renders what a build would do, for `--dry-run`.
+//
+// The whole point is that planning is pure: it names the target, the tag, the extension
+// and the compiler invocation without touching the toolchain, so a target whose
+// compiler is not installed can still be verified this far.
+fn describe_plan(p Project, opt BuildOptions, target CrossTarget, tag string, suffix string, output string, args []string) string {
+	mut out := target.describe()
+	out += 'tag              ${tag}\n'
+	out += 'extension        ${p.module + suffix}\n'
+	out += 'output           ${output}\n'
+	out += 'command          ${args.join(' ')}\n'
+	return out
 }
 
 // absolute makes a path absolute, which the `.pth` of an editable install needs.

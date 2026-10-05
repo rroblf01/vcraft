@@ -223,6 +223,50 @@ def main() -> int:
         t.check("info reports where vlib is",
                 info.get("vlib", "").strip() == str(ROOT / "vlib"), proc.stdout)
 
+        print("targets")
+        # `--target` planning is pure: it names the OS, the architecture, the tag and
+        # the compiler without touching a toolchain, so every one of these runs
+        # everywhere, including where the compiler for the target is not installed.
+        proc = vcraft("info", "--target", "linux-aarch64-gnu", cwd=project)
+        t.check("aarch64 resolves", proc.returncode == 0
+                and "target-arch      aarch64" in proc.stdout
+                and "platform-tag     linux_aarch64" in proc.stdout, proc.stdout)
+        proc = vcraft("info", "--target", "linux-x86_64-musl", "--musllinux", "1_2",
+                      cwd=project)
+        t.check("a musl policy resolves", proc.returncode == 0
+                and "platform-tag     musllinux_1_2_x86_64" in proc.stdout, proc.stdout)
+        proc = vcraft("info", "--target", "linux-aarch64-gnu", "--manylinux", "2_17",
+                      cwd=project)
+        t.check("a manylinux policy resolves", proc.returncode == 0
+                and "platform-tag     manylinux_2_17_aarch64" in proc.stdout, proc.stdout)
+        proc = vcraft("info", "--target", "bogus", cwd=project)
+        t.check("an unknown target fails", proc.returncode != 0)
+        t.check("and names itself", "unknown target" in proc.stderr, proc.stderr.strip())
+        proc = vcraft("info", "--target", "linux-x86_64-musl", "--manylinux", "2_17",
+                      cwd=project)
+        t.check("manylinux on musl fails", proc.returncode != 0)
+        t.check("and says why", "needs a gnu target" in proc.stderr,
+                proc.stderr.strip())
+        proc = vcraft("build", "--target", "linux-aarch64-gnu", "--dry-run",
+                      cwd=project)
+        t.check("a dry run plans without a toolchain", proc.returncode == 0
+                and "platform-tag     linux_aarch64" in proc.stdout
+                and "aarch64-linux-gnu-gcc" in proc.stdout, proc.stdout)
+        t.check("a dry run writes nothing",
+                not list((project / "dist").glob("*aarch64*")))
+        proc = vcraft("build", "--target", "linux-aarch64-gnu", cwd=project)
+        t.check("a real aarch64 build needs its compiler", proc.returncode != 0)
+        t.check("and names it", "aarch64-linux-gnu-gcc" in proc.stderr,
+                proc.stderr.strip()[-300:])
+        proc = vcraft("build", "--target", "linux-aarch64-gnu",
+                      "--platform", "manylinux_2_17_x86_64", cwd=project)
+        t.check("a platform that disagrees with the target fails",
+                proc.returncode != 0)
+        t.check("and says which implies which", "implies" in proc.stderr,
+                proc.stderr.strip())
+        proc = vcraft("develop", "--dry-run", cwd=project)
+        t.check("develop has nothing dry to run", proc.returncode != 0)
+
         print("build")
         proc = vcraft("build", cwd=project)
         t.check("build succeeds", proc.returncode == 0,
@@ -357,6 +401,23 @@ def main() -> int:
                 (proc.stderr or proc.stdout).strip()[-300:])
         t.check("the rebuild is identical", wheel.read_bytes() == first,
                 "a build that is not reproducible makes a diff meaningless")
+
+        print("an explicit native target")
+        # Naming the host's own target must change nothing: same tag, same suffix, same
+        # bytes. If the explicit path diverged from the default one, this is where it
+        # shows, rather than in a wheel someone uploads.
+        explicit_out = tmp / "out-explicit-target"
+        proc = vcraft("build", "--target", "linux-x86_64-gnu", "--out-dir",
+                      str(explicit_out), cwd=project)
+        t.check("an explicit native target builds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        explicit_wheels = sorted(explicit_out.glob("*.whl"))
+        t.check("it writes one wheel", len(explicit_wheels) == 1,
+                str(list(explicit_out.glob("*"))))
+        if explicit_wheels:
+            t.check("and it is the default wheel byte for byte",
+                    explicit_wheels[0].read_bytes() == first,
+                    "the explicit path diverged from the default one")
 
         print("install the wheel with pip")
         target = tmp / "venv-wheel"

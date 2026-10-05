@@ -617,13 +617,22 @@ vcraft new <name>            scaffold a V project ready for Python
 vcraft develop [options]     build and install an editable pointer by default
 vcraft develop --copy        install a plain extension copy instead
 vcraft build [options]       build a distributable wheel
+vcraft build --target linux-aarch64-gnu --dry-run
+                             print the cross-compilation plan without building
 vcraft build --editable      build a local-only wheel that points at build output
 
     --release                compile with -prod
     --abi3 <version>         build one wheel usable from CPython <version> onwards
     --interpreter <path>     build against a specific interpreter
     --out-dir <dir>          output directory (default: dist/)
-    --platform <tag>         override the platform tag
+  --platform <tag>             override the platform tag
+  --target <name>              cross-compile for a target, e.g. linux-aarch64-gnu
+  --manylinux <version>        claim a manylinux policy, e.g. 2_17
+  --musllinux <version>        claim a musllinux policy, e.g. 1_2
+  --cc <compiler>              C compiler for V to invoke
+  --cflags <flags>             extra flags for the C compiler
+  --ldflags <flags>            extra flags for the C linker
+  --dry-run                    print the build plan without building
     --strip                  strip symbols from the extension
     --skip-audit             do not validate the resulting wheel
 
@@ -697,6 +706,32 @@ develop` is editable by default: it installs a `.pth` pointing at the build outp
 the project's Python sources, plus distribution metadata, while `develop --copy`
 installs a plain extension copy. `pip install -e .` uses the generated PEP 660 backend.
 Editable wheels point at the local build tree and are refused by `vcraft publish`.
+
+### Cross-compilation targets
+
+`--target` names the machine a wheel is built for rather than the one building it.
+The canonical form is `<os>-<arch>-<libc>` -- `linux-aarch64-gnu`,
+`linux-x86_64-musl`, `macos-universal2`, `windows-amd64` -- and Rust-style triples
+like `aarch64-unknown-linux-gnu` are accepted as aliases. A Linux policy is claimed
+separately and explicitly, because the tag is a statement about the libc the binary
+was linked against:
+
+```console
+$ vcraft build --target linux-aarch64-gnu --manylinux 2_17
+$ vcraft build --target linux-x86_64-musl --musllinux 1_2 --cc x86_64-linux-musl-gcc
+```
+
+A target without a policy keeps the plain `linux_<arch>` tag: claiming manylinux is
+a statement a build that has not verified its libc must not make. Naming the host's
+own target changes nothing -- the wheel is byte-identical to a default build, which
+is checked -- and a `--platform` that disagrees with the target is refused rather
+than warned about, because the wheel would lie about what it contains.
+
+`--dry-run` prints the resolved OS, architecture, tag, extension suffix and compiler
+invocation without touching a toolchain. Planning is pure; compiling is not, so a
+target whose cross compiler is not installed verifies this far and fails with the
+compiler's name when asked to build for real. Foreign execution -- actually running
+an aarch64 or musl wheel -- happens in CI, where the images carry the toolchains.
 
 ## Generated project layout
 
@@ -905,6 +940,9 @@ for the ones the generator did.
 - [x] **Free-threading**: checked against the interpreter rather than assumed, so a
       `cp314t` wheel cannot be produced from a GIL build
 - [ ] Cross-compilation, `--target`, aarch64 and musllinux verification
+- [x] **Cross-compilation planning**: `--target` with canonical names and Rust-style
+      aliases, `--manylinux`/`--musllinux` policies, `--cc`/`--cflags`/`--ldflags`,
+      `--dry-run` planning, and a toolchain check that fails before compiling
 - [x] **CI**: `vcraft generate-ci` emits a matrix derived from the project's ABI
       choice, with `vcraft-action@v1`
 - [ ] CI: published manylinux and musllinux images, and the action's own releases

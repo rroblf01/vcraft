@@ -30,6 +30,13 @@ build options:
   --interpreter <path>         build against a specific interpreter
   --out-dir <dir>              output directory (default: dist/)
   --platform <tag>             override the platform tag
+  --target <name>              cross-compile for a target, e.g. linux-aarch64-gnu
+  --manylinux <version>        claim a manylinux policy, e.g. 2_17
+  --musllinux <version>        claim a musllinux policy, e.g. 1_2
+  --cc <compiler>              C compiler for V to invoke
+  --cflags <flags>             extra flags for the C compiler
+  --ldflags <flags>            extra flags for the C linker
+  --dry-run                    print the build plan without building
   --free-threading             build against a free-threaded interpreter
   --strip                      strip symbols
   --skip-audit                 do not validate the resulting wheel
@@ -107,7 +114,7 @@ fn parse_args(argv []string) !Args {
 // takes_value reports whether an option is followed by a value.
 fn takes_value(name string) bool {
 	return name in ['abi3', 'interpreter', 'out-dir', 'platform', 'jobs', 'python',
-		'action']
+		'action', 'target', 'manylinux', 'musllinux', 'cc', 'cflags', 'ldflags']
 }
 
 fn main() {
@@ -197,6 +204,13 @@ fn cmd_build(args Args, develop bool) {
 		release:     args.flags['release']
 		interpreter: args.options['interpreter']
 		platform:    args.options['platform']
+		target:      args.options['target']
+		manylinux:   args.options['manylinux']
+		musllinux:   args.options['musllinux']
+		cc:          args.options['cc']
+		cflags:      args.options['cflags']
+		ldflags:     args.options['ldflags']
+		dry_run:     args.flags['dry-run']
 		jobs:        args.options['jobs'].int()
 		v_path:      vcraft_project.vlib_path()
 		v:           vcraft_project.v_compiler()
@@ -205,9 +219,19 @@ fn cmd_build(args Args, develop bool) {
 		// is never editable, because a wheel is a thing you upload.
 		editable:    (develop || args.flags['editable']) && !args.flags['copy']
 	}
+	if develop && args.flags['dry-run'] {
+		// `develop` installs, so a dry run would plan a build it then refuses to do.
+		eprintln('error: `--dry-run` makes no sense with `develop`')
+		exit(2)
+	}
 	result := vcraft_project.build(p, opt) or {
 		eprintln('error: ${err.msg()}')
 		exit(1)
+	}
+	// A dry run printed its plan inside `build` and wrote nothing, so there is no
+	// wheel to audit and nothing to install.
+	if opt.dry_run {
+		return
 	}
 	if !args.flags['skip-audit'] {
 		problems := vcraft_project.audit(result) or {
@@ -260,6 +284,19 @@ fn cmd_info(args Args) {
 	println('python           ${vcraft_project.interpreter_version("python3")}')
 	println('extension        ${vcraft_project.extension_suffix("python3")}')
 	println('platform         ${vcraft_project.platform_tag("python3")}')
+	if args.options['target'] != '' {
+		// The target is resolved the same way a build resolves it, so `info` answers
+		// the question "what would `--target X` do" without compiling anything.
+		mut target := vcraft_project.parse_target(args.options['target']) or {
+			eprintln('error: ${err.msg()}')
+			exit(1)
+		}
+		target = target.with_policy(args.options['manylinux'], args.options['musllinux']) or {
+			eprintln('error: ${err.msg()}')
+			exit(1)
+		}
+		print(target.describe())
+	}
 	println('v                ${vcraft_project.v_compiler()}')
 	println('vlib             ${vcraft_project.vlib_path()}')
 	println('environment      ${vcraft_project.active_environment()}')
