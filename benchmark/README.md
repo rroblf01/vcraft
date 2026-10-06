@@ -168,6 +168,11 @@ Por prioridad. Cada punto está reproducido en este benchmark.
    comprobaciones y `copy_element_to` por elemento. Las definiciones están en el
    propio C generado (`array__set` comprueba límites y hace `vmemcpy` de
    `element_size`; `array__push` comprueba, reserva y hace `copy_element_to`).
+   Medido en `count_primes(1e6)`: la mitad de las muestras caen en
+   `memmove`/`memcpy`, y el mismo sieve sobre un buffer `malloc` con tiendas
+   directas baja a 1,7 ms (V `0137eb5`, macOS arm64), por delante de PyO3
+   (2,02 ms). Sin rodeos en el código del usuario no hay arreglo dentro de
+   vcraft: el lowering lo hace V.
 9. ✅ *Medido tras el paso 6 y ofrecido como opción `gc-free-space-divisor` (1 por
    defecto).* `GC_set_free_space_divisor(1)`, el valor que fija V, hace crecer el heap
    antes que recolectar. Con 2, en esta máquina: lo retenido pasa de 1,0 a 0,5 MiB
