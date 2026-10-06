@@ -127,7 +127,9 @@ pub fn (o PyObj) type() PyObj {
 // type_is reports whether the object is an instance of `wanted` or of a class
 // deriving from it.
 pub fn (o PyObj) type_is(wanted PyObj) bool {
-	return C.PyType_IsSubtype(C.PyObject_Type(o.ptr), wanted.ptr) == 1
+	// Through the shim, which borrows the type: `PyObject_Type` returned a new
+	// reference here that nothing released.
+	return C.vpy_is_instance(o.ptr, wanted.ptr) == 1
 }
 
 // type_name returns the name of the object's type, for error messages.

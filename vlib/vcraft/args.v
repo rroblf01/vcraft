@@ -36,6 +36,14 @@ pub fn require_nargs(name string, expected int, given int) {
 	}
 }
 
+// wrong_nargs raises the TypeError for a call with the wrong number of positional
+// arguments. The generated glue compares `nargs` itself and only calls this when
+// the count is wrong, so the success path pays for one comparison.
+pub fn wrong_nargs(name string, expected int, given int) {
+	require_nargs(name, expected, given)
+	reject_extra_args(name, expected, given)
+}
+
 // reject_extra_args reports a call that passed more arguments than the V function
 // accepts. Called after the last parameter.
 pub fn reject_extra_args(name string, expected int, given int) {

@@ -10,8 +10,7 @@ module vcraft_codegen
 // that panics halfway leaves the instance as it was rather than half written:
 //
 //	fn vcraft_generated__method_Counter_increment(self voidptr, args voidptr, nargs isize) voidptr {
-//		vcraft.require_nargs('increment', 1, int(nargs))
-//		if vcraft.error_is_set() { return unsafe { nil } }
+//		if nargs != 1 { vcraft.wrong_nargs('increment', 1, int(nargs)) return unsafe { nil } }
 //		arg0 := vcraft.from_py_int_arg(args, 0, 'increment', 'by') or { return unsafe { nil } }
 //		mut state := Counter{}
 //		vcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ${c.size_fn})

@@ -690,3 +690,39 @@ PyObject *vpy_exc_arithmetic_error(void) {
 PyObject *vpy_exc_overflow_error(void) {
 	return PyExc_OverflowError;
 }
+
+// vpy_exact_long_as_i64 is the fast path for reading an integer argument.
+//
+// It covers the case nearly every call is: an exact `int` that fits in 64 bits. One
+// pointer comparison decides it, where the general reader asks `PyType_IsSubtype`
+// twice (once to refuse `bool`, once to accept `int`) and then consults the error
+// indicator. Returns 1 with the value stored, or 0 with nothing stored and no Python
+// error left set, in which case the caller takes the general path: a subclass, a
+// `bool`, another type and an overflow all end up there, with their usual messages.
+int vpy_exact_long_as_i64(PyObject *o, long long *out) {
+	if (o == NULL || !PyLong_CheckExact(o)) {
+		return 0;
+	}
+	int overflow = 0;
+	long long value = PyLong_AsLongLongAndOverflow(o, &overflow);
+	if (overflow != 0) {
+		return 0;
+	}
+	if (value == -1 && PyErr_Occurred()) {
+		PyErr_Clear();
+		return 0;
+	}
+	*out = value;
+	return 1;
+}
+
+// vpy_is_instance reports whether `o` is an instance of `type` or of a subclass.
+//
+// `PyObject_Type` would answer the same question with a new reference to the type,
+// which the caller then has to release; reading `Py_TYPE` borrows it.
+int vpy_is_instance(PyObject *o, PyObject *type) {
+	if (o == NULL || type == NULL) {
+		return 0;
+	}
+	return PyType_IsSubtype(Py_TYPE(o), (PyTypeObject *)type);
+}

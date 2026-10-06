@@ -9,12 +9,9 @@ module vcraft_codegen
 // The shape of a trampoline is fixed. For a plain function:
 //
 //	fn vcraft_generated__wrap_add(self voidptr, args voidptr, nargs isize) voidptr {
-//		vcraft.require_nargs('add', 2, int(nargs))
-//		if vcraft.error_is_set() { return unsafe { nil } }
+//		if nargs != 2 { vcraft.wrong_nargs('add', 2, int(nargs)) return unsafe { nil } }
 //		arg0 := vcraft.from_py_int_arg(args, 0, 'add', 'a') or { return unsafe { nil } }
 //		arg1 := vcraft.from_py_int_arg(args, 1, 'add', 'b') or { return unsafe { nil } }
-//		vcraft.reject_extra_args('add', 2, int(nargs))
-//		if vcraft.error_is_set() { return unsafe { nil } }
 //		mut result := 0
 //		defer { if message := recover() { vcraft.raise_runtime_error('panic in V code: ${message}') } }
 //		result = add(arg0, arg1)
@@ -383,6 +380,17 @@ fn emit_nogil_failure(inner string) string {
 		'\t\t' + inner + '\n'
 }
 
+// emit_nargs_check renders the arity check at the top of a positional trampoline.
+//
+// One comparison on the success path. The message, and the choice between too few
+// and too many, only run when it fails. Checking before any argument is read also
+// means a reader never sees an index past `nargs`.
+fn emit_nargs_check(f Func) string {
+	return '\tif nargs != ${f.params.len} {\n' +
+		"\t\tvcraft.wrong_nargs('${f.name}', ${f.params.len}, int(nargs))\n" +
+		'\t\treturn unsafe { nil }\n\t}\n'
+}
+
 // emit_method_trampoline renders a method of a class.
 //
 // It is the ordinary trampoline wrapped in the two statements that move the V value
@@ -396,18 +404,13 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 	if f.params.len > 0 {
-		w.write_string("\tvcraft.require_nargs('${f.name}', ${f.params.len}, int(nargs))\n")
-		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+		w.write_string(emit_nargs_check(f))
 	}
 	mut names := []string{}
 	for i, param in f.params {
 		name := local_name(i)
 		names << name
 		w.write_string('\t${reader_expr(lookup(param.v_type), name, i, f.name, param.name, param.v_type)}\n')
-	}
-	if f.params.len > 0 {
-		w.write_string("\tvcraft.reject_extra_args('${f.name}', ${f.params.len}, int(nargs))\n")
-		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	}
 	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
 	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
@@ -570,8 +573,7 @@ pub fn emit_trampoline(f Func) string {
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 
 	if f.params.len > 0 {
-		w.write_string("\tvcraft.require_nargs('${f.name}', ${f.params.len}, int(nargs))\n")
-		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+		w.write_string(emit_nargs_check(f))
 	}
 
 	// `@[vc_raw]` keeps the declared signature but skips every conversion: each
@@ -594,10 +596,6 @@ pub fn emit_trampoline(f Func) string {
 		w.write_string('\t${reader_expr(strategy, name, i, f.name, param.name, param.v_type)}\n')
 	}
 
-	if f.params.len > 0 {
-		w.write_string("\tvcraft.reject_extra_args('${f.name}', ${f.params.len}, int(nargs))\n")
-		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
-	}
 
 	ret := lookup(f.v_ret)
 	has_value := f.raw || ret != .void

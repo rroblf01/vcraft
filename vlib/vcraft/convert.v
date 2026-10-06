@@ -27,6 +27,12 @@ module vcraft
 // would happily accept it, but `True` becoming `1` in a V function is almost
 // never what the caller meant.
 pub fn from_py_int(obj PyObj, name string) !int {
+	// An exact int that fits is decided by one pointer comparison. Everything else,
+	// including every error, takes the checks below.
+	mut fast := i64(0)
+	if C.vpy_exact_long_as_i64(obj.ptr, &fast) == 1 {
+		return int(fast)
+	}
 	if obj.is_null() {
 		set_error(pyexc_obj(.type_error), '${name}: missing argument')
 		return error('${name}: missing')
