@@ -1,0 +1,5 @@
+/build/
+/dist/
+/.vcraft/
+/src/_vcraft_generated.v
+*.so
