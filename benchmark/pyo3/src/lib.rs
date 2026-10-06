@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 
 /// Benchmark workloads written in Rust.
 ///
-/// The same seven workloads as the vcraft and zig-maturin projects, with the same
+/// The same nine workloads as the vcraft and zig-maturin projects, with the same
 /// semantics and 64-bit integers throughout.
 #[pymodule]
 mod bench_pyo3 {
@@ -65,6 +65,24 @@ mod bench_pyo3 {
     #[pyfunction]
     fn greet(name: &str) -> String {
         format!("Hello, {name}!")
+    }
+
+    /// Bytes in without copying, one int out.
+    #[pyfunction]
+    fn checksum(data: &[u8]) -> u64 {
+        data.iter().map(|b| *b as u64).sum()
+    }
+
+    /// The error path: a bad value raises instead of returning.
+    #[pyfunction]
+    fn expect_positive(n: i64) -> PyResult<i64> {
+        if n < 0 {
+            Err(pyo3::exceptions::PyValueError::new_err(
+                "expect_positive() expected n >= 0",
+            ))
+        } else {
+            Ok(n)
+        }
     }
 
     /// Method-call overhead on a native object.

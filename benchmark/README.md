@@ -1,6 +1,6 @@
 # Benchmark: PyO3 vs vcraft vs zig-maturin
 
-Tres proyectos independientes que implementan **las mismas siete funciones con la misma
+Tres proyectos independientes que implementan **las mismas nueve funciones con la misma
 semántica**, uno por herramienta, más una referencia en Python puro:
 
 | carpeta | herramienta | lenguaje | módulo |
@@ -32,6 +32,8 @@ escribe en [`results.md`](results.md) y [`results.json`](results.json).
 | `sum_floats(lista de 100k)` | conversión `list[float]` → nativo |
 | `make_range(100_000)` | conversión nativo → `list[int]` |
 | `greet('world')` | `str` de entrada, `str` nuevo de salida |
+| `checksum(bytes de 100k)` | `bytes` → nativo sin copiar (protocolo búfer) |
+| `expect_positive(-1)` con `try` | ida y vuelta de una excepción por llamada |
 | `Counter()` / `c.increment()` | construcción de objeto y llamada a método |
 
 - **Velocidad:** `timeit`, el mejor de 7 repeticiones, en un proceso dedicado.
@@ -177,6 +179,14 @@ Por prioridad. Cada punto está reproducido en este benchmark.
    783 µs); el perfil muestra dos tercios en `PyLong_FromLongLong` (un alloc por
    elemento, inevitable) y un tercio en `array__push`. Sin rodeos en el código
    del usuario no hay arreglo dentro de vcraft: el lowering lo hace V.
+   Reportado a vlang/v; el texto del issue está en el historial del chat.
+   Nota de compilación: V compila la TU grande de una extensión con `-O2`
+   (y `-flto` solo para no-`shared`), mientras que un binario pequeño recibe
+   `-O3`; en el mismo sieve suelto eso son ~2400 frente a ~2700 µs. vcraft no
+   lo fuerza a `-O3`: es una decisión de tiempo de compilación del toolchain
+   (las TU grandes disparan el coste de `-O3`); medido: pasar `--cflags -O3`
+   a `vcraft build` deja el binario bit-idéntico, así que no es una palanca
+   útil.
 9. ✅ *Medido tras el paso 6 y ofrecido como opción `gc-free-space-divisor` (1 por
    defecto).* `GC_set_free_space_divisor(1)`, el valor que fija V, hace crecer el heap
    antes que recolectar. Con 2, en esta máquina: lo retenido pasa de 1,0 a 0,5 MiB
@@ -217,8 +227,13 @@ Para que los tres proyectos compilen con la misma semántica:
 
 ## Progreso de vcraft
 
-Las cifras de vcraft tras cada paso, con el benchmark completo. PyO3 se mantiene estable
-entre ejecuciones (±2 %), así que la columna de referencia es la de la tabla inicial.
+Las cifras de vcraft tras cada paso, con el benchmark completo. PyO3 se mantiene
+estable entre ejecuciones en las cargas grandes (±3 %: `count_primes`,
+`sum_floats`, `make_range` se movieron +0,5 %, +0,3 % y +1,0 % entre las dos
+últimas mediciones completas); en la escala de nanosegundos hay más ruido
+(`greet` de PyO3: 60 → 54 ns, −10 %) y en el import en caliente también
+(+7 % PyO3, +10 % zig). Diferencias menores al 5 % en celdas pequeñas no son
+movimiento real. La columna de referencia es la de la tabla inicial.
 
 | paso | `add` | `increment` | `sum_floats` | `make_range` | `count_primes` | fuga `make_range` |
 |---|---|---|---|---|---|---|
@@ -296,7 +311,12 @@ mucho también va más rápido (`sum_floats` 153 → 133 µs; un bucle que solo 
 strings, 1,8×). Linux no cambia: allí Boehm registra las bibliotecas de otra forma y no lo
 he medido. Del import que queda (0,63 frente a 0,54 ms en caliente), el `PyInit`
 no tiene la culpa: con la imagen ya cargada son 118 frente a 230 µs; el resto es
-el arranque de Boehm, una vez por proceso.
+el arranque de Boehm, una vez por proceso. Y el RSS del import (1.104 frente a
+304 KiB) tampoco cede a los ajustes del GC: ni `GC_MARKERS=1` ni
+`GC_INITIAL_HEAP_SIZE=64k` lo mueven un KiB. Según `vmmap`, unas 400 KiB son el
+propio `.so` mapeado (`__TEXT` 240 KiB residentes + `__DATA`/`__LINKEDIT`); el
+resto es el arranque del runtime. No hay palanca aquí: la extensión ya es la más
+pequeña de las tres tras `strip` (351 frente a 414 y 400 KiB).
 
 ### Estado tras el paso 6
 

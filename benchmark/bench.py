@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compares PyO3, vcraft and zig-maturin on the same seven workloads.
+"""Compares PyO3, vcraft and zig-maturin on the same nine workloads.
 
 Every backend is measured in fresh subprocesses so that one backend's allocator,
 garbage collector or imported runtime never shows up in another's numbers: one
@@ -41,6 +41,7 @@ BACKENDS = {
 }
 
 FLOATS = [i * 0.5 for i in range(100_000)]
+BYTES = bytes(range(256)) * 400
 
 IMPORT_RUNS = 8
 
@@ -52,6 +53,11 @@ SPEED = {
     "sum_floats(100k)": ("m.sum_floats(FLOATS)", "list[float] -> native"),
     "make_range(100k)": ("m.make_range(100_000)", "native -> list[int]"),
     "greet": ("m.greet('world')", "str in, new str out"),
+    "checksum(100kB)": ("m.checksum(BYTES)", "bytes -> native, no copy"),
+    "expect_positive(err)": (
+        "try:\n    m.expect_positive(-1)\nexcept ValueError:\n    pass",
+        "raise + catch per call",
+    ),
     "Counter()": ("m.Counter()", "object construction"),
     "c.increment()": ("c.increment()", "method call"),
 }
@@ -64,6 +70,9 @@ MEMORY = {
     # A fresh list on every call, so a reader that keeps a reference to each item it
     # reads leaks the whole list. The speed workload reuses one list and cannot see it.
     "sum_floats(new 10k list) x500": ("m.sum_floats([i * 0.5 for i in range(10_000)])", 500),
+    # Same idea for the buffer path: a view the reader does not release keeps the
+    # whole object alive.
+    "checksum(new 100kB) x500": ("m.checksum(bytes(range(256)) * 400)", 500),
     "Counter() x1M": ("m.Counter()", 1_000_000),
 }
 
@@ -76,6 +85,9 @@ CORRECTNESS = {
     "sum_floats": ("m.sum_floats([1.5, 2.5])", 4.0),
     "make_range(3)": ("m.make_range(3)", [0, 1, 2]),
     "greet unicode": ("m.greet('España')", "Hello, España!"),
+    "checksum 3 bytes": ("m.checksum(b'\\x01\\x02\\xff')", 258),
+    "expect_positive ok": ("m.expect_positive(41)", 41),
+    "expect_positive raises": ("m.expect_positive(-1)", "ValueError"),
     "add 2**63 overflows": ("m.add(2**63, 0)", "OverflowError"),
 }
 
@@ -124,7 +136,7 @@ def worker_speed(module: str, quick: bool) -> dict:
             correctness[label] = "ok" if name == expected else f"{name}: {exc}"
 
     c = m.Counter()
-    env = {"m": m, "c": c, "FLOATS": FLOATS}
+    env = {"m": m, "c": c, "FLOATS": FLOATS, "BYTES": BYTES}
     repeat = 3 if quick else 7
     speed = {}
     for label, (stmt, _) in SPEED.items():

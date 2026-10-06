@@ -5,7 +5,7 @@ const zm = @import("zig-maturin");
 // A Zig panic becomes a Python exception instead of aborting the interpreter.
 pub const panic = pz.panic;
 
-// The same seven workloads as the PyO3 and vcraft projects, with the same
+// The same nine workloads as the PyO3 and vcraft projects, with the same
 // semantics and 64-bit integers throughout.
 
 // Call overhead: two ints in, one int out.
@@ -64,6 +64,24 @@ fn greet(name: []const u8) !pz.PyString {
     return pz.PyString.init(text);
 }
 
+// Bytes in without copying, one int out.
+fn checksum(data: []const u8) u64 {
+    var total: u64 = 0;
+    for (data) |b| total += b;
+    return total;
+}
+
+// The error path: a bad value raises instead of returning. The exception is
+// set here and the error value only signals failure; the wrapper keeps an
+// already-set exception.
+fn expect_positive(n: i64) !i64 {
+    if (n < 0) {
+        zm.PyErr_SetString(zm.PyExc_ValueError(), "expect_positive() expected n >= 0");
+        return error.NegativeValue;
+    }
+    return n;
+}
+
 // Method-call overhead on a native object.
 const Counter = extern struct {
     value: i64,
@@ -94,6 +112,8 @@ const Mod = pz.pyModule("bench_zig", .{
         pz.pyFnNamed("sum_floats", sum_floats),
         pz.pyFnNamed("make_range", make_range),
         pz.pyFnNamed("greet", greet),
+        pz.pyFnNamed("checksum", checksum),
+        pz.pyFnNamed("expect_positive", expect_positive),
     },
     .classes = &[_]type{CounterClass},
 });

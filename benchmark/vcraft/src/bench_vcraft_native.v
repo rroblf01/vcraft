@@ -1,6 +1,8 @@
 module bench_vcraft_native
 
-// The same seven workloads as the PyO3 and zig-maturin projects, with the same
+import vcraft
+
+// The same nine workloads as the PyO3 and zig-maturin projects, with the same
 // semantics and 64-bit integers throughout.
 
 // add is call overhead: two ints in, one int out.
@@ -64,6 +66,26 @@ pub fn make_range(n i64) []i64 {
 @[vc_fn]
 pub fn greet(name string) string {
 	return 'Hello, ${name}!'
+}
+
+// checksum sums bytes without copying them: the `[]u8` parameter aliases any
+// bytes-like object through the buffer protocol.
+@[vc_fn]
+pub fn checksum(data []u8) u64 {
+	mut total := u64(0)
+	for b in data {
+		total += u64(b)
+	}
+	return total
+}
+
+// expect_positive is the error path: a bad value raises ValueError.
+@[vc_fn]
+pub fn expect_positive(n i64) !i64 {
+	if n < 0 {
+		return vcraft.raise_domain(.value_error, 'expect_positive() expected n >= 0')
+	}
+	return n
 }
 
 // Counter measures method-call overhead on a native object.

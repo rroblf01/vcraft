@@ -1,4 +1,4 @@
-"""The seven benchmark workloads in plain Python: the baseline the extensions beat."""
+"""The nine benchmark workloads in plain Python: the baseline the extensions beat."""
 
 
 def add(a, b):
@@ -37,6 +37,19 @@ def make_range(n):
 
 def greet(name):
     return f"Hello, {name}!"
+
+
+def checksum(data):
+    total = 0
+    for b in data:
+        total += b
+    return total
+
+
+def expect_positive(n):
+    if n < 0:
+        raise ValueError("expect_positive() expected n >= 0")
+    return n
 
 
 class Counter:
