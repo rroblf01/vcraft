@@ -16,6 +16,8 @@ module vcraft
 // Pulled into the extension by the driver. Accessors for CPython data symbols.
 #flag @VMODROOT/c/shim.c
 #include "c/shim.h"
+// Before V's collector starts on macOS; see the header.
+#include "c/gc_preinit.h"
 
 #include <Python.h>
 

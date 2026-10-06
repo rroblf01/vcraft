@@ -178,6 +178,28 @@ def main() -> int:
              lambda: tally.add_then_fail(5))
     t.equal("a method works in place, so a write before a panic stays", tally.sum, 5)
 
+    print("collector")
+    # Enough allocation to run V's collector some five hundred times: `repeat` builds
+    # its result by concatenation, a few hundred KiB per call. On macOS the runtime
+    # registers the module's own data as the collector's only static roots, so a root it
+    # missed would show up here as a V value freed while still in use: a wrong result,
+    # an error that loses its message, or a crash.
+    wrong = 0
+    for i in range(3_000):
+        if h.repeat("ab", 400) != "ab" * 400:
+            wrong += 1
+        if h.greet(f"n{i}") != f"Hello, n{i}!":
+            wrong += 1
+        if h.words(f"a b{i}") != ["a", f"b{i}"]:
+            wrong += 1
+        if i % 10 == 0:
+            try:
+                h.parse_int("x")
+                wrong += 1
+            except ValueError as exc:
+                wrong += "invalid literal" not in str(exc)
+    t.equal("values survive hundreds of collections", wrong, 0)
+
     print("raw escape hatch")
     sentinel = [1, 2, 3]
     t.check("raw returns the same object", h.passthrough(sentinel) is sentinel)
