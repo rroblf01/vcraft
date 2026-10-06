@@ -180,13 +180,14 @@ Por prioridad. Cada punto está reproducido en este benchmark.
    elemento, inevitable) y un tercio en `array__push`. Sin rodeos en el código
    del usuario no hay arreglo dentro de vcraft: el lowering lo hace V.
    Reportado a vlang/v; el texto del issue está en el historial del chat.
-   Nota de compilación: V compila la TU grande de una extensión con `-O2`
-   (y `-flto` solo para no-`shared`), mientras que un binario pequeño recibe
-   `-O3`; en el mismo sieve suelto eso son ~2400 frente a ~2700 µs. vcraft no
-   lo fuerza a `-O3`: es una decisión de tiempo de compilación del toolchain
-   (las TU grandes disparan el coste de `-O3`); medido: pasar `--cflags -O3`
-   a `vcraft build` deja el binario bit-idéntico, así que no es una palanca
-   útil.
+   Nota de compilación: medido a fondo, no hay flag que lo evite. V ya compila
+   la extensión con `-O3`; ni `-O3` explícito por `--cflags` (binario
+   bit-idéntico: V lo emite de todos modos), ni `-flto`, ni `-fwrapv` pliegan
+   el `memcpy` en la TU grande (comprobado compilando el C generado a mano y
+   por disassembler). En una TU pequeña sí se pliega, y solo con la receta
+   completa del ejecutable (`-O3 -flto` la deja ~2×); sin LTO o en TU grande,
+   el `memcpy` por elemento se queda. Por eso `vcraft build` no fuerza nada:
+   no hay palanca.
 9. ✅ *Medido tras el paso 6, ofrecido como opción `gc-free-space-divisor` y
    desde entonces el defecto (2).* `GC_set_free_space_divisor(1)`, el valor que
    fija V, hace crecer el heap antes que recolectar. Con 2, en esta máquina: lo
