@@ -197,9 +197,21 @@ entre ejecuciones (±2 %), así que la columna de referencia es la de la tabla i
 | PyO3 (referencia) | 29 ns | 19 ns | 451 µs | 833 µs | 2,00 ms | 0 |
 | inicial | 41 ns | 29 ns | 968 µs | 1,10 ms | 3,76 ms | 772 MiB |
 | 1. devolver listas y objetos | 40 ns | 29 ns | 970 µs | 1,09 ms | 3,76 ms | **0** |
+| 2. coste fijo por llamada | **22 ns** | 29 ns | 942 µs | 1,10 ms | 3,77 ms | 0 |
 
 **Paso 1** (puntos 1–4 y 6). Ya se puede devolver `[]T`, `vcraft.PyObj` y `voidptr`, y los
 campos `i64` compilan. La fuga desaparece: lo que queda tras `make_range` son 18,5 MiB del
 heap del GC, que se estabilizan. Reservar la lista con su tamaño no cambia el tiempo: lo
 caro de `make_range` es construir antes el `[]i64` de 800 KB en el GC, el mismo coste que
 en `count_primes` (punto 7).
+
+**Paso 2.** El glue de cada función comprobaba la aridad con dos llamadas, y después de
+cada una consultaba `PyErr_Occurred`. Ahora es una sola comparación de `nargs`, y el
+mensaje de error solo se construye cuando falla. Además, un `int` exacto que cabe en
+64 bits se lee con una sola comparación de tipo en C; antes eran dos `PyType_IsSubtype`
+(uno para rechazar `bool` y otro para aceptar `int`) y otra consulta del error. `add` pasa
+de 40 a **22 ns**, por delante de PyO3 (29 ns). Medido por partes en una copia del glue: la
+aridad aportaba unos 6 ns, la lectura de enteros unos 10 y el guardián de pánicos
+(`recover()`, un `_setjmp` por llamada) unos 5. El guardián se mantiene: sin él, un
+`panic` de V termina el intérprete. `increment` no cambia porque un método copia el estado
+de la instancia dentro y fuera en cada llamada; es el siguiente paso.
