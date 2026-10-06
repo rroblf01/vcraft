@@ -41,13 +41,18 @@ pub mut:
 	// args are the vcraft arguments the cell runs, including the target and the
 	// interpreter when the build is containerised.
 	args string
+	// check is the interpreter that installs and imports the finished wheel inside
+	// the container. Empty for a runner build, which checks with setup-python's
+	// interpreter instead.
+	check string
 	// note explains why a cell exists, and becomes a workflow comment.
 	note string
 }
 
 // workflow renders the workflow file.
 //
-// `vcraft_action` is the action the build step uses. It defaults to `vcraft-action@v1`
+// `vcraft_action` is the action the build step uses. It defaults to
+// `rroblf01/vcraft/actions/vcraft-action@v1`
 // because that is the published action a consumer expects; a project pinned to its own
 // build can name a different ref.
 pub fn workflow(p vcraft_project.Project, vcraft_action string, free_threading bool) string {
@@ -83,36 +88,50 @@ pub fn workflow(p vcraft_project.Project, vcraft_action string, free_threading b
 			w.write_string('            free-threading: true\n')
 		}
 		w.write_string('            args: ' + quote(t.args) + '\n')
+		if t.check.len > 0 {
+			w.write_string('            check: ' + quote(t.check) + '\n')
+		}
 	}
 	w.write_string('\n    steps:\n')
 	w.write_string('      - uses: actions/checkout@v4\n\n')
 	w.write_string('      - name: set up Python\n')
+	w.write_string('        id: python\n')
 	w.write_string('        if: ')
 	w.write_string(gha_if_empty('matrix.container'))
 	w.write_string('\n')
 	w.write_string('        uses: actions/setup-python@v5\n')
 	w.write_string('        with:\n')
 	w.write_string('          python-version: ' + gha('matrix.python') + '\n\n')
-	w.write_string('      - name: install vcraft\n')
-	w.write_string('        if: ')
-	w.write_string(gha_if_empty('matrix.container'))
-	w.write_string('\n')
-	w.write_string('        run: pip install vcraft\n\n')
+	// The action installs V and vcraft itself on a runner cell, so there is no
+	// separate install step. A free-threaded cell passes the exact interpreter
+	// setup-python installed: which name `python3` resolves to on a free-threaded
+	// runner is the installer's choice, and the build refuses to guess.
 	w.write_string('      - name: build\n')
 	w.write_string('        uses: ' + vcraft_action + '\n')
 	w.write_string('        with:\n')
 	w.write_string('          container: ' + gha('matrix.container') + '\n')
-	w.write_string('          args: ' + gha('matrix.args') + '\n\n')
+	w.write_string('          args: ' + gha('matrix.args') +
+		gha("matrix.free-threading && matrix.container == '' && format(' --interpreter {0}', steps.python.outputs.python-path) || ''") +
+		'\n\n')
 	w.write_string('      - name: upload\n')
 	w.write_string('        uses: actions/upload-artifact@v4\n')
 	w.write_string('        with:\n')
 	w.write_string('          name: ' + gha('matrix.target') + '\n')
 	w.write_string('          path: dist/*.whl\n\n')
+	// The wheel is installed where it was built for. A manylinux wheel for cp313 does
+	// not install on the runner's own Python, and a musllinux wheel never installs on a
+	// glibc runner at all, so container cells check inside their image.
 	w.write_string('      - name: test\n')
+	w.write_string('        env:\n')
+	w.write_string('          CONTAINER: ' + gha('matrix.container') + '\n')
+	w.write_string('          CHECK: ' + gha('matrix.check || steps.python.outputs.python-path') + '\n')
 	w.write_string('        run: |\n')
-	w.write_string('          python -m venv /tmp/check\n')
-	w.write_string('          /tmp/check/bin/pip install dist/*.whl\n')
-	w.write_string('          /tmp/check/bin/python -c "import ${p.module}; print(${p.module}.__name__)"\n')
+	w.write_string('          script="$CHECK -m venv /tmp/check && /tmp/check/bin/python -m pip install dist/*.whl && /tmp/check/bin/python -c \'import ${p.module}; print(${p.module}.__name__)\'"\n')
+	w.write_string('          if [ -n "$CONTAINER" ]; then\n')
+	w.write_string('            docker run --rm -e CHECK -v "$PWD:/work" -w /work "$CONTAINER" sh -c "$script"\n')
+	w.write_string('          else\n')
+	w.write_string('            sh -c "$script"\n')
+	w.write_string('          fi\n')
 	return w.str()
 }
 
@@ -157,23 +176,35 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 	mut out := []Target{}
 	if free_threading {
 		// A free-threaded build has no stable ABI, so the matrix is one cell per
-		// platform and each names its own interpreter rather than a version the runner
-		// might provide with the GIL. The interpreter is passed explicitly because the
-		// build refuses to guess: without `--interpreter` a GIL `python3` earlier on
-		// PATH would produce a `cp313t`-tagged wheel full of GIL code.
-		out << Target{
-			os:             'ubuntu-latest'
-			python:         '3.13t'
-			target:         'cp3.13t-cp313t-manylinux-x86_64'
-			free_threading: true
-			args:           'build --release --free-threading --interpreter python3'
-		}
-		out << Target{
-			os:             'macos-14'
-			python:         '3.13t'
-			target:         'cp3.13t-cp313t-macosx-arm64'
-			free_threading: true
-			args:           'build --release --free-threading --interpreter python3'
+		// free-threaded CPython and platform, each naming its own interpreter rather
+		// than a version the runner might provide with the GIL. The interpreter is
+		// always explicit because the build refuses to guess: a GIL `python3` earlier
+		// on PATH would produce a `cp313t`-tagged wheel full of GIL code.
+		for version in vcraft_project.supported_pythons {
+			if vcraft_project.version_key(version) < vcraft_project.version_key(vcraft_project.free_threading_floor)
+				|| vcraft_project.version_key(version) < vcraft_project.version_key(p.minimum_version) {
+				continue
+			}
+			floor := compact(version)
+			// In the manylinux image like every other Linux cell: a runner build is
+			// tagged `linux_x86_64`, which PyPI refuses. The image ships `cpXYt`.
+			interpreter := '/opt/python/cp' + floor + '-cp' + floor + 't/bin/python'
+			out << Target{
+				os:             'ubuntu-latest'
+				target:         'cp' + floor + 't-manylinux-x86_64'
+				container:      image_names('manylinux')
+				free_threading: true
+				args:           'build --release --free-threading --target linux-x86_64-gnu' +
+					' --manylinux 2_28 --interpreter ' + interpreter
+				check:          interpreter
+			}
+			out << Target{
+				os:             'macos-14'
+				python:         version + 't'
+				target:         'cp' + floor + 't-macosx-arm64'
+				free_threading: true
+				args:           'build --release --free-threading'
+			}
 		}
 		return out
 	}
@@ -188,6 +219,7 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 			args:      'build --release --abi3 ' + p.abi3 +
 				' --target linux-x86_64-gnu --manylinux 2_28' +
 				' --interpreter /opt/python/cp' + compact(p.abi3) + '-cp' + compact(p.abi3) + '/bin/python'
+			check:     '/opt/python/cp' + compact(p.abi3) + '-cp' + compact(p.abi3) + '/bin/python'
 		}
 		out << Target{
 			os:        'ubuntu-24.04-arm'
@@ -197,6 +229,7 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 			args:      'build --release --abi3 ' + p.abi3 +
 				' --target linux-aarch64-gnu --manylinux 2_28' +
 				' --interpreter /opt/python/cp' + compact(p.abi3) + '-cp' + compact(p.abi3) + '/bin/python'
+			check:     '/opt/python/cp' + compact(p.abi3) + '-cp' + compact(p.abi3) + '/bin/python'
 		}
 		out << Target{
 			os:        'ubuntu-latest'
@@ -205,6 +238,7 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 			container: image_names('musllinux')
 			args:      'build --release --abi3 ' + p.abi3 +
 				' --target linux-x86_64-musl --musllinux 1_2 --interpreter /usr/bin/python3'
+			check:     '/usr/bin/python3'
 		}
 		out << Target{
 			os:        'ubuntu-24.04-arm'
@@ -213,9 +247,13 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 			container: image_names('musllinux')
 			args:      'build --release --abi3 ' + p.abi3 +
 				' --target linux-aarch64-musl --musllinux 1_2 --interpreter /usr/bin/python3'
+			check:     '/usr/bin/python3'
 		}
+		// Built with the floor's own interpreter, so the wheel is also checked on the
+		// oldest CPython it claims to support.
 		out << Target{
 			os:     'macos-14'
+			python: p.abi3
 			abi3:   p.abi3
 			target: 'cp' + compact(p.abi3) + '-abi3-macosx-arm64'
 			args:   'build --release --abi3 ' + p.abi3
@@ -224,7 +262,12 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 	}
 	// Without abi3 every interpreter needs its own wheel, so the matrix is
 	// interpreters crossed with the platforms that have a current interpreter.
-	for version in ['3.12', '3.13', '3.14'] {
+	// From the project's `minimum-version` up, so a project that supports 3.11 gets a
+	// 3.11 wheel and one that starts at 3.13 does not build wheels it cannot use.
+	for version in vcraft_project.supported_pythons {
+		if vcraft_project.version_key(version) < vcraft_project.version_key(p.minimum_version) {
+			continue
+		}
 		floor := compact(version)
 		out << Target{
 			os:        'ubuntu-latest'
@@ -232,6 +275,7 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 			container: image_names('manylinux')
 			args:      'build --release --target linux-x86_64-gnu' +
 				' --interpreter /opt/python/cp' + floor + '-cp' + floor + '/bin/python'
+			check:     '/opt/python/cp' + floor + '-cp' + floor + '/bin/python'
 		}
 		out << Target{
 			os:        'ubuntu-24.04-arm'
@@ -239,6 +283,7 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 			container: image_names('manylinux')
 			args:      'build --release --target linux-aarch64-gnu' +
 				' --interpreter /opt/python/cp' + floor + '-cp' + floor + '/bin/python'
+			check:     '/opt/python/cp' + floor + '-cp' + floor + '/bin/python'
 		}
 		out << Target{
 			os:     'macos-14'

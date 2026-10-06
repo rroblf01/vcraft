@@ -39,8 +39,18 @@ runs:
         echo "error: vcraft-action does not support Windows runners yet" >&2
         exit 1
 
-    - name: install the V compiler
+    # The compiler only changes with the pins, so it is built once per runner
+    # image and restored afterwards: a cold build is several minutes per cell.
+    - name: restore the V compiler
+      id: v-cache
       if: ${{ inputs.container == '' }}
+      uses: actions/cache@v4
+      with:
+        path: /tmp/v-src
+        key: vcraft-v-${{ runner.os }}-${{ runner.arch }}-0137eb5d8ebc5d183259309ed08ea06ba9bc27d6-8af812feb76c678abd86a8e682fd9ab2790e519c
+
+    - name: install the V compiler
+      if: ${{ inputs.container == '' && steps.v-cache.outputs.cache-hit != 'true' }}
       shell: bash
       # Built from source at a pinned commit, because no V release is newer
       # than the flags vcraft passes: the 0.5.2 release predates `-new-compiler`
@@ -60,7 +70,11 @@ runs:
         (cd vc && git checkout -q "$VC_COMMIT")
         make fresh_tcc
         make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
-        echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+    - name: put V on PATH
+      if: ${{ inputs.container == '' }}
+      shell: bash
+      run: echo "/tmp/v-src" >> "$GITHUB_PATH"
 
     - name: install vcraft
       if: ${{ inputs.container == '' }}
@@ -70,8 +84,17 @@ runs:
         # and the wheel carries the same binary plus the V modules it was built
         # with. The leading v comes off the version because tags read
         # `vcraft/v0.1.0` and PyPI reads `0.1.0`.
+        #
+        # Into a venv of its own: a runner's system Python is externally managed
+        # (PEP 668) and refuses a plain `pip install` outright. Only the `vcraft`
+        # entry point goes on PATH, never the venv's `python3`, so the interpreter
+        # a build defaults to is still the one the workflow set up.
         VERSION="${{ inputs.vcraft-version }}"
-        python3 -m pip install "vcraft==${VERSION#v}"
+        python3 -m venv "$RUNNER_TEMP/vcraft-tool"
+        "$RUNNER_TEMP/vcraft-tool/bin/python" -m pip install -q "vcraft==${VERSION#v}"
+        mkdir -p "$RUNNER_TEMP/vcraft-bin"
+        ln -sf "$RUNNER_TEMP/vcraft-tool/bin/vcraft" "$RUNNER_TEMP/vcraft-bin/vcraft"
+        echo "$RUNNER_TEMP/vcraft-bin" >> "$GITHUB_PATH"
 
     - name: run vcraft
       shell: bash

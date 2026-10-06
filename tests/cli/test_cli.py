@@ -26,6 +26,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 VCRAFT = ROOT / "bin" / "vcraft"
 
+# The oldest CPython vcraft supports, and so the lowest stable-ABI floor it accepts.
+# The abi3 checks build at this floor so the wheel the suite installs on the running
+# interpreter, whichever supported version it is, is also the widest one vcraft makes.
+ABI3_FLOOR = "3.11"
+
 
 class Suite:
     def __init__(self) -> None:
@@ -354,8 +359,8 @@ def main() -> int:
 
             print("sourceless python")
             manifest.write_text(original_manifest.replace(
-                'minimum-version = "3.12"\n',
-                'minimum-version = "3.12"\nembed-pyc = true\n'))
+                'minimum-version = "3.11"\n',
+                'minimum-version = "3.11"\nembed-pyc = true\n'))
             pyc_out = tmp / "out-pyc"
             proc = vcraft("build", "--out-dir", str(pyc_out), cwd=project)
             t.check("a sourceless build succeeds", proc.returncode == 0,
@@ -524,7 +529,7 @@ def main() -> int:
         # An abi3 build goes through CPython's multi-phase initialisation and the
         # stable API, neither of which the normal path touches. A refactor that only
         # ever builds one of them leaves the other broken in a way no other test sees.
-        proc = vcraft("build", "--abi3", "3.12", cwd=project)
+        proc = vcraft("build", "--abi3", ABI3_FLOOR, cwd=project)
         t.check("an abi3 build succeeds", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-400:])
         abi_wheels = list((project / "dist").glob("*abi3*.whl"))
@@ -535,19 +540,20 @@ def main() -> int:
             # PEP 425: the tag names the floor, not the interpreter that built it.
             # `cp314-cp312-...` is what a naive tag builder produces and every
             # installer rejects it with "no wheels with a matching Python version tag".
-            # `mypkg-0.1.0-cp312-abi3-linux_x86_64.whl`: five parts, and the
+            # `mypkg-0.1.0-cp311-abi3-linux_x86_64.whl`: five parts, and the
             # interpreter field is the floor the stable ABI starts at.
             parts = abi.name[:-len(".whl")].split("-")
             t.check("the wheel name has five parts", len(parts) == 5, abi.name)
             t.check("the ABI field is abi3", parts[3] == "abi3", abi.name)
-            t.check("the tag names the floor", parts[2] == "cp312", abi.name)
+            t.check("the tag names the floor",
+                    parts[2] == "cp" + ABI3_FLOOR.replace(".", ""), abi.name)
             with zipfile.ZipFile(abi) as z:
                 t.check("the extension is named .abi3.so",
                         any(n.endswith(".abi3.so") for n in z.namelist()),
                         str(z.namelist()))
                 t.check("the abi3 wheel is a valid archive", z.testzip() is None)
-                # The floor is hex, not decimal: `Py_LIMITED_API` for 3.12 is
-                # `0x030c0000`, and `0x03120000` reads as a 3.18 floor. The headers
+                # The floor is hex, not decimal: `Py_LIMITED_API` for 3.11 is
+                # `0x030b0000`, and `0x03110000` reads as a 3.17 floor. The headers
                 # then use the function form of `Py_TYPE`, which only 3.14 exports,
                 # so the wheel imports on 3.14 and fails everywhere older. `nm` sees
                 # what the import would hit, without needing the older interpreters.
@@ -810,7 +816,7 @@ pub fn (mut n Node) link(other voidptr) {
 }
 """)
         try:
-            proc = vcraft("build", "--abi3", "3.12", cwd=project)
+            proc = vcraft("build", "--abi3", ABI3_FLOOR, cwd=project)
             t.check("an abi3 build with a reference field succeeds",
                     proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-400:])
             if proc.returncode == 0:
@@ -827,6 +833,9 @@ pub fn (mut n Node) link(other voidptr) {
                 probe = (
                     "import gc\n"
                     "import mypkg_native as m\n"
+                    # Garbage left over from start-up would otherwise be counted
+                    # too: some CPython builds leave a couple of dozen objects.
+                    "gc.collect()\n"
                     "a = m.Node()\n"
                     "b = m.Node()\n"
                     "a.label = 1\n"
@@ -1002,12 +1011,14 @@ pub fn (mut n Node) link(other voidptr) {
             t.check("matrix expressions have double braces",
                     "${{ matrix.os }}" in text and "${{ matrix.target }}" in text,
                     text[:600])
-            t.check("it builds with the action", "vcraft-action@v1" in text)
+            t.check("it builds with the action",
+                    "uses: rroblf01/vcraft/actions/vcraft-action@v1" in text,
+                    "an action reference needs owner/repo/path@ref")
             t.check("it uploads a wheel", "upload-artifact" in text)
             t.check("it is marked generated", "Generated by vcraft" in text)
             # A YAML value like `3.10` unquoted is a float, and comes back as `3.1`,
             # which is a version nobody publishes.
-            t.check("versions are quoted", 'python: "3.12"' in text, text[:800])
+            t.check("versions are quoted", 'python: "3.11"' in text, text[:800])
             t.check("the matrix has cells",
                     text.count("- target:") >= 4, str(text.count("- target:")))
             t.check("the plain matrix tags macOS honestly too",
@@ -1056,7 +1067,7 @@ pub fn (mut n Node) link(other voidptr) {
                        if isinstance(cell, dict)]
             runners += [os for os in matrix.get("os", []) if isinstance(os, str)]
             t.check("CI runs where the developers cannot",
-                    "macos-14" in runners, str(runners))
+                    any(r.startswith("macos-") for r in runners), str(runners))
             t.check("CI runs every suite",
                     all(path in (ROOT / ".github" / "workflows" / "ci.yml").read_text()
                         for path in ["tests/project/check_toml.py",
@@ -1101,6 +1112,12 @@ pub fn (mut n Node) link(other voidptr) {
                     publish.get("environment") == "pypi"
                     and publish.get("permissions", {}).get("id-token") == "write",
                     str({k: publish.get(k) for k in ("environment", "permissions")}))
+            t.check("the Linux tool wheel carries a tag PyPI accepts",
+                    "--platform manylinux_2_28_x86_64" in release_text
+                    and "--platform linux_x86_64" not in release_text,
+                    "PyPI rejects linux_x86_64 wheels")
+            t.check("the macOS binary honours its tag's macOS version",
+                    'MACOSX_DEPLOYMENT_TARGET: "11.0"' in release_text)
             t.check("the release uploads wheels, not tarballs",
                     "gh-action-pypi-publish" in release_text
                     and "tar -czf" not in release_text, release_text[-300:])
@@ -1110,8 +1127,8 @@ pub fn (mut n Node) link(other voidptr) {
         print("abi3 changes the matrix")
         manifest = project / "vcraft.toml"
         original = manifest.read_text()
-        manifest.write_text(original.replace('minimum-version = "3.12"',
-                                             'minimum-version = "3.12"\nabi3 = "3.12"'))
+        manifest.write_text(original.replace('minimum-version = "3.11"',
+                                             'minimum-version = "3.11"\nabi3 = "3.12"'))
         proc = vcraft("info", cwd=project)
         t.check("abi3 is read from the manifest",
                 "abi3" in proc.stdout and "3.12" in proc.stdout, proc.stdout)
@@ -1144,20 +1161,73 @@ pub fn (mut n Node) link(other voidptr) {
         # A free-threaded cell without an interpreter is a cell that fails: the
         # build refuses to guess which `python3` is free-threaded, so the matrix
         # names setup-python's free-threaded interpreter and passes it explicitly.
-        manifest.write_text(original.replace('minimum-version = "3.12"',
-                                             'minimum-version = "3.12"\nfree-threading = true'))
+        manifest.write_text(original.replace('minimum-version = "3.11"',
+                                             'minimum-version = "3.11"\nfree-threading = true'))
         proc = vcraft("generate-ci", cwd=project)
         t.check("generate-ci succeeds with free-threading", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-300:])
         text = workflow.read_text()
-        t.check("the free-threaded matrix is one cell per platform",
-                text.count("- target:") == 2, str(text.count("- target:")))
-        t.check("free-threaded cells name a free-threaded interpreter",
-                text.count('python: "3.13t"') == 2, text[:800])
-        t.check("and pass it to the build",
-                text.count("--free-threading --interpreter python3") == 2,
-                text[:800])
+        # 3.13t and 3.14t, each on Linux and macOS.
+        t.check("the free-threaded matrix is one cell per version and platform",
+                text.count("- target:") == 4, str(text.count("- target:")))
+        t.check("macOS cells name a free-threaded interpreter",
+                'python: "3.13t"' in text and 'python: "3.14t"' in text, text[:1200])
+        t.check("and pass setup-python's exact interpreter to the build",
+                "steps.python.outputs.python-path" in text, text[-1500:])
+        t.check("linux free-threaded cells build in the manylinux image",
+                "--interpreter /opt/python/cp313-cp313t/bin/python" in text
+                and "--interpreter /opt/python/cp314-cp314t/bin/python" in text,
+                text[:1500])
         manifest.write_text(original)
+
+        print("the plain matrix follows minimum-version")
+        manifest.write_text(original)
+        proc = vcraft("generate-ci", cwd=project)
+        text = workflow.read_text()
+        t.check("the default 3.11 floor builds 3.11 to 3.14",
+                all(f"cp{v}-cp{v}/bin/python" in text for v in ("311", "312", "313", "314")),
+                text[:1500])
+        manifest.write_text(original.replace('minimum-version = "3.11"',
+                                             'minimum-version = "3.14"'))
+        proc = vcraft("generate-ci", cwd=project)
+        text = workflow.read_text()
+        t.check("a 3.14 floor builds nothing older",
+                "cp313-cp313" not in text and "cp314-cp314" in text, text[:1500])
+        t.check("wheels are checked inside their container",
+                'check: "/opt/python/cp314-cp314/bin/python"' in text
+                and 'docker run' in text, text[-1500:])
+        manifest.write_text(original)
+
+        print("unsupported versions are refused before compiling")
+        proc = vcraft("build", "--abi3", "3.10", "--dry-run", cwd=project)
+        t.check("an abi3 floor below 3.11 is refused",
+                proc.returncode != 0 and "3.11" in proc.stderr, proc.stderr.strip())
+        proc = vcraft("build", "--abi3", "3.99", "--dry-run", cwd=project)
+        t.check("an abi3 floor above the interpreter is refused",
+                proc.returncode != 0 and "newer than the interpreter" in proc.stderr,
+                proc.stderr.strip())
+        proc = vcraft("build", "--abi3", ABI3_FLOOR, "--free-threading",
+                      "--interpreter", sys.executable, "--dry-run", cwd=project)
+        t.check("abi3 with free-threading is refused",
+                proc.returncode != 0 and "cannot be combined" in proc.stderr,
+                proc.stderr.strip())
+
+        print("macOS tags keep their promise")
+        # The version in a macOS tag is the oldest system the binary loads on, and
+        # only MACOSX_DEPLOYMENT_TARGET makes the compiler honour it.
+        env = {k: v for k, v in os.environ.items() if k != "MACOSX_DEPLOYMENT_TARGET"}
+        proc = subprocess.run([str(VCRAFT), "build", "--target", "macos-arm64",
+                               "--dry-run"], cwd=project, env=env,
+                              capture_output=True, text=True)
+        t.check("a macOS build sets the deployment target its tag names",
+                "-macosx_11_0_arm64" in proc.stdout
+                and "MACOSX_DEPLOYMENT_TARGET=11.0" in proc.stdout, proc.stdout)
+        proc = subprocess.run([str(VCRAFT), "build", "--target", "macos-arm64",
+                               "--dry-run"], cwd=project,
+                              env={**env, "MACOSX_DEPLOYMENT_TARGET": "13.0"},
+                              capture_output=True, text=True)
+        t.check("a deployment target the caller set moves the tag",
+                "-macosx_13_0_arm64" in proc.stdout, proc.stdout)
 
         print("errors")
         proc = vcraft("build", "--out-dir", cwd=project)

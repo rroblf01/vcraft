@@ -22,6 +22,7 @@ usage:
   vcraft generate-ci           emit a GitHub Actions workflow into .github/workflows/
   vcraft publish               upload the built distributions to PyPI
   vcraft info                  show what vcraft resolved for this project
+  vcraft clean                 remove build output
   vcraft version               print the version
 
 build options:
@@ -324,8 +325,10 @@ fn cmd_generate_ci(args Args) {
 		eprintln('error: ${err.msg()}')
 		exit(1)
 	}
+	// A full `owner/repo/path@ref`: GitHub rejects a bare `vcraft-action@v1` as an
+	// action reference before a single job starts.
 	action := if args.options['action'] != '' { args.options['action'] } else {
-		'vcraft-action@v1'
+		'rroblf01/vcraft/actions/vcraft-action@v1'
 	}
 	dir := '.github/workflows'
 	if !os.exists(dir) {
