@@ -145,9 +145,8 @@ pub fn platform_tag(python string) string {
 // itself before loading anything.
 pub fn abi_tag(version string, free_threading bool, abi3 string) string {
 	clean := version.replace('.', '')
-	// A free-threaded build has no stable ABI, so `abi3` and `free-threading` cannot
-	// both be honoured. The stable ABI floor wins, because it is the one that decides
-	// whether the extension can be loaded at all.
+	// `abi3` with `free-threading` is refused by `check_versions` before this runs;
+	// should it get here anyway, the stable ABI floor is the tag it builds.
 	if abi3.len > 0 {
 		return 'cp${abi3.replace('.', '')}'
 	}
@@ -155,6 +154,46 @@ pub fn abi_tag(version string, free_threading bool, abi3 string) string {
 		return 'cp${clean}t'
 	}
 	return 'cp${clean}'
+}
+
+// macos_platform makes a macOS platform tag describe the binary that is actually
+// built, and returns the deployment target that keeps it true. Other tags come back
+// unchanged with no deployment target.
+//
+// `universal2` is replaced by the architecture compiled, because one build makes one
+// architecture and a fat-binary tag on a thin binary installs where it cannot run. An
+// arm64 tag below 11.0 is raised to 11.0, the first macOS on Apple silicon.
+pub fn macos_platform(tag string, machine string) (string, string) {
+	if !tag.starts_with('macosx_') {
+		return tag, ''
+	}
+	parts := tag.split('_')
+	if parts.len < 4 || !parts[1].is_int() || !parts[2].is_int() {
+		return tag, ''
+	}
+	mut major := parts[1].int()
+	mut minor := parts[2].int()
+	mut arch := parts[3..].join('_')
+	if arch in ['universal2', 'universal', 'intel', 'fat', 'fat3', 'fat64'] {
+		arch = if machine in ['arm64', 'aarch64'] { 'arm64' } else { 'x86_64' }
+	}
+	if arch == 'arm64' && major < 11 {
+		major = 11
+		minor = 0
+	}
+	return 'macosx_${major}_${minor}_${arch}', '${major}.${minor}'
+}
+
+// macos_retarget rewrites a macOS tag's version, e.g. to `13.0` from a deployment
+// target the caller set.
+pub fn macos_retarget(tag string, deployment string) string {
+	parts := tag.split('_')
+	nums := deployment.split('.')
+	if parts.len < 4 || nums.len == 0 || !nums[0].is_int() {
+		return tag
+	}
+	minor := if nums.len > 1 && nums[1].is_int() { nums[1] } else { '0' }
+	return 'macosx_${nums[0]}_${minor}_' + parts[3..].join('_')
 }
 
 // limited_api_defines returns the C defines that select the stable ABI.
@@ -215,6 +254,57 @@ pub fn limited_define(abi3 string) string {
 	return '-Dvcraft_limited_api'
 }
 
+// oldest_python is the oldest CPython vcraft builds for. 3.10 is out because the
+// runtime's buffer support needs `PyBuffer_*`, which only joined the stable ABI in 3.11.
+pub const oldest_python = '3.11'
+
+// free_threading_floor is the first CPython with a free-threaded build.
+pub const free_threading_floor = '3.13'
+
+// supported_pythons are the CPython versions vcraft is tested against, oldest first.
+// The generated CI matrix builds one wheel per entry from a project's floor upwards.
+pub const supported_pythons = ['3.11', '3.12', '3.13', '3.14']
+
+// version_key turns `3.12` into a number that orders correctly: 312 sorts after 311 and
+// before 313, where comparing the strings puts `3.9` after `3.12`. Malformed input is
+// 0, which every check below treats as too old.
+pub fn version_key(version string) int {
+	parts := version.split('.')
+	if parts.len < 2 || !parts[0].is_int() || !parts[1].is_int() {
+		return 0
+	}
+	return parts[0].int() * 100 + parts[1].int()
+}
+
+// check_versions refuses the combinations that compile and then fail somewhere else:
+// on the installer, at import, or only on the interpreters nobody tried.
+pub fn check_versions(interpreter string, abi3 string, free_threading bool) ! {
+	if version_key(interpreter) < version_key(oldest_python) {
+		return error('CPython ${interpreter} is not supported; vcraft needs ${oldest_python} or newer')
+	}
+	if abi3.len > 0 {
+		if version_key(abi3) == 0 {
+			return error('abi3 `${abi3}` is not a version; write it as `3.12`')
+		}
+		if version_key(abi3) < version_key(oldest_python) {
+			return error('abi3 `${abi3}` is below the oldest supported CPython, ${oldest_python}')
+		}
+		// Older headers do not describe a newer stable ABI: the build compiles against
+		// what 3.11 offers and the tag promises what 3.12 offers.
+		if version_key(abi3) > version_key(interpreter) {
+			return error('abi3 `${abi3}` is newer than the interpreter building it (${interpreter}); build with ${abi3} or newer')
+		}
+		// CPython has no stable ABI for free-threaded interpreters, and its headers
+		// refuse `Py_LIMITED_API` with `Py_GIL_DISABLED`.
+		if free_threading {
+			return error('abi3 and free-threading cannot be combined: free-threaded CPython has no stable ABI')
+		}
+	}
+	if free_threading && version_key(interpreter) < version_key(free_threading_floor) {
+		return error('free-threading needs CPython ${free_threading_floor} or newer, not ${interpreter}')
+	}
+}
+
 // build compiles the project and writes a wheel.
 pub fn build(p Project, opt BuildOptions) !BuildResult {
 	python := if opt.interpreter.len > 0 { opt.interpreter } else { 'python3' }
@@ -222,6 +312,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	if version.len == 0 {
 		return error('cannot run ${python}; is it on PATH?')
 	}
+	check_versions(version, p.abi3, p.free_threading)!
 	// The target is resolved before anything else, because every error it can report is
 	// cheaper than compiling: an unknown name, a policy on the wrong libc, and a
 	// `--platform` that disagrees with the target all fail here.
@@ -266,7 +357,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	if include.len == 0 {
 		return error('cannot find Python.h for ${python}')
 	}
-	tag_platform := if opt.platform.len > 0 {
+	claimed_platform := if opt.platform.len > 0 {
 		// An explicit tag that disagrees with an explicit target is a wheel that lies
 		// about what it contains, so it is refused rather than warned about.
 		if explicit && opt.platform != target.platform_tag {
@@ -277,6 +368,20 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		target.platform_tag
 	} else {
 		platform_tag(python)
+	}
+	// On macOS the tag's version is a promise about the oldest system the binary loads
+	// on, and only `MACOSX_DEPLOYMENT_TARGET` makes the compiler keep it: without it the
+	// binary requires the build machine's own macOS, and pip installs it on older ones
+	// where it then fails to load. A deployment target the caller already set wins, and
+	// the tag follows it instead.
+	mut tag_platform, deployment := macos_platform(claimed_platform, os.uname().machine)
+	if deployment.len > 0 {
+		chosen := os.getenv('MACOSX_DEPLOYMENT_TARGET')
+		if chosen.len > 0 {
+			tag_platform, _ = macos_platform(macos_retarget(tag_platform, chosen), os.uname().machine)
+		} else {
+			os.setenv('MACOSX_DEPLOYMENT_TARGET', deployment, true)
+		}
 	}
 	// `version` arrives as `3.14` and the tag wants `314`: the interpreter tag has no
 	// separator between major and minor. A tag of `cp3.14-cp314-...` is not a tag pip
@@ -501,6 +606,10 @@ fn cc_exists(cc string) bool {
 fn describe_plan(p Project, opt BuildOptions, target CrossTarget, tag string, suffix string, output string, args []string) string {
 	mut out := target.describe()
 	out += 'tag              ${tag}\n'
+	deployment := os.getenv('MACOSX_DEPLOYMENT_TARGET')
+	if tag.contains('-macosx_') && deployment.len > 0 {
+		out += 'deployment       MACOSX_DEPLOYMENT_TARGET=${deployment}\n'
+	}
 	out += 'extension        ${p.module + suffix}\n'
 	out += 'output           ${output}\n'
 	out += 'command          ${args.join(' ')}\n'

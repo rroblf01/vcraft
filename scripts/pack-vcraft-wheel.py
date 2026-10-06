@@ -124,7 +124,7 @@ def build_wheel(version: str, platform: str, binary: Path, vlib: Path) -> bytes:
             "Name: vcraft\n"
             f"Version: {version}\n"
             "Summary: Build Python extension modules written in V\n"
-            "Requires-Python: >=3.10\n"
+            "Requires-Python: >=3.11\n"
         )
         put(f"{dist_info}/METADATA", metadata.encode())
         wheel_file = (

@@ -16,9 +16,9 @@ import os
 //	module = "hello_native"
 //	description = "Greets people from V."
 //	license = "MIT"
-//	requires-python = ">=3.12"
+//	requires-python = ">=3.11"
 //
-//	minimum-version = "3.12"
+//	minimum-version = "3.11"
 //
 //	[[classifiers]]
 //	text = "Programming Language :: V"
@@ -69,8 +69,8 @@ pub fn default_project(name string) Project {
 		module:          '${name}_native'
 		description:     'A Python extension written in V.'
 		license:         'MIT'
-		requires_python: '>=3.12'
-		minimum_version: '3.12'
+		requires_python: '>=3.11'
+		minimum_version: '3.11'
 		classifiers: ['Programming Language :: V', 'Programming Language :: Python :: 3']
 	}
 }
