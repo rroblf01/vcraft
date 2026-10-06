@@ -779,14 +779,15 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 		.uint { "vcraft.from_py_uint_arg(args, ${index}, '${func}', '${param}')" }
 		.float { "vcraft.from_py_f64_arg(args, ${index}, '${func}', '${param}')" }
 		.str { "vcraft.from_py_string_arg(args, ${index}, '${func}', '${param}')" }
-		// A `[]u8` parameter takes any bytes-like object without copying it. Three
-		// statements rather than one: the view is acquired, its release is deferred so
-		// every path gives it back, and the slice aliases it for the call. The slice
-		// must not outlive the call, because the release drops the exporter's reference.
+		// A `[]u8` parameter takes any bytes-like object without copying it. Exact
+		// `bytes` aliases the object with no view at all; anything else goes
+		// through a view whose deferred release pins the exporter for the call.
+		// The slice must not outlive the call, because the release drops the
+		// exporter's reference.
 		.bytes {
-			"\t${local}_view := vcraft.buffer_view(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }\n" +
-				'\tdefer { vcraft.buffer_release(${local}_view) }\n' +
-				'\t${local} := vcraft.buffer_bytes(${local}_view)'
+			"\t${local}_bytes := vcraft.bytes_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }\n" +
+				'\tdefer { ${local}_bytes.release() }\n' +
+				'\t${local} := ${local}_bytes.data'
 		}
 		.seq {
 			element := element_type(param_type)

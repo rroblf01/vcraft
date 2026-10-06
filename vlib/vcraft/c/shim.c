@@ -595,6 +595,19 @@ void vpy_buffer_release(void *view) {
 	PyMem_Free(view);
 }
 
+// vpy_is_exact_bytes reports whether obj is exactly bytes, not a subclass.
+//
+// Only exact bytes take the no-view fast path: bytes is immutable, so its buffer
+// cannot move for the duration of the call, and the argument itself keeps the
+// object alive. Everything else -- bytearray, memoryview, exotic exporters --
+// goes through a view, which also pins the exporter with a reference.
+int vpy_is_exact_bytes(void *obj) {
+	if (obj == NULL) {
+		return 0;
+	}
+	return Py_TYPE((PyObject *)obj) == &PyBytes_Type;
+}
+
 PyObject *vpy_none(void) {
 	return Py_None;
 }

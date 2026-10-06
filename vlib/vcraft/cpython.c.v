@@ -65,6 +65,7 @@ fn C.vpy_buffer_get(obj voidptr, view voidptr) int
 fn C.vpy_buffer_ptr(view voidptr) voidptr
 fn C.vpy_buffer_len(view voidptr) int
 fn C.vpy_buffer_release(view voidptr)
+fn C.vpy_is_exact_bytes(obj voidptr) int
 fn C.vpy_state_init()
 fn C.vpy_enter_state(block voidptr) voidptr
 fn C.vpy_leave_state(previous voidptr)
@@ -158,7 +159,7 @@ fn C.PyUnicode_FromFormat(format voidptr) voidptr
 
 fn C.PyBytes_FromStringAndSize(s voidptr, len isize) voidptr
 
-fn C.PyBytes_AsStringAndSize(o voidptr, len voidptr) voidptr
+fn C.PyBytes_AsStringAndSize(o voidptr, s voidptr, len voidptr) int
 
 // ------------------------------------------------------------------ tuples
 

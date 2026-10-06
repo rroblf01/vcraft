@@ -571,11 +571,11 @@ def main() -> int:
     t.check("as immutable bytes", type(h.echoed(b"abc")) is bytes)
 
     print("buffers in the generated file")
-    t.check("the view is acquired",
-            "vcraft.buffer_view(args, 0, 'checksum', 'data')" in glue)
+    t.check("the argument is acquired",
+            "vcraft.bytes_arg(args, 0, 'checksum', 'data')" in glue)
     t.check("and released on every path",
-            "defer { vcraft.buffer_release(arg0_view) }" in glue)
-    t.check("the slice aliases it", "vcraft.buffer_bytes(arg0_view)" in glue)
+            "defer { arg0_bytes.release() }" in glue)
+    t.check("the slice aliases it", "arg0_bytes.data" in glue)
     t.check("a return copies out", "vcraft.to_py_bytes_slice(result)" in glue)
 
     print("the GIL is released")

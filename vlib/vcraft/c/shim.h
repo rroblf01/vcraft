@@ -122,6 +122,7 @@ int vpy_buffer_get(void *obj, void *view);
 void *vpy_buffer_ptr(void *view);
 long vpy_buffer_len(void *view);
 void vpy_buffer_release(void *view);
+int vpy_is_exact_bytes(void *obj);
 
 PyObject *vpy_none(void);
 PyObject *vpy_notimplemented(void);

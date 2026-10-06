@@ -93,6 +93,10 @@ packages them as wheels, with no Rust, C++ or zlib involved.
 - **One-pass conversions**: `[]int`, `[]i64` and `[]f64` arguments are filled in
   a single C pass, and returned lists of those element types are built in a
   single C pass with `PyList_SET_ITEM`.
+- **No-view fast path for exact `bytes`**: a `[]u8` argument that is exactly
+  `bytes` aliases the object directly instead of allocating, acquiring and
+  releasing a buffer view. Anything else bytes-like still goes through the
+  view, which pins the exporter for the call.
 - **Smaller per-call state**: the `state_at` chain is only published when the
   project calls `vcraft.state_at`.
 - **Faster imports on macOS**: vcraft starts Boehm before V with only the
@@ -119,6 +123,10 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   reaches the caller.
 - **`u64` results**: a function returning an unsigned width never compiled; the
   result local starts as `u64(0)`.
+- **Dead `bytes_of`**: `from_py_bytes`'s helper called
+  `PyBytes_AsStringAndSize` with two arguments instead of three, which never
+  compiled wherever V kept it. It now passes the buffer and length out-pointers
+  and reports failure with a null pointer.
 - **Abandoned buffer backing**: `buffer_bytes` allocated a `[]u8` of the
   argument's length and then overwrote its `data` with the exporter's pointer,
   so every `[]u8` call left a GC block of the argument's size behind for the
