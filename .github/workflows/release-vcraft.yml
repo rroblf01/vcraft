@@ -5,6 +5,14 @@ on:
     tags:
       - vcraft/v*
 
+# Serialise releases per ref, but never cancel one. Publishing to PyPI is not
+# safely interruptible: a run cancelled between uploading some wheels and
+# others leaves a partial release, and a release cannot be un-published. So a
+# second run for the same tag queues behind the first instead of replacing it.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -17,7 +25,7 @@ env:
   VC_COMMIT: 8af812feb76c678abd86a8e682fd9ab2790e519c
 
 jobs:
-  release:
+  build:
     strategy:
       fail-fast: false
       matrix:
@@ -59,20 +67,85 @@ jobs:
           python3 tests/runtime/test_runtime.py
           python3 tests/wheel/test_wheel.py
           python3 tests/project/check_toml.py
+          python3 tests/packaging/test_pack.py
+          python3 tests/packaging/test_pack.py
           python3 tests/cli/test_cli.py
 
-      - name: pack the release
-        # The tarball holds the binary and the V modules it was built with, under
-        # one top-level directory. The action strips that directory on install,
-        # so the layout here and the `--strip-components=1` there have to agree.
+      # The binary and the V modules it was built with, uploaded for the publish
+      # job rather than published as tarballs: PyPI is the only distribution
+      # channel, and the tarballs existed only for the action to download.
+      - name: upload the distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcraft-dist-${{ matrix.asset }}
+          path: |
+            bin/vcraft
+            vlib/
+
+  publish-pypi:
+    # A release is not published with a red platform: every matrix build runs
+    # the full suites, and this job waits for all of them.
+    needs: [build]
+    # Redundant with the tag-only trigger above, and kept on purpose: it is
+    # the one line standing between a build and an upload.
+    if: startsWith(github.ref, 'refs/tags/vcraft/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    # Both: trusted publishing mints its token from `id-token`, and the notes
+    # step creates the GitHub release with `contents`. Job permissions replace
+    # the workflow's rather than merging into them, so both are named here.
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: download the distributions
+        # One directory per platform artifact, not merged: both hold `bin/` and
+        # `vlib/`, and merging them would overwrite one binary with the other.
+        uses: actions/download-artifact@v4
+        with:
+          path: dists
+
+      - name: check the tag names the version being built
+        # A tag of `vcraft/v0.2.0` on a tree that stamps `0.1.0` publishes a
+        # wheel that lies about its version, and PyPI keeps it forever.
         run: |
           VERSION="${GITHUB_REF_NAME#vcraft/}"
-          mkdir -p "vcraft-${VERSION}-${{ matrix.asset }}/bin"
-          cp bin/vcraft "vcraft-${VERSION}-${{ matrix.asset }}/bin/"
-          cp -r vlib "vcraft-${VERSION}-${{ matrix.asset }}/"
-          tar -czf "vcraft-${VERSION}-${{ matrix.asset }}.tar.gz" "vcraft-${VERSION}-${{ matrix.asset }}"
+          VERSION="${VERSION#v}"
+          STAMPED="$(grep -o "pub const version = '[^']*'" vlib/vcraft_project/env.v | cut -d"'" -f2)"
+          test "$VERSION" = "$STAMPED" || {
+            echo "error: tag says $VERSION but the tree stamps $STAMPED" >&2
+            exit 1
+          }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: publish the release
+      - name: assemble the platform wheels
+        # No sdist: a source distribution of a launcher with no binary installs
+        # something that cannot run.
+        run: |
+          mkdir -p dist
+          python3 scripts/pack-vcraft-wheel.py --version "$VERSION" \
+            --platform linux_x86_64 \
+            --bin dists/vcraft-dist-linux-x86_64/bin/vcraft \
+            --vlib dists/vcraft-dist-linux-x86_64/vlib \
+            --out-dir dist
+          python3 scripts/pack-vcraft-wheel.py --version "$VERSION" \
+            --platform macosx_11_0_arm64 \
+            --bin dists/vcraft-dist-macos-arm64/bin/vcraft \
+            --vlib dists/vcraft-dist-macos-arm64/vlib \
+            --out-dir dist
+          ls dist/
+
+      - name: publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          verify-metadata: true
+
+      - name: publish the GitHub release notes
+        # Notes only, no assets: the tarballs used to live here for the action
+        # to download, and PyPI is the distribution channel now.
         uses: softprops/action-gh-release@v2
         with:
-          files: vcraft-*-${{ matrix.asset }}.tar.gz
+          generate_release_notes: true

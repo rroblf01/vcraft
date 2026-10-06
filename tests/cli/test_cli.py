@@ -1060,6 +1060,7 @@ pub fn (mut n Node) link(other voidptr) {
             t.check("CI runs every suite",
                     all(path in (ROOT / ".github" / "workflows" / "ci.yml").read_text()
                         for path in ["tests/project/check_toml.py",
+                                     "tests/packaging/test_pack.py",
                                      "tests/wheel/test_wheel.py",
                                      "tests/runtime/test_runtime.py",
                                      "tests/codegen/test_codegen.py",
@@ -1082,6 +1083,29 @@ pub fn (mut n Node) link(other voidptr) {
                                     "docker/musllinux.Dockerfile"} and
                     all((ROOT / name).exists() for name in dockerfiles),
                     str(sorted(dockerfiles)))
+            release = yaml.safe_load(
+                (ROOT / ".github" / "workflows" / "release-vcraft.yml").read_text())
+            t.check("the release builds per platform",
+                    set(cell.get("asset", "") for cell in
+                        release["jobs"]["build"]["strategy"]["matrix"]["include"])
+                    == {"linux-x86_64", "macos-arm64"})
+            publish = release["jobs"]["publish-pypi"]
+            release_text = (ROOT / ".github" / "workflows" / "release-vcraft.yml").read_text()
+            t.check("PyPI publish waits for every platform",
+                    publish["needs"] == ["build"], str(publish.get("needs")))
+            t.check("PyPI publish is tag-gated twice",
+                    "vcraft/v*" in release_text
+                    and "refs/tags/vcraft/v" in str(publish.get("if", "")),
+                    str(publish.get("if", "")))
+            t.check("PyPI publish uses trusted publishing",
+                    publish.get("environment") == "pypi"
+                    and publish.get("permissions", {}).get("id-token") == "write",
+                    str({k: publish.get(k) for k in ("environment", "permissions")}))
+            t.check("the release uploads wheels, not tarballs",
+                    "gh-action-pypi-publish" in release_text
+                    and "tar -czf" not in release_text, release_text[-300:])
+            t.check("releases can never be cancelled mid-upload",
+                    "cancel-in-progress: false" in release_text)
 
         print("abi3 changes the matrix")
         manifest = project / "vcraft.toml"

@@ -66,24 +66,12 @@ runs:
       if: ${{ inputs.container == '' }}
       shell: bash
       run: |
-        # One release asset per runner OS. macOS is arm64 only: Intel runners are
-        # retired, and no Intel vcraft binary is published.
-        case "$(uname -s)" in
-          Linux) ASSET="vcraft-${{ inputs.vcraft-version }}-linux-x86_64.tar.gz" ;;
-          Darwin) ASSET="vcraft-${{ inputs.vcraft-version }}-macos-arm64.tar.gz" ;;
-          *)
-            echo "error: no vcraft release asset for $(uname -s)" >&2
-            exit 1
-            ;;
-        esac
-        curl -fsSL -o /tmp/vcraft.tar.gz \
-          "https://github.com/rroblf01/vcraft/releases/download/${{ inputs.vcraft-version }}/${ASSET}"
-        mkdir -p /opt/vcraft
-        # The release packs a top-level directory, which is stripped so the binary
-        # lands at the documented `/opt/vcraft/bin/vcraft` whatever the version is.
-        tar -xzf /tmp/vcraft.tar.gz -C /opt/vcraft --strip-components=1
-        rm /tmp/vcraft.tar.gz
-        echo "/opt/vcraft/bin" >> "$GITHUB_PATH"
+        # From PyPI rather than the GitHub release: the tarballs no longer exist,
+        # and the wheel carries the same binary plus the V modules it was built
+        # with. The leading v comes off the version because tags read
+        # `vcraft/v0.1.0` and PyPI reads `0.1.0`.
+        VERSION="${{ inputs.vcraft-version }}"
+        python3 -m pip install "vcraft==${VERSION#v}"
 
     - name: run vcraft
       shell: bash

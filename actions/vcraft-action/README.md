@@ -1,8 +1,13 @@
 # vcraft-action
 
 Build a Python extension written in V, as a GitHub Action. It mirrors
-`maturin-action`: it installs a pinned `vcraft` release and runs any `vcraft`
-command, and it can do it inside a manylinux container.
+`maturin-action`: it installs a pinned `vcraft` release from PyPI, builds the V
+compiler from a pinned source commit (no V release is newer than the flags
+vcraft passes), and runs any `vcraft` command. It can also do it inside a
+manylinux container, in which case nothing is installed at all.
+
+Prerequisites are a Python with pip -- `actions/setup-python` -- and, for
+container builds, Docker on the runner.
 
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
@@ -29,7 +34,7 @@ jobs:
 
 | Input               | Default           | Meaning                                 |
 | ------------------- | ----------------- | --------------------------------------- |
-| `vcraft-version`    | `v0.1.0`          | The vcraft release to download          |
+| `vcraft-version`    | `v0.1.0`          | The vcraft release to install from PyPI |
 | `args`              | `build --release` | The vcraft command to run               |
 | `container`         | `''`              | An image to build inside instead        |
 | `working-directory` | `.`               | The project directory to run vcraft in  |

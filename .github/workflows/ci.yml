@@ -54,6 +54,7 @@ jobs:
         # the ones after it.
         run: |
           python3 tests/project/check_toml.py
+          python3 tests/packaging/test_pack.py
           python3 tests/wheel/test_wheel.py
           python3 tests/runtime/test_runtime.py
           python3 tests/codegen/test_codegen.py

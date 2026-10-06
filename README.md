@@ -985,6 +985,22 @@ target-dir = "build"
 
 ## Try it
 
+The fastest way to try it needs no checkout at all:
+
+```console
+$ pip install vcraft
+$ vcraft --help
+```
+
+That installs the `vcraft` command for Linux x86_64 or macOS arm64. Two things
+to know before building anything with it. First, compiling still needs a V
+compiler -- `pip` ships the tool, not the toolchain, the same way `maturin`
+needs Rust. The action and the images install or build one; locally, build V
+from source at the commit pinned in `docker/` (no V release is newer than the
+flags vcraft passes). Second, there is no sdist on PyPI on purpose: a source
+distribution of a launcher with no binary installs something that cannot run,
+so only platform wheels are published.
+
 The repository ships two working examples, both built by hand rather than by
 `vcraft`, because they predate the code generator.
 
@@ -1056,6 +1072,10 @@ for the ones the generator did.
       tag computation and PEP 427 file names, editable installs with PEP 660, and
       sourceless `.pyc` packaging, verified by real installs
 - [x] **CLI**: `vcraft new`, `build`, `develop`, `sdist`, `publish`, `info`, `clean`
+- [x] **Distribution**: `vcraft` itself ships as platform wheels on PyPI
+      (`pip install vcraft`), assembled by `scripts/pack-vcraft-wheel.py` with the
+      executable bit preserved, published per tag after every suite passes on both
+      platforms, with trusted publishing and no tarballs
 - [x] **abi3**: stable-ABI builds with multi-phase initialisation, verified by a real
       `pip install`
 - [x] **PEP 517**: `pip install .` and `pip install <sdist>` both work
