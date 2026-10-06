@@ -72,13 +72,6 @@ jobs:
       - name: put V on PATH
         run: echo "/tmp/v-src" >> "$GITHUB_PATH"
 
-      - name: build vcraft
-        # The macOS wheel is tagged `macosx_11_0_arm64`, and without a deployment
-        # target the binary would require the runner's own macOS instead.
-        env:
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
-        run: ./scripts/build-vcraft.sh && bin/vcraft version
-
       - name: run the test suites
         run: |
           python3 tests/codegen/test_codegen.py
@@ -87,6 +80,15 @@ jobs:
           python3 tests/project/check_toml.py
           python3 tests/packaging/test_pack.py
           python3 tests/cli/test_cli.py
+
+      - name: build the shipped vcraft
+        # After the suites, not before: the CLI suite rebuilds bin/vcraft itself
+        # without a deployment target, and an earlier build would be overwritten
+        # by that one. The macOS wheel is tagged `macosx_11_0_arm64`, and without
+        # a deployment target the binary would require the runner's own macOS.
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: ./scripts/build-vcraft.sh && bin/vcraft version
 
       # The suites above ran against a binary linked to the runner's glibc, which
       # would make the wheel need that glibc too. The shipped Linux binary is built
