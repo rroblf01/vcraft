@@ -154,4 +154,10 @@ PyObject *vpy_exc_arithmetic_error(void);
 int vpy_exact_long_as_i64(PyObject *o, long long *out);
 int vpy_is_instance(PyObject *o, PyObject *type);
 
+// Reading a list or a tuple: a borrowed item, and one-pass conversions of the leading
+// items that need no Python call.
+PyObject *vpy_seq_item(PyObject *o, Py_ssize_t i);
+Py_ssize_t vpy_seq_fill_f64(PyObject *o, double *out, Py_ssize_t n);
+Py_ssize_t vpy_seq_fill_i64(PyObject *o, long long *out, Py_ssize_t n);
+
 #endif // VCRAFT_SHIM_H

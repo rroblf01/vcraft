@@ -88,6 +88,29 @@ pub fn total(values []int) int {
 	return sum
 }
 
+// Sums a sequence of 64-bit integers.
+@[vc_fn]
+pub fn total64(values []i64) i64 {
+	mut sum := i64(0)
+	for v in values {
+		sum += v
+	}
+	return sum
+}
+
+// Averages a sequence of numbers, ints and floats alike.
+@[vc_fn]
+pub fn mean(values []f64) f64 {
+	if values.len == 0 {
+		return 0.0
+	}
+	mut sum := 0.0
+	for v in values {
+		sum += v
+	}
+	return sum / f64(values.len)
+}
+
 // Counts up from zero, returning the numbers as a list.
 @[vc_fn]
 pub fn count_up(n i64) []i64 {

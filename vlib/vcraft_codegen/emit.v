@@ -765,7 +765,15 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 		.seq {
 			element := element_type(param_type)
 			match lookup(element) {
-				.int { "vcraft.from_py_int_seq_arg(args, ${index}, '${func}', '${param}')" }
+				// An `i64` element has its own reader: V does not convert a `[]int` into
+				// a `[]i64`, so the int reader's result does not compile there.
+				.int {
+					if element == 'i64' {
+						"vcraft.from_py_i64_seq_arg(args, ${index}, '${func}', '${param}')"
+					} else {
+						"vcraft.from_py_int_seq_arg(args, ${index}, '${func}', '${param}')"
+					}
+				}
 				.uint { "vcraft.from_py_uint_seq_arg(args, ${index}, '${func}', '${param}')" }
 				.float { "vcraft.from_py_f64_seq_arg(args, ${index}, '${func}', '${param}')" }
 				.str { "vcraft.from_py_str_seq_arg(args, ${index}, '${func}', '${param}')" }

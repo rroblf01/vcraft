@@ -168,24 +168,56 @@ fn seq_elements(argv voidptr, i int, func string, name string) ?PyObj {
 }
 
 // from_py_int_seq_arg reads positional argument `i` as a sequence of ints.
+//
+// The leading items that are exact ints are converted in one pass in C; whatever is
+// left, from the first item that is anything else, goes through the general reader,
+// which raises the usual error for the item that is wrong.
 pub fn from_py_int_seq_arg(argv voidptr, i int, func string, name string) ![]int {
 	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
-	mut out := []int{cap: int(obj.len())}
+	n := int(obj.len())
+	mut out := []int{len: n}
 	mut k := 0
-	for k < int(obj.len()) {
-		out << from_py_int(obj.item(k), name)!
+	// The C pass writes 64-bit integers, so it only applies where an int is that wide.
+	if sizeof(int) == sizeof(i64) && n > 0 {
+		k = int(C.vpy_seq_fill_i64(obj.ptr, unsafe { &i64(out.data) }, isize(n)))
+	}
+	for k < n {
+		out[k] = from_py_int(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_i64_seq_arg reads positional argument `i` as a sequence of i64.
+pub fn from_py_i64_seq_arg(argv voidptr, i int, func string, name string) ![]i64 {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []i64{len: n}
+	mut k := 0
+	if n > 0 {
+		k = int(C.vpy_seq_fill_i64(obj.ptr, unsafe { &i64(out.data) }, isize(n)))
+	}
+	for k < n {
+		out[k] = i64(from_py_int(obj.item(k), name)!)
 		k++
 	}
 	return out
 }
 
 // from_py_f64_seq_arg reads positional argument `i` as a sequence of floats.
+//
+// Exact floats and ints convert in one pass in C, the rest one at a time, as in
+// `from_py_int_seq_arg`.
 pub fn from_py_f64_seq_arg(argv voidptr, i int, func string, name string) ![]f64 {
 	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
-	mut out := []f64{cap: int(obj.len())}
+	n := int(obj.len())
+	mut out := []f64{len: n}
 	mut k := 0
-	for k < int(obj.len()) {
-		out << from_py_f64(obj.item(k), name)!
+	if n > 0 {
+		k = int(C.vpy_seq_fill_f64(obj.ptr, unsafe { &f64(out.data) }, isize(n)))
+	}
+	for k < n {
+		out[k] = from_py_f64(obj.item(k), name)!
 		k++
 	}
 	return out
@@ -194,9 +226,10 @@ pub fn from_py_f64_seq_arg(argv voidptr, i int, func string, name string) ![]f64
 // from_py_str_seq_arg reads positional argument `i` as a sequence of strings.
 pub fn from_py_str_seq_arg(argv voidptr, i int, func string, name string) ![]string {
 	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
-	mut out := []string{cap: int(obj.len())}
+	n := int(obj.len())
+	mut out := []string{cap: n}
 	mut k := 0
-	for k < int(obj.len()) {
+	for k < n {
 		out << from_py_string(obj.item(k), name)!
 		k++
 	}
@@ -207,9 +240,10 @@ pub fn from_py_str_seq_arg(argv voidptr, i int, func string, name string) ![]str
 // integers.
 pub fn from_py_uint_seq_arg(argv voidptr, i int, func string, name string) ![]u64 {
 	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
-	mut out := []u64{cap: int(obj.len())}
+	n := int(obj.len())
+	mut out := []u64{cap: n}
 	mut k := 0
-	for k < int(obj.len()) {
+	for k < n {
 		out << from_py_uint(obj.item(k), name)!
 		k++
 	}

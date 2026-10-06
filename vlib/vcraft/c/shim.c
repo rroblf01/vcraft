@@ -726,3 +726,70 @@ int vpy_is_instance(PyObject *o, PyObject *type) {
 	}
 	return PyType_IsSubtype(Py_TYPE(o), (PyTypeObject *)type);
 }
+
+// vpy_seq_item returns item `i` of a list or a tuple as a borrowed reference.
+//
+// `PySequence_GetItem` answers for any sequence, but with a new reference, and the
+// runtime's sequence readers treated it as borrowed: every element read kept one
+// reference that was never released, so the elements of a temporary list were never
+// freed. A list or a tuple, the only sequences a `[]T` parameter accepts, hands out
+// borrowed references of its own.
+PyObject *vpy_seq_item(PyObject *o, Py_ssize_t i) {
+	if (PyList_Check(o)) {
+		return PyList_GetItem(o, i);
+	}
+	if (PyTuple_Check(o)) {
+		return PyTuple_GetItem(o, i);
+	}
+	PyErr_SetString(PyExc_TypeError, "expected a list or a tuple");
+	return NULL;
+}
+
+// vpy_seq_at reads item `i` of a list or a tuple whose length the caller has checked.
+static PyObject *vpy_seq_at(PyObject *o, int is_list, Py_ssize_t i) {
+#ifdef Py_LIMITED_API
+	return is_list ? PyList_GetItem(o, i) : PyTuple_GetItem(o, i);
+#else
+	return is_list ? PyList_GET_ITEM(o, i) : PyTuple_GET_ITEM(o, i);
+#endif
+}
+
+// vpy_seq_fill_f64 converts the leading items of a list or a tuple of exact floats
+// and ints into `out`, which holds `n` doubles, `n` being the sequence's length.
+//
+// It returns how many it converted. It stops at the first item that is anything
+// else, without raising, and the caller converts the rest one at a time with the
+// general reader, which raises the usual error for whichever item is wrong. One pass
+// in C with no Python error state consulted is what makes the common case cheap.
+Py_ssize_t vpy_seq_fill_f64(PyObject *o, double *out, Py_ssize_t n) {
+	int is_list = PyList_Check(o);
+	for (Py_ssize_t i = 0; i < n; i++) {
+		PyObject *item = vpy_seq_at(o, is_list, i);
+		if (item != NULL && PyFloat_CheckExact(item)) {
+#ifdef Py_LIMITED_API
+			out[i] = PyFloat_AsDouble(item);
+#else
+			out[i] = PyFloat_AS_DOUBLE(item);
+#endif
+			continue;
+		}
+		long long value;
+		if (vpy_exact_long_as_i64(item, &value)) {
+			out[i] = (double)value;
+			continue;
+		}
+		return i;
+	}
+	return n;
+}
+
+// vpy_seq_fill_i64 is `vpy_seq_fill_f64` for exact ints that fit in 64 bits.
+Py_ssize_t vpy_seq_fill_i64(PyObject *o, long long *out, Py_ssize_t n) {
+	int is_list = PyList_Check(o);
+	for (Py_ssize_t i = 0; i < n; i++) {
+		if (!vpy_exact_long_as_i64(vpy_seq_at(o, is_list, i), &out[i])) {
+			return i;
+		}
+	}
+	return n;
+}

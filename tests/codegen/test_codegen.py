@@ -75,7 +75,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 19,
+            glue.count("add_function_owned") == 21,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -117,6 +117,27 @@ def main() -> int:
     t.equal("total over a tuple", h.total((5, 5)), 10)
     t.equal("total of empty", h.total([]), 0)
     t.equal("text signature", h.add.__doc__, "add(a: int, b: int) -> int")
+
+    print("sequence arguments")
+    t.equal("an i64 sequence", h.total64([2**40, 1]), 2**40 + 1)
+    t.equal("an i64 tuple", h.total64((3, 4)), 7)
+    t.equal("a float sequence", h.mean([1.0, 2.0, 6.0]), 3.0)
+    t.equal("ints in a float sequence", h.mean([1, 2.0, 3]), 2.0)
+    t.equal("an empty float sequence", h.mean([]), 0.0)
+    t.raises("a bad item after good ones", TypeError, "expected float",
+             lambda: h.mean([1.0, 2.0, "x"]))
+    t.raises("an int subclass is read the slow way", TypeError, "expected int",
+             lambda: h.total64([1, True]))
+    t.raises("an item too large for 64 bits", OverflowError, "out of range",
+             lambda: h.total64([1, 2**64]))
+    # Each item read used to keep a reference nobody released, so the items of a
+    # temporary list were never freed.
+    item = 12345.5
+    before = sys.getrefcount(item)
+    for _ in range(50):
+        h.mean([item] * 10)
+        h.total([7] * 10)
+    t.equal("reading a sequence keeps no reference", sys.getrefcount(item), before)
 
     print("returned lists and objects")
     # Each of these failed to build before: a `[]T` result called `to_py_list` with one
