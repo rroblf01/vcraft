@@ -246,6 +246,7 @@ movimiento real. La columna de referencia es la de la tabla inicial.
 | 5. listas numéricas en C | 22 ns | 16 ns | 152 µs | 1,03 ms | 3,77 ms | 0 |
 | 6. raíces del GC (macOS) | 22 ns | 16 ns | **133 µs** | **988 µs** | 3,70 ms | 0 |
 | verificación tras diagnósticos, divisor, lectores y raíces Linux | 23 ns | 16 ns | 135 µs | 1,00 ms | 3,73 ms | 0 |
+| divisor 2 por defecto + `bytes` sin vista | 23 ns | 16 ns | 131 µs | 1,00 ms | 3,77 ms | 0 |
 
 Memoria e import de vcraft en cada paso (PyO3: 0,50 ms de import, 304 KiB, 0 retenido):
 
@@ -254,6 +255,7 @@ Memoria e import de vcraft en cada paso (PyO3: 0,50 ms de import, 304 KiB, 0 ret
 | inicial | 3,50 ms | 1.088 KiB | 13,8 MiB | 41,8 MiB |
 | 6. raíces del GC (macOS) | **0,61 ms** | 1.120 KiB | **1,0 MiB** | **29,0 MiB** |
 | verificación tras diagnósticos, divisor, lectores y raíces Linux | 0,63 ms | 1.104 KiB | 1,0 MiB | 29,2 MiB |
+| divisor 2 por defecto + `bytes` sin vista | 0,62 ms | 1.136 KiB | **0,5 MiB** | 28,5 MiB |
 
 **Paso 1** (puntos 1–4 y 6). Ya se puede devolver `[]T`, `vcraft.PyObj` y `voidptr`, y los
 campos `i64` compilan. La fuga desaparece: lo que queda tras `make_range` son 18,5 MiB del
@@ -338,10 +340,12 @@ copiar) y la ida y vuelta de una excepción por llamada.
   abandonando un bloque del GC por llamada (el perfil mostraba un 26 % en
   `GC_collect_or_expand`). Corregido construyendo la cabecera desde un literal
   vacío; el escenario de memoria `checksum(new 100kB) x500` queda en 0,0
-  retenido y 0,0 fuga en los tres. De lo que queda (2,85×), unos 40 ns fijos
-  son la vista (`PyMem_Calloc` + `GetBuffer` + `Release` por llamada; un atajo
-  para `bytes` exactos los quitaría) y el resto es el loop: suma con
-  ensanchado `u64(b)` frente al SIMD de Rust.
+  retenido y 0,0 fuga en los tres. Después, los `bytes` exactos ya no pasan por
+  la vista (`vpy_is_exact_bytes` + alias directo; el perfil pasa de ~7 % de
+  muestras en `GetBuffer`/`Release`/`PyMem_Calloc` a cero): a 100k el número no
+  se mueve (4,8 µs, el loop manda) y a 256 B apenas (125 frente a 83 ns; la
+  vista era ~9 ns de esos 42). De lo que queda, el grueso es el loop: suma con
+  ensanchado `u64(b)` frente al SIMD de Rust, más el boxeo del resultado.
 - `expect_positive(-1)` con `try`: vcraft 93 ns, por delante de PyO3
   (112 ns), Python (124 ns) y zig (277 ns).
 - En corrección, las tres pasan las tres comprobaciones nuevas. zig-maturin

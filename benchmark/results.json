@@ -8,15 +8,15 @@
     "pyo3": {
       "sizes": {
         "wheel_file": "bench_pyo3-0.1.0-cp313-cp313-macosx_11_0_arm64.whl",
-        "wheel": 227619,
+        "wheel": 227620,
         "extension": 565520,
         "extension_stripped": 423696,
         "files_in_wheel": 6
       },
-      "build_s": 5.642686375000267,
+      "build_s": 5.554005499998311,
       "import": {
-        "first_s": 0.16857858299954387,
-        "warm_s": 0.0005200000014156103,
+        "first_s": 0.16574391600079252,
+        "warm_s": 0.0005257919983705506,
         "rss_bytes": 311296
       },
       "speed": {
@@ -34,46 +34,46 @@
           "add 2**63 overflows": "ok"
         },
         "speed_ns": {
-          "add": 27.894308350005304,
-          "fib(25)": 122299.53125006432,
-          "count_primes(1e6)": 2018805.8350049686,
-          "sum_floats(100k)": 457841.625000583,
-          "make_range(100k)": 828865.8750007016,
-          "greet": 53.69049169985374,
-          "checksum(100kB)": 1690.6463550003537,
-          "expect_positive(err)": 111.54640624999956,
-          "Counter()": 36.88141039992843,
-          "c.increment()": 19.14738750001561
+          "add": 27.912089599885803,
+          "fib(25)": 121714.13524993113,
+          "count_primes(1e6)": 2019430.000000284,
+          "sum_floats(100k)": 455826.0000012524,
+          "make_range(100k)": 830670.8749987592,
+          "greet": 53.977279200262274,
+          "checksum(100kB)": 1693.870937497195,
+          "expect_positive(err)": 102.68613524931425,
+          "Counter()": 37.089039599959506,
+          "c.increment()": 19.393952075006382
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 28672000,
-          "kept": 16384,
+          "peak": 28655616,
+          "kept": 32768,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 33456128,
+          "peak": 33505280,
           "kept": -442368,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 38633472,
+          "peak": 38600704,
           "kept": 0,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 29229056,
-          "kept": 425984,
+          "peak": 29114368,
+          "kept": 327680,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 28704768,
+          "peak": 28672000,
           "kept": 0,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 28639232,
+          "peak": 28606464,
           "kept": 0,
           "leak": 0
         }
@@ -82,15 +82,15 @@
     "vcraft": {
       "sizes": {
         "wheel_file": "bench_vcraft-0.1.0-cp313-cp313-macosx_11_0_arm64.whl",
-        "wheel": 196725,
-        "extension": 415408,
-        "extension_stripped": 359224,
+        "wheel": 197405,
+        "extension": 415600,
+        "extension_stripped": 359336,
         "files_in_wheel": 4
       },
-      "build_s": 2.0558905839989166,
+      "build_s": 2.0645907500002068,
       "import": {
-        "first_s": 0.09681408299911709,
-        "warm_s": 0.0006238329988264013,
+        "first_s": 0.245425624998461,
+        "warm_s": 0.0006228329984878656,
         "rss_bytes": 1163264
       },
       "speed": {
@@ -108,47 +108,47 @@
           "add 2**63 overflows": "ok"
         },
         "speed_ns": {
-          "add": 22.499656249965483,
-          "fib(25)": 119746.69775008806,
-          "count_primes(1e6)": 3775290.835001215,
-          "sum_floats(100k)": 129281.20849983314,
-          "make_range(100k)": 997855.3125029065,
-          "greet": 34.17683544994361,
-          "checksum(100kB)": 4812.132499992003,
-          "expect_positive(err)": 92.5314125001023,
-          "Counter()": 34.529687499980355,
-          "c.increment()": 15.919760425003915
+          "add": 22.76473955007532,
+          "fib(25)": 119907.57274998032,
+          "count_primes(1e6)": 3773558.5399968843,
+          "sum_floats(100k)": 131345.39575003146,
+          "make_range(100k)": 999903.8549995021,
+          "greet": 34.60208335000061,
+          "checksum(100kB)": 4813.829169979726,
+          "expect_positive(err)": 93.93332500003453,
+          "Counter()": 34.42227499999717,
+          "c.increment()": 15.89667915004611
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 30703616,
-          "kept": 1064960,
+          "peak": 29933568,
+          "kept": 475136,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 36569088,
-          "kept": 1933312,
+          "peak": 35684352,
+          "kept": 1130496,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 39583744,
+          "peak": 39550976,
           "kept": 0,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 31195136,
-          "kept": 1507328,
+          "peak": 30752768,
+          "kept": 1097728,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 29491200,
+          "peak": 29556736,
           "kept": 0,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 30507008,
-          "kept": 1064960,
+          "peak": 29982720,
+          "kept": 475136,
           "leak": 0
         }
       }
@@ -156,15 +156,15 @@
     "zig-maturin": {
       "sizes": {
         "wheel_file": "bench_zig-0.1.0-cp313-cp313-macosx_11_0_arm64.whl",
-        "wheel": 191294,
+        "wheel": 191289,
         "extension": 495136,
         "extension_stripped": 410176,
         "files_in_wheel": 4
       },
-      "build_s": 8.697015583000393,
+      "build_s": 8.706694750002498,
       "import": {
-        "first_s": 0.12452633300017624,
-        "warm_s": 0.0005827500008308562,
+        "first_s": 0.11491695899894694,
+        "warm_s": 0.0005769579984189477,
         "rss_bytes": 147456
       },
       "speed": {
@@ -182,46 +182,46 @@
           "add 2**63 overflows": "TypeError: expected int, got int"
         },
         "speed_ns": {
-          "add": 203.8727294993805,
-          "fib(25)": 155148.54150023893,
-          "count_primes(1e6)": 1466315.1050035595,
-          "sum_floats(100k)": 496917.9170002463,
-          "make_range(100k)": 847922.3329995875,
-          "greet": 261.7325000001074,
-          "checksum(100kB)": 25691.43749997238,
-          "expect_positive(err)": 277.4549374998969,
-          "Counter()": 201.01618749959016,
-          "c.increment()": 195.6159062497136
+          "add": 202.711541998724,
+          "fib(25)": 154865.25000051188,
+          "count_primes(1e6)": 1449412.0850031322,
+          "sum_floats(100k)": 497088.3750029316,
+          "make_range(100k)": 842113.6249999108,
+          "greet": 261.2392914998054,
+          "checksum(100kB)": 25607.71874996135,
+          "expect_positive(err)": 279.44229150125466,
+          "Counter()": 199.39329199951317,
+          "c.increment()": 194.94767724972917
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 28737536,
-          "kept": 49152,
+          "peak": 28557312,
+          "kept": 65536,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 32391168,
+          "peak": 32538624,
           "kept": -442368,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 38600704,
+          "peak": 38469632,
           "kept": 0,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 29081600,
-          "kept": 409600,
+          "peak": 28966912,
+          "kept": 327680,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 28540928,
+          "peak": 28573696,
           "kept": 0,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 28557312,
+          "peak": 28573696,
           "kept": 0,
           "leak": 0
         }
@@ -230,8 +230,8 @@
     "python": {
       "sizes": {},
       "import": {
-        "first_s": 0.0008596249990659999,
-        "warm_s": 6.812500032538082e-05,
+        "first_s": 0.0008705830005055759,
+        "warm_s": 6.670799848507158e-05,
         "rss_bytes": 0
       },
       "speed": {
@@ -249,16 +249,16 @@
           "add 2**63 overflows": "n/a"
         },
         "speed_ns": {
-          "add": 15.849331250001342,
-          "fib(25)": 5502388.750010141,
-          "count_primes(1e6)": 41919620.89989829,
-          "sum_floats(100k)": 780918.1660013564,
-          "make_range(100k)": 777629.2079997802,
-          "greet": 31.859525000072605,
-          "checksum(100kB)": 988276.6250011628,
-          "expect_positive(err)": 123.6405312502029,
-          "Counter()": 38.01716874995691,
-          "c.increment()": 25.604741699953593
+          "add": 15.749521875022765,
+          "fib(25)": 5171272.500010673,
+          "count_primes(1e6)": 42300304.20003459,
+          "sum_floats(100k)": 775074.3750002584,
+          "make_range(100k)": 776182.7089998405,
+          "greet": 32.44485209997947,
+          "checksum(100kB)": 984315.3124984383,
+          "expect_positive(err)": 123.97512500047016,
+          "Counter()": 38.16237500013813,
+          "c.increment()": 25.327570849913172
         }
       },
       "memory": {
@@ -268,27 +268,27 @@
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 32210944,
+          "peak": 32260096,
           "kept": -425984,
-          "leak": 0
+          "leak": -16384
         },
         "count_primes(10M) x5": {
-          "peak": 38387712,
+          "peak": 38305792,
           "kept": 0,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 28803072,
+          "peak": 28704768,
           "kept": 327680,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 28360704,
+          "peak": 28442624,
           "kept": 0,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 28393472,
+          "peak": 28295168,
           "kept": 0,
           "leak": 0
         }
