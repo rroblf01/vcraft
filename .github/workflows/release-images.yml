@@ -20,19 +20,23 @@ jobs:
             base: quay.io/pypa/manylinux_2_28_x86_64
             runner: ubuntu-latest
             arch: x86_64
+            python: /opt/python/cp314-cp314/bin/python
           - image: manylinux
             dockerfile: docker/manylinux.Dockerfile
             base: quay.io/pypa/manylinux_2_28_aarch64
             runner: ubuntu-24.04-arm
             arch: aarch64
+            python: /opt/python/cp314-cp314/bin/python
           - image: musllinux
             dockerfile: docker/musllinux.Dockerfile
             runner: ubuntu-latest
             arch: x86_64
+            python: /usr/bin/python3
           - image: musllinux
             dockerfile: docker/musllinux.Dockerfile
             runner: ubuntu-24.04-arm
             arch: aarch64
+            python: /usr/bin/python3
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -50,29 +54,55 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: build and push the architecture tag
+      - name: set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Built and loaded locally first, pushed only once verified, so a broken
+      # image never reaches the registry. The layer cache is a `buildcache-<arch>`
+      # tag in the registry rather than the Actions cache, which one tag cannot
+      # read from another: tinycc, Boehm and V depend only on their pinned
+      # commits, so a release normally rebuilds nothing but the vcraft layer.
+      - name: build the architecture image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: |
+            BASE=${{ matrix.base }}
+            VCRAFT_REF=${{ github.sha }}
+          load: true
+          tags: vcraft-${{ matrix.image }}:verify
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/vcraft-${{ matrix.image }}:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/vcraft-${{ matrix.image }}:buildcache-${{ matrix.arch }},mode=max
+
+      - name: verify the image builds a wheel that imports
+        # The image is not done when it builds: it is done when a project built
+        # inside it installs and imports. A fresh project exercises the whole
+        # toolchain -- V, the C compiler, the headers -- with nothing cached to
+        # hide behind. The project is created on a mounted directory, because one
+        # created inside a `--rm` container disappears with it.
+        run: |
+          IMAGE=vcraft-${{ matrix.image }}:verify
+          PY=${{ matrix.python }}
+          mkdir -p "$RUNNER_TEMP/verify"
+          docker run --rm -v "$RUNNER_TEMP/verify:/work" -w /work "$IMAGE" vcraft new verify
+          docker run --rm -v "$RUNNER_TEMP/verify/verify:/work" -w /work "$IMAGE" sh -c "
+            set -e
+            vcraft build --target linux-${{ matrix.arch }}-${{ matrix.image == 'musllinux' && 'musl' || 'gnu' }} --interpreter $PY
+            $PY -m venv /tmp/check
+            /tmp/check/bin/python -m pip install -q dist/*.whl
+            /tmp/check/bin/python -c 'import verify_native as m; assert m.add(2, 3) == 5; print(m.greet(\"image\"))'
+          "
+
+      - name: push the architecture tag
         # One tag per architecture, e.g. `vcraft-manylinux:0.1.0-x86_64`. The
         # version-less manifest below points at these, so republishing it never
         # rebuilds anything.
         run: |
           VERSION="${GITHUB_REF_NAME#images/}"
-          docker build \
-            --build-arg BASE=${{ matrix.base }} \
-            --build-arg VCRAFT_REF=${{ github.sha }} \
-            -f ${{ matrix.dockerfile }} \
-            -t "ghcr.io/${{ github.repository_owner }}/vcraft-${{ matrix.image }}:${VERSION}-${{ matrix.arch }}" \
-            --push .
-
-      - name: verify the image builds a wheel
-        # The image is not done when it builds: it is done when a project built
-        # inside it imports. A fresh project exercises the whole toolchain --
-        # V, the C compiler, the headers -- with nothing cached to hide behind.
-        run: |
-          VERSION="${GITHUB_REF_NAME#images/}"
-          IMAGE="ghcr.io/${{ github.repository_owner }}/vcraft-${{ matrix.image }}:${VERSION}-${{ matrix.arch }}"
-          docker run --rm "$IMAGE" vcraft new verify
-          docker run --rm -v "$PWD/verify:/work" -w /work "$IMAGE" \
-            vcraft build --target linux-${{ matrix.arch }}-${{ matrix.image == 'musllinux' && 'musl' || 'gnu' }}
+          TARGET="ghcr.io/${{ github.repository_owner }}/vcraft-${{ matrix.image }}:${VERSION}-${{ matrix.arch }}"
+          docker tag vcraft-${{ matrix.image }}:verify "$TARGET"
+          docker push "$TARGET"
 
   merge:
     needs: build
