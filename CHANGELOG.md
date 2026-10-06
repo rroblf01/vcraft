@@ -62,9 +62,46 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   an image. It caches the V compiler between runs.
 - **Container images**: manylinux and musllinux images with V and vcraft
   preinstalled.
+- **Returning lists and objects**: functions and methods can return `[]T`
+  (boxed into a Python list), `vcraft.PyObj` (its reference is handed to the
+  caller) and `voidptr` (borrowed, increfed for the caller).
+- **`i64` throughout**: class fields, method parameters and sequence parameters
+  accept `i64` as well as `int` (with this V compiler, `int` is already 64 bits).
 - **Distribution of vcraft itself**: `pip install vcraft` installs the tool on
   Python 3.11 or newer, as a platform wheel for Linux x86_64 (`manylinux_2_28`)
   or macOS arm64 (macOS 11.0+).
+
+### Changed
+
+- **Methods work in place**: methods, accessors and slots operate on the
+  instance's state block through a pointer, as PyO3 works through its cell,
+  instead of copying the struct in and out per call. As in PyO3, a method that
+  fails halfway keeps the fields it already wrote.
+- **Cheaper calls**: each trampoline checks arity with a single comparison, reads
+  an exact `int` argument with one type check in C, and keeps one `_setjmp`
+  panic guard per call (about 5 ns) so a V panic becomes a Python exception
+  instead of killing the interpreter.
+- **One-pass conversions**: `[]int`, `[]i64` and `[]f64` arguments are filled in
+  a single C pass, and returned lists of those element types are built in a
+  single C pass with `PyList_SET_ITEM`.
+- **Smaller per-call state**: the `state_at` chain is only published when the
+  project calls `vcraft.state_at`.
+- **Faster imports on macOS**: vcraft starts Boehm before V with only the
+  module's own `__DATA` registered as roots, instead of scanning every loaded
+  image. Import falls from about 3.5 ms to about 0.6 ms and the memory kept
+  after two million calls from about 14 MiB to about 1 MiB. See
+  `benchmark/README.md` for the full before/after tables.
+
+### Fixed
+
+- **Leaked list items**: `PyObj.item` on lists and tuples borrows instead of
+  returning a new reference the caller treated as borrowed, so the items of a
+  sequence passed on every call are freed again.
+- **Leaked results**: a raw result takes its reference instead of handing Python
+  a pointer nobody owned, which used to crash the interpreter on exit.
+- **Method diagnostics**: an unsupported parameter or return type on a
+  `@[vc_methods]` method is reported with file, line and column instead of
+  failing later as a compile error in the generated glue.
 
 ### Build safeguards
 
