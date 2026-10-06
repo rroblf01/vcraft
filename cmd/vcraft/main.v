@@ -161,6 +161,17 @@ fn cmd_new(args Args) {
 	if args.options['module'] != '' {
 		p.module = args.options['module']
 	}
+	// V compiles a file matching `*_test.v` as a test file and silently drops its
+	// module export, so a module ending in `_test` builds an empty shared object
+	// that fails at import. Refused here, where the message can name the name.
+	if p.module.ends_with('_test') {
+		eprintln('error: module `${p.module}` ends in `_test`, and V would compile its source as a test file with no module export; pick a module that does not end in `_test`')
+		exit(2)
+	}
+	if name.ends_with('_test') {
+		eprintln('error: name `${name}` ends in `_test`, and V treats `*_test` files as test files; pick a name that does not end in `_test`')
+		exit(2)
+	}
 	root := if args.positional.len > 1 { args.positional[1] } else { name }
 	written := vcraft_project.write_scaffold(root, p) or {
 		eprintln('error: ${err.msg()}')

@@ -129,6 +129,14 @@ def main() -> int:
         t.check("new refuses to overwrite", proc.returncode != 0, proc.stdout)
         t.check("and says why", "already exists" in proc.stderr, proc.stderr.strip())
 
+        proc = vcraft("new", "mypkg_test", cwd=tmp)
+        t.check("new refuses a _test name", proc.returncode != 0, proc.stdout)
+        t.check("and names the reason", "_test" in proc.stderr, proc.stderr.strip())
+        t.check("and writes nothing", not (tmp / "mypkg_test").exists())
+        proc = vcraft("new", "okpkg", "--module=ok_test", cwd=tmp)
+        t.check("new refuses a _test module", proc.returncode != 0, proc.stdout)
+        t.check("and writes nothing for it either", not (tmp / "okpkg").exists())
+
         # Inheritance, on a project of its own: a chain three deep, declared
         # subclass-first, which is the order that breaks anything relying on declaration
         # order, and the diagnostics for the ways `@[vc_base]` can be wrong.
