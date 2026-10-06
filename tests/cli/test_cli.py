@@ -280,6 +280,11 @@ def main() -> int:
                 and "aarch64-linux-gnu-gcc" in proc.stdout, proc.stdout)
         t.check("a dry run writes nothing",
                 not list((project / "dist").glob("*aarch64*")))
+        proc = vcraft("build", "--target", "linux-aarch64-gnu", "--release",
+                      "--dry-run", cwd=project)
+        t.check("a release dry run shows the command as it would run",
+                proc.returncode == 0 and "-prod" in proc.stdout
+                and "command " in proc.stdout, proc.stdout)
         proc = vcraft("build", "--target", "linux-aarch64-gnu", cwd=project)
         t.check("a real aarch64 build needs its compiler", proc.returncode != 0)
         t.check("and names it", "aarch64-linux-gnu-gcc" in proc.stderr,

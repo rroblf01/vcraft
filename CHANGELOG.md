@@ -119,6 +119,9 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   reaches the caller.
 - **`u64` results**: a function returning an unsigned width never compiled; the
   result local starts as `u64(0)`.
+- **`--dry-run` hid flags**: a release dry run printed the compiler invocation
+  before `-prod` and the project root were added to it, so the shown command
+  was not the one a real build runs. The plan now renders the full command.
 
 ### Build safeguards
 
