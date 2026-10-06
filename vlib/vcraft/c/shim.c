@@ -510,12 +510,13 @@ void vpy_end_allow_threads(void *state) {
 // headers know about free threading. Compiles everywhere -- on a GIL build it is
 // just `(void *)1` -- and is only ever passed to `PyUnstable_Module_SetGIL`.
 void *vpy_mod_gil_not_used(void) {
-#if !defined(Py_LIMITED_API) || Py_LIMITED_API+0 >= 0x030d0000
+#ifdef Py_MOD_GIL_NOT_USED
 	return Py_MOD_GIL_NOT_USED;
 #else
-	// The value is `(void *)1` in every version that defines the macro; it is only
-	// hidden behind the limited API before 3.13, and an abi3 build at floor 3.12
-	// still compiles this file.
+	// The value is `(void *)1` in every version that defines the macro. It is absent
+	// from the headers before 3.13 and hidden behind the limited API below a 3.13
+	// floor, and both still compile this file. Testing the macro itself rather than
+	// the API level is what keeps a 3.11 or 3.12 full-API build compiling.
 	return (void *)1;
 #endif
 }
