@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -60,6 +61,15 @@ def vcraft(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run([str(VCRAFT), *args], cwd=cwd, capture_output=True, text=True)
 
 
+def host_target() -> str:
+    """The canonical `--target` name of the machine running the suite."""
+    machine = platform.machine().lower()
+    if sys.platform == "darwin":
+        return "macos-arm64" if machine == "arm64" else "macos-x86_64"
+    arch = "aarch64" if machine in ("aarch64", "arm64") else "x86_64"
+    return f"linux-{arch}-gnu"
+
+
 def make_venv(path: Path, with_pip: bool = False) -> Path:
     # `with_pip` is off by default because a venv with pip takes several seconds and
     # `develop` only needs an interpreter. The one check that installs a wheel turns it
@@ -84,7 +94,9 @@ def main() -> int:
     t.check("an unknown command explains itself", "unknown command" in proc.stderr,
             proc.stderr.strip())
 
-    tmp = Path(tempfile.mkdtemp(prefix="vcraft-cli-"))
+    # Resolved, because on macOS the temporary directory is under `/var`, a symlink to
+    # `/private/var`, and vcraft writes the physical path the working directory reports.
+    tmp = Path(tempfile.mkdtemp(prefix="vcraft-cli-")).resolve()
     try:
         print("new")
         proc = vcraft("new", "mypkg", cwd=tmp)
@@ -413,7 +425,7 @@ def main() -> int:
         # bytes. If the explicit path diverged from the default one, this is where it
         # shows, rather than in a wheel someone uploads.
         explicit_out = tmp / "out-explicit-target"
-        proc = vcraft("build", "--target", "linux-x86_64-gnu", "--out-dir",
+        proc = vcraft("build", "--target", host_target(), "--out-dir",
                       str(explicit_out), cwd=project)
         t.check("an explicit native target builds", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-400:])
