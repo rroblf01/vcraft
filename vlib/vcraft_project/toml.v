@@ -88,6 +88,18 @@ pub fn (t &Table) bool_of(key string, fallback bool) bool {
 	return v.flag
 }
 
+// int_of returns a key's value as a number, or `fallback`.
+//
+// Like the other accessors, a wrong type is not an error: a missing or mistyped
+// key takes its default rather than refusing the build.
+pub fn (t &Table) int_of(key string, fallback int) int {
+	v := t.get(key) or { return fallback }
+	if v.kind != .integer {
+		return fallback
+	}
+	return v.number
+}
+
 // string_list_of returns a key's value as a list of strings.
 //
 // A bare string counts as a one-element list, because `classifiers = "Programming

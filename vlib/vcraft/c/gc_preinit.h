@@ -14,6 +14,13 @@
 #include <dlfcn.h>
 #include <mach-o/getsect.h>
 
+// The heap growth divisor, overridable from `vcraft.toml` (`gc-free-space-divisor`)
+// through `-DVCRAFT_GC_DIVISOR`. Boehm's default favours a small heap; V builds for
+// throughput with 1.
+#ifndef VCRAFT_GC_DIVISOR
+#define VCRAFT_GC_DIVISOR 1
+#endif
+
 // vpy_gc_preinit starts V's collector so that it scans only this module.
 //
 // On macOS the collector registers the writable data of every image in the process as
@@ -31,7 +38,7 @@ __attribute__((constructor)) static void vpy_gc_preinit(void) {
 	}
 	GC_set_pages_executable(0);
 	GC_set_all_interior_pointers(1);
-	GC_set_free_space_divisor(1);
+	GC_set_free_space_divisor(VCRAFT_GC_DIVISOR);
 	GC_set_no_dls(1);
 	GC_INIT();
 	Dl_info info;

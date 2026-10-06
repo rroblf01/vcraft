@@ -67,6 +67,10 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   caller) and `voidptr` (borrowed, increfed for the caller).
 - **`i64` throughout**: class fields, method parameters and sequence parameters
   accept `i64` as well as `int` (with this V compiler, `int` is already 64 bits).
+- **Collector tuning**: `gc-free-space-divisor` in `vcraft.toml` sets Boehm's heap
+  growth divisor (default 1, V's value, which favours speed). With 2, roughly
+  half a MiB less stays resident after large workloads for a few percent of
+  allocation-heavy throughput.
 - **Distribution of vcraft itself**: `pip install vcraft` installs the tool on
   Python 3.11 or newer, as a platform wheel for Linux x86_64 (`manylinux_2_28`)
   or macOS arm64 (macOS 11.0+).

@@ -168,9 +168,13 @@ Por prioridad. Cada punto está reproducido en este benchmark.
    comprobaciones y `copy_element_to` por elemento. Las definiciones están en el
    propio C generado (`array__set` comprueba límites y hace `vmemcpy` de
    `element_size`; `array__push` comprueba, reserva y hace `copy_element_to`).
-9. **Pendiente:** `GC_set_free_space_divisor(1)`, el valor que fija V, hace crecer el heap
-   antes que recolectar. Con 2 se retienen algo menos de memoria a cambio de un 0–3 % de
-   velocidad; no lo he cambiado, pero vcraft podría ofrecerlo como opción.
+9. ✅ *Medido tras el paso 6 y ofrecido como opción `gc-free-space-divisor` (1 por
+   defecto).* `GC_set_free_space_divisor(1)`, el valor que fija V, hace crecer el heap
+   antes que recolectar. Con 2, en esta máquina: lo retenido pasa de 1,0 a 0,5 MiB
+   tras `greet` ×2M, de 1,1 a 0,3 en `make_range` y de 1,3 a 1,0 en `sum_floats`;
+   el RSS del import no cambia (1.120 KiB). Cuesta `sum_floats` 129 → 135 µs
+   (+5 %), `fib` +1,6 %, y nada medible en el resto (`add` 22 → 23 ns está en el
+   ruido).
 
 ### zig-maturin
 

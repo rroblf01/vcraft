@@ -458,6 +458,14 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 			os.setenv(name, '1', true)
 		}
 	}
+	// The collector's heap growth is a `-D` define for the C compiler rather than a
+	// `-d` one for V: the only reader is the C pre-initialiser, and V's `$if`
+	// cannot see a `-cflags` define while the C preprocessor can.
+	gc_define := if p.gc_free_space_divisor != 1 {
+		'-DVCRAFT_GC_DIVISOR=${p.gc_free_space_divisor}'
+	} else {
+		''
+	}
 	mut args := [
 		shell_quote(opt.v),
 		'-new-compiler',
@@ -468,7 +476,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		'-path',
 		shell_quote('${opt.v_path}|@vlib'),
 		'-cflags',
-		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + opt.cflags),
+		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + gc_define + ' ' + opt.cflags),
 	]
 	ldflags := extension_ldflags(target.os, opt.ldflags)
 	if ldflags.len > 0 {

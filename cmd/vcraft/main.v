@@ -282,6 +282,9 @@ fn cmd_info(args Args) {
 	}
 	println('free-threading   ${p.free_threading}')
 	println('strip            ${p.strip}')
+	if p.gc_free_space_divisor != 1 {
+		println('gc-free-space-divisor ${p.gc_free_space_divisor}')
+	}
 	println('python           ${vcraft_project.interpreter_version("python3")}')
 	println('extension        ${vcraft_project.extension_suffix("python3")}')
 	println('platform         ${vcraft_project.platform_tag("python3")}')

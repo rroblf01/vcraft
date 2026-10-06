@@ -53,6 +53,12 @@ pub mut:
 	free_threading bool
 	// strip removes symbols from the extension.
 	strip bool
+	// gc_free_space_divisor tunes Boehm's heap growth: the collector runs once the
+	// live data exceeds the heap divided by this. V's own value is 1, which favours
+	// speed; 2 keeps roughly half a MiB less resident after large workloads for a
+	// few percent of allocation-heavy throughput (measured on macOS arm64, CPython
+	// 3.13; see benchmark/README.md).
+	gc_free_space_divisor int
 	// embed_pyc ships the project's Python files compiled rather than as source.
 	//
 	// A sourceless distribution: the wheel carries `foo.pyc` where a source install would
@@ -71,6 +77,7 @@ pub fn default_project(name string) Project {
 		license:         'MIT'
 		requires_python: '>=3.11'
 		minimum_version: '3.11'
+		gc_free_space_divisor: 1
 		classifiers: ['Programming Language :: V', 'Programming Language :: Python :: 3']
 	}
 }
@@ -114,6 +121,10 @@ pub fn load(root string) !Project {
 	p.free_threading = table.bool_of('free-threading', false)
 	p.strip = table.bool_of('strip', false)
 	p.embed_pyc = table.bool_of('embed-pyc', false)
+	p.gc_free_space_divisor = table.int_of('gc-free-space-divisor', 1)
+	if p.gc_free_space_divisor < 1 {
+		return error('gc-free-space-divisor is ${p.gc_free_space_divisor}; it must be 1 or more (1 favours speed, 2 keeps less heap resident)')
+	}
 	return p
 }
 
@@ -140,6 +151,9 @@ pub fn (p Project) render() string {
 	}
 	if p.strip {
 		out += 'strip = true\n'
+	}
+	if p.gc_free_space_divisor != 1 {
+		out += 'gc-free-space-divisor = ${p.gc_free_space_divisor}\n'
 	}
 	out += '\n[package]\n'
 	out += 'name = ${quote(p.name)}\n'
