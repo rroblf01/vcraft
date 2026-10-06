@@ -93,7 +93,8 @@ packages them as wheels, with no Rust, C++ or zlib involved.
 - **Faster imports on macOS**: vcraft starts Boehm before V with only the
   module's own `__DATA` registered as roots, instead of scanning every loaded
   image. Import falls from about 3.5 ms to about 0.6 ms and the memory kept
-  after two million calls from about 14 MiB to about 1 MiB. See
+  after two million calls from about 14 MiB to about 1 MiB. Linux builds do the
+  same with the module's own writable segments (not yet measured there). See
   `benchmark/README.md` for the full before/after tables.
 
 ### Fixed
