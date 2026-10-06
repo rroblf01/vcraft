@@ -300,6 +300,11 @@ def main() -> int:
 
         t.check("the glue is generated",
                 (project / "src" / "_vcraft_generated.v").exists())
+        # The scaffolded project never calls `vcraft.state_at`, so nothing can read the
+        # state chain and no trampoline should pay to publish it.
+        glue_text = (project / "src" / "_vcraft_generated.v").read_text()
+        t.check("an unread state chain is not published",
+                "vcraft.enter_state(" not in glue_text)
         t.check("a stub is generated",
                 (project / "python" / "mypkg_native" / "_stubs.pyi").exists(),
                 str(list((project / "python").rglob("*.pyi"))))

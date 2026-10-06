@@ -147,6 +147,10 @@ def main() -> int:
     tally.sum = 2**40
     t.equal("an i64 field holds 64 bits", tally.sum, 2**40)
     t.equal("an i64 field in the repr", repr(tally), f"Tally(sum: {2**40})")
+    tally = h.Tally()
+    t.raises("a method can panic", RuntimeError, "failed after writing",
+             lambda: tally.add_then_fail(5))
+    t.equal("a method works in place, so a write before a panic stays", tally.sum, 5)
 
     print("raw escape hatch")
     sentinel = [1, 2, 3]
@@ -372,11 +376,9 @@ def main() -> int:
             "vcraft.tuple_of_one(g_vc_type_counter)" in glue)
     t.check("the base level is published", "vcraft.publish_base(1," in glue)
     t.check("the chain is restored on the way out", "vcraft.leave_state(previous)" in glue)
-    # One per trampoline that loads a subclass's state, and none in a trampoline of a
-    # class with no base: there is no generation above it to point at. The generated state
-    # constructor is the one that does not publish, because it builds the block rather
-    # than running a method against it.
-    loaders = glue.count("mut state := BoundedCounterState{}") - 1
+    # One per trampoline that works on a subclass's state, and none in a trampoline of a
+    # class with no base: there is no generation above it to point at.
+    loaders = glue.count("mut state := unsafe { &BoundedCounterState(")
     t.check("one published level per subclass trampoline",
             glue.count("publish_base(1,") == loaders,
             f"{glue.count('publish_base(1,')} published, {loaders} trampolines")

@@ -253,8 +253,8 @@ Counter(value: 100, step: 5)
 ```
 
 A class becomes a CPython heap type created with `PyType_FromSpec`. The state lives
-in a block CPython allocates, the V struct is copied in before a method runs and
-back out after, and `tp_dealloc` frees the block.
+in a block CPython allocates, methods and accessors work on that block in place, and
+`tp_dealloc` frees the block.
 
 An `@[vc_eq]` and an `@[vc_hash]` function fill the type's comparison and hash slots.
 They are free functions rather than methods, because V allows exactly one receiver per
@@ -677,7 +677,9 @@ RuntimeError: panic in V code: substr(0, 1) out of bounds (len=0) s=
 
 A recovered panic is raised rather than reaching Python as a half-written result,
 which is what the wrapper's `error_is_set` check after the call is for. Panic state
-is thread-local in V, so this stays correct under free threading.
+is thread-local in V, so this stays correct under free threading. A method works on
+the instance in place, as a PyO3 method does, so one that panics halfway keeps the
+fields it had already written.
 
 The guard is inlined per trampoline rather than shared through a helper. V emits no
 forward declaration for a generic function called across modules, so a shared

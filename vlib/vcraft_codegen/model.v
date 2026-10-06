@@ -338,6 +338,10 @@ pub mut:
 	// the emitter reports them all at once so a project with five mistakes takes
 	// one build to fix rather than five.
 	diagnostics []Diagnostic
+	// uses_state_at is whether any source file calls `vcraft.state_at`, the only reader
+	// of the state chain. Without one, nothing can observe the chain, so the
+	// trampolines skip publishing it.
+	uses_state_at bool
 }
 
 // Diagnostic is one problem, anchored to a source position.

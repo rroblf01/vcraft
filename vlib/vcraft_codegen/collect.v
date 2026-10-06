@@ -13,6 +13,11 @@ import v.token
 // calling it per declaration would turn a build into a quadratic number of parses.
 pub fn collect_file(path string, mut p Project) {
 	lines := read_lines(path)
+	// A textual match is enough: a false positive, such as the name in a comment,
+	// only costs the publishing the trampolines did unconditionally before.
+	if !p.uses_state_at && lines.any(it.contains('state_at(')) {
+		p.uses_state_at = true
+	}
 	ast := astquery.parse(path)
 	for decl in astquery.declarations(ast) {
 		match decl.kind {

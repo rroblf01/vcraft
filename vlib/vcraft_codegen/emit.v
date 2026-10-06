@@ -412,9 +412,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 		names << name
 		w.write_string('\t${reader_expr(lookup(param.v_type), name, i, f.name, param.name, param.v_type)}\n')
 	}
-	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
-	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
-		'${c.size_fn}())\n')
+	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
 	has_value := ret != .void
@@ -467,8 +465,6 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	}
 	// The instance is written back before anything can fail, so a method that
 	// raises leaves the object consistent.
-	w.write_string('\tvcraft.store_state(voidptr(&state), vcraft.instance_storage(self), ' +
-		'${c.size_fn}())\n')
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	if has_value {
 		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
@@ -486,9 +482,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
 	w.write_string('fn ${f.trampoline}(self voidptr, closure voidptr) voidptr {\n')
-	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
-	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
-		'${c.size_fn}())\n')
+	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
 	if f.nogil {

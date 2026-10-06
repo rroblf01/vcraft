@@ -180,3 +180,4 @@ class Countdown:
 """
 class Tally:
     sum: int
+    def add_then_fail(self, by: int) -> None: ...

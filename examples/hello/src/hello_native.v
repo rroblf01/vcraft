@@ -520,3 +520,13 @@ mut:
 pub fn new_tally() &Tally {
 	return &Tally{}
 }
+
+// add_then_fail adds `by` to the sum and then panics.
+//
+// A method works on the instance in place, as a PyO3 method does, so the write that
+// happened before the panic stays.
+@[vc_methods]
+pub fn (mut t Tally) add_then_fail(by i64) {
+	t.sum += by
+	panic('failed after writing')
+}
