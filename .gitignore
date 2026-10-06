@@ -50,3 +50,6 @@ Thumbs.db
 
 # generated glue and stubs, rebuilt by `vcraft build`
 /bin/
+
+
+*.md
