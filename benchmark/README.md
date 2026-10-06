@@ -145,7 +145,7 @@ Por prioridad. Cada punto está reproducido en este benchmark.
 4. ✅ *Corregido en el paso 1.* **Un campo `i64` en una clase no compila.** El getter y el `__repr__` generados llaman a
    `to_py_int` y `repr_int`, que solo aceptan `int`. Con este V, `int` ya es de 64 bits, así
    que basta con aceptar ambos tipos.
-5. **`sum_floats` es más lento que Python puro**, 2,1× por detrás de PyO3:
+5. ✅ *Corregido en el paso 4.* **`sum_floats` es más lento que Python puro**, 2,1× por detrás de PyO3:
    `from_py_f64_seq_arg` hace `obj.item(k)` y comprobaciones por elemento, y añade al
    resultado con `<<` sobre un array del GC. Leer la lista con `PySequence_Fast` y
    `PyFloat_AsDouble` sobre los ítems directamente es lo habitual.
@@ -199,6 +199,7 @@ entre ejecuciones (±2 %), así que la columna de referencia es la de la tabla i
 | 1. devolver listas y objetos | 40 ns | 29 ns | 970 µs | 1,09 ms | 3,76 ms | **0** |
 | 2. coste fijo por llamada | **22 ns** | 29 ns | 942 µs | 1,10 ms | 3,77 ms | 0 |
 | 3. métodos sobre el puntero | 23 ns | **16 ns** | 961 µs | 1,10 ms | 3,78 ms | 0 |
+| 4. leer secuencias | 22 ns | 16 ns | **153 µs** | 1,10 ms | 3,78 ms | 0 |
 
 **Paso 1** (puntos 1–4 y 6). Ya se puede devolver `[]T`, `vcraft.PyObj` y `voidptr`, y los
 campos `i64` compilan. La fuga desaparece: lo que queda tras `make_range` son 18,5 MiB del
@@ -224,3 +225,13 @@ para `vcraft.state_at` (una reserva con `PyMem_Malloc` y dos copias por llamada)
 emite si algún fichero del módulo llama a `state_at`. `increment` pasa de 29 a **16 ns**,
 por delante de PyO3 (19 ns). Contrapartida, la misma que en PyO3: un método que hace
 `panic` a medias conserva lo que ya había escrito.
+
+**Paso 4.** Al medir apareció una fuga que el benchmark no veía: `PyObj.item` usaba
+`PySequence_GetItem`, que devuelve una referencia nueva, y quien lo llamaba la trataba
+como prestada. Cada elemento leído de una lista pasada como `[]T` quedaba con una
+referencia de más, así que los elementos de una lista temporal nunca se liberaban. Ahora
+`item` usa `PyList_GetItem`/`PyTuple_GetItem`, y el benchmark tiene un escenario que pasa
+una lista nueva en cada llamada para detectarlo. Además, `[]int`, `[]i64` y `[]f64`
+convierten en C, en una sola pasada, los elementos que son `int` o `float` exactos;
+el resto sigue por el camino general. `sum_floats` pasa de 961 a **153 µs**, tres veces
+más rápido que PyO3 (451 µs).

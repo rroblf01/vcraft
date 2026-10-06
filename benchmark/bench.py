@@ -61,6 +61,9 @@ MEMORY = {
     "greet x2M": ("m.greet('world')", 2_000_000),
     "make_range(100k) x200": ("m.make_range(100_000)", 200),
     "count_primes(10M) x5": ("m.count_primes(10_000_000)", 5),
+    # A fresh list on every call, so a reader that keeps a reference to each item it
+    # reads leaks the whole list. The speed workload reuses one list and cannot see it.
+    "sum_floats(new 10k list) x500": ("m.sum_floats([i * 0.5 for i in range(10_000)])", 500),
     "Counter() x1M": ("m.Counter()", 1_000_000),
 }
 

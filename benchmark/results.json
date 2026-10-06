@@ -8,15 +8,15 @@
     "pyo3": {
       "sizes": {
         "wheel_file": "bench_pyo3-0.1.0-cp313-cp313-macosx_11_0_arm64.whl",
-        "wheel": 225875,
+        "wheel": 225878,
         "extension": 562816,
         "extension_stripped": 423504,
         "files_in_wheel": 6
       },
-      "build_s": 5.352458375000424,
+      "build_s": 5.2456926249997196,
       "import": {
-        "first_s": 0.1593871670002045,
-        "warm_s": 0.000517375000526954,
+        "first_s": 0.16090941600032238,
+        "warm_s": 0.0005081250001239823,
         "rss_bytes": 311296
       },
       "speed": {
@@ -31,34 +31,39 @@
           "add 2**63 overflows": "ok"
         },
         "speed_ns": {
-          "add": 28.813435399979426,
-          "fib(25)": 122420.52074998357,
-          "count_primes(1e6)": 2030113.1249971152,
-          "sum_floats(100k)": 452212.62499944714,
-          "make_range(100k)": 825816.8749998731,
-          "greet": 59.891645799962134,
-          "Counter()": 36.544289550010944,
-          "c.increment()": 19.32762395001646
+          "add": 28.77187084995967,
+          "fib(25)": 121683.64600006498,
+          "count_primes(1e6)": 2031104.375000723,
+          "sum_floats(100k)": 450602.54100008024,
+          "make_range(100k)": 824148.5830003512,
+          "greet": 60.317937500076376,
+          "Counter()": 35.84296670001095,
+          "c.increment()": 19.091884374984147
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 28508160,
-          "kept": 16384,
+          "peak": 28491776,
+          "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 33374208,
+          "peak": 33177600,
           "kept": -442368,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 38535168,
+          "peak": 38633472,
           "kept": 0,
           "leak": 0
         },
+        "sum_floats(new 10k list) x500": {
+          "peak": 28852224,
+          "kept": 327680,
+          "leak": 0
+        },
         "Counter() x1M": {
-          "peak": 28540928,
+          "peak": 28377088,
           "kept": 0,
           "leak": 0
         }
@@ -67,16 +72,16 @@
     "vcraft": {
       "sizes": {
         "wheel_file": "bench_vcraft-0.1.0-cp313-cp313-macosx_11_0_arm64.whl",
-        "wheel": 192689,
-        "extension": 414272,
-        "extension_stripped": 359192,
+        "wheel": 193619,
+        "extension": 414672,
+        "extension_stripped": 359256,
         "files_in_wheel": 4
       },
-      "build_s": 2.114935915999922,
+      "build_s": 2.1207438750006986,
       "import": {
-        "first_s": 0.11915141699955711,
-        "warm_s": 0.003478917000393267,
-        "rss_bytes": 1130496
+        "first_s": 0.11903616700055863,
+        "warm_s": 0.003478791999441455,
+        "rss_bytes": 1146880
       },
       "speed": {
         "correctness": {
@@ -90,34 +95,39 @@
           "add 2**63 overflows": "ok"
         },
         "speed_ns": {
-          "add": 22.5569833499776,
-          "fib(25)": 120002.46874981713,
-          "count_primes(1e6)": 3784072.0849999343,
-          "sum_floats(100k)": 961438.4590004192,
-          "make_range(100k)": 1097858.1249992203,
-          "greet": 34.529608349976115,
-          "Counter()": 34.08039165001355,
-          "c.increment()": 15.879751050010782
+          "add": 22.481900000002497,
+          "fib(25)": 119323.4897500588,
+          "count_primes(1e6)": 3777743.539999392,
+          "sum_floats(100k)": 152700.58350006366,
+          "make_range(100k)": 1097504.89750013,
+          "greet": 34.51496249999764,
+          "Counter()": 33.926208350021625,
+          "c.increment()": 15.902282299998662
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 43679744,
+          "peak": 43745280,
           "kept": 14450688,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 53919744,
-          "kept": 19349504,
+          "peak": 53936128,
+          "kept": 19382272,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 55197696,
-          "kept": 15859712,
+          "peak": 44695552,
+          "kept": 5357568,
           "leak": 0
         },
+        "sum_floats(new 10k list) x500": {
+          "peak": 46006272,
+          "kept": 16498688,
+          "leak": 16384
+        },
         "Counter() x1M": {
-          "peak": 43646976,
+          "peak": 43761664,
           "kept": 13484032,
           "leak": 966656
         }
@@ -126,15 +136,15 @@
     "zig-maturin": {
       "sizes": {
         "wheel_file": "bench_zig-0.1.0-cp313-cp313-macosx_11_0_arm64.whl",
-        "wheel": 190433,
+        "wheel": 190436,
         "extension": 494096,
         "extension_stripped": 410096,
         "files_in_wheel": 4
       },
-      "build_s": 8.560468583000329,
+      "build_s": 8.411427332999665,
       "import": {
-        "first_s": 0.08093454199934058,
-        "warm_s": 0.0005784580007457407,
+        "first_s": 0.10815545799960091,
+        "warm_s": 0.0005764589996033465,
         "rss_bytes": 147456
       },
       "speed": {
@@ -149,34 +159,39 @@
           "add 2**63 overflows": "TypeError: expected int, got int"
         },
         "speed_ns": {
-          "add": 202.76733350010545,
-          "fib(25)": 158982.07300006106,
-          "count_primes(1e6)": 1481537.917500191,
-          "sum_floats(100k)": 496204.0840000555,
-          "make_range(100k)": 836911.708000116,
-          "greet": 278.89835449968814,
-          "Counter()": 202.34925000022486,
-          "c.increment()": 197.49182300006396
+          "add": 202.57739550015685,
+          "fib(25)": 164699.3542499331,
+          "count_primes(1e6)": 1438884.5824987583,
+          "sum_floats(100k)": 495343.2080001221,
+          "make_range(100k)": 842142.0839995336,
+          "greet": 276.7057915002624,
+          "Counter()": 199.35833299996375,
+          "c.increment()": 194.5685727498585
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 28508160,
-          "kept": 32768,
+          "peak": 28393472,
+          "kept": 16384,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 32473088,
-          "kept": -425984,
+          "peak": 32292864,
+          "kept": -442368,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 38453248,
+          "peak": 38354944,
           "kept": 0,
           "leak": 0
         },
+        "sum_floats(new 10k list) x500": {
+          "peak": 28868608,
+          "kept": 409600,
+          "leak": 0
+        },
         "Counter() x1M": {
-          "peak": 28442624,
+          "peak": 28295168,
           "kept": 0,
           "leak": 0
         }
@@ -185,8 +200,8 @@
     "python": {
       "sizes": {},
       "import": {
-        "first_s": 7.687499964958988e-05,
-        "warm_s": 6.333399960567476e-05,
+        "first_s": 7.412499962811125e-05,
+        "warm_s": 6.695799947920023e-05,
         "rss_bytes": 0
       },
       "speed": {
@@ -201,34 +216,39 @@
           "add 2**63 overflows": "n/a"
         },
         "speed_ns": {
-          "add": 15.491166674996746,
-          "fib(25)": 5154285.83999892,
-          "count_primes(1e6)": 42386741.70001104,
-          "sum_floats(100k)": 777556.0830004906,
-          "make_range(100k)": 776422.7090001442,
-          "greet": 32.56256664999455,
-          "Counter()": 37.34543749997101,
-          "c.increment()": 25.286429150037293
+          "add": 15.706242725013906,
+          "fib(25)": 5201924.579996558,
+          "count_primes(1e6)": 42180425.00006049,
+          "sum_floats(100k)": 776605.7919998275,
+          "make_range(100k)": 779890.0830002822,
+          "greet": 32.784308349982894,
+          "Counter()": 38.52496039999096,
+          "c.increment()": 25.80462500000067
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 28262400,
+          "peak": 28098560,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 32243712,
+          "peak": 32440320,
           "kept": -425984,
           "leak": -16384
         },
         "count_primes(10M) x5": {
-          "peak": 38191104,
+          "peak": 38207488,
           "kept": 0,
           "leak": 0
         },
+        "sum_floats(new 10k list) x500": {
+          "peak": 28639232,
+          "kept": 393216,
+          "leak": 0
+        },
         "Counter() x1M": {
-          "peak": 28196864,
+          "peak": 28426240,
           "kept": 0,
           "leak": 0
         }
