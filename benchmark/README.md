@@ -152,10 +152,18 @@ Por prioridad. Cada punto está reproducido en este benchmark.
 6. ✅ *Hecho en el paso 1, sin efecto medible.* **`to_py_list` crea la lista con
    `PyList_New(0)` y `PyList_Append`.** Reservarla con su tamaño es lo que hacen PyO3 y
    pyo3zig, pero la diferencia en `make_range` está en el punto 7.
-7. **Coste del GC.** Hay 3,5 ms de import, frente a 0,5 ms, y un heap mínimo de 13–15 MiB.
-   Además, las reservas grandes van 2,8× más lentas que con `calloc` (3,76 frente a 1,34 ms
-   en `count_primes`). Conviene documentarlo, o dar una opción en `vcraft.toml` para
-   reservar fuera del GC los buffers que no contienen punteros.
+7. ✅ *Corregido en el paso 6 (import y memoria); el diagnóstico estaba mal.* **Coste del
+   GC.** Había 3,5 ms de import, frente a 0,5 ms, y un heap mínimo de 13–15 MiB. Además,
+   las reservas grandes iban 2,8× más lentas que con `calloc` (3,76 frente a 1,34 ms en
+   `count_primes`). Los 3 ms y los 13 MiB venían de que Boehm escaneaba todas las imágenes
+   del proceso (paso 6). Lo de `calloc` no era el GC: el experimento usaba un puntero
+   crudo, que se salta las llamadas por elemento con las que V compila `a[i] = x` (paso 5).
+8. **Pendiente, en V:** el compilador nuevo de V convierte cada `<<` y cada `a[i] = x` en
+   una llamada con `memcpy` de un elemento, y `@[direct_array_access]` no lo evita en las
+   escrituras. Es lo que queda entre vcraft y PyO3 en `count_primes` y `make_range`.
+9. **Pendiente:** `GC_set_free_space_divisor(1)`, el valor que fija V, hace crecer el heap
+   antes que recolectar. Con 2 se retienen algo menos de memoria a cambio de un 0–3 % de
+   velocidad; no lo he cambiado, pero vcraft podría ofrecerlo como opción.
 
 ### zig-maturin
 
@@ -200,6 +208,15 @@ entre ejecuciones (±2 %), así que la columna de referencia es la de la tabla i
 | 2. coste fijo por llamada | **22 ns** | 29 ns | 942 µs | 1,10 ms | 3,77 ms | 0 |
 | 3. métodos sobre el puntero | 23 ns | **16 ns** | 961 µs | 1,10 ms | 3,78 ms | 0 |
 | 4. leer secuencias | 22 ns | 16 ns | **153 µs** | 1,10 ms | 3,78 ms | 0 |
+| 5. listas numéricas en C | 22 ns | 16 ns | 152 µs | 1,03 ms | 3,77 ms | 0 |
+| 6. raíces del GC (macOS) | 22 ns | 16 ns | **133 µs** | **988 µs** | 3,70 ms | 0 |
+
+Memoria e import de vcraft en cada paso (PyO3: 0,50 ms de import, 304 KiB, 0 retenido):
+
+| paso | `import` | RSS del `import` | retenido tras `greet` ×2M | pico `greet` ×2M |
+|---|---|---|---|---|
+| inicial | 3,50 ms | 1.088 KiB | 13,8 MiB | 41,8 MiB |
+| 6. raíces del GC (macOS) | **0,61 ms** | 1.120 KiB | **1,0 MiB** | **29,0 MiB** |
 
 **Paso 1** (puntos 1–4 y 6). Ya se puede devolver `[]T`, `vcraft.PyObj` y `voidptr`, y los
 campos `i64` compilan. La fuga desaparece: lo que queda tras `make_range` son 18,5 MiB del
@@ -235,3 +252,33 @@ una lista nueva en cada llamada para detectarlo. Además, `[]int`, `[]i64` y `[]
 convierten en C, en una sola pasada, los elementos que son `int` o `float` exactos;
 el resto sigue por el camino general. `sum_floats` pasa de 961 a **153 µs**, tres veces
 más rápido que PyO3 (451 µs).
+
+**Paso 5.** Una lista devuelta de `[]i64`, `[]int` o `[]f64` se construye en C en una
+sola pasada, con `PyList_SET_ITEM`, en vez de llamar a una función por elemento.
+`make_range` baja de 1,10 a 1,03 ms; la conversión ya cuesta lo mismo que
+`list(range(n))`. Al perfilar apareció la causa real de lo que queda, y **corrige lo que
+decía el punto 7**: no es el GC. El compilador nuevo de V convierte cada `<<` y cada
+asignación `a[i] = x` en una llamada a función que copia un elemento con `memcpy`, y
+`@[direct_array_access]` solo quita la comprobación en las lecturas. Eso es lo que separa
+`count_primes` y `make_range` de PyO3, y está en V, no en vcraft.
+
+**Paso 6.** En macOS, el GC de Boehm registraba como raíces los datos escribibles de
+**todas** las imágenes del proceso (unas 400 en un Python normal), con un callback por
+imagen. Eso costaba unos 3 ms de cada import y hacía que cada recolección recorriera los
+datos de todas esas bibliotecas, de modo que sus páginas pasaban a contar en el RSS. Ahora
+vcraft arranca el GC antes que V, sin ese registro, y registra a mano solo el segmento
+`__DATA` del módulo, que es donde V guarda sus globales. El import pasa de 3,5 a
+**0,61 ms**, y la memoria retenida tras 2 millones de llamadas, de 13,8 a **1,0 MiB**: lo
+que parecía heap del GC eran páginas de bibliotecas del sistema. El código que reserva
+mucho también va más rápido (`sum_floats` 153 → 133 µs; un bucle que solo concatena
+strings, 1,8×). Linux no cambia: allí Boehm registra las bibliotecas de otra forma y no lo
+he medido.
+
+### Estado tras el paso 6
+
+vcraft gana a PyO3 en `add` (22 frente a 29 ns), `fib`, `sum_floats` (133 frente a
+451 µs), `greet` (34 frente a 60 ns), `Counter()` e `increment` (16 frente a 19 ns), y en
+tamaño de wheel y tiempo de build. Pierde en `count_primes` (3,70 frente a 2,02 ms) y en
+`make_range` (988 frente a 829 µs), por la forma en que V compila la escritura en arrays.
+En memoria queda por encima: unos 800 KiB más al importar (el heap inicial y las
+estructuras del GC) y alrededor de 1–2 MiB retenidos tras cargas grandes.
