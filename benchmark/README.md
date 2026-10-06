@@ -221,6 +221,7 @@ entre ejecuciones (±2 %), así que la columna de referencia es la de la tabla i
 | 4. leer secuencias | 22 ns | 16 ns | **153 µs** | 1,10 ms | 3,78 ms | 0 |
 | 5. listas numéricas en C | 22 ns | 16 ns | 152 µs | 1,03 ms | 3,77 ms | 0 |
 | 6. raíces del GC (macOS) | 22 ns | 16 ns | **133 µs** | **988 µs** | 3,70 ms | 0 |
+| verificación tras diagnósticos, divisor, lectores y raíces Linux | 23 ns | 16 ns | 135 µs | 1,00 ms | 3,73 ms | 0 |
 
 Memoria e import de vcraft en cada paso (PyO3: 0,50 ms de import, 304 KiB, 0 retenido):
 
@@ -228,6 +229,7 @@ Memoria e import de vcraft en cada paso (PyO3: 0,50 ms de import, 304 KiB, 0 ret
 |---|---|---|---|---|
 | inicial | 3,50 ms | 1.088 KiB | 13,8 MiB | 41,8 MiB |
 | 6. raíces del GC (macOS) | **0,61 ms** | 1.120 KiB | **1,0 MiB** | **29,0 MiB** |
+| verificación tras diagnósticos, divisor, lectores y raíces Linux | 0,63 ms | 1.104 KiB | 1,0 MiB | 29,2 MiB |
 
 **Paso 1** (puntos 1–4 y 6). Ya se puede devolver `[]T`, `vcraft.PyObj` y `voidptr`, y los
 campos `i64` compilan. La fuga desaparece: lo que queda tras `make_range` son 18,5 MiB del
