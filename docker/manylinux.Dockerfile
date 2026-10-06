@@ -15,7 +15,8 @@
 #
 #   docker build -f docker/manylinux.Dockerfile -t vcraft-manylinux:local .
 #   docker run --rm -v "$PWD:/work" -w /work vcraft-manylinux:local \
-#     vcraft build --target linux-x86_64-gnu --manylinux 2_28
+#     vcraft build --target linux-x86_64-gnu --manylinux 2_28 \
+#       --interpreter /opt/python/cp314-cp314/bin/python
 #
 # The base defaults to x86_64. For aarch64 pass
 # `--build-arg BASE=quay.io/pypa/manylinux_2_28_aarch64` on an aarch64 host, or
@@ -33,6 +34,10 @@ ARG V_COMMIT=0137eb5d8ebc5d183259309ed08ea06ba9bc27d6
 # predate, and the build fails on the compiler's own sources with errors about the
 # wrong strictness.
 ARG VC_COMMIT=8af812feb76c678abd86a8e682fd9ab2790e519c
+# tinycc moves on its `mob` branch with no releases, so it is pinned too: an unpinned
+# clone makes the image depend on the day it was built, and a pinned layer is one a
+# build cache can keep.
+ARG TCC_COMMIT=43c7708b85681a2fd4451c8a541af4494a8919b2
 
 # git and make for the V source build; the C toolchain is already in the base image.
 RUN yum install -y git make 2>/dev/null || microdnf install -y git make
@@ -56,22 +61,22 @@ RUN git init -q /opt/v-src \
 # itself passes when it compiles the amalgamation: thread-local allocation needs
 # GC_THREADS, and the prebuilt archives this replaces were built with thread-local
 # allocation.
-RUN git clone https://repo.or.cz/tinycc.git /opt/tinycc \
-    && cd /opt/tinycc \
+RUN git clone -q https://repo.or.cz/tinycc.git /opt/tinycc \
+    && cd /opt/tinycc && git checkout -q "${TCC_COMMIT}" \
     && ./configure \
         --prefix=/opt/v-src/thirdparty/tcc \
         --bindir=/opt/v-src/thirdparty/tcc \
         --crtprefix=/opt/v-src/thirdparty/tcc/lib:/usr/lib/x86_64-linux-gnu:/usr/lib64:/usr/lib:/lib/x86_64-linux-gnu:/lib:/lib64 \
         --libpaths=/opt/v-src/thirdparty/tcc/lib/tcc:/opt/v-src/thirdparty/tcc/lib:/usr/lib/x86_64-linux-gnu:/usr/lib64:/usr/lib:/lib/x86_64-linux-gnu:/lib:/lib64:/usr/local/lib/x86_64-linux-gnu:/usr/local/lib \
         --cc=gcc --extra-cflags=-O2 --config-bcheck=yes --config-backtrace=yes \
-    && make -j2 && make install \
+    && make -j"$(nproc)" && make install \
     && mkdir -p /opt/v-src/thirdparty/tcc/lib \
     && gcc -O2 -fPIC -DGC_THREADS=1 -DTHREAD_LOCAL_ALLOC=1 -DALL_INTERIOR_POINTERS=1 \
         -DGC_BUILTIN_ATOMIC=1 -I/opt/v-src/thirdparty/libgc/include \
         -c /opt/v-src/thirdparty/libgc/gc.c -o /opt/v-src/thirdparty/tcc/lib/libgc.o \
     && ar rcs /opt/v-src/thirdparty/tcc/lib/libgc.a /opt/v-src/thirdparty/tcc/lib/libgc.o \
     && rm /opt/v-src/thirdparty/tcc/lib/libgc.o
-RUN cd /opt/v-src && make local=1 -j2 \
+RUN cd /opt/v-src && make local=1 -j"$(nproc)" \
     && ln -s /opt/v-src/v /usr/local/bin/v \
     && v version
 

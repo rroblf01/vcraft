@@ -43,7 +43,7 @@ RUN git init -q /opt/v-src \
 # libc itself and links the system's Boehm (`gc-dev` above) instead of the bundled
 # archive, so there is nothing native to build. V falls back from the missing tcc to
 # the system compiler with a warning, which is noise in a build log but not an error.
-RUN cd /opt/v-src && make local=1 -j2 \
+RUN cd /opt/v-src && make local=1 -j"$(nproc)" \
     && ln -s /opt/v-src/v /usr/local/bin/v \
     && v version
 
