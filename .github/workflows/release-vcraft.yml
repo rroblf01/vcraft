@@ -15,6 +15,8 @@ concurrency:
 
 permissions:
   contents: write
+  # Read the image build cache in ghcr.io.
+  packages: read
 
 # The V compiler is built from source at a pinned commit on every runner: no V
 # release is newer than the flags vcraft passes, so a release binary fails every
@@ -45,7 +47,17 @@ jobs:
         with:
           python-version: "3.14"
 
+      # Same cache as ci.yml: a tag can restore what the default branch saved,
+      # so a release normally skips the five-minute compiler build.
+      - name: restore the V compiler
+        id: v-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/v-src
+          key: v-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+
       - name: build the V compiler from source
+        if: steps.v-cache.outputs.cache-hit != 'true'
         run: |
           git init -q /tmp/v-src
           cd /tmp/v-src
@@ -56,7 +68,9 @@ jobs:
           (cd vc && git checkout -q "$VC_COMMIT")
           make fresh_tcc
           make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
-          echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      - name: put V on PATH
+        run: echo "/tmp/v-src" >> "$GITHUB_PATH"
 
       - name: build vcraft
         # The macOS wheel is tagged `macosx_11_0_arm64`, and without a deployment
@@ -79,11 +93,37 @@ jobs:
       # again inside the manylinux_2_28 image instead, the one the images publish,
       # so its `manylinux_2_28` tag is true. PyPI refuses a plain `linux_x86_64`
       # tag outright, so this is also what makes the upload possible at all.
+      - name: set up buildx
+        if: runner.os == 'Linux'
+        uses: docker/setup-buildx-action@v3
+
+      # Reads the layer cache release-images.yml writes to the registry, so the
+      # tinycc, Boehm and V layers come from it and only vcraft rebuilds. Read
+      # only: the image release owns that cache.
+      - name: log in to ghcr.io
+        if: runner.os == 'Linux'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: rebuild the Linux binary in the manylinux image
         if: runner.os == 'Linux'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/manylinux.Dockerfile
+          build-args: |
+            BASE=quay.io/pypa/manylinux_2_28_x86_64
+            VCRAFT_REF=${{ github.sha }}
+          load: true
+          tags: vcraft-release
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/vcraft-manylinux:buildcache-x86_64
+
+      - name: take the binary out of the image
+        if: runner.os == 'Linux'
         run: |
-          docker build -f docker/manylinux.Dockerfile \
-            --build-arg VCRAFT_REF="${{ github.sha }}" -t vcraft-release .
           id="$(docker create vcraft-release)"
           docker cp "$id:/src/vcraft/bin/vcraft" bin/vcraft
           docker rm "$id"
