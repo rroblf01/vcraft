@@ -326,3 +326,27 @@ tamaño de wheel y tiempo de build. Pierde en `count_primes` (3,70 frente a 2,02
 `make_range` (988 frente a 829 µs), por la forma en que V compila la escritura en arrays.
 En memoria queda por encima: unos 800 KiB más al importar (el heap inicial y las
 estructuras del GC) y alrededor de 1–2 MiB retenidos tras cargas grandes.
+
+### Cargas nuevas: `checksum` y `expect_positive`
+
+Dos caminos que las siete cargas no tocaban: el protocolo búfer (`bytes` sin
+copiar) y la ida y vuelta de una excepción por llamada.
+
+- `checksum(bytes de 100k)`: PyO3 1,7 µs, vcraft 4,8 µs, zig 25,7 µs. Al
+  añadirla apareció un bug real: `buffer_bytes` reservaba un `[]u8` del tamaño
+  del argumento y luego sobrescribía su `data` con el puntero del exportador,
+  abandonando un bloque del GC por llamada (el perfil mostraba un 26 % en
+  `GC_collect_or_expand`). Corregido construyendo la cabecera desde un literal
+  vacío; el escenario de memoria `checksum(new 100kB) x500` queda en 0,0
+  retenido y 0,0 fuga en los tres. De lo que queda (2,85×), unos 40 ns fijos
+  son la vista (`PyMem_Calloc` + `GetBuffer` + `Release` por llamada; un atajo
+  para `bytes` exactos los quitaría) y el resto es el loop: suma con
+  ensanchado `u64(b)` frente al SIMD de Rust.
+- `expect_positive(-1)` con `try`: vcraft 93 ns, por delante de PyO3
+  (112 ns), Python (124 ns) y zig (277 ns).
+- En corrección, las tres pasan las tres comprobaciones nuevas. zig-maturin
+  sigue fallando `add 2**63` con `TypeError` en vez de `OverflowError`.
+- Nota sobre el `kept` de `make_range`: oscila entre 1,1 y 2,5 MiB según el
+  build (medido 1,1, 1,8, 1,9 y 2,5 con fuga siempre 0,0), también sin las
+  funciones nuevas. Es holgura del heap con divisor 1, no una fuga ni una
+  regresión de ningún cambio concreto.
