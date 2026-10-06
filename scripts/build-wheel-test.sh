@@ -7,8 +7,11 @@ out_dir="${1:-$root/build}"
 
 ./scripts/build-example.sh hello hello_native
 
-extension="$(find "$root/examples/hello/python" -maxdepth 1 -name 'hello_native*.so' -print -quit)"
-if [ -z "$extension" ]; then
+# The exact suffix of this interpreter: a glob would pick up an extension built
+# earlier by another Python version and package it under this one's tag.
+suffix="$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX"))')"
+extension="$root/examples/hello/python/hello_native$suffix"
+if [ ! -f "$extension" ]; then
 	echo "no extension was built" >&2
 	exit 1
 fi
@@ -16,4 +19,7 @@ fi
 mkdir -p "$out_dir"
 "$root/scripts/vcraft-v.sh" -enable-globals -o "$out_dir/build_wheel" \
 	-path "$root/vlib|@vlib" "$root/tests/wheel"
-"$out_dir/build_wheel" --binary "$extension" --out "$out_dir"
+# The tag names the interpreter that built the extension, so the wheel installs on
+# exactly that one, whichever version the suite runs under.
+tag="$(python3 "$root/tests/wheel/wheel_tag.py")"
+"$out_dir/build_wheel" --binary "$extension" --out "$out_dir" --tag "$tag"

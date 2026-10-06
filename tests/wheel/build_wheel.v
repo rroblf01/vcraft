@@ -9,6 +9,7 @@ import vcraft_wheel
 fn main() {
 	mut binary_path := ''
 	mut out_dir := ''
+	mut tag := ''
 	mut args := os.args[1..]
 	for i in 0 .. args.len {
 		if args[i] == '--binary' && i + 1 < args.len {
@@ -17,9 +18,12 @@ fn main() {
 		if args[i] == '--out' && i + 1 < args.len {
 			out_dir = args[i + 1]
 		}
+		if args[i] == '--tag' && i + 1 < args.len {
+			tag = args[i + 1]
+		}
 	}
-	if binary_path == '' || out_dir == '' {
-		eprintln('usage: build_wheel --binary FILE --out DIR')
+	if binary_path == '' || out_dir == '' || tag == '' {
+		eprintln('usage: build_wheel --binary FILE --out DIR --tag TAG')
 		exit(1)
 	}
 	binary := os.read_file(binary_path) or {
@@ -33,17 +37,16 @@ fn main() {
 		module:       'hello_native'
 		extension:    name
 		binary:       binary.bytes()
-		tags:         ['cp314-cp314-manylinux_2_17_x86_64']
+		tags:         [tag]
 		summary:      'A demo package built by vcraft'
 		license:      'MIT'
-		requires_python: '>=3.12'
+		requires_python: '>=3.11'
 		classifiers: ['Programming Language :: V', 'Programming Language :: Python :: 3']
 	}) or {
 		eprintln('build failed: ' + err.msg())
 		exit(1)
 	}
-	wheel := vcraft_wheel.wheel_filename('vcraft-demo', '0.1.0',
-		['cp314-cp314-manylinux_2_17_x86_64'])
+	wheel := vcraft_wheel.wheel_filename('vcraft-demo', '0.1.0', [tag])
 	target := out_dir.trim_right('/') + '/' + wheel
 	os.write_file(target, out.bytestr()) or {
 		eprintln('cannot write ${target}')

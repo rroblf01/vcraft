@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Tests for the vcraft runtime, driven through a hand-written extension.
 
-Build the extension first, then run this with nothing but the standard library:
+It builds the extension itself through `scripts/build-runtime-tests.sh`, like the
+other suites, and needs nothing but the standard library:
 
-    ./scripts/build-runtime-tests.sh
     python3 tests/runtime/test_runtime.py
 """
 
+import subprocess
 import sys
 import sysconfig
 from pathlib import Path
@@ -53,10 +54,20 @@ class Suite:
             self.check(label, False, f"returned {result!r}, no exception")
 
 
+def build() -> None:
+    """Rebuild every time: a stale module would test yesterday's runtime."""
+    print("building the runtime test extension")
+    proc = subprocess.run([str(ROOT / "scripts" / "build-runtime-tests.sh")],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise SystemExit(f"build failed:\n{proc.stdout}\n{proc.stderr}")
+
+
 def main() -> int:
+    build()
     extension = find_extension()
     if extension is None:
-        print(f"missing {BUILD}/{MODULE}*.so; run scripts/build-runtime-tests.sh first")
+        print(f"missing {BUILD}/{MODULE}*.so after a successful build")
         return 1
 
     sys.path.insert(0, str(BUILD))

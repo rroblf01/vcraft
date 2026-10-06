@@ -625,7 +625,10 @@ def main() -> int:
         sizes = {}
         include = sysconfig.get_paths()["include"]
         libdir = sysconfig.get_config_var("LIBDIR") or "/usr/lib"
-        pylib = f"python{sys.version_info[0]}.{sys.version_info[1]}"
+        # LDVERSION carries the ABI flags: `3.13t` names `libpython3.13t` on a
+        # free-threaded interpreter, where `3.13` would link the wrong library.
+        pylib = "python" + (sysconfig.get_config_var("LDVERSION")
+                            or f"{sys.version_info[0]}.{sys.version_info[1]}")
         for label, extra in (("gil", []), ("free-threaded", ["-d", "vcraft_free_threaded"])):
             out = mirror_tmp / f"mirror-{label}"
             # Linked against libpython: the probe only prints a `sizeof`, but the
@@ -637,14 +640,21 @@ def main() -> int:
                  "-enable-globals", "-o", str(out),
                  "-path", f"{ROOT}/vlib|@vlib",
                  "-cflags", f"-I{include}",
-                 "-ldflags", f"-L{libdir} -l{pylib}",
+                 # The rpath because a libpython outside the loader's default
+                 # paths (a uv or setup-python interpreter) otherwise stops the
+                 # probe from starting, and it prints nothing at all.
+                 "-ldflags", f"-L{libdir} -l{pylib} -Wl,-rpath,{libdir}",
                  *extra, str(mirror_tmp)],
                 capture_output=True, text=True)
             t.check(f"the {label} mirror compiles", proc.returncode == 0,
                     (proc.stderr or proc.stdout).strip()[-300:])
             if proc.returncode == 0:
                 probe = subprocess.run([str(out)], capture_output=True, text=True)
-                sizes[label] = probe.stdout.strip()
+                t.check(f"the {label} mirror probe runs",
+                        probe.returncode == 0 and probe.stdout.strip().isdigit(),
+                        (probe.stderr or probe.stdout).strip()[-300:])
+                if probe.returncode == 0 and probe.stdout.strip().isdigit():
+                    sizes[label] = probe.stdout.strip()
         if len(sizes) == 2:
             t.check("the free-threaded header is 16 bytes wider",
                     int(sizes["free-threaded"]) - int(sizes["gil"]) == 16,

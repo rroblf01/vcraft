@@ -18,12 +18,22 @@ import shutil
 import stat
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import venv
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+
+# The tag of the machine running the suite, e.g. `linux_x86_64` or
+# `macosx_11_0_arm64`. pip refuses a wheel tagged for another platform, so a
+# hard-coded Linux tag fails the install step on every other host.
+PLATFORM = sysconfig.get_platform().replace("-", "_").replace(".", "_")
+
+
+class _Abort(Exception):
+    """Stops the suite after a failure the remaining checks depend on."""
 
 
 def load_packer():
@@ -85,7 +95,7 @@ def main() -> int:
         out = tmp / "dist"
         out.mkdir()
         wheel = out / "w.whl"
-        wheel.write_bytes(packer.build_wheel("0.1.0", "linux_x86_64",
+        wheel.write_bytes(packer.build_wheel("0.1.0", PLATFORM,
                                              binary, vlib))
         with zipfile.ZipFile(wheel) as z:
             names = z.namelist()
@@ -108,9 +118,11 @@ def main() -> int:
             t.check("metadata names the version",
                     "Name: vcraft" in meta and "Version: 0.1.0" in meta,
                     meta[:120])
+            t.check("metadata names the oldest supported Python",
+                    "Requires-Python: >=3.11" in meta, meta[:200])
             tag = z.read("vcraft-0.1.0.dist-info/WHEEL").decode()
             t.check("the wheel tag names the platform",
-                    "Tag: py3-none-linux_x86_64" in tag, tag)
+                    f"Tag: py3-none-{PLATFORM}" in tag, tag)
             entry_points = z.read(
                 "vcraft-0.1.0.dist-info/entry_points.txt").decode()
             t.check("a console script is declared",
@@ -150,7 +162,7 @@ def main() -> int:
             t.check("hashes and sizes verify", ok)
 
         print("determinism")
-        again = packer.build_wheel("0.1.0", "linux_x86_64", binary, vlib)
+        again = packer.build_wheel("0.1.0", PLATFORM, binary, vlib)
         t.check("the same inputs give the same bytes",
                 again == wheel.read_bytes())
 
@@ -161,15 +173,20 @@ def main() -> int:
         venv_dir = tmp / "venv"
         venv.EnvBuilder(with_pip=True, clear=True).create(venv_dir)
         vpython = venv_dir / "bin" / "python"
-        named = out / "vcraft-0.1.0-py3-none-linux_x86_64.whl"
+        named = out / f"vcraft-0.1.0-py3-none-{PLATFORM}.whl"
         wheel.rename(named)
         wheel = named
         proc = subprocess.run(
             [str(vpython), "-m", "pip", "install", "--no-index",
              "--no-deps", str(wheel)],
             capture_output=True, text=True)
-        t.check("pip installs the tool wheel", proc.returncode == 0,
+        installed = proc.returncode == 0
+        t.check("pip installs the tool wheel", installed,
                 (proc.stderr or proc.stdout).strip()[-300:])
+        if not installed:
+            # Everything below runs the installed launcher; without it each
+            # step would crash rather than report.
+            raise _Abort
         proc = subprocess.run(
             [str(venv_dir / "bin" / "vcraft"), "new", "demo"],
             capture_output=True, text=True)
@@ -187,9 +204,9 @@ def main() -> int:
         real_bin = ROOT / "bin" / "vcraft"
         real_vlib = ROOT / "vlib"
         if real_bin.exists():
-            real = packer.build_wheel("0.1.0", "linux_x86_64",
+            real = packer.build_wheel("0.1.0", PLATFORM,
                                       real_bin, real_vlib)
-            real_wheel = out / "vcraft-0.1.0-py3-none-linux_x86_64.whl"
+            real_wheel = out / f"vcraft-0.1.0-py3-none-{PLATFORM}.whl"
             real_wheel.write_bytes(real)
             with zipfile.ZipFile(real_wheel) as z:
                 names = z.namelist()
@@ -212,6 +229,8 @@ def main() -> int:
                     (proc.stderr or proc.stdout).strip()[-200:])
         else:
             print("  skip no built binary for the real payload")
+    except _Abort:
+        print("  skip the remaining checks need the installed launcher")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

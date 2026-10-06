@@ -23,6 +23,11 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 BUILD = ROOT / "build"
 WHEEL_GLOB = "vcraft_demo-*.whl"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from wheel_tag import tag as _tag  # noqa: E402
+
+TAG = _tag()
+
 
 def check(label: str, condition: bool, detail: str = "") -> bool:
     if condition:
@@ -33,7 +38,9 @@ def check(label: str, condition: bool, detail: str = "") -> bool:
 
 
 def find_wheel() -> Path:
-    wheels = sorted(BUILD.glob(WHEEL_GLOB))
+    # This interpreter's wheel exactly: a build directory shared with another
+    # Python version holds that version's wheel too, and it would not install here.
+    wheels = sorted(BUILD.glob(f"vcraft_demo-*-{TAG}.whl"))
     if not wheels:
         raise SystemExit(
             f"no wheel in {BUILD}; run ./scripts/build-wheel-test.sh first"
@@ -92,8 +99,7 @@ def main() -> int:
         t("not pure Python", "Root-Is-Purelib: false" in wheel_meta,
           "a wheel holding an extension must not claim to be pure")
         t("tag matches the file name",
-          "cp314-cp314-manylinux_2_17_x86_64" in wheel_meta
-          and "manylinux_2_17_x86_64" in wheel.name, wheel.name)
+          f"Tag: {TAG}" in wheel_meta and TAG in wheel.name, wheel.name)
 
         meta = z.read("vcraft_demo-0.1.0.dist-info/METADATA").decode()
         t("metadata version", meta.startswith("Metadata-Version:"), meta[:40])
@@ -101,7 +107,7 @@ def main() -> int:
           "Name: vcraft-demo" in meta, meta[:120])
         t("version", "Version: 0.1.0" in meta)
         t("summary", "Summary: A demo package built by vcraft" in meta)
-        t("requires-python", "Requires-Python: >=3.12" in meta)
+        t("requires-python", "Requires-Python: >=3.11" in meta)
         t("classifiers survive", "Classifier: Programming Language :: V" in meta)
 
         print("record")
