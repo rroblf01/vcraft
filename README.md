@@ -181,6 +181,7 @@ generic value tree.
 | `[N]T` / struct                  | `list` / `dict`              | Of field values                          |
 | enum                             | `int`                        | As its `.name`, by default               |
 | `voidptr`                        | `PyObject *`                 | Borrowed; you own the reference          |
+| `vcraft.PyObj` (result)          | any object                   | Owned; the reference goes to the caller  |
 | `&T`                             | `PyObject *` wrapping a `T`  | Stable identity across the call          |
 | `void`, `!void`                  | `None`                       |                                          |
 | `!T` / `T!`                      | `T` or raises                | See [Errors and panics](#errors-and-panics) |

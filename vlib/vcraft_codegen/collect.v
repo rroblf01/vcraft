@@ -1042,6 +1042,14 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 	if f.v_ret.len > 0 && lookup(f.v_ret) == .unsupported {
 		report(mut p, path, decl,
 			'error: cannot expose `${decl.name}`: return type `${f.v_ret}` has no marshalling rule')
+		return
+	}
+	// A returned `[]T` boxes each element, so the element needs a rule of its own. A
+	// slice of structs or of slices would otherwise generate glue that does not
+	// compile, and the error would point at the generated file instead of here.
+	if lookup(f.v_ret) == .seq && !element_is_boxable(element_type(f.v_ret)) {
+		report(mut p, path, decl,
+			'error: cannot expose `${decl.name}`: return type `${f.v_ret}` has elements of type `${element_type(f.v_ret)}`, which have no marshalling rule; a returned list holds bool, integers, floats or strings')
 	}
 }
 

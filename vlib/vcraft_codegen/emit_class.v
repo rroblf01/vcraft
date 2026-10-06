@@ -367,7 +367,7 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 		'${c.size_fn}())\n')
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	if has_value {
-		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
 	} else {
 		w.write_string('\treturn vcraft.to_py_none().ptr\n')
 	}

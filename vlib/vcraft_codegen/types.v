@@ -79,7 +79,9 @@ pub fn describe(v_type string) string {
 		.float { 'float' }
 		.str { 'str' }
 		.bytes { 'bytes' }
-		.pyobj { 'Any' }
+		// `.pyref` needs its own arm: V compiled this match without it, and the missing
+		// arm returned an unset string that crashed the generator inside `+`.
+		.pyobj, .pyref { 'Any' }
 		.seq { 'Sequence[Any]' }
 		.unsupported { 'Any' }
 	}

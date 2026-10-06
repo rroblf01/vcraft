@@ -75,7 +75,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 15,
+            glue.count("add_function_owned") == 19,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -117,6 +117,36 @@ def main() -> int:
     t.equal("total over a tuple", h.total((5, 5)), 10)
     t.equal("total of empty", h.total([]), 0)
     t.equal("text signature", h.add.__doc__, "add(a: int, b: int) -> int")
+
+    print("returned lists and objects")
+    # Each of these failed to build before: a `[]T` result called `to_py_list` with one
+    # argument, a `PyObj` result crashed the generator, and a `voidptr` result took
+    # `.ptr` of a pointer.
+    t.check("a list result is boxed per element",
+            "vcraft.to_py_list(result, fn (x i64) vcraft.PyObj" in glue)
+    t.equal("an i64 list", h.count_up(4), [0, 1, 2, 3])
+    t.equal("an empty list", h.count_up(0), [])
+    t.equal("a string list", h.words("hola qué tal"), ["hola", "qué", "tal"])
+    t.equal("a PyObj result", h.boxed(2**40), [2**40])
+    t.check("a PyObj signature", h.boxed.__doc__.startswith("boxed(n: int) -> Any"),
+            h.boxed.__doc__)
+    probe = object()
+    before = sys.getrefcount(probe)
+    for _ in range(100):
+        h.identity(probe)
+    t.check("a voidptr result is the same object", h.identity(probe) is probe)
+    t.equal("a voidptr result keeps the count", sys.getrefcount(probe), before)
+    for _ in range(100):
+        h.boxed(1)
+    gc.collect()
+    held = h.boxed(1)
+    t.equal("a PyObj result is owned once", sys.getrefcount(held), 2)
+
+    print("i64 fields")
+    tally = h.Tally()
+    tally.sum = 2**40
+    t.equal("an i64 field holds 64 bits", tally.sum, 2**40)
+    t.equal("an i64 field in the repr", repr(tally), f"Tally(sum: {2**40})")
 
     print("raw escape hatch")
     sentinel = [1, 2, 3]

@@ -128,9 +128,13 @@ pub fn from_py_voidptr(obj PyObj) voidptr {
 
 // ------------------------------------------------------------- to Python
 
-// to_py_int boxes a V int.
-pub fn to_py_int(value int) PyObj {
-	return steal(C.PyLong_FromLongLong(i64(value)))
+// to_py_int boxes a V integer.
+//
+// It takes an i64 so that every signed width boxes through it: V widens an `int`,
+// an `i32` or an `i16` implicitly, but refuses to narrow an `i64`, so an `int`
+// parameter made every generated `i64` getter a compile error.
+pub fn to_py_int(value i64) PyObj {
+	return steal(C.PyLong_FromLongLong(value))
 }
 
 // to_py_uint boxes a V u64.
@@ -162,18 +166,29 @@ pub fn to_py_bool(value bool) PyObj {
 	return bool_obj(value)
 }
 
-// to_py_list boxes a V slice of pointers as a Python list, calling `to_py_object`
-// on each element.
+// to_py_list boxes a V slice as a Python list, calling `box` on each element.
 //
 // The element conversion is a function because the element type is only known to
 // the code generator, so it passes the boxing rule in rather than this module
 // hard-coding one.
+//
+// The list is created at its final length and each slot filled once. Appending to an
+// empty list instead regrows it as it goes, and costs a third more for a large one.
+// `PyList_SetItem` steals the element's reference, so nothing is released here on
+// success; a failed box releases the half-built list and returns a null object with
+// the exception already set.
 pub fn to_py_list[T](items []T, box fn (T) PyObj) PyObj {
-	list := steal(C.PyList_New(0))
-	for item in items {
+	list := steal(C.PyList_New(isize(items.len)))
+	if list.is_null() {
+		return list
+	}
+	for i, item in items {
 		value := box(item)
-		C.PyList_Append(list.ptr, value.ptr)
-		value.decref()
+		if value.is_null() {
+			list.decref()
+			return steal(unsafe { nil })
+		}
+		C.PyList_SetItem(list.ptr, isize(i), value.ptr)
 	}
 	return list
 }
@@ -227,7 +242,7 @@ pub fn unbox_bool(value voidptr) !bool {
 
 // repr_int, repr_uint, repr_f64, repr_bool and repr_string render a V value the way
 // Python's own repr would, so an instance's repr reads like a Python one.
-pub fn repr_int(value int) string {
+pub fn repr_int(value i64) string {
 	return '${value}'
 }
 

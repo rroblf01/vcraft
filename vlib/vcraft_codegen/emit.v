@@ -468,7 +468,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 		'${c.size_fn}())\n')
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	if has_value {
-		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
 	} else {
 		w.write_string('\treturn vcraft.to_py_none().ptr\n')
 	}
@@ -518,7 +518,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 			w.write_string(emit_nogil_close())
 		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
-		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
 	} else if ret != .void {
 		// A plain getter: the call is assigned to the `result` declared above. Without
 		// this the value is computed and dropped on the floor, and the getter returns the
@@ -527,7 +527,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}
-		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
 	} else {
 		// A property returning nothing has no `result` to assign: it was never declared,
 		// and assigning to it is a compile error rather than a warning.
@@ -535,7 +535,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}
-		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
 	}
 	w.write_string('}\n')
 	return w.str()
@@ -668,7 +668,7 @@ pub fn emit_trampoline(f Func) string {
 		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 		if has_value {
-			w.write_string('\treturn ${return_expr(ret, 'result', f.raw)}\n')
+			w.write_string('\treturn ${return_expr(ret, 'result', f.raw, f.v_ret)}\n')
 		} else {
 			w.write_string('\treturn vcraft.to_py_none().ptr\n')
 		}
@@ -676,7 +676,7 @@ pub fn emit_trampoline(f Func) string {
 		return w.str()
 	}
 
-	w.write_string('\treturn ${return_expr(ret, 'result', f.raw)}\n}\n')
+	w.write_string('\treturn ${return_expr(ret, 'result', f.raw, f.v_ret)}\n}\n')
 	return w.str()
 }
 
@@ -684,8 +684,9 @@ pub fn emit_trampoline(f Func) string {
 //
 // A raw result is a `voidptr` the V side already owns a reference to, so it is
 // wrapped as-is without touching the reference count. Everything else is a real
-// V value that has to be boxed.
-pub fn return_expr(strategy Strategy, value string, raw bool) string {
+// V value that has to be boxed. `v_type` is the declared value type, which a
+// sequence needs to choose how each element is boxed.
+pub fn return_expr(strategy Strategy, value string, raw bool, v_type string) string {
 	if raw {
 		// A raw function hands back a borrowed pointer, so the wrapper takes the
 		// reference itself. Without this the caller receives a pointer it never
@@ -697,8 +698,35 @@ pub fn return_expr(strategy Strategy, value string, raw bool) string {
 	// `.pyref`, where it is the object itself rather than a pointer to one.
 	return match strategy {
 		.pyref { boxed_expr(strategy, value) + '.ptr' }
+		// A `voidptr` result is borrowed, the same contract as a raw one, and it is
+		// already a pointer: boxing it and taking `.ptr` does not compile.
+		.pyobj { 'vcraft.borrow(${value}).new_ref().ptr' }
+		.seq { 'vcraft.to_py_list(${value}, ${element_box_fn(element_type(v_type))}).ptr' }
 		else { '${boxed_expr(strategy, value)}.ptr' }
 	}
+}
+
+// element_box_fn renders the boxing rule `vcraft.to_py_list` applies to each element
+// of a returned `[]T`, as an anonymous function from `T` to an object.
+//
+// The runtime cannot pick the rule itself: the element type is only known here. Each
+// rule widens to the one width its boxer takes, so every integer width shares
+// `to_py_int`. An element with no rule is refused by `validate` before this runs.
+pub fn element_box_fn(element string) string {
+	boxed := match lookup(element) {
+		.int { 'vcraft.to_py_int(i64(x))' }
+		.uint { 'vcraft.to_py_uint(u64(x))' }
+		.float { 'vcraft.to_py_f64(f64(x))' }
+		.str { 'vcraft.to_py_string(x)' }
+		.bool { 'vcraft.to_py_bool(x)' }
+		else { 'vcraft.to_py_none()' }
+	}
+	return 'fn (x ${element}) vcraft.PyObj { return ${boxed} }'
+}
+
+// element_is_boxable reports whether a returned `[]T` has an element rule.
+pub fn element_is_boxable(element string) bool {
+	return lookup(element) in [.int, .uint, .float, .str, .bool]
 }
 
 // zero_value is the initial value of a result local. It has to be valid V for the

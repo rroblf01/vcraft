@@ -174,6 +174,8 @@ fn C.PyList_New(size isize) voidptr
 
 fn C.PyList_Append(l voidptr, item voidptr) int
 
+fn C.PyList_SetItem(l voidptr, i isize, item voidptr) int
+
 fn C.PySequence_GetItem(o voidptr, i isize) voidptr
 
 fn C.PyDict_New() voidptr
