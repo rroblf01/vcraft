@@ -67,11 +67,18 @@ pub fn buffer_view(argv voidptr, i int, func string, name string) !voidptr {
 //
 // The slice and the view share the exporter's memory. See the module comment for why
 // the slice must not outlive the call.
+//
+// The header is built field by field from an empty literal: allocating `len`
+// first and then overwriting `data` would abandon a GC block of the argument's
+// size on every call, which is exactly the garbage a zero-copy path exists to
+// avoid.
 pub fn buffer_bytes(view voidptr) []u8 {
 	unsafe {
-		n := C.vpy_buffer_len(view)
-		mut out := []u8{len: n, cap: n}
+		n := int(C.vpy_buffer_len(view))
+		mut out := []u8{}
 		out.data = C.vpy_buffer_ptr(view)
+		out.len = n
+		out.cap = n
 		return out
 	}
 }
