@@ -228,6 +228,13 @@ pub fn (t CrossTarget) v_arch() string {
 // than after generating a gigabyte of C.
 pub fn (t CrossTarget) default_cc() string {
 	if t.is_host() {
+		// V reaches for its bundled tcc first, and on macOS tcc cannot link a shared
+		// object (`unsupported linker option '-exported_symbol'`): every build fails
+		// once and is then redone with the system compiler. Naming it skips the
+		// failed attempt.
+		if t.os == 'macos' {
+			return 'cc'
+		}
 		return ''
 	}
 	if t.os == 'linux' && t.arch == 'aarch64' && t.libc == 'gnu' {

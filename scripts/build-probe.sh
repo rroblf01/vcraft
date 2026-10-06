@@ -23,7 +23,16 @@ echo "headers: $include"
 # `v -shared` appends a shared library suffix on its own, but it does not know
 # about CPython's EXT_SUFFIX, so vcraft supplies the full output name. Python
 # will only load a module whose file name ends in that suffix.
+# Extensions leave the `Py*` symbols for the interpreter to resolve at import.
+# Apple's linker refuses undefined symbols in a shared object unless told so;
+# ELF linkers allow them by default.
+macos_ldflags=()
+if [ "$(uname -s)" = Darwin ]; then
+	macos_ldflags=(-ldflags "-undefined dynamic_lookup")
+fi
+
 "$here/scripts/vcraft-v.sh" -shared -o "$probe_dir/probe$suffix" \
+	${macos_ldflags[@]+"${macos_ldflags[@]}"} \
 	-cflags "-I$include" "$probe_dir/src/"
 
 echo "built $probe_dir/probe$suffix"

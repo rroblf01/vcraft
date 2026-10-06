@@ -23,7 +23,16 @@ echo "V:       $(command -v v)"
 echo "Python:  $(python3 -VV)"
 echo "headers: $include"
 
+# Extensions leave the `Py*` symbols for the interpreter to resolve at import.
+# Apple's linker refuses undefined symbols in a shared object unless told so;
+# ELF linkers allow them by default.
+macos_ldflags=()
+if [ "$(uname -s)" = Darwin ]; then
+	macos_ldflags=(-ldflags "-undefined dynamic_lookup")
+fi
+
 "$here/scripts/vcraft-v.sh" -shared -o "$out$suffix" \
+	${macos_ldflags[@]+"${macos_ldflags[@]}"} \
 	-path "$here/vlib|@vlib" \
 	-cflags "-I$include" \
 	"$here/tests/runtime"

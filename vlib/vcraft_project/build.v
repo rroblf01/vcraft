@@ -196,6 +196,23 @@ pub fn macos_retarget(tag string, deployment string) string {
 	return 'macosx_${nums[0]}_${minor}_' + parts[3..].join('_')
 }
 
+// extension_ldflags returns the linker flags for an extension on `target_os`.
+//
+// An extension leaves every `Py*` symbol undefined for the interpreter that loads it to
+// resolve. ELF linkers allow that in a shared object by default; Apple's linker refuses
+// it, so on macOS every build fails at the link with each CPython symbol listed as
+// missing. `-undefined dynamic_lookup` is what CPython's own `LDSHARED` uses there.
+pub fn extension_ldflags(target_os string, extra string) string {
+	mut flags := []string{}
+	if target_os == 'macos' {
+		flags << '-undefined dynamic_lookup'
+	}
+	if extra.len > 0 {
+		flags << extra
+	}
+	return flags.join(' ')
+}
+
 // limited_api_defines returns the C defines that select the stable ABI.
 //
 // Without `Py_LIMITED_API` an abi3 wheel compiles against the full headers and then
@@ -431,8 +448,19 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	// Every argument is quoted individually. `-path` takes `dir|@vlib`, and an
 	// unquoted `@` is a shell word the shell tries to run: the error is "not found"
 	// pointing at a directory that does exist.
+	// `-new-compiler` and the two variables stop V from answering a C error by
+	// downloading its 0.5.2 release and retrying with it: that retry hides the real
+	// diagnostic behind an unrelated parse error in the generated glue, and on a CI
+	// runner it costs a download and a compiler build on every failure.
+	// `scripts/vcraft-v.sh` does the same for this repository's own builds.
+	for name in ['V_MACOS_V3_NO_FALLBACK', 'V_C_ERROR_BUG_REPORT_DISABLED'] {
+		if os.getenv(name).len == 0 {
+			os.setenv(name, '1', true)
+		}
+	}
 	mut args := [
 		shell_quote(opt.v),
+		'-new-compiler',
 		'-enable-globals',
 		'-shared',
 		'-o',
@@ -442,9 +470,10 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		'-cflags',
 		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + opt.cflags),
 	]
-	if opt.ldflags.len > 0 {
+	ldflags := extension_ldflags(target.os, opt.ldflags)
+	if ldflags.len > 0 {
 		args << '-ldflags'
-		args << shell_quote(opt.ldflags)
+		args << shell_quote(ldflags)
 	}
 	if explicit {
 		// An explicit target is spelled out even when it matches the host, so `--dry-run`

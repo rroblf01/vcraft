@@ -1228,6 +1228,12 @@ pub fn (mut n Node) link(other voidptr) {
                               capture_output=True, text=True)
         t.check("a deployment target the caller set moves the tag",
                 "-macosx_13_0_arm64" in proc.stdout, proc.stdout)
+        # Apple's linker refuses the undefined `Py*` symbols every extension leaves
+        # for the interpreter, so without this no macOS build links at all.
+        t.check("a macOS build lets the interpreter resolve CPython's symbols",
+                "-undefined dynamic_lookup" in proc.stdout, proc.stdout)
+        t.check("V never retries a failed build with its 0.5.2 release",
+                "-new-compiler" in proc.stdout, proc.stdout)
 
         print("errors")
         proc = vcraft("build", "--out-dir", cwd=project)

@@ -21,7 +21,16 @@ mkdir -p "$here/build"
 "$here/build/vc-generate" "$project" "$module" "$module"
 
 mkdir -p "$project/python"
+# Extensions leave the `Py*` symbols for the interpreter to resolve at import.
+# Apple's linker refuses undefined symbols in a shared object unless told so;
+# ELF linkers allow them by default.
+macos_ldflags=()
+if [ "$(uname -s)" = Darwin ]; then
+	macos_ldflags=(-ldflags "-undefined dynamic_lookup")
+fi
+
 "$here/scripts/vcraft-v.sh" -enable-globals -shared -o "$project/python/$module$suffix" \
+	${macos_ldflags[@]+"${macos_ldflags[@]}"} \
 	-path "$here/vlib|@vlib" \
 	-cflags "-I$include" \
 	"$project"
