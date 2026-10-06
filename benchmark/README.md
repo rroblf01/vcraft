@@ -171,8 +171,12 @@ Por prioridad. Cada punto está reproducido en este benchmark.
    Medido en `count_primes(1e6)`: la mitad de las muestras caen en
    `memmove`/`memcpy`, y el mismo sieve sobre un buffer `malloc` con tiendas
    directas baja a 1,7 ms (V `0137eb5`, macOS arm64), por delante de PyO3
-   (2,02 ms). Sin rodeos en el código del usuario no hay arreglo dentro de
-   vcraft: el lowering lo hace V.
+   (2,02 ms). En `make_range(100k)` el reparto es el mismo al revés: construir
+   el `[]i64` con `<<` cuesta 208 µs frente a 13 µs con tiendas directas, y la
+   conversión en C ya está a la par de `list(range(100k))` (790 frente a
+   783 µs); el perfil muestra dos tercios en `PyLong_FromLongLong` (un alloc por
+   elemento, inevitable) y un tercio en `array__push`. Sin rodeos en el código
+   del usuario no hay arreglo dentro de vcraft: el lowering lo hace V.
 9. ✅ *Medido tras el paso 6 y ofrecido como opción `gc-free-space-divisor` (1 por
    defecto).* `GC_set_free_space_divisor(1)`, el valor que fija V, hace crecer el heap
    antes que recolectar. Con 2, en esta máquina: lo retenido pasa de 1,0 a 0,5 MiB
