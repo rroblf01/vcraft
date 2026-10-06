@@ -729,17 +729,21 @@ would do, and without it each thread needs its own.
 
 ```
 vcraft new <name>            scaffold a V project ready for Python
+vcraft build [options]       build a distributable wheel
 vcraft develop [options]     build and install an editable pointer by default
 vcraft develop --copy        install a plain extension copy instead
-vcraft build [options]       build a distributable wheel
-vcraft build --target linux-aarch64-gnu --dry-run
-                             print the cross-compilation plan without building
-vcraft build --editable      build a local-only wheel that points at build output
+vcraft sdist                 build a source distribution
+vcraft generate-ci           emit a GitHub Actions workflow into .github/workflows/
+vcraft publish               upload the built distributions to PyPI
+vcraft info                  show what vcraft resolved for this project
+vcraft clean                 remove build output
+vcraft version               print the version
 
-    --release                compile with -prod
-    --abi3 <version>         build one wheel usable from CPython <version> onwards
-    --interpreter <path>     build against a specific interpreter
-    --out-dir <dir>          output directory (default: dist/)
+build options:
+  --release                    compile with -prod
+  --abi3 <version>             one wheel usable from CPython <version> onwards (3.11+)
+  --interpreter <path>         build against a specific interpreter
+  --out-dir <dir>              output directory (default: dist/)
   --platform <tag>             override the platform tag
   --target <name>              cross-compile for a target, e.g. linux-aarch64-gnu
   --manylinux <version>        claim a manylinux policy, e.g. 2_17
@@ -748,16 +752,12 @@ vcraft build --editable      build a local-only wheel that points at build outpu
   --cflags <flags>             extra flags for the C compiler
   --ldflags <flags>            extra flags for the C linker
   --dry-run                    print the build plan without building
-    --strip                  strip symbols from the extension
-    --skip-audit             do not validate the resulting wheel
-
-vcraft generate-ci [github]  emit a ready-to-use CI workflow
-vcraft sdist                 build a source distribution
-vcraft publish               upload to PyPI (delegates to twine or uv)
-vcraft audit                 validate tags, RECORD and metadata of a wheel
-vcraft test                  run `v test` and the Python test suite
-vcraft generate-ci [github]  emit a ready-to-use CI workflow
-vcraft clean                 remove build artefacts
+  --free-threading             build against a free-threaded interpreter (3.13t+)
+  --strip                      strip symbols
+  --skip-audit                 do not validate the resulting wheel
+  --jobs <n>                   compiler parallelism
+  --editable                   point the environment at this build instead of copying
+  --copy                       install a copy, which is the opposite of --editable
 ```
 
 `vcraft` never writes to a system location and never installs anything outside
@@ -852,23 +852,22 @@ an aarch64 or musl wheel -- happens in CI, where the images carry the toolchains
 
 ## Generated project layout
 
+What `vcraft new mi_extension_nativa` writes:
+
 ```
 mi_extension_nativa/
-├── pyproject.toml              PEP 621 metadata + vcraft build backend + cibuildwheel config
+├── vcraft.toml                 packaging configuration (see Configuration)
 ├── v.mod                       Module { name: 'mi_extension_nativa' }
-├── README.md  LICENSE  .gitignore  .gitattributes
-├── src/                        the V core
-│   ├── lib.v                   your code
-│   └── _vcraft_generated.v     generated, git-ignored
-├── python/mi_extension_nativa/ the Python part
-│   ├── __init__.py
-│   ├── helpers.py
-│   └── _stubs.pyi              generated, type-checked by pyright/mypy
-├── tests/
-│   ├── test_basics.py          run by CIBW_TEST_COMMAND
-│   └── lib_test.v              run by `vcraft test`
-└── .github/workflows/wheels.yml
+├── pyproject.toml              names the PEP 517/660 build backend
+├── vcraft_build.py             the backend, emitted by the vcraft that wrote it
+├── README.md  .gitignore
+└── src/
+    └── mi_extension_nativa_native.v   your code
 ```
+
+A build adds `src/_vcraft_generated.v` and `python/<module>/_stubs.pyi`, both
+generated and git-ignored, and writes wheels to `dist/`. `vcraft generate-ci` adds
+`.github/workflows/build.yml`.
 
 Python and V coexist: pure-V packages get a generated `__init__.py` that
 re-exports the extension, while mixed packages can put whatever Python they like
@@ -938,48 +937,60 @@ nothing is installed at all. Linux and macOS (arm64) runners are supported;
 Windows runners are refused with a clear error.
 
 ```yaml
-- uses: vcraft/vcraft-action@v1
+- uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
     vcraft-version: v0.1.0
     args: build --release
 ```
 
-`vcraft generate-ci github` writes the workflow above into
-`.github/workflows/wheels.yml`.
+`vcraft generate-ci github` writes a workflow into `.github/workflows/build.yml`
+with one cell per supported CPython from the project's `minimum-version` up (or one
+per platform for abi3, or 3.13t and 3.14t for free-threading). Every wheel is
+installed and imported in the image or interpreter it was built for before the job
+passes.
 
 ---
 
 ## Configuration
 
-Everything lives in `pyproject.toml` under `[tool.vcraft]`.
+Packaging configuration lives in `vcraft.toml` at the project root. `vcraft new`
+writes one; `pyproject.toml` only names the build backend.
 
 ```toml
-[project]
+minimum-version = "3.11"   # oldest CPython the CI matrix builds a wheel for
+abi3 = "3.11"              # optional: one stable-ABI wheel for 3.11 and newer
+free-threading = false     # true: build for a free-threaded CPython (3.13t+)
+strip = false
+embed-pyc = false
+
+[package]
 name = "mi-extension-nativa"
 version = "0.1.0"
-requires-python = ">=3.10"
+module = "mi_extension_nativa"
+description = "A Python extension written in V."
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = []
 
-[build-system]
-requires = []
-build-backend = "vcraft_build"
-backend-path = ["_vcraft_build"]
-
-[tool.vcraft]
-abi3 = "3.10"            # or "off" for one wheel per CPython version
-free-threading = true    # emit Py_mod_gil = Py_MOD_GIL_NOT_USED
-gc = "boehm"             # "boehm" (default) or "none"
-strip = true
-target-dir = "build"
+[[classifier]]
+text = "Programming Language :: V"
 ```
 
-| Key               | Default   | Meaning                                                  |
-| ----------------- | --------- | -------------------------------------------------------- |
-| `abi3`            | `"off"`   | Minimum CPython for a single portable wheel               |
-| `free-threading`  | `true`    | Declare the extension as GIL-free                         |
-| `gc`              | `"boehm"` | V garbage collector mode passed to `v -gc`                |
-| `strip`           | `true`    | Strip the extension                                       |
-| `target-dir`      | `"build"` | Scratch directory for intermediate artefacts              |
-| `min-manylinux`   | auto      | Oldest manylinux policy to claim                          |
+The root keys must come before the first table: in TOML a key written after
+`[package]` belongs to `[package]`.
+
+| Key               | Default   | Meaning                                                        |
+| ----------------- | --------- | -------------------------------------------------------------- |
+| `minimum-version` | `"3.11"`  | Oldest CPython `vcraft generate-ci` builds a wheel for          |
+| `abi3`            | unset     | Stable-ABI floor for a single portable wheel, `3.11` or newer   |
+| `free-threading`  | `false`   | Build for a free-threaded interpreter and declare it GIL-free   |
+| `strip`           | `false`   | Strip the extension                                             |
+| `embed-pyc`       | `false`   | Ship sourceless `.pyc` files instead of the project's `.py`     |
+
+`vcraft build` refuses the combinations that would compile and then fail later: an
+interpreter older than 3.11, an `abi3` floor below 3.11 or above the interpreter
+building it, `abi3` together with `free-threading` (free-threaded CPython has no
+stable ABI), and `free-threading` on anything older than 3.13.
 
 ---
 
@@ -1082,15 +1093,14 @@ for the ones the generator did.
 - [x] **Free-threading**: checked against the interpreter rather than assumed, so a
       `cp314t` wheel cannot be produced from a GIL build; the object-header mirror
       follows the 32-byte free-threaded layout, the module declares itself GIL-free,
-      and both are verified by importing with the GIL disabled; the object-header mirror
-      follows the 32-byte free-threaded layout, verified by importing on 3.14t
+      and both are verified by importing with the GIL disabled on 3.13t and 3.14t
 - [x] **Cross-compilation**: `--target` with canonical names and Rust-style
       aliases, `--manylinux`/`--musllinux` policies, `--cc`/`--cflags`/`--ldflags`,
       `--dry-run` planning, a toolchain check that fails before compiling, real
       manylinux and musllinux wheels built and imported in their images, an exact
-      `manylinux_2_17` auditwheel match, and an abi3 wheel imported on 3.12–3.14
+      `manylinux_2_17` auditwheel match, and an abi3 wheel imported on 3.11–3.14
 - [x] **CI**: `vcraft generate-ci` emits a matrix derived from the project's ABI
-      choice, with `vcraft-action@v1`
+      choice, with `rroblf01/vcraft/actions/vcraft-action@v1`
 - [x] **CI images and action releases**: manylinux and musllinux images with V built
       from source, published as multi-arch manifests and verified by building inside
       each one; the action builds locally or in a container, released with floating
@@ -1098,7 +1108,7 @@ for the ones the generator did.
 - [x] **Zero-copy buffers, `@[vc_gil]`, iterators**: buffer-protocol `[]u8` parameters
       that alias instead of copying, GIL release with exact pairing on every path and
       per-thread state, and `@[vc_iter]`/`@[vc_next]` slots
-- [ ] Apple Silicon and aarch64 verification (covered by `ci.yml` on macos-14 and
+- [ ] Apple Silicon and aarch64 verification (covered by `ci.yml` on macos-15 and
       by the native-arm image builds; musllinux x86_64 is verified locally in
       its image)
 - [ ] Windows support (explicitly out of scope for now: the compiler arguments
@@ -1168,7 +1178,8 @@ this yet.
   (`-new-compiler` fails there with "Unknown argument"), so build V from source
   at the commit pinned in `docker/` -- the images, the action and CI all do
   exactly that, and the pins are the documented minimum
-- CPython 3.10 or newer (3.13+ for free-threaded builds)
+- CPython 3.11 to 3.14, every one tested in CI on Linux and macOS; 3.13t and
+  3.14t for free-threaded builds
 - A C toolchain: gcc or clang, plus the CPython development headers (MSVC is
   untested: vcraft quotes its compiler arguments for a POSIX shell and Windows
   builds are explicitly unsupported for now)
@@ -1221,8 +1232,7 @@ file of accessors with a header, pulled in with `#flag @VMODROOT/c/...`.
 default. It is statically linked into the extension, it does not replace the C
 allocator, so it never interferes with CPython's own memory management, and V
 0.5.2 already calls `GC_allow_register_threads()` during initialisation, which is
-precisely the case of a host-created thread entering V code. Use
-`[tool.vcraft] gc = "none"` if you would rather manage lifetimes yourself.
+precisely the case of a host-created thread entering V code.
 
 **Extension modules are process-scoped.** `PyInit_` is the single-phase
 initialisation API, so a module loaded in one interpreter is shared by all of
