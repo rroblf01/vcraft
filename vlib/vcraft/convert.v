@@ -48,12 +48,15 @@ pub fn from_py_int(obj PyObj, name string) !int {
 	unsafe {
 		mut overflow := 0
 		value := C.PyLong_AsLongLongAndOverflow(obj.ptr, &overflow)
-		if error_is_set() {
-			return error('${name}: ${pending_error_text()}')
-		}
 		if overflow != 0 {
 			raise(.overflow_error, '${name}: value out of range for int')
 			return error('${name}: out of range')
+		}
+		if error_is_set() {
+			// Some other failure, with CPython's own exception already set.
+			// It stays set: the V error only travels the `!` chain back to the
+			// trampoline, which returns NULL for it.
+			return error('${name}: cannot read int')
 		}
 		return int(value)
 	}
@@ -68,7 +71,9 @@ pub fn from_py_uint(obj PyObj, name string) !u64 {
 	}
 	value := C.PyLong_AsUnsignedLongLong(obj.ptr)
 	if error_is_set() {
-		return error('${name}: ${pending_error_text()}')
+		// OverflowError for a negative or too-large int, left set: the V error
+		// only travels the `!` chain back to the trampoline.
+		return error('${name}: value out of range for u64')
 	}
 	return value
 }
@@ -79,7 +84,9 @@ pub fn from_py_f64(obj PyObj, name string) !f64 {
 	if obj.type_is(float_type()) {
 		value := C.PyFloat_AsDouble(obj.ptr)
 		if error_is_set() {
-			return error('${name}: ${pending_error_text()}')
+			// Practically unreachable for an exact float, but if it fails the
+			// exception is already set and stays set.
+			return error('${name}: cannot read float')
 		}
 		return value
 	}
@@ -95,6 +102,92 @@ pub fn from_py_bool(obj PyObj) bool {
 	return obj.is_true()
 }
 
+// Narrowing a Python int into a smaller V integer.
+//
+// `from_py_int` and `from_py_uint` read the full-width value with the usual
+// TypeError behaviour; what is left is refusing what does not fit, with the
+// OverflowError Python raises for the same input. V casts truncate silently,
+// so the check comes before the cast, never after it. `isize` and `usize`
+// need no check: on the 64-bit targets vcraft builds for they are the full
+// width already.
+
+// i8_from_py_int reads a Python int into an i8.
+pub fn i8_from_py_int(obj PyObj, name string) !i8 {
+	value := from_py_int(obj, name)!
+	if value < -128 || value > 127 {
+		raise(.overflow_error, '${name}: value out of range for i8')
+		return error('${name}: out of range')
+	}
+	return i8(value)
+}
+
+// i16_from_py_int reads a Python int into an i16.
+pub fn i16_from_py_int(obj PyObj, name string) !i16 {
+	value := from_py_int(obj, name)!
+	if value < -32768 || value > 32767 {
+		raise(.overflow_error, '${name}: value out of range for i16')
+		return error('${name}: out of range')
+	}
+	return i16(value)
+}
+
+// i32_from_py_int reads a Python int into an i32.
+pub fn i32_from_py_int(obj PyObj, name string) !i32 {
+	value := from_py_int(obj, name)!
+	if value < -2147483648 || value > 2147483647 {
+		raise(.overflow_error, '${name}: value out of range for i32')
+		return error('${name}: out of range')
+	}
+	return i32(value)
+}
+
+// isize_from_py_int reads a Python int into an isize.
+pub fn isize_from_py_int(obj PyObj, name string) !isize {
+	return isize(from_py_int(obj, name)!)
+}
+
+// rune_from_py_int reads a Python int into a rune.
+pub fn rune_from_py_int(obj PyObj, name string) !rune {
+	value := from_py_int(obj, name)!
+	if value < -2147483648 || value > 2147483647 {
+		raise(.overflow_error, '${name}: value out of range for rune')
+		return error('${name}: out of range')
+	}
+	return rune(value)
+}
+
+// u16_from_py_uint reads a Python int into an u16.
+pub fn u16_from_py_uint(obj PyObj, name string) !u16 {
+	value := from_py_uint(obj, name)!
+	if value > 65535 {
+		raise(.overflow_error, '${name}: value out of range for u16')
+		return error('${name}: out of range')
+	}
+	return u16(value)
+}
+
+// u32_from_py_uint reads a Python int into a u32.
+pub fn u32_from_py_uint(obj PyObj, name string) !u32 {
+	value := from_py_uint(obj, name)!
+	if value > 4294967295 {
+		raise(.overflow_error, '${name}: value out of range for u32')
+		return error('${name}: out of range')
+	}
+	return u32(value)
+}
+
+// usize_from_py_uint reads a Python int into a usize.
+pub fn usize_from_py_uint(obj PyObj, name string) !usize {
+	return usize(from_py_uint(obj, name)!)
+}
+
+// f32_from_py_f64 reads a Python float or int into an f32, with the same
+// acceptance as `from_py_f64`. Any f64 converts; one far outside the f32
+// range becomes an infinity, as a V `f32()` cast does.
+pub fn f32_from_py_f64(obj PyObj, name string) !f32 {
+	return f32(from_py_f64(obj, name)!)
+}
+
 // from_py_string reads a Python str. bytes is rejected: CPython separates the
 // two on purpose, and silently decoding one as the other hides bugs.
 pub fn from_py_string(obj PyObj, name string) !string {
@@ -104,7 +197,8 @@ pub fn from_py_string(obj PyObj, name string) !string {
 	}
 	ptr, size := utf8_of(obj)
 	if ptr == unsafe { nil } {
-		return error('${name}: ${pending_error_text()}')
+		// CPython set the exception (usually MemoryError); it stays set.
+		return error('${name}: cannot read str')
 	}
 	return from_utf8(ptr, size)
 }
@@ -120,7 +214,8 @@ pub fn from_py_bytes(obj PyObj, name string) !string {
 	}
 	ptr, size := bytes_of(obj)
 	if ptr == unsafe { nil } {
-		return error('${name}: ${pending_error_text()}')
+		// CPython set the exception (usually MemoryError); it stays set.
+		return error('${name}: cannot read bytes')
 	}
 	return from_utf8(ptr, size)
 }

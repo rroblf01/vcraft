@@ -733,13 +733,27 @@ pub fn element_is_boxable(element string) bool {
 	return lookup(element) in [.int, .uint, .float, .str, .bool]
 }
 
+// element_is_readable reports whether a `[]T` parameter has an element reader.
+//
+// `[]u8` never reaches this: it is a buffer, read through the buffer protocol
+// rather than as a sequence.
+pub fn element_is_readable(element string) bool {
+	if element == 'u8' {
+		return false
+	}
+	return lookup(element) in [.int, .uint, .float, .str, .bool]
+}
+
 // zero_value is the initial value of a result local. It has to be valid V for the
-// declared type, which rules out `T(0)` for strings and slices.
+// declared type, which rules out `T(0)` for strings and slices. A uint result
+// starts as `u64(0)` rather than `0`: the local is assigned the declared width
+// before it is boxed, and `to_py_uint` takes nothing narrower.
 pub fn zero_value(strategy Strategy, v_type string) string {
 	return match strategy {
 		.void { 'unsafe { nil }' }
 		.bool { 'false' }
-		.int, .uint { '0' }
+		.int { '0' }
+		.uint { 'u64(0)' }
 		.float { '0.0' }
 		.str { "''" }
 		// `.bytes` is always a `[]u8`: a string literal would not compile where a slice
@@ -778,17 +792,34 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 			element := element_type(param_type)
 			match lookup(element) {
 				// An `i64` element has its own reader: V does not convert a `[]int` into
-				// a `[]i64`, so the int reader's result does not compile there.
+				// a `[]i64`, so the int reader's result does not compile there. The
+				// narrower widths have theirs for the same reason; only `int` itself
+				// uses the one-pass C reader.
 				.int {
 					if element == 'i64' {
 						"vcraft.from_py_i64_seq_arg(args, ${index}, '${func}', '${param}')"
-					} else {
+					} else if element == 'int' {
 						"vcraft.from_py_int_seq_arg(args, ${index}, '${func}', '${param}')"
+					} else {
+						"vcraft.from_py_${element}_seq_arg(args, ${index}, '${func}', '${param}')"
 					}
 				}
-				.uint { "vcraft.from_py_uint_seq_arg(args, ${index}, '${func}', '${param}')" }
-				.float { "vcraft.from_py_f64_seq_arg(args, ${index}, '${func}', '${param}')" }
+				.uint {
+					if element == 'u64' {
+						"vcraft.from_py_uint_seq_arg(args, ${index}, '${func}', '${param}')"
+					} else {
+						"vcraft.from_py_${element}_seq_arg(args, ${index}, '${func}', '${param}')"
+					}
+				}
+				.float {
+					if element == 'f64' {
+						"vcraft.from_py_f64_seq_arg(args, ${index}, '${func}', '${param}')"
+					} else {
+						"vcraft.from_py_${element}_seq_arg(args, ${index}, '${func}', '${param}')"
+					}
+				}
 				.str { "vcraft.from_py_str_seq_arg(args, ${index}, '${func}', '${param}')" }
+				.bool { "vcraft.from_py_bool_seq_arg(args, ${index}, '${func}', '${param}')" }
 				else { "vcraft.from_py_int_seq_arg(args, ${index}, '${func}', '${param}')" }
 			}
 		}

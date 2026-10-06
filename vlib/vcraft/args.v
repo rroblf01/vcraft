@@ -249,3 +249,138 @@ pub fn from_py_uint_seq_arg(argv voidptr, i int, func string, name string) ![]u6
 	}
 	return out
 }
+
+// The narrower widths below go through the scalar narrowers one item at a time,
+// like `from_py_uint_seq_arg` does: the one-pass C readers only exist for the
+// three hot widths (`int`, `i64`, `f64`). An item that is wrong raises the same
+// TypeError or OverflowError a scalar parameter would.
+
+// from_py_i8_seq_arg reads positional argument `i` as a sequence of i8.
+pub fn from_py_i8_seq_arg(argv voidptr, i int, func string, name string) ![]i8 {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []i8{cap: n}
+	mut k := 0
+	for k < n {
+		out << i8_from_py_int(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_i16_seq_arg reads positional argument `i` as a sequence of i16.
+pub fn from_py_i16_seq_arg(argv voidptr, i int, func string, name string) ![]i16 {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []i16{cap: n}
+	mut k := 0
+	for k < n {
+		out << i16_from_py_int(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_i32_seq_arg reads positional argument `i` as a sequence of i32.
+pub fn from_py_i32_seq_arg(argv voidptr, i int, func string, name string) ![]i32 {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []i32{cap: n}
+	mut k := 0
+	for k < n {
+		out << i32_from_py_int(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_isize_seq_arg reads positional argument `i` as a sequence of isize.
+pub fn from_py_isize_seq_arg(argv voidptr, i int, func string, name string) ![]isize {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []isize{cap: n}
+	mut k := 0
+	for k < n {
+		out << isize_from_py_int(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_rune_seq_arg reads positional argument `i` as a sequence of runes.
+pub fn from_py_rune_seq_arg(argv voidptr, i int, func string, name string) ![]rune {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []rune{cap: n}
+	mut k := 0
+	for k < n {
+		out << rune_from_py_int(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_u16_seq_arg reads positional argument `i` as a sequence of u16.
+pub fn from_py_u16_seq_arg(argv voidptr, i int, func string, name string) ![]u16 {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []u16{cap: n}
+	mut k := 0
+	for k < n {
+		out << u16_from_py_uint(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_u32_seq_arg reads positional argument `i` as a sequence of u32.
+pub fn from_py_u32_seq_arg(argv voidptr, i int, func string, name string) ![]u32 {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []u32{cap: n}
+	mut k := 0
+	for k < n {
+		out << u32_from_py_uint(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_usize_seq_arg reads positional argument `i` as a sequence of usize.
+pub fn from_py_usize_seq_arg(argv voidptr, i int, func string, name string) ![]usize {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []usize{cap: n}
+	mut k := 0
+	for k < n {
+		out << usize_from_py_uint(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_f32_seq_arg reads positional argument `i` as a sequence of f32.
+pub fn from_py_f32_seq_arg(argv voidptr, i int, func string, name string) ![]f32 {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []f32{cap: n}
+	mut k := 0
+	for k < n {
+		out << f32_from_py_f64(obj.item(k), name)!
+		k++
+	}
+	return out
+}
+
+// from_py_bool_seq_arg reads positional argument `i` as a sequence of bools.
+pub fn from_py_bool_seq_arg(argv voidptr, i int, func string, name string) ![]bool {
+	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
+	n := int(obj.len())
+	mut out := []bool{cap: n}
+	mut k := 0
+	for k < n {
+		out << from_py_bool(obj.item(k))
+		k++
+	}
+	return out
+}

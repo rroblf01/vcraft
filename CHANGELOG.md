@@ -67,6 +67,11 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   caller) and `voidptr` (borrowed, increfed for the caller).
 - **`i64` throughout**: class fields, method parameters and sequence parameters
   accept `i64` as well as `int` (with this V compiler, `int` is already 64 bits).
+- **Narrow sequence parameters**: `[]i8`, `[]i16`, `[]i32`, `[]isize`, `[]rune`,
+  `[]u16`, `[]u32`, `[]usize`, `[]f32` and `[]bool` convert with the same
+  TypeError/OverflowError behaviour as scalar parameters. A sequence element
+  with no reader is a diagnostic with file, line and column instead of a
+  compile error in the generated glue.
 - **Collector tuning**: `gc-free-space-divisor` in `vcraft.toml` sets Boehm's heap
   growth divisor (default 1, V's value, which favours speed). With 2, roughly
   half a MiB less stays resident after large workloads for a few percent of
@@ -107,6 +112,13 @@ packages them as wheels, with no Rust, C++ or zlib involved.
 - **Method diagnostics**: an unsupported parameter or return type on a
   `@[vc_methods]` method is reported with file, line and column instead of
   failing later as a compile error in the generated glue.
+- **Lost C-level conversion errors**: when a CPython conversion set an exception
+  while reading an argument, the runtime consumed it for its own message and
+  the call failed with `SystemError: ... returned NULL without an exception
+  set`. The original exception (e.g. OverflowError for a negative `u64`) now
+  reaches the caller.
+- **`u64` results**: a function returning an unsigned width never compiled; the
+  result local starts as `u64(0)`.
 
 ### Build safeguards
 

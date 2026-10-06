@@ -1044,6 +1044,15 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule')
 			return
 		}
+		// A `[]T` parameter reads each element, so the element needs a reader of
+		// its own. Without one the glue names a function that does not exist,
+		// and the error points at the generated file instead of here.
+		if lookup(param.v_type) == .seq &&
+			!element_is_readable(element_type(param.v_type)) {
+			report(mut p, path, decl,
+				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds `${element_type(param.v_type)}`, which has no sequence reader; a sequence holds bool, integers, floats or strings')
+			return
+		}
 	}
 	// `@[vc_gil]` promises the call touches no Python, and `@[vc_raw]` promises the
 	// opposite: the function handles `PyObject *` itself. Both together would release
