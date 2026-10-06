@@ -16,17 +16,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: install PyYAML
+        run: python -m pip install -q pyyaml
+
       - name: validate the action definition
         # A composite action with a typo fails every consumer with a message about
         # their workflow, not about this file. Parsing it here keeps the failure
         # where the typo is.
-        run: python3 -c "import yaml,sys; d=yaml.safe_load(open('actions/vcraft-action/action.yml')); assert d['runs']['using']=='composite', d; print('action ok:', d['name'])"
+        run: python -c "import yaml,sys; d=yaml.safe_load(open('actions/vcraft-action/action.yml')); assert d['runs']['using']=='composite', d; print('action ok:', d['name'])"
 
       - name: move the floating tags
         # `v1` tracks the action and `v1.0` tracks its minor line, so `@v1` follows
         # releases and a full version pins. Forced forward, because that is what a
         # floating tag is.
+        # An annotated tag needs a tagger, and a runner has no git identity.
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           VERSION="${GITHUB_REF_NAME#vcraft-action/}"
           MAJOR="${VERSION%%.*}"
           MINOR="${VERSION%.*}"
