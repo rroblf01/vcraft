@@ -48,10 +48,14 @@ Cada herramienta compila con su modo release: `cargo --release` (opt-level 3),
 `vcraft build --release` (`v -prod`) y `zig-maturin build --release` (`ReleaseSafe`). Los
 tres mantienen las comprobaciones de límites.
 
-## Resultados
+## Resultados iniciales
 
 macOS 27, Apple Silicon (arm64), CPython 3.13.15. Una sola máquina y una sola ejecución
 completa; la ejecución rápida previa dio las mismas cifras con un margen del 5 %.
+
+Esta es la foto de partida, antes de mejorar vcraft. La evolución de vcraft está en
+[Progreso de vcraft](#progreso-de-vcraft), y la última ejecución completa, en
+[`results.md`](results.md).
 
 ### Tamaño y build
 
@@ -128,24 +132,26 @@ tiene el build más pesado de los dos con toolchain propio y el wheel algo mayor
 
 Por prioridad. Cada punto está reproducido en este benchmark.
 
-1. **Devolver `[]T` no compila.** El emisor genera `vcraft.to_py_list(result)` con un
+1. ✅ *Corregido en el paso 1.* **Devolver `[]T` no compila.** El emisor genera `vcraft.to_py_list(result)` con un
    argumento, y el runtime declara `to_py_list[T](items, box)` con dos
    (`vlib/vcraft_codegen/emit.v`, `boxed_expr`).
-2. **Las alternativas para devolver una lista también fallan.** Devolver `vcraft.PyObj` o
+2. ✅ *Corregido en el paso 1.* **Las alternativas para devolver una lista también fallan.** Devolver `vcraft.PyObj` o
    `PyObj` hace que el generador muera con SIGBUS (exit 138), sin ningún diagnóstico. Un
    `voidptr` bajo `@[vc_fn]` genera `result.ptr` sobre un puntero y no compila.
-3. **`@[vc_raw]` no puede devolver un objeto nuevo sin fugarlo.** El glue trata el
+3. ✅ *Resuelto en el paso 1: un resultado `vcraft.PyObj` entrega su referencia.*
+   **`@[vc_raw]` no puede devolver un objeto nuevo sin fugarlo.** El glue trata el
    resultado como prestado y hace `borrow(result).new_ref()`. Junto con los puntos 1 y 2,
    devolver una lista implica perder memoria; es lo que mide `make_range`.
-4. **Un campo `i64` en una clase no compila.** El getter y el `__repr__` generados llaman a
+4. ✅ *Corregido en el paso 1.* **Un campo `i64` en una clase no compila.** El getter y el `__repr__` generados llaman a
    `to_py_int` y `repr_int`, que solo aceptan `int`. Con este V, `int` ya es de 64 bits, así
    que basta con aceptar ambos tipos.
 5. **`sum_floats` es más lento que Python puro**, 2,1× por detrás de PyO3:
    `from_py_f64_seq_arg` hace `obj.item(k)` y comprobaciones por elemento, y añade al
    resultado con `<<` sobre un array del GC. Leer la lista con `PySequence_Fast` y
    `PyFloat_AsDouble` sobre los ítems directamente es lo habitual.
-6. **`to_py_list` crea la lista con `PyList_New(0)` y `PyList_Append`.** Reservarla con su
-   tamaño y usar `PyList_SET_ITEM` es lo que hacen PyO3 y pyo3zig (1,32× en `make_range`).
+6. ✅ *Hecho en el paso 1, sin efecto medible.* **`to_py_list` crea la lista con
+   `PyList_New(0)` y `PyList_Append`.** Reservarla con su tamaño es lo que hacen PyO3 y
+   pyo3zig, pero la diferencia en `make_range` está en el punto 7.
 7. **Coste del GC.** Hay 3,5 ms de import, frente a 0,5 ms, y un heap mínimo de 13–15 MiB.
    Además, las reservas grandes van 2,8× más lentas que con `calloc` (3,76 frente a 1,34 ms
    en `count_primes`). Conviene documentarlo, o dar una opción en `vcraft.toml` para
@@ -176,9 +182,24 @@ Nada que señalar en este benchmark.
 ## Rodeos en el código del benchmark
 
 Para que los tres proyectos compilen con la misma semántica:
-- **vcraft:** `make_range` usa `@[vc_raw]` (por los puntos 1–3, y por eso fuga) y
-  `Counter.value` es `int` (punto 4).
 - **zig-maturin:** `build.zig` reenvía el include de Python (punto 3) y `make_range` usa
-  `zm.PyList_SetItem` (punto 5).
+  `zm.PyList_SetItem` (punto 5). Están comentados en el código fuente.
+- **vcraft:** ninguno desde el paso 1. Antes, `make_range` usaba `@[vc_raw]` (puntos 1–3,
+  y por eso fugaba) y `Counter.value` era `int` (punto 4).
 
-Los dos están comentados en el código fuente.
+## Progreso de vcraft
+
+Las cifras de vcraft tras cada paso, con el benchmark completo. PyO3 se mantiene estable
+entre ejecuciones (±2 %), así que la columna de referencia es la de la tabla inicial.
+
+| paso | `add` | `increment` | `sum_floats` | `make_range` | `count_primes` | fuga `make_range` |
+|---|---|---|---|---|---|---|
+| PyO3 (referencia) | 29 ns | 19 ns | 451 µs | 833 µs | 2,00 ms | 0 |
+| inicial | 41 ns | 29 ns | 968 µs | 1,10 ms | 3,76 ms | 772 MiB |
+| 1. devolver listas y objetos | 40 ns | 29 ns | 970 µs | 1,09 ms | 3,76 ms | **0** |
+
+**Paso 1** (puntos 1–4 y 6). Ya se puede devolver `[]T`, `vcraft.PyObj` y `voidptr`, y los
+campos `i64` compilan. La fuga desaparece: lo que queda tras `make_range` son 18,5 MiB del
+heap del GC, que se estabilizan. Reservar la lista con su tamaño no cambia el tiempo: lo
+caro de `make_range` es construir antes el `[]i64` de 800 KB en el GC, el mismo coste que
+en `count_primes` (punto 7).
