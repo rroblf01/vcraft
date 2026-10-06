@@ -1,6 +1,6 @@
 # Benchmark: PyO3 vs vcraft vs zig-maturin
 
-Three independent projects implementing **the same nine functions with the same
+Three independent projects implementing **the same thirteen functions with the same
 semantics**, one per tool, plus a pure-Python reference:
 
 | directory | tool | language | module |
@@ -33,8 +33,12 @@ It needs `uv`, `cargo`, `zig` 0.16 and a `v` built at the commit pinned in `dock
 | `make_range(100_000)` | native → `list[int]` conversion |
 | `greet('world')` | `str` in, new `str` out |
 | `checksum(100k bytes)` | `bytes` → native with no copy (buffer protocol) |
+| `echo_bytes(100k bytes)` | `bytes` in, fresh copy out |
+| `join_strings(10k strs)` | `list[str]` → native → `str` |
 | `expect_positive(-1)` under `try` | exception round trip per call |
 | `Counter()` / `c.increment()` | object construction and method call |
+| `c.add(1)` | method call with an argument |
+| `c.value` | attribute read |
 
 - **Speed:** `timeit`, best of 7 repeats, in a dedicated process.
 - **Memory:** each scenario runs in a fresh process, **twice in a row**.
@@ -365,3 +369,26 @@ copy) and an exception round trip per call.
   (measured 1.1, 1.8, 1.9 and 2.5 with leak always 0.0), even without the
   new functions. It is heap slack with divisor 1, not a leak and not a
   regression from any particular change.
+
+### Second wave: `echo_bytes`, `join_strings`, `c.add`, `c.value`
+
+Four boundaries the earlier workloads did not cover: a `bytes` return, a `str`
+sequence, a method with an argument, and an attribute read.
+
+- `echo_bytes(100k bytes)`: vcraft 1.5 µs, ahead of zig (1.7), Python (1.6) and
+  PyO3 (4.2). The way in borrows in all three (the exact-`bytes` fast path on
+  vcraft's side); the way out copies once everywhere. The memory scenario
+  `echo_bytes(new 100kB) x500` sits at 0.0 kept and 0.0 leak on all four.
+  (Purity note: `bytes(data)` and `data + b""` in pure Python return the same
+  object, so the reference uses `bytes(memoryview(data))` — exactly one copy.)
+- `join_strings(10k strs)`: zig 127 µs, vcraft 173, PyO3 204. The one boundary
+  where zig leads by structure: `pz` borrows each item via `PyUnicode_AsUTF8`
+  and only the join allocates, while vcraft copies every item into a V string
+  (one GC allocation plus copy per item, 10k of them) and PyO3 builds a
+  `Vec<String>`. A borrow-based `str` sequence reader would close most of it;
+  the `join_strings(new 1k strs) x500` scenario (vcraft kept 0.8 MiB, leak 0.0)
+  already guards that path against item leaks.
+- `c.add(1)`: vcraft 22 ns, ahead of PyO3 (28 ns) and zig (204 ns — methods go
+  through `METH_VARARGS` there, tuple included).
+- `c.value`: vcraft and zig tie at 15 ns, PyO3 at 21.
+- Correctness: all four pass the five new checks everywhere.

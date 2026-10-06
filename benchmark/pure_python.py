@@ -1,4 +1,4 @@
-"""The nine benchmark workloads in plain Python: the baseline the extensions beat."""
+"""The thirteen benchmark workloads in plain Python: the baseline the extensions beat."""
 
 
 def add(a, b):
@@ -52,10 +52,24 @@ def expect_positive(n):
     return n
 
 
+def join_strings(parts):
+    return ",".join(parts)
+
+
+def echo_bytes(data):
+    # bytes() on a view copies exactly once; bytes(data) or data + b""
+    # would return the same object.
+    return bytes(memoryview(data))
+
+
 class Counter:
     def __init__(self):
         self.value = 0
 
     def increment(self):
         self.value += 1
+        return self.value
+
+    def add(self, n):
+        self.value += n
         return self.value

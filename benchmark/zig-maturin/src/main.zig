@@ -5,7 +5,7 @@ const zm = @import("zig-maturin");
 // A Zig panic becomes a Python exception instead of aborting the interpreter.
 pub const panic = pz.panic;
 
-// The same nine workloads as the PyO3 and vcraft projects, with the same
+// The same thirteen workloads as the PyO3 and vcraft projects, with the same
 // semantics and 64-bit integers throughout.
 
 // Call overhead: two ints in, one int out.
@@ -64,6 +64,18 @@ fn greet(name: []const u8) !pz.PyString {
     return pz.PyString.init(text);
 }
 
+// A list of str in, one new str out.
+fn join_strings(parts: []const []const u8) !pz.PyString {
+    const text = try std.mem.join(std.heap.c_allocator, ",", parts);
+    defer std.heap.c_allocator.free(text);
+    return pz.PyString.init(text);
+}
+
+// Bytes in, a fresh copy out.
+fn echo_bytes(data: []const u8) !pz.PyBytes {
+    return pz.PyBytes.init(data);
+}
+
 // Bytes in without copying, one int out.
 fn checksum(data: []const u8) u64 {
     var total: u64 = 0;
@@ -96,9 +108,15 @@ fn counter_increment(self: *Counter) i64 {
     return self.value;
 }
 
+fn counter_add(self: *Counter, n: i64) i64 {
+    self.value += n;
+    return self.value;
+}
+
 const CounterClass = pz.PyClass(Counter, .{
     .methods = &[_]pz.PyMethodDef{
         pz.wrapMethodNamed(Counter, "increment", counter_increment),
+        pz.wrapMethodNamed(Counter, "add", counter_add),
     },
     .readonly = &.{"value"},
 });
@@ -114,6 +132,8 @@ const Mod = pz.pyModule("bench_zig", .{
         pz.pyFnNamed("greet", greet),
         pz.pyFnNamed("checksum", checksum),
         pz.pyFnNamed("expect_positive", expect_positive),
+        pz.pyFnNamed("join_strings", join_strings),
+        pz.pyFnNamed("echo_bytes", echo_bytes),
     },
     .classes = &[_]type{CounterClass},
 });

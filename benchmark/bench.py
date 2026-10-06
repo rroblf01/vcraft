@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compares PyO3, vcraft and zig-maturin on the same nine workloads.
+"""Compares PyO3, vcraft and zig-maturin on the same thirteen workloads.
 
 Every backend is measured in fresh subprocesses so that one backend's allocator,
 garbage collector or imported runtime never shows up in another's numbers: one
@@ -42,6 +42,7 @@ BACKENDS = {
 
 FLOATS = [i * 0.5 for i in range(100_000)]
 BYTES = bytes(range(256)) * 400
+STRINGS = ["s%05d" % i for i in range(10_000)]
 
 IMPORT_RUNS = 8
 
@@ -54,12 +55,16 @@ SPEED = {
     "make_range(100k)": ("m.make_range(100_000)", "native -> list[int]"),
     "greet": ("m.greet('world')", "str in, new str out"),
     "checksum(100kB)": ("m.checksum(BYTES)", "bytes -> native, no copy"),
+    "echo_bytes(100kB)": ("m.echo_bytes(BYTES)", "bytes in, fresh copy out"),
+    "join_strings(10k)": ("m.join_strings(STRINGS)", "list[str] -> native -> str"),
     "expect_positive(err)": (
         "try:\n    m.expect_positive(-1)\nexcept ValueError:\n    pass",
         "raise + catch per call",
     ),
     "Counter()": ("m.Counter()", "object construction"),
     "c.increment()": ("c.increment()", "method call"),
+    "c.add(1)": ("c.add(1)", "method call with an argument"),
+    "c.value": ("c.value", "attribute read"),
 }
 
 # label -> (statement run `loops` times, loops). Each runs in its own process.
@@ -73,6 +78,9 @@ MEMORY = {
     # Same idea for the buffer path: a view the reader does not release keeps the
     # whole object alive.
     "checksum(new 100kB) x500": ("m.checksum(bytes(range(256)) * 400)", 500),
+    "echo_bytes(new 100kB) x500": ("m.echo_bytes(bytes(range(256)) * 400)", 500),
+    "join_strings(new 1k strs) x500": (
+        "m.join_strings(['s%05d' % i for i in range(1000)])", 500),
     "Counter() x1M": ("m.Counter()", 1_000_000),
 }
 
@@ -86,6 +94,10 @@ CORRECTNESS = {
     "make_range(3)": ("m.make_range(3)", [0, 1, 2]),
     "greet unicode": ("m.greet('España')", "Hello, España!"),
     "checksum 3 bytes": ("m.checksum(b'\\x01\\x02\\xff')", 258),
+    "echo_bytes round trip": ("m.echo_bytes(b'\\x01\\x02\\xff')", b'\x01\x02\xff'),
+    "join_strings 3 items": ("m.join_strings(['a', 'bb', 'ccc'])", 'a,bb,ccc'),
+    "counter starts at 0": ("(lambda c: c.value)(m.Counter())", 0),
+    "counter add and value": ("(lambda c: [c.add(2), c.add(3), c.value])(m.Counter())", [2, 5, 5]),
     "expect_positive ok": ("m.expect_positive(41)", 41),
     "expect_positive raises": ("m.expect_positive(-1)", "ValueError"),
     "add 2**63 overflows": ("m.add(2**63, 0)", "OverflowError"),
@@ -136,7 +148,7 @@ def worker_speed(module: str, quick: bool) -> dict:
             correctness[label] = "ok" if name == expected else f"{name}: {exc}"
 
     c = m.Counter()
-    env = {"m": m, "c": c, "FLOATS": FLOATS, "BYTES": BYTES}
+    env = {"m": m, "c": c, "FLOATS": FLOATS, "BYTES": BYTES, "STRINGS": STRINGS}
     repeat = 3 if quick else 7
     speed = {}
     for label, (stmt, _) in SPEED.items():

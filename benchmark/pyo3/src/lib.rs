@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 
 /// Benchmark workloads written in Rust.
 ///
-/// The same nine workloads as the vcraft and zig-maturin projects, with the same
+/// The same thirteen workloads as the vcraft and zig-maturin projects, with the same
 /// semantics and 64-bit integers throughout.
 #[pymodule]
 mod bench_pyo3 {
@@ -85,6 +85,18 @@ mod bench_pyo3 {
         }
     }
 
+    /// A list of str in, one new str out.
+    #[pyfunction]
+    fn join_strings(parts: Vec<String>) -> String {
+        parts.join(",")
+    }
+
+    /// Bytes in, a fresh copy out.
+    #[pyfunction]
+    fn echo_bytes(data: &[u8]) -> Vec<u8> {
+        data.to_vec()
+    }
+
     /// Method-call overhead on a native object.
     #[pyclass]
     struct Counter {
@@ -101,6 +113,11 @@ mod bench_pyo3 {
 
         fn increment(&mut self) -> i64 {
             self.value += 1;
+            self.value
+        }
+
+        fn add(&mut self, n: i64) -> i64 {
+            self.value += n;
             self.value
         }
     }

@@ -2,7 +2,7 @@ module bench_vcraft_native
 
 import vcraft
 
-// The same nine workloads as the PyO3 and zig-maturin projects, with the same
+// The same thirteen workloads as the PyO3 and zig-maturin projects, with the same
 // semantics and 64-bit integers throughout.
 
 // add is call overhead: two ints in, one int out.
@@ -88,6 +88,18 @@ pub fn expect_positive(n i64) !i64 {
 	return n
 }
 
+// join_strings converts a list of str and returns a new str.
+@[vc_fn]
+pub fn join_strings(parts []string) string {
+	return parts.join(',')
+}
+
+// echo_bytes takes bytes without copying and returns a fresh copy.
+@[vc_fn]
+pub fn echo_bytes(data []u8) []u8 {
+	return data
+}
+
 // Counter measures method-call overhead on a native object.
 @[vc_class]
 pub struct Counter {
@@ -105,5 +117,12 @@ pub fn new_counter() &Counter {
 @[vc_methods]
 pub fn (mut c Counter) increment() i64 {
 	c.value++
+	return c.value
+}
+
+// add adds n and returns the new value.
+@[vc_methods]
+pub fn (mut c Counter) add(n i64) i64 {
+	c.value += n
 	return c.value
 }
