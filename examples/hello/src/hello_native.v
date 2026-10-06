@@ -121,6 +121,22 @@ pub fn count_up(n i64) []i64 {
 	return out
 }
 
+// Halves each number, returning floats.
+@[vc_fn]
+pub fn halves(values []f64) []f64 {
+	return values.map(it / 2.0)
+}
+
+// Squares of zero up to `n`, as ints.
+@[vc_fn]
+pub fn squares(n int) []int {
+	mut out := []int{cap: n}
+	for i in 0 .. n {
+		out << i * i
+	}
+	return out
+}
+
 // Splits text on spaces into a list of words.
 @[vc_fn]
 pub fn words(text string) []string {

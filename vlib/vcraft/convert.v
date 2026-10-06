@@ -199,6 +199,27 @@ pub fn to_py_list[T](items []T, box fn (T) PyObj) PyObj {
 	return list
 }
 
+// to_py_i64_list, to_py_int_list and to_py_f64_list box a slice of plain numbers as a
+// list in one pass in C, with no function call per element. The generated glue uses
+// them for those element types and `to_py_list` for the rest.
+pub fn to_py_i64_list(items []i64) PyObj {
+	return steal(C.vpy_list_from_i64(unsafe { &i64(items.data) }, isize(items.len)))
+}
+
+pub fn to_py_int_list(items []int) PyObj {
+	// The C pass reads 64-bit integers, so it only applies where an int is that wide.
+	if sizeof(int) == sizeof(i64) {
+		return steal(C.vpy_list_from_i64(unsafe { &i64(items.data) }, isize(items.len)))
+	}
+	return to_py_list(items, fn (x int) PyObj {
+		return to_py_int(x)
+	})
+}
+
+pub fn to_py_f64_list(items []f64) PyObj {
+	return steal(C.vpy_list_from_f64(unsafe { &f64(items.data) }, isize(items.len)))
+}
+
 // to_py_object is the default boxing rule for a `[]voidptr` sequence: each element
 // is already a PyObject pointer, and it is passed through with its own reference
 // kept by the list.

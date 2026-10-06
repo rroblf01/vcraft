@@ -793,3 +793,50 @@ Py_ssize_t vpy_seq_fill_i64(PyObject *o, long long *out, Py_ssize_t n) {
 	}
 	return n;
 }
+
+// vpy_list_from_i64 builds a list of ints from `n` 64-bit integers.
+//
+// The generic `to_py_list` boxes each element through a function pointer and stores
+// it with `PyList_SetItem`, which checks its arguments every time. For the element
+// types that are plain numbers the whole loop runs here instead. Returns a new
+// reference, or NULL with an exception set.
+PyObject *vpy_list_from_i64(const long long *items, Py_ssize_t n) {
+	PyObject *list = PyList_New(n);
+	if (list == NULL) {
+		return NULL;
+	}
+	for (Py_ssize_t i = 0; i < n; i++) {
+		PyObject *value = PyLong_FromLongLong(items[i]);
+		if (value == NULL) {
+			Py_DECREF(list);
+			return NULL;
+		}
+#ifdef Py_LIMITED_API
+		PyList_SetItem(list, i, value);
+#else
+		PyList_SET_ITEM(list, i, value);
+#endif
+	}
+	return list;
+}
+
+// vpy_list_from_f64 is `vpy_list_from_i64` for doubles.
+PyObject *vpy_list_from_f64(const double *items, Py_ssize_t n) {
+	PyObject *list = PyList_New(n);
+	if (list == NULL) {
+		return NULL;
+	}
+	for (Py_ssize_t i = 0; i < n; i++) {
+		PyObject *value = PyFloat_FromDouble(items[i]);
+		if (value == NULL) {
+			Py_DECREF(list);
+			return NULL;
+		}
+#ifdef Py_LIMITED_API
+		PyList_SetItem(list, i, value);
+#else
+		PyList_SET_ITEM(list, i, value);
+#endif
+	}
+	return list;
+}

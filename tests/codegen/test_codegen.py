@@ -75,7 +75,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 21,
+            glue.count("add_function_owned") == 23,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -143,11 +143,16 @@ def main() -> int:
     # Each of these failed to build before: a `[]T` result called `to_py_list` with one
     # argument, a `PyObj` result crashed the generator, and a `voidptr` result took
     # `.ptr` of a pointer.
-    t.check("a list result is boxed per element",
-            "vcraft.to_py_list(result, fn (x i64) vcraft.PyObj" in glue)
+    t.check("a list of numbers is built in one pass",
+            "vcraft.to_py_i64_list(result)" in glue)
+    t.check("any other list is boxed per element",
+            "vcraft.to_py_list(result, fn (x string) vcraft.PyObj" in glue)
     t.equal("an i64 list", h.count_up(4), [0, 1, 2, 3])
     t.equal("an empty list", h.count_up(0), [])
     t.equal("a string list", h.words("hola qué tal"), ["hola", "qué", "tal"])
+    t.equal("a float list", h.halves([1, 3]), [0.5, 1.5])
+    t.equal("an int list", h.squares(3), [0, 1, 4])
+    t.equal("an i64 list at full width", h.count_up(2)[-1] + 2**40, 2**40 + 1)
     t.equal("a PyObj result", h.boxed(2**40), [2**40])
     t.check("a PyObj signature", h.boxed.__doc__.startswith("boxed(n: int) -> Any"),
             h.boxed.__doc__)

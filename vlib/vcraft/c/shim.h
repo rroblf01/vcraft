@@ -160,4 +160,8 @@ PyObject *vpy_seq_item(PyObject *o, Py_ssize_t i);
 Py_ssize_t vpy_seq_fill_f64(PyObject *o, double *out, Py_ssize_t n);
 Py_ssize_t vpy_seq_fill_i64(PyObject *o, long long *out, Py_ssize_t n);
 
+// Building a list from a slice of plain numbers in one pass.
+PyObject *vpy_list_from_i64(const long long *items, Py_ssize_t n);
+PyObject *vpy_list_from_f64(const double *items, Py_ssize_t n);
+
 #endif // VCRAFT_SHIM_H

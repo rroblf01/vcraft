@@ -214,6 +214,10 @@ fn C.vpy_seq_item(o voidptr, i isize) voidptr
 fn C.vpy_seq_fill_f64(o voidptr, out &f64, n isize) isize
 
 fn C.vpy_seq_fill_i64(o voidptr, out &i64, n isize) isize
+
+fn C.vpy_list_from_i64(items &i64, n isize) voidptr
+
+fn C.vpy_list_from_f64(items &f64, n isize) voidptr
 fn C.vpy_not_implemented() voidptr
 fn C.PyTuple_New(size isize) voidptr
 fn C.PyTuple_SET_ITEM(tuple voidptr, index isize, item voidptr)

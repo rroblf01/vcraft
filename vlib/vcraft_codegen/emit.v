@@ -693,8 +693,20 @@ pub fn return_expr(strategy Strategy, value string, raw bool, v_type string) str
 		// A `voidptr` result is borrowed, the same contract as a raw one, and it is
 		// already a pointer: boxing it and taking `.ptr` does not compile.
 		.pyobj { 'vcraft.borrow(${value}).new_ref().ptr' }
-		.seq { 'vcraft.to_py_list(${value}, ${element_box_fn(element_type(v_type))}).ptr' }
+		.seq { '${seq_boxed_expr(element_type(v_type), value)}.ptr' }
 		else { '${boxed_expr(strategy, value)}.ptr' }
+	}
+}
+
+// seq_boxed_expr boxes a returned `[]T` as a list. Slices of the plain number types
+// the runtime has a one-pass builder for use it; every other element type goes through
+// `to_py_list` with a boxing rule.
+fn seq_boxed_expr(element string, value string) string {
+	return match element {
+		'i64' { 'vcraft.to_py_i64_list(${value})' }
+		'int' { 'vcraft.to_py_int_list(${value})' }
+		'f64' { 'vcraft.to_py_f64_list(${value})' }
+		else { 'vcraft.to_py_list(${value}, ${element_box_fn(element)})' }
 	}
 }
 
