@@ -294,7 +294,9 @@ vcraft arranca el GC antes que V, sin ese registro, y registra a mano solo el se
 que parecía heap del GC eran páginas de bibliotecas del sistema. El código que reserva
 mucho también va más rápido (`sum_floats` 153 → 133 µs; un bucle que solo concatena
 strings, 1,8×). Linux no cambia: allí Boehm registra las bibliotecas de otra forma y no lo
-he medido.
+he medido. Del import que queda (0,63 frente a 0,54 ms en caliente), el `PyInit`
+no tiene la culpa: con la imagen ya cargada son 118 frente a 230 µs; el resto es
+el arranque de Boehm, una vez por proceso.
 
 ### Estado tras el paso 6
 
