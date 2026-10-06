@@ -161,6 +161,13 @@ Por prioridad. Cada punto está reproducido en este benchmark.
 8. **Pendiente, en V:** el compilador nuevo de V convierte cada `<<` y cada `a[i] = x` en
    una llamada con `memcpy` de un elemento, y `@[direct_array_access]` no lo evita en las
    escrituras. Es lo que queda entre vcraft y PyO3 en `count_primes` y `make_range`.
+   Repro mínima (V `0137eb5`, `v -new-compiler -o out.c`):
+   `fill(mut a []i64) { for i in 0 .. n { a[i] = i } }` genera por elemento
+   `{ Array* _a0 = a; int _i0 = i; array__set(_a0, _i0, &(i64[]){i}); }`, idéntico
+   con `@[direct_array_access]`; `a << x` genera `array_push(a, &x)`, con sus
+   comprobaciones y `copy_element_to` por elemento. Las definiciones están en el
+   propio C generado (`array__set` comprueba límites y hace `vmemcpy` de
+   `element_size`; `array__push` comprueba, reserva y hace `copy_element_to`).
 9. **Pendiente:** `GC_set_free_space_divisor(1)`, el valor que fija V, hace crecer el heap
    antes que recolectar. Con 2 se retienen algo menos de memoria a cambio de un 0–3 % de
    velocidad; no lo he cambiado, pero vcraft podría ofrecerlo como opción.
