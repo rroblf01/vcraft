@@ -194,7 +194,11 @@ Por prioridad. Cada punto está reproducido en este benchmark.
    retenido pasa de 1,0 a 0,5 MiB tras `greet` ×2M, de 1,1 a 0,3 en `make_range`
    y de 1,3 a 1,0 en `sum_floats`; el RSS del import no cambia (1.120 KiB).
    Cuesta `sum_floats` 129 → 135 µs (+5 %), `fib` +1,6 %, y nada medible en el
-   resto (`add` 22 → 23 ns está en el ruido).
+   resto (`add` 22 → 23 ns está en el ruido). Divisores 3 y 4 medidos después:
+   solo baja el retenido de `sum_floats` (0,6 → 0,3 → 0,1 MiB); `greet` (0,5) y
+   `make_range` (1,2) no se mueven y la velocidad tampoco. El suelo lo marca la
+   granularidad del heap, no el divisor: el 2 se queda. `GC_FORCE_UNMAP_ON_GCOLLECT=1`
+   tampoco mueve el retenido ni un KiB.
 
 ### zig-maturin
 
@@ -314,12 +318,17 @@ mucho también va más rápido (`sum_floats` 153 → 133 µs; un bucle que solo 
 strings, 1,8×). Linux no cambia: allí Boehm registra las bibliotecas de otra forma y no lo
 he medido. Del import que queda (0,63 frente a 0,54 ms en caliente), el `PyInit`
 no tiene la culpa: con la imagen ya cargada son 118 frente a 230 µs; el resto es
-el arranque de Boehm, una vez por proceso. Y el RSS del import (1.104 frente a
+el arranque de Boehm, una vez por proceso. Y el RSS del import (1.136 frente a
 304 KiB) tampoco cede a los ajustes del GC: ni `GC_MARKERS=1` ni
 `GC_INITIAL_HEAP_SIZE=64k` lo mueven un KiB. Según `vmmap`, unas 400 KiB son el
 propio `.so` mapeado (`__TEXT` 240 KiB residentes + `__DATA`/`__LINKEDIT`); el
 resto es el arranque del runtime. No hay palanca aquí: la extensión ya es la más
-pequeña de las tres tras `strip` (351 frente a 414 y 400 KiB).
+pequeña de las tres tras `strip` (351 frente a 414 y 400 KiB). La prueba
+definitiva: un módulo vcraft vacío retiene 1.104 de los 1.136 KiB — las nueve
+funciones y el tipo solo añaden ~30 KiB. De esos 1.104, `vmmap` atribuye ~640
+KiB a heap Boehm faulteado al arrancar (estructuras internas del collector, no
+datos vivos: el knob de heap inicial tampoco lo mueve) y ~350 KiB al mapeo
+propio. Suelo estructural.
 
 ### Estado tras el paso 6
 
