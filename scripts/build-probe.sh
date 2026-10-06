@@ -35,4 +35,10 @@ fi
 	${macos_ldflags[@]+"${macos_ldflags[@]}"} \
 	-cflags "-I$include" "$probe_dir/src/"
 
+# For macOS V appends `.dylib` to an output name that does not already end in it,
+# and CPython only imports a file ending in its EXT_SUFFIX, so the file is moved back.
+if [ -f "$probe_dir/probe$suffix.dylib" ]; then
+	mv -f "$probe_dir/probe$suffix.dylib" "$probe_dir/probe$suffix"
+fi
+
 echo "built $probe_dir/probe$suffix"

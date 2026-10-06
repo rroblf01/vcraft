@@ -35,4 +35,10 @@ fi
 	-cflags "-I$include" \
 	"$project"
 
+# For macOS V appends `.dylib` to an output name that does not already end in it,
+# and CPython only imports a file ending in its EXT_SUFFIX, so the file is moved back.
+if [ -f "$project/python/$module$suffix.dylib" ]; then
+	mv -f "$project/python/$module$suffix.dylib" "$project/python/$module$suffix"
+fi
+
 echo "built $project/python/$module$suffix"

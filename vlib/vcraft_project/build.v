@@ -538,9 +538,23 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		args << '-prod'
 	}
 	args << shell_quote(opt.root.trim_right('/'))
+	// For macOS V names the shared object itself: an `-o` that does not end in `.dylib`
+	// gets `.dylib` appended, so `x.cpython-311-darwin.so` is written as
+	// `x.cpython-311-darwin.so.dylib` and CPython, which only imports its EXT_SUFFIX,
+	// never finds it. The file is moved back after the build. Both names are cleared
+	// first, so a leftover from an earlier build can never be read as this one.
+	dylib := output + '.dylib'
+	for stale in [output, dylib] {
+		if os.exists(stale) {
+			os.rm(stale) or { return error('cannot remove ${stale}') }
+		}
+	}
 	result := os.execute(args.join(' '))
 	if result.exit_code != 0 {
 		return error('the V compiler failed:\n${result.output}')
+	}
+	if !os.exists(output) && os.exists(dylib) {
+		os.mv(dylib, output) or { return error('cannot move ${dylib} to ${output}') }
 	}
 	binary := os.read_file(output) or { return error('cannot read ${output}') }
 
