@@ -22,10 +22,16 @@ env:
 
 jobs:
   tests:
+    # Every supported CPython on both platforms: a wheel is built per interpreter,
+    # and the runtime compiles against each version's headers, so a version left
+    # out of this list is a version nobody has compiled for. Keep it in step with
+    # `supported_pythons` in vlib/vcraft_project/build.v.
+    name: tests (${{ matrix.os }}, ${{ matrix.python }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14]
+        os: [ubuntu-latest, macos-15]
+        python: ["3.11", "3.12", "3.13", "3.14"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -33,9 +39,19 @@ jobs:
       - name: set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python }}
+
+      # The compiler only changes when the pins do, so it is built once per
+      # runner image and pin pair and restored from the cache afterwards.
+      - name: restore the V compiler
+        id: v-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/v-src
+          key: v-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
 
       - name: build the V compiler from source
+        if: steps.v-cache.outputs.cache-hit != 'true'
         run: |
           git init -q /tmp/v-src
           cd /tmp/v-src
@@ -46,26 +62,50 @@ jobs:
           (cd vc && git checkout -q "$VC_COMMIT")
           make fresh_tcc
           make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
-          echo "/tmp/v-src" >> "$GITHUB_PATH"
 
-      - name: run the test suites
-        # Every suite, in dependency order: the wheel and CLI suites build on
-        # what the earlier ones prove, so a failure early in this list explains
-        # the ones after it.
-        run: |
-          python3 tests/project/check_toml.py
-          python3 tests/packaging/test_pack.py
-          python3 tests/wheel/test_wheel.py
-          python3 tests/runtime/test_runtime.py
-          python3 tests/codegen/test_codegen.py
-          python3 tests/cli/test_cli.py
+      - name: put V on PATH
+        id: v-ready
+        run: echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      # One step per suite, so the summary names the one that failed. Each
+      # suite builds what it needs, so a failure in one does not stop the rest;
+      # only a missing compiler does.
+      - name: "suite: vcraft.toml parser"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/project/check_toml.py
+
+      - name: "suite: tool wheel packer"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/packaging/test_pack.py
+
+      - name: "suite: wheel writer"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/wheel/test_wheel.py
+
+      - name: "suite: runtime"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/runtime/test_runtime.py
+
+      - name: "suite: code generator"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/codegen/test_codegen.py
+
+      - name: "suite: cli"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/cli/test_cli.py
 
   free-threaded:
     # The one configuration nothing else exercises: a free-threaded interpreter
     # with the GIL actually disabled. A build that merely tags `cp314t` but
     # crashes, warns, or serialises on import fails here rather than on a
     # user's machine.
-    runs-on: ubuntu-latest
+    name: free-threaded (${{ matrix.os }}, ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+        python: ["3.13t", "3.14t"]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -73,9 +113,19 @@ jobs:
         id: ft-python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13t"
+          python-version: ${{ matrix.python }}
+
+      # The compiler only changes when the pins do, so it is built once per
+      # runner image and pin pair and restored from the cache afterwards.
+      - name: restore the V compiler
+        id: v-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/v-src
+          key: v-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
 
       - name: build the V compiler from source
+        if: steps.v-cache.outputs.cache-hit != 'true'
         run: |
           git init -q /tmp/v-src
           cd /tmp/v-src
@@ -86,7 +136,10 @@ jobs:
           (cd vc && git checkout -q "$VC_COMMIT")
           make fresh_tcc
           make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
-          echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      - name: put V on PATH
+        id: v-ready
+        run: echo "/tmp/v-src" >> "$GITHUB_PATH"
 
       - name: build the vcraft binary
         run: ./scripts/build-vcraft.sh && bin/vcraft version
@@ -111,6 +164,7 @@ jobs:
           import sys, threading, glob
           sys.path.insert(0, glob.glob('dist/build/*.so')[0].rsplit('/', 1)[0])
           import ftcheck_native as m
+          assert not sys._is_gil_enabled(), 'importing the module re-enabled the GIL'
           assert m.add(2, 3) == 5
           seen = []
           def burn():

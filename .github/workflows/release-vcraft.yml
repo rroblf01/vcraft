@@ -59,6 +59,10 @@ jobs:
           echo "/tmp/v-src" >> "$GITHUB_PATH"
 
       - name: build vcraft
+        # The macOS wheel is tagged `macosx_11_0_arm64`, and without a deployment
+        # target the binary would require the runner's own macOS instead.
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: ./scripts/build-vcraft.sh && bin/vcraft version
 
       - name: run the test suites
@@ -68,8 +72,22 @@ jobs:
           python3 tests/wheel/test_wheel.py
           python3 tests/project/check_toml.py
           python3 tests/packaging/test_pack.py
-          python3 tests/packaging/test_pack.py
           python3 tests/cli/test_cli.py
+
+      # The suites above ran against a binary linked to the runner's glibc, which
+      # would make the wheel need that glibc too. The shipped Linux binary is built
+      # again inside the manylinux_2_28 image instead, the one the images publish,
+      # so its `manylinux_2_28` tag is true. PyPI refuses a plain `linux_x86_64`
+      # tag outright, so this is also what makes the upload possible at all.
+      - name: rebuild the Linux binary in the manylinux image
+        if: runner.os == 'Linux'
+        run: |
+          docker build -f docker/manylinux.Dockerfile \
+            --build-arg VCRAFT_REF="${{ github.sha }}" -t vcraft-release .
+          id="$(docker create vcraft-release)"
+          docker cp "$id:/src/vcraft/bin/vcraft" bin/vcraft
+          docker rm "$id"
+          bin/vcraft version
 
       # The binary and the V modules it was built with, uploaded for the publish
       # job rather than published as tarballs: PyPI is the only distribution
@@ -126,7 +144,7 @@ jobs:
         run: |
           mkdir -p dist
           python3 scripts/pack-vcraft-wheel.py --version "$VERSION" \
-            --platform linux_x86_64 \
+            --platform manylinux_2_28_x86_64 \
             --bin dists/vcraft-dist-linux-x86_64/bin/vcraft \
             --vlib dists/vcraft-dist-linux-x86_64/vlib \
             --out-dir dist
