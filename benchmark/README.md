@@ -1,366 +1,367 @@
 # Benchmark: PyO3 vs vcraft vs zig-maturin
 
-Tres proyectos independientes que implementan **las mismas nueve funciones con la misma
-semántica**, uno por herramienta, más una referencia en Python puro:
+Three independent projects implementing **the same nine functions with the same
+semantics**, one per tool, plus a pure-Python reference:
 
-| carpeta | herramienta | lenguaje | módulo |
+| directory | tool | language | module |
 |---|---|---|---|
 | [`pyo3/`](pyo3) | PyO3 0.29 + maturin 1.15 | Rust 1.98 | `bench_pyo3` |
-| [`vcraft/`](vcraft) | vcraft (este repo) | V `0137eb5` | `bench_vcraft_native` |
+| [`vcraft/`](vcraft) | vcraft (this repo) | V `0137eb5` | `bench_vcraft_native` |
 | [`zig-maturin/`](zig-maturin) | [zig-maturin](https://github.com/rroblf01/zig-maturin) 1.0.1 | Zig 0.16 | `bench_zig` |
 | [`pure_python.py`](pure_python.py) | — | Python | `pure_python` |
 
-## Cómo se ejecuta
+## How to run it
 
 ```console
-$ ./run.sh            # build limpio de los tres, instalación en .venv y benchmark
-$ ./run.sh --quick    # menos repeticiones, para comprobar el arnés
+$ ./run.sh            # clean build of all three, install into .venv, benchmark
+$ ./run.sh --quick    # fewer repeats, to check the harness
 ```
 
-Necesita `uv`, `cargo`, `zig` 0.16 y un `v` compilado en el commit fijado en `docker/` en el
-`PATH`. No instala nada fuera de `benchmark/.venv`. `BENCH_PYTHON` elige el intérprete
-(3.13 por defecto, la versión más nueva que soportan los tres). El resultado completo se
-escribe en [`results.md`](results.md) y [`results.json`](results.json).
+It needs `uv`, `cargo`, `zig` 0.16 and a `v` built at the commit pinned in `docker/` on
+`PATH`. It installs nothing outside `benchmark/.venv`. `BENCH_PYTHON` picks the interpreter
+(3.13 by default, the newest all three support). The full result is written to
+[`results.md`](results.md) and [`results.json`](results.json).
 
-## Qué se mide
+## What is measured
 
-| carga | qué mide |
+| workload | what it measures |
 |---|---|
-| `add(1, 2)` | coste fijo de una llamada |
-| `fib(25)` recursivo | cálculo puro: calidad del código generado |
-| `count_primes(1_000_000)` | cálculo más una reserva nativa de 1 MB |
-| `sum_floats(lista de 100k)` | conversión `list[float]` → nativo |
-| `make_range(100_000)` | conversión nativo → `list[int]` |
-| `greet('world')` | `str` de entrada, `str` nuevo de salida |
-| `checksum(bytes de 100k)` | `bytes` → nativo sin copiar (protocolo búfer) |
-| `expect_positive(-1)` con `try` | ida y vuelta de una excepción por llamada |
-| `Counter()` / `c.increment()` | construcción de objeto y llamada a método |
+| `add(1, 2)` | fixed cost of a call |
+| `fib(25)` recursive | pure compute: quality of the generated code |
+| `count_primes(1_000_000)` | compute plus a native 1 MB allocation |
+| `sum_floats(100k list)` | `list[float]` → native conversion |
+| `make_range(100_000)` | native → `list[int]` conversion |
+| `greet('world')` | `str` in, new `str` out |
+| `checksum(100k bytes)` | `bytes` → native with no copy (buffer protocol) |
+| `expect_positive(-1)` under `try` | exception round trip per call |
+| `Counter()` / `c.increment()` | object construction and method call |
 
-- **Velocidad:** `timeit`, el mejor de 7 repeticiones, en un proceso dedicado.
-- **Memoria:** cada escenario se ejecuta en un proceso nuevo y **dos veces seguidas**.
-  *Peak* es el RSS máximo del proceso. *Kept* es lo que queda residente tras la primera
-  tanda y `gc.collect()`. *Leak* es lo que añade la segunda tanda, idéntica a la primera:
-  un heap que ya se ha estabilizado no añade nada, y una fuga sí.
-- **Import:** 8 procesos. El primero se informa aparte, porque macOS verifica una vez cada
-  binario recién instalado; la cifra "warm" es la mediana del resto.
-- **Tamaño:** el wheel, la extensión tal como sale y la extensión tras `strip -x`.
-- **Corrección:** valores esperados, incluido `2**40`, y que `2**63` lance `OverflowError`.
+- **Speed:** `timeit`, best of 7 repeats, in a dedicated process.
+- **Memory:** each scenario runs in a fresh process, **twice in a row**.
+  *Peak* is the process's maximum RSS. *Kept* is what stays resident after the first
+  batch and `gc.collect()`. *Leak* is what the second batch, identical to the first, adds:
+  a heap that has plateaued adds nothing, and a leak does.
+- **Import:** 8 processes. The first is reported separately, because macOS verifies each
+  freshly installed binary once; the "warm" figure is the median of the rest.
+- **Size:** the wheel, the extension as built, and the extension after `strip -x`.
+- **Correctness:** expected values, including `2**40`, and that `2**63` raises `OverflowError`.
 
-Cada herramienta compila con su modo release: `cargo --release` (opt-level 3),
-`vcraft build --release` (`v -prod`) y `zig-maturin build --release` (`ReleaseSafe`). Los
-tres mantienen las comprobaciones de límites.
+Each tool compiles in its release mode: `cargo --release` (opt-level 3),
+`vcraft build --release` (`v -prod`) and `zig-maturin build --release` (`ReleaseSafe`). All
+three keep bounds checks.
 
-## Resultados iniciales
+## Initial results
 
-macOS 27, Apple Silicon (arm64), CPython 3.13.15. Una sola máquina y una sola ejecución
-completa; la ejecución rápida previa dio las mismas cifras con un margen del 5 %.
+macOS 27, Apple Silicon (arm64), CPython 3.13.15. A single machine and a single full
+run; the earlier quick run gave the same figures within 5%.
 
-Esta es la foto de partida, antes de mejorar vcraft. La evolución de vcraft está en
-[Progreso de vcraft](#progreso-de-vcraft), y la última ejecución completa, en
+This is the starting picture, before improving vcraft. vcraft's progress is under
+[vcraft progress](#vcraft-progress), and the latest full run under
 [`results.md`](results.md).
 
-### Tamaño y build
+### Size and build
 
 | | PyO3 | vcraft | zig-maturin |
 |---|---|---|---|
 | wheel | 221 KiB | **189 KiB** | **186 KiB** |
-| extensión (`strip -x`) | 414 KiB | **351 KiB** | 400 KiB |
-| build release limpio¹ | 5,7 s | **2,1 s** | 8,4 s |
+| extension (`strip -x`) | 414 KiB | **351 KiB** | 400 KiB |
+| clean release build¹ | 5.7 s | **2.1 s** | 8.4 s |
 
-¹ Proyecto limpio, con las cachés de cargo y zig ya calientes (sin descargas).
+¹ Clean project, with warm cargo and zig caches (no downloads).
 
-### Velocidad (tiempo por llamada; menos es mejor)
+### Speed (time per call; lower is better)
 
-| carga | PyO3 | vcraft | zig-maturin | Python |
+| workload | PyO3 | vcraft | zig-maturin | Python |
 |---|---|---|---|---|
 | `add` | **29 ns** | 41 ns | 206 ns | 16 ns |
-| `fib(25)` | 121 µs | **118 µs** | 164 µs | 5,20 ms |
-| `count_primes(1e6)` | 2,00 ms | 3,76 ms | **1,43 ms** | 42,2 ms |
+| `fib(25)` | 121 µs | **118 µs** | 164 µs | 5.20 ms |
+| `count_primes(1e6)` | 2.00 ms | 3.76 ms | **1.43 ms** | 42.2 ms |
 | `sum_floats(100k)` | **451 µs** | 968 µs | 496 µs | 775 µs |
-| `make_range(100k)` | **833 µs** | 1,10 ms | 841 µs | 775 µs |
+| `make_range(100k)` | **833 µs** | 1.10 ms | 841 µs | 775 µs |
 | `greet` | 60 ns | **39 ns** | 275 ns | 33 ns |
 | `Counter()` | 36 ns | **35 ns** | 200 ns | 39 ns |
 | `c.increment()` | **19 ns** | 29 ns | 194 ns | 27 ns |
 
-### Memoria
+### Memory
 
 | | PyO3 | vcraft | zig-maturin | Python |
 |---|---|---|---|---|
-| RSS que añade el `import` | 304 KiB | 1.088 KiB | **144 KiB** | — |
-| `import` (warm) | **0,51 ms** | 3,50 ms | 0,57 ms | — |
-| `greet` ×2M: kept / leak | 0 / 0 | 13,8 MiB / 0 | 0 / 0 | 0 / 0 |
+| RSS added by `import` | 304 KiB | 1,088 KiB | **144 KiB** | — |
+| `import` (warm) | **0.51 ms** | 3.50 ms | 0.57 ms | — |
+| `greet` ×2M: kept / leak | 0 / 0 | 13.8 MiB / 0 | 0 / 0 | 0 / 0 |
 | `make_range` ×200: kept / leak | 0 / 0 | **790 MiB / 772 MiB** | 0 / 0 | 0 / 0 |
-| `count_primes(10M)` ×5: kept / leak | 0 / 0 | 14,7 MiB / 0 | 0 / 0 | 0 / 0 |
-| `Counter()` ×1M: kept / leak | 0 / 0 | 12,9 MiB / 0,9 MiB | 0 / 0 | 0 / 0 |
+| `count_primes(10M)` ×5: kept / leak | 0 / 0 | 14.7 MiB / 0 | 0 / 0 | 0 / 0 |
+| `Counter()` ×1M: kept / leak | 0 / 0 | 12.9 MiB / 0.9 MiB | 0 / 0 | 0 / 0 |
 
-### Corrección
+### Correctness
 
-Todo correcto salvo un caso: con `add(2**63, 0)`, zig-maturin lanza
-`TypeError: expected int, got int` en lugar de `OverflowError`.
+All correct except one case: with `add(2**63, 0)`, zig-maturin raises
+`TypeError: expected int, got int` instead of `OverflowError`.
 
-## Conclusiones
+## Conclusions
 
-**Velocidad: los tres generan código nativo comparable.** En `fib`, la diferencia entre
-PyO3 y vcraft es ruido, y Zig va algo por detrás, seguramente por `ReleaseSafe`. Las
-diferencias reales están en la frontera con Python: el coste de cada llamada y el de las
-conversiones. Ahí PyO3 es el más regular. vcraft queda a 1,4–1,5× en llamadas simples y es
-el mejor en `greet` y en construir objetos. zig-maturin paga hoy entre 5 y 10× por llamada,
-por una causa concreta que se corrige con una línea (ver abajo).
+**Speed: all three generate comparable native code.** On `fib`, the difference between
+PyO3 and vcraft is noise, and Zig trails somewhat, probably because of `ReleaseSafe`. The
+real differences are at the boundary with Python: the cost of each call and of conversions.
+There PyO3 is the most consistent. vcraft is at 1.4–1.5× on simple calls and is best at
+`greet` and object construction. zig-maturin pays 5–10× per call today, for one concrete
+cause fixed with a one-liner (see below).
 
-**Tamaño: empate práctico.** Entre 186 y 221 KiB por wheel. No es un criterio para elegir.
+**Size: a practical tie.** Between 186 and 221 KiB per wheel. Not a criterion to choose by.
 
-**RAM: PyO3 y zig-maturin no se distinguen de Python puro. vcraft sí.**
-- El GC de Boehm añade unos 1 MiB al importar y deja un heap de 13–15 MiB que no devuelve
-  al sistema. Se estabiliza; no es una fuga.
-- Hay una fuga real: **vcraft no tiene hoy ninguna forma de devolver una lista sin perder
-  memoria** (ver abajo). En `make_range`, cada llamada pierde la lista entera.
+**RAM: PyO3 and zig-maturin are indistinguishable from pure Python. vcraft is not.**
+- The Boehm GC adds about 1 MiB at import and leaves a 13–15 MiB heap it never returns
+  to the system. It plateaus; it is not a leak.
+- There is a real leak: **vcraft today has no way to return a list without losing
+  memory** (see below). In `make_range`, every call loses the whole list.
 
-**¿Merece la pena vcraft?** El código que genera V es tan rápido como el de Rust. Con la
-reserva fuera del GC, `count_primes` baja a 1,34 ms, mejor que los otros dos. Además el
-build es el más rápido y el binario el más pequeño. Pero hoy **no está a la par de PyO3**:
-le faltan piezas básicas, como devolver listas, y el GC cuesta RAM y velocidad en las
-reservas grandes. La base merece la pena; los puntos de abajo son los que lo separan de
-PyO3, y casi todos son acotados.
+**Is vcraft worth it?** The code V generates is as fast as Rust's. With the allocation
+outside the GC, `count_primes` drops to 1.34 ms, better than the other two. Plus the build
+is the fastest and the binary the smallest. But today **it is not on par with PyO3**:
+it lacks basic pieces, like returning lists, and the GC costs RAM and speed on large
+allocations. The foundation is worth it; the points below are what separate it from
+PyO3, and almost all of them are bounded.
 
-**zig-maturin** queda muy cerca de PyO3 en todo menos en el coste por llamada, y eso tiene
-una corrección verificada.
+**zig-maturin** is very close to PyO3 in everything except per-call cost, and that has a
+verified fix.
 
-**PyO3** es la referencia: el más regular y sin ningún fallo en este benchmark. A cambio,
-tiene el build más pesado de los dos con toolchain propio y el wheel algo mayor.
+**PyO3** is the reference: the most consistent and with no failures in this benchmark. In
+exchange, it has the heaviest build of the two with their own toolchain and a somewhat
+larger wheel.
 
-## Qué mejorar
+## What to improve
 
 ### vcraft
 
-Por prioridad. Cada punto está reproducido en este benchmark.
+By priority. Each point is reproduced in this benchmark.
 
-1. ✅ *Corregido en el paso 1.* **Devolver `[]T` no compila.** El emisor genera `vcraft.to_py_list(result)` con un
-   argumento, y el runtime declara `to_py_list[T](items, box)` con dos
+1. ✅ *Fixed in step 1.* **Returning `[]T` does not compile.** The emitter generates `vcraft.to_py_list(result)` with one
+   argument, and the runtime declares `to_py_list[T](items, box)` with two
    (`vlib/vcraft_codegen/emit.v`, `boxed_expr`).
-2. ✅ *Corregido en el paso 1.* **Las alternativas para devolver una lista también fallan.** Devolver `vcraft.PyObj` o
-   `PyObj` hace que el generador muera con SIGBUS (exit 138), sin ningún diagnóstico. Un
-   `voidptr` bajo `@[vc_fn]` genera `result.ptr` sobre un puntero y no compila.
-3. ✅ *Resuelto en el paso 1: un resultado `vcraft.PyObj` entrega su referencia.*
-   **`@[vc_raw]` no puede devolver un objeto nuevo sin fugarlo.** El glue trata el
-   resultado como prestado y hace `borrow(result).new_ref()`. Junto con los puntos 1 y 2,
-   devolver una lista implica perder memoria; es lo que mide `make_range`.
-4. ✅ *Corregido en el paso 1.* **Un campo `i64` en una clase no compila.** El getter y el `__repr__` generados llaman a
-   `to_py_int` y `repr_int`, que solo aceptan `int`. Con este V, `int` ya es de 64 bits, así
-   que basta con aceptar ambos tipos.
-5. ✅ *Corregido en el paso 4.* **`sum_floats` es más lento que Python puro**, 2,1× por detrás de PyO3:
-   `from_py_f64_seq_arg` hace `obj.item(k)` y comprobaciones por elemento, y añade al
-   resultado con `<<` sobre un array del GC. Leer la lista con `PySequence_Fast` y
-   `PyFloat_AsDouble` sobre los ítems directamente es lo habitual.
-6. ✅ *Hecho en el paso 1, sin efecto medible.* **`to_py_list` crea la lista con
-   `PyList_New(0)` y `PyList_Append`.** Reservarla con su tamaño es lo que hacen PyO3 y
-   pyo3zig, pero la diferencia en `make_range` está en el punto 7.
-7. ✅ *Corregido en el paso 6 (import y memoria); el diagnóstico estaba mal.* **Coste del
-   GC.** Había 3,5 ms de import, frente a 0,5 ms, y un heap mínimo de 13–15 MiB. Además,
-   las reservas grandes iban 2,8× más lentas que con `calloc` (3,76 frente a 1,34 ms en
-   `count_primes`). Los 3 ms y los 13 MiB venían de que Boehm escaneaba todas las imágenes
-   del proceso (paso 6). Lo de `calloc` no era el GC: el experimento usaba un puntero
-   crudo, que se salta las llamadas por elemento con las que V compila `a[i] = x` (paso 5).
-8. **Pendiente, en V:** el compilador nuevo de V convierte cada `<<` y cada `a[i] = x` en
-   una llamada con `memcpy` de un elemento, y `@[direct_array_access]` no lo evita en las
-   escrituras. Es lo que queda entre vcraft y PyO3 en `count_primes` y `make_range`.
-   Repro mínima (V `0137eb5`, `v -new-compiler -o out.c`):
-   `fill(mut a []i64) { for i in 0 .. n { a[i] = i } }` genera por elemento
-   `{ Array* _a0 = a; int _i0 = i; array__set(_a0, _i0, &(i64[]){i}); }`, idéntico
-   con `@[direct_array_access]`; `a << x` genera `array_push(a, &x)`, con sus
-   comprobaciones y `copy_element_to` por elemento. Las definiciones están en el
-   propio C generado (`array__set` comprueba límites y hace `vmemcpy` de
-   `element_size`; `array__push` comprueba, reserva y hace `copy_element_to`).
-   Medido en `count_primes(1e6)`: la mitad de las muestras caen en
-   `memmove`/`memcpy`, y el mismo sieve sobre un buffer `malloc` con tiendas
-   directas baja a 1,7 ms (V `0137eb5`, macOS arm64), por delante de PyO3
-   (2,02 ms). En `make_range(100k)` el reparto es el mismo al revés: construir
-   el `[]i64` con `<<` cuesta 208 µs frente a 13 µs con tiendas directas, y la
-   conversión en C ya está a la par de `list(range(100k))` (790 frente a
-   783 µs); el perfil muestra dos tercios en `PyLong_FromLongLong` (un alloc por
-   elemento, inevitable) y un tercio en `array__push`. Sin rodeos en el código
-   del usuario no hay arreglo dentro de vcraft: el lowering lo hace V.
-   Reportado a vlang/v; el texto del issue está en el historial del chat.
-   Nota de compilación: medido a fondo, no hay flag que lo evite. V ya compila
-   la extensión con `-O3`; ni `-O3` explícito por `--cflags` (binario
-   bit-idéntico: V lo emite de todos modos), ni `-flto`, ni `-fwrapv` pliegan
-   el `memcpy` en la TU grande (comprobado compilando el C generado a mano y
-   por disassembler). En una TU pequeña sí se pliega, y solo con la receta
-   completa del ejecutable (`-O3 -flto` la deja ~2×); sin LTO o en TU grande,
-   el `memcpy` por elemento se queda. Por eso `vcraft build` no fuerza nada:
-   no hay palanca.
-9. ✅ *Medido tras el paso 6, ofrecido como opción `gc-free-space-divisor` y
-   desde entonces el defecto (2).* `GC_set_free_space_divisor(1)`, el valor que
-   fija V, hace crecer el heap antes que recolectar. Con 2, en esta máquina: lo
-   retenido pasa de 1,0 a 0,5 MiB tras `greet` ×2M, de 1,1 a 0,3 en `make_range`
-   y de 1,3 a 1,0 en `sum_floats`; el RSS del import no cambia (1.120 KiB).
-   Cuesta `sum_floats` 129 → 135 µs (+5 %), `fib` +1,6 %, y nada medible en el
-   resto (`add` 22 → 23 ns está en el ruido). Divisores 3 y 4 medidos después:
-   solo baja el retenido de `sum_floats` (0,6 → 0,3 → 0,1 MiB); `greet` (0,5) y
-   `make_range` (1,2) no se mueven y la velocidad tampoco. El suelo lo marca la
-   granularidad del heap, no el divisor: el 2 se queda. `GC_FORCE_UNMAP_ON_GCOLLECT=1`
-   tampoco mueve el retenido ni un KiB.
+2. ✅ *Fixed in step 1.* **The alternatives for returning a list fail too.** Returning `vcraft.PyObj` or
+   `PyObj` kills the generator with SIGBUS (exit 138), with no diagnostics. A
+   `voidptr` under `@[vc_fn]` generates `result.ptr` over a pointer and does not compile.
+3. ✅ *Solved in step 1: a `vcraft.PyObj` result hands over its reference.*
+   **`@[vc_raw]` cannot return a new object without leaking it.** The glue treats the
+   result as borrowed and does `borrow(result).new_ref()`. Together with points 1 and 2,
+   returning a list means losing memory; that is what `make_range` measures.
+4. ✅ *Fixed in step 1.* **An `i64` field in a class does not compile.** The generated getter and `__repr__` call
+   `to_py_int` and `repr_int`, which only accept `int`. With this V, `int` is already 64 bits, so
+   accepting both types is enough.
+5. ✅ *Fixed in step 4.* **`sum_floats` is slower than pure Python**, 2.1× behind PyO3:
+   `from_py_f64_seq_arg` does `obj.item(k)` and per-element checks, and appends to
+   the result with `<<` on a GC array. Reading the list with `PySequence_Fast` and
+   `PyFloat_AsDouble` over the items directly is the usual thing.
+6. ✅ *Done in step 1, with no measurable effect.* **`to_py_list` builds the list with
+   `PyList_New(0)` and `PyList_Append`.** Reserving it at its size is what PyO3 and
+   pyo3zig do, but the difference in `make_range` is in point 7.
+7. ✅ *Fixed in step 6 (import and memory); the diagnosis was wrong.* **GC
+   cost.** Import was 3.5 ms vs 0.5 ms, with a minimum 13–15 MiB heap. Plus,
+   large allocations ran 2.8× slower than with `calloc` (3.76 vs 1.34 ms in
+   `count_primes`). The 3 ms and 13 MiB came from Boehm scanning every image in
+   the process (step 6). The `calloc` part was not the GC: the experiment used a raw
+   pointer, which skips the per-element calls V compiles `a[i] = x` into (step 5).
+8. **Pending, in V:** V's new compiler turns every `<<` and every `a[i] = x` into
+   a call with a one-element `memcpy`, and `@[direct_array_access]` does not avoid it on
+   writes. That is what stands between vcraft and PyO3 in `count_primes` and `make_range`.
+   Minimal repro (V `0137eb5`, `v -new-compiler -o out.c`):
+   `fill(mut a []i64) { for i in 0 .. n { a[i] = i } }` generates per element
+   `{ Array* _a0 = a; int _i0 = i; array__set(_a0, _i0, &(i64[]){i}); }`, identical
+   with `@[direct_array_access]`; `a << x` generates `array_push(a, &x)`, with its
+   checks and `copy_element_to` per element. The definitions are in the
+   generated C itself (`array__set` bounds-checks and does a `vmemcpy` of
+   `element_size`; `array__push` checks, reserves and does `copy_element_to`).
+   Measured in `count_primes(1e6)`: half the samples land in
+   `memmove`/`memcpy`, and the same sieve over a `malloc`'d buffer with direct
+   stores drops to 1.7 ms (V `0137eb5`, macOS arm64), ahead of PyO3
+   (2.02 ms). In `make_range(100k)` the split is the same in reverse: building
+   the `[]i64` with `<<` costs 208 µs vs 13 µs with direct stores, and the
+   C conversion is already on par with `list(range(100k))` (790 vs
+   783 µs); the profile shows two thirds in `PyLong_FromLongLong` (one alloc per
+   element, unavoidable) and one third in `array__push`. With no detours in user
+   code there is no fix inside vcraft: V does the lowering.
+   Reported to vlang/v; the issue text is in the chat history.
+   Compiler note: measured thoroughly, no flag avoids it. V already compiles
+   the extension with `-O3`; neither explicit `-O3` via `--cflags` (bit-identical
+   binary: V emits it anyway), nor `-flto`, nor `-fwrapv` folds
+   the `memcpy` in the large TU (verified by compiling the generated C by hand and
+   by disassembler). In a small TU it does fold, and only with the full
+   executable recipe (`-O3 -flto` leaves it ~2×); without LTO or in a large TU,
+   the per-element `memcpy` stays. So `vcraft build` forces nothing:
+   there is no lever.
+9. ✅ *Measured after step 6, offered as the `gc-free-space-divisor` option and
+   the default since (2).* `GC_set_free_space_divisor(1)`, the value V
+   sets, grows the heap before collecting. With 2, on this machine: kept drops
+   from 1.0 to 0.5 MiB after `greet` ×2M, from 1.1 to 0.3 in `make_range`
+   and from 1.3 to 1.0 in `sum_floats`; import RSS does not change (1,120 KiB).
+   It costs `sum_floats` 129 → 135 µs (+5%), `fib` +1.6%, and nothing measurable in
+   the rest (`add` 22 → 23 ns is noise). Divisors 3 and 4 measured later:
+   only `sum_floats` kept drops further (0.6 → 0.3 → 0.1 MiB); `greet` (0.5) and
+   `make_range` (1.2) do not move, nor does speed. The floor is set by heap
+   granularity, not the divisor: 2 stays. `GC_FORCE_UNMAP_ON_GCOLLECT=1`
+   does not move kept by a single KiB either.
 
 ### zig-maturin
 
-1. **`setjmp` por llamada** (`pyo3zig_capi.c`). En macOS, `setjmp` guarda la máscara de
-   señales con una llamada al sistema en cada entrada. Cambiarlo por `_setjmp`/`_longjmp`
-   (o `sigsetjmp(env, 0)`) lo he verificado en una copia: `add` pasa de 206 a **31 ns**,
-   `increment` de 194 a **22 ns** y `greet` de 275 a 98 ns.
-2. **`METH_VARARGS` en lugar de `METH_FASTCALL`.** Crea una tupla por llamada; PyO3 y vcraft
-   usan `FASTCALL`. No lo he medido por separado.
-3. **El `build.zig` que genera `scaffold` no reenvía `-Dpython-include` a la dependencia.**
-   La dependencia recurre entonces a `python3-config`, que no existe en un venv de uv, y el
-   build aborta. Está corregido en [`zig-maturin/build.zig`](zig-maturin/build.zig).
-4. **Desbordamiento de entero:** debería lanzar `OverflowError`, no
+1. **`setjmp` per call** (`pyo3zig_capi.c`). On macOS, `setjmp` saves the signal mask
+   with a syscall on every entry. Switching to `_setjmp`/`_longjmp`
+   (or `sigsetjmp(env, 0)`), verified in a copy: `add` goes from 206 to **31 ns**,
+   `increment` from 194 to **22 ns** and `greet` from 275 to 98 ns.
+2. **`METH_VARARGS` instead of `METH_FASTCALL`.** It builds a tuple per call; PyO3 and vcraft
+   use `FASTCALL`. Not measured separately.
+3. **The `build.zig` that `scaffold` generates does not forward `-Dpython-include` to the dependency.**
+   The dependency then falls back to `python3-config`, which does not exist in a uv venv, and the
+   build aborts. Fixed in [`zig-maturin/build.zig`](zig-maturin/build.zig).
+4. **Integer overflow:** it should raise `OverflowError`, not
    `TypeError: expected int, got int`.
-5. **`pz` no reexporta `PyList_SetItem`**: hay que importar el módulo de bajo nivel
-   `zig-maturin` para construir una lista sin copias.
-6. Sin `--release`, `zig-maturin build` compila en `Debug`. Conviene tenerlo presente al
-   comparar.
+5. **`pz` does not re-export `PyList_SetItem`**: the low-level
+   `zig-maturin` module must be imported to build a list with no copies.
+6. Without `--release`, `zig-maturin build` compiles in `Debug`. Worth keeping in mind when
+   comparing.
 
 ### PyO3
 
-Nada que señalar en este benchmark.
+Nothing to note in this benchmark.
 
-## Rodeos en el código del benchmark
+## Workarounds in the benchmark code
 
-Para que los tres proyectos compilen con la misma semántica:
-- **zig-maturin:** `build.zig` reenvía el include de Python (punto 3) y `make_range` usa
-  `zm.PyList_SetItem` (punto 5). Están comentados en el código fuente.
-- **vcraft:** ninguno desde el paso 1. Antes, `make_range` usaba `@[vc_raw]` (puntos 1–3,
-  y por eso fugaba) y `Counter.value` era `int` (punto 4).
+So the three projects compile with the same semantics:
+- **zig-maturin:** `build.zig` forwards the Python include (point 3) and `make_range` uses
+  `zm.PyList_SetItem` (point 5). Both are commented in the source.
+- **vcraft:** none since step 1. Before, `make_range` used `@[vc_raw]` (points 1–3,
+  which is why it leaked) and `Counter.value` was `int` (point 4).
 
-## Progreso de vcraft
+## vcraft progress
 
-Las cifras de vcraft tras cada paso, con el benchmark completo. PyO3 se mantiene
-estable entre ejecuciones en las cargas grandes (±3 %: `count_primes`,
-`sum_floats`, `make_range` se movieron +0,5 %, +0,3 % y +1,0 % entre las dos
-últimas mediciones completas); en la escala de nanosegundos hay más ruido
-(`greet` de PyO3: 60 → 54 ns, −10 %) y en el import en caliente también
-(+7 % PyO3, +10 % zig). Diferencias menores al 5 % en celdas pequeñas no son
-movimiento real. La columna de referencia es la de la tabla inicial.
+vcraft's figures after each step, with the full benchmark. PyO3 stays stable
+across runs on large workloads (±3%: `count_primes`,
+`sum_floats`, `make_range` moved +0.5%, +0.3% and +1.0% between the last two
+full measurements); at nanosecond scale there is more noise
+(PyO3's `greet`: 60 → 54 ns, −10%) and in warm import too
+(+7% PyO3, +10% zig). Differences below 5% on small cells are not
+real movement. The reference column is the initial table.
 
-| paso | `add` | `increment` | `sum_floats` | `make_range` | `count_primes` | fuga `make_range` |
+| step | `add` | `increment` | `sum_floats` | `make_range` | `count_primes` | `make_range` leak |
 |---|---|---|---|---|---|---|
-| PyO3 (referencia) | 29 ns | 19 ns | 451 µs | 833 µs | 2,00 ms | 0 |
-| inicial | 41 ns | 29 ns | 968 µs | 1,10 ms | 3,76 ms | 772 MiB |
-| 1. devolver listas y objetos | 40 ns | 29 ns | 970 µs | 1,09 ms | 3,76 ms | **0** |
-| 2. coste fijo por llamada | **22 ns** | 29 ns | 942 µs | 1,10 ms | 3,77 ms | 0 |
-| 3. métodos sobre el puntero | 23 ns | **16 ns** | 961 µs | 1,10 ms | 3,78 ms | 0 |
-| 4. leer secuencias | 22 ns | 16 ns | **153 µs** | 1,10 ms | 3,78 ms | 0 |
-| 5. listas numéricas en C | 22 ns | 16 ns | 152 µs | 1,03 ms | 3,77 ms | 0 |
-| 6. raíces del GC (macOS) | 22 ns | 16 ns | **133 µs** | **988 µs** | 3,70 ms | 0 |
-| verificación tras diagnósticos, divisor, lectores y raíces Linux | 23 ns | 16 ns | 135 µs | 1,00 ms | 3,73 ms | 0 |
-| divisor 2 por defecto + `bytes` sin vista | 23 ns | 16 ns | 131 µs | 1,00 ms | 3,77 ms | 0 |
+| PyO3 (reference) | 29 ns | 19 ns | 451 µs | 833 µs | 2.00 ms | 0 |
+| initial | 41 ns | 29 ns | 968 µs | 1.10 ms | 3.76 ms | 772 MiB |
+| 1. returning lists and objects | 40 ns | 29 ns | 970 µs | 1.09 ms | 3.76 ms | **0** |
+| 2. fixed per-call cost | **22 ns** | 29 ns | 942 µs | 1.10 ms | 3.77 ms | 0 |
+| 3. methods on the pointer | 23 ns | **16 ns** | 961 µs | 1.10 ms | 3.78 ms | 0 |
+| 4. reading sequences | 22 ns | 16 ns | **153 µs** | 1.10 ms | 3.78 ms | 0 |
+| 5. numeric lists in C | 22 ns | 16 ns | 152 µs | 1.03 ms | 3.77 ms | 0 |
+| 6. GC roots (macOS) | 22 ns | 16 ns | **133 µs** | **988 µs** | 3.70 ms | 0 |
+| verification after diagnostics, divisor, readers and Linux roots | 23 ns | 16 ns | 135 µs | 1.00 ms | 3.73 ms | 0 |
+| divisor 2 by default + `bytes` with no view | 23 ns | 16 ns | 131 µs | 1.00 ms | 3.77 ms | 0 |
 
-Memoria e import de vcraft en cada paso (PyO3: 0,50 ms de import, 304 KiB, 0 retenido):
+vcraft memory and import per step (PyO3: 0.50 ms import, 304 KiB, 0 kept):
 
-| paso | `import` | RSS del `import` | retenido tras `greet` ×2M | pico `greet` ×2M |
+| step | `import` | `import` RSS | kept after `greet` ×2M | `greet` ×2M peak |
 |---|---|---|---|---|
-| inicial | 3,50 ms | 1.088 KiB | 13,8 MiB | 41,8 MiB |
-| 6. raíces del GC (macOS) | **0,61 ms** | 1.120 KiB | **1,0 MiB** | **29,0 MiB** |
-| verificación tras diagnósticos, divisor, lectores y raíces Linux | 0,63 ms | 1.104 KiB | 1,0 MiB | 29,2 MiB |
-| divisor 2 por defecto + `bytes` sin vista | 0,62 ms | 1.136 KiB | **0,5 MiB** | 28,5 MiB |
+| initial | 3.50 ms | 1,088 KiB | 13.8 MiB | 41.8 MiB |
+| 6. GC roots (macOS) | **0.61 ms** | 1,120 KiB | **1.0 MiB** | **29.0 MiB** |
+| verification after diagnostics, divisor, readers and Linux roots | 0.63 ms | 1,104 KiB | 1.0 MiB | 29.2 MiB |
+| divisor 2 by default + `bytes` with no view | 0.62 ms | 1,136 KiB | **0.5 MiB** | 28.5 MiB |
 
-**Paso 1** (puntos 1–4 y 6). Ya se puede devolver `[]T`, `vcraft.PyObj` y `voidptr`, y los
-campos `i64` compilan. La fuga desaparece: lo que queda tras `make_range` son 18,5 MiB del
-heap del GC, que se estabilizan. Reservar la lista con su tamaño no cambia el tiempo: lo
-caro de `make_range` es construir antes el `[]i64` de 800 KB en el GC, el mismo coste que
-en `count_primes` (punto 7).
+**Step 1** (points 1–4 and 6). `[]T`, `vcraft.PyObj` and `voidptr` can now be returned, and
+`i64` fields compile. The leak is gone: what is left after `make_range` is 18.5 MiB of
+GC heap, which plateaus. Reserving the list at its size does not change the time: what
+is expensive in `make_range` is first building the 800 KB `[]i64` in the GC, the same cost as
+in `count_primes` (point 7).
 
-**Paso 2.** El glue de cada función comprobaba la aridad con dos llamadas, y después de
-cada una consultaba `PyErr_Occurred`. Ahora es una sola comparación de `nargs`, y el
-mensaje de error solo se construye cuando falla. Además, un `int` exacto que cabe en
-64 bits se lee con una sola comparación de tipo en C; antes eran dos `PyType_IsSubtype`
-(uno para rechazar `bool` y otro para aceptar `int`) y otra consulta del error. `add` pasa
-de 40 a **22 ns**, por delante de PyO3 (29 ns). Medido por partes en una copia del glue: la
-aridad aportaba unos 6 ns, la lectura de enteros unos 10 y el guardián de pánicos
-(`recover()`, un `_setjmp` por llamada) unos 5. El guardián se mantiene: sin él, un
-`panic` de V termina el intérprete. `increment` no cambia porque un método copia el estado
-de la instancia dentro y fuera en cada llamada; es el siguiente paso.
+**Step 2.** Each function's glue checked arity with two calls, and after each one
+queried `PyErr_Occurred`. Now it is a single `nargs` comparison, and the
+error message is only built on failure. Plus, an exact `int` that fits in
+64 bits is read with a single C type check; before it was two `PyType_IsSubtype`
+(one to reject `bool`, one to accept `int`) plus another error query. `add` goes
+from 40 to **22 ns**, ahead of PyO3 (29 ns). Measured by parts in a copy of the glue: arity
+contributed about 6 ns, integer reading about 10, and the panic guard
+(`recover()`, one `_setjmp` per call) about 5. The guard stays: without it, a
+V `panic` kills the interpreter. `increment` does not change because a method copies the
+instance state in and out on every call; that is the next step.
 
-**Paso 3.** Los métodos, accesores y slots trabajan sobre el bloque de estado de la
-instancia a través de un puntero, como PyO3 con su celda, en vez de copiar el struct entero
-antes y después de cada llamada. Además, la cadena de estados que publica cada trampolín
-para `vcraft.state_at` (una reserva con `PyMem_Malloc` y dos copias por llamada) solo se
-emite si algún fichero del módulo llama a `state_at`. `increment` pasa de 29 a **16 ns**,
-por delante de PyO3 (19 ns). Contrapartida, la misma que en PyO3: un método que hace
-`panic` a medias conserva lo que ya había escrito.
+**Step 3.** Methods, accessors and slots work on the instance's state block
+through a pointer, like PyO3 through its cell, instead of copying the whole struct
+before and after each call. Plus, the state chain each trampoline publishes
+for `vcraft.state_at` (one `PyMem_Malloc` allocation and two copies per call) is only
+emitted if some file in the module calls `state_at`. `increment` goes from 29 to **16 ns**,
+ahead of PyO3 (19 ns). Trade-off, the same as in PyO3: a method that
+`panic`s halfway keeps what it already wrote.
 
-**Paso 4.** Al medir apareció una fuga que el benchmark no veía: `PyObj.item` usaba
-`PySequence_GetItem`, que devuelve una referencia nueva, y quien lo llamaba la trataba
-como prestada. Cada elemento leído de una lista pasada como `[]T` quedaba con una
-referencia de más, así que los elementos de una lista temporal nunca se liberaban. Ahora
-`item` usa `PyList_GetItem`/`PyTuple_GetItem`, y el benchmark tiene un escenario que pasa
-una lista nueva en cada llamada para detectarlo. Además, `[]int`, `[]i64` y `[]f64`
-convierten en C, en una sola pasada, los elementos que son `int` o `float` exactos;
-el resto sigue por el camino general. `sum_floats` pasa de 961 a **153 µs**, tres veces
-más rápido que PyO3 (451 µs).
+**Step 4.** Measuring turned up a leak the benchmark could not see: `PyObj.item` used
+`PySequence_GetItem`, which returns a new reference, and its caller treated it
+as borrowed. Every element read from a list passed as `[]T` kept one reference
+too many, so the elements of a temporary list were never freed. Now
+`item` uses `PyList_GetItem`/`PyTuple_GetItem`, and the benchmark has a scenario that passes
+a fresh list on every call to catch it. Plus, `[]int`, `[]i64` and `[]f64`
+convert in C, in a single pass, the elements that are exact `int` or `float`;
+the rest takes the general path. `sum_floats` goes from 961 to **153 µs**, three times
+faster than PyO3 (451 µs).
 
-**Paso 5.** Una lista devuelta de `[]i64`, `[]int` o `[]f64` se construye en C en una
-sola pasada, con `PyList_SET_ITEM`, en vez de llamar a una función por elemento.
-`make_range` baja de 1,10 a 1,03 ms; la conversión ya cuesta lo mismo que
-`list(range(n))`. Al perfilar apareció la causa real de lo que queda, y **corrige lo que
-decía el punto 7**: no es el GC. El compilador nuevo de V convierte cada `<<` y cada
-asignación `a[i] = x` en una llamada a función que copia un elemento con `memcpy`, y
-`@[direct_array_access]` solo quita la comprobación en las lecturas. Eso es lo que separa
-`count_primes` y `make_range` de PyO3, y está en V, no en vcraft.
+**Step 5.** A list returned from `[]i64`, `[]int` or `[]f64` is built in C in a
+single pass, with `PyList_SET_ITEM`, instead of calling one function per element.
+`make_range` drops from 1.10 to 1.03 ms; the conversion already costs the same as
+`list(range(n))`. Profiling surfaced the real cause of what is left, and **it corrects
+point 7**: it is not the GC. V's new compiler turns every `<<` and every
+`a[i] = x` assignment into a function call that copies one element with `memcpy`, and
+`@[direct_array_access]` only removes the check on reads. That is what separates
+`count_primes` and `make_range` from PyO3, and it is in V, not in vcraft.
 
-**Paso 6.** En macOS, el GC de Boehm registraba como raíces los datos escribibles de
-**todas** las imágenes del proceso (unas 400 en un Python normal), con un callback por
-imagen. Eso costaba unos 3 ms de cada import y hacía que cada recolección recorriera los
-datos de todas esas bibliotecas, de modo que sus páginas pasaban a contar en el RSS. Ahora
-vcraft arranca el GC antes que V, sin ese registro, y registra a mano solo el segmento
-`__DATA` del módulo, que es donde V guarda sus globales. El import pasa de 3,5 a
-**0,61 ms**, y la memoria retenida tras 2 millones de llamadas, de 13,8 a **1,0 MiB**: lo
-que parecía heap del GC eran páginas de bibliotecas del sistema. El código que reserva
-mucho también va más rápido (`sum_floats` 153 → 133 µs; un bucle que solo concatena
-strings, 1,8×). Linux no cambia: allí Boehm registra las bibliotecas de otra forma y no lo
-he medido. Del import que queda (0,63 frente a 0,54 ms en caliente), el `PyInit`
-no tiene la culpa: con la imagen ya cargada son 118 frente a 230 µs; el resto es
-el arranque de Boehm, una vez por proceso. Y el RSS del import (1.136 frente a
-304 KiB) tampoco cede a los ajustes del GC: ni `GC_MARKERS=1` ni
-`GC_INITIAL_HEAP_SIZE=64k` lo mueven un KiB. Según `vmmap`, unas 400 KiB son el
-propio `.so` mapeado (`__TEXT` 240 KiB residentes + `__DATA`/`__LINKEDIT`); el
-resto es el arranque del runtime. No hay palanca aquí: la extensión ya es la más
-pequeña de las tres tras `strip` (351 frente a 414 y 400 KiB). La prueba
-definitiva: un módulo vcraft vacío retiene 1.104 de los 1.136 KiB — las nueve
-funciones y el tipo solo añaden ~30 KiB. De esos 1.104, `vmmap` atribuye ~640
-KiB a heap Boehm faulteado al arrancar (estructuras internas del collector, no
-datos vivos: el knob de heap inicial tampoco lo mueve) y ~350 KiB al mapeo
-propio. Suelo estructural.
+**Step 6.** On macOS, Boehm registered the writable data of **every**
+image in the process as roots (about 400 in a normal Python), with one callback per
+image. That cost about 3 ms of every import and made every collection walk
+all those libraries' data, so their pages counted in the RSS. Now
+vcraft starts the GC before V, without that registration, and hand-registers only the
+module's `__DATA` segment, where V keeps its globals. Import goes from 3.5 to
+**0.61 ms**, and memory kept after two million calls from 13.8 to **1.0 MiB**: what
+looked like GC heap was system-library pages. Code that allocates
+a lot also runs faster (`sum_floats` 153 → 133 µs; a loop that only concatenates
+strings, 1.8×). Linux is unchanged: there Boehm registers libraries differently and I have
+not measured it. Of the import that is left (0.63 vs 0.54 ms warm), `PyInit`
+is not to blame: with the image preloaded it is 118 vs 230 µs; the rest is
+Boehm startup, once per process. And import RSS (1,136 vs
+304 KiB) does not yield to GC tuning either: neither `GC_MARKERS=1` nor
+`GC_INITIAL_HEAP_SIZE=64k` moves it one KiB. Per `vmmap`, about 400 KiB is the
+`.so` itself mapped (`__TEXT` 240 KiB resident + `__DATA`/`__LINKEDIT`); the
+rest is runtime startup. There is no lever here: the extension is already the
+smallest of the three after `strip` (351 vs 414 and 400 KiB). The definitive
+test: an empty vcraft module keeps 1,104 of the 1,136 KiB — the nine
+functions and the type only add ~30 KiB. Of those 1,104, `vmmap` attributes ~640
+KiB to Boehm heap faulted at startup (the collector's internal structures, not
+live data: the initial-heap knob does not move it either) and ~350 KiB to its own
+mapping. Structural floor.
 
-### Estado tras el paso 6
+### State after step 6
 
-vcraft gana a PyO3 en `add` (22 frente a 29 ns), `fib`, `sum_floats` (133 frente a
-451 µs), `greet` (34 frente a 60 ns), `Counter()` e `increment` (16 frente a 19 ns), y en
-tamaño de wheel y tiempo de build. Pierde en `count_primes` (3,70 frente a 2,02 ms) y en
-`make_range` (988 frente a 829 µs), por la forma en que V compila la escritura en arrays.
-En memoria queda por encima: unos 800 KiB más al importar (el heap inicial y las
-estructuras del GC) y alrededor de 1–2 MiB retenidos tras cargas grandes.
+vcraft beats PyO3 in `add` (22 vs 29 ns), `fib`, `sum_floats` (133 vs
+451 µs), `greet` (34 vs 60 ns), `Counter()` and `increment` (16 vs 19 ns), and in
+wheel size and build time. It loses in `count_primes` (3.70 vs 2.02 ms) and in
+`make_range` (988 vs 829 µs), because of how V compiles array writes.
+On memory it stays above: about 800 KiB more at import (the initial heap and the
+GC structures) and around 1–2 MiB kept after large workloads.
 
-### Cargas nuevas: `checksum` y `expect_positive`
+### New workloads: `checksum` and `expect_positive`
 
-Dos caminos que las siete cargas no tocaban: el protocolo búfer (`bytes` sin
-copiar) y la ida y vuelta de una excepción por llamada.
+Two paths the seven workloads did not touch: the buffer protocol (`bytes` with no
+copy) and an exception round trip per call.
 
-- `checksum(bytes de 100k)`: PyO3 1,7 µs, vcraft 4,8 µs, zig 25,7 µs. Al
-  añadirla apareció un bug real: `buffer_bytes` reservaba un `[]u8` del tamaño
-  del argumento y luego sobrescribía su `data` con el puntero del exportador,
-  abandonando un bloque del GC por llamada (el perfil mostraba un 26 % en
-  `GC_collect_or_expand`). Corregido construyendo la cabecera desde un literal
-  vacío; el escenario de memoria `checksum(new 100kB) x500` queda en 0,0
-  retenido y 0,0 fuga en los tres. Después, los `bytes` exactos ya no pasan por
-  la vista (`vpy_is_exact_bytes` + alias directo; el perfil pasa de ~7 % de
-  muestras en `GetBuffer`/`Release`/`PyMem_Calloc` a cero): a 100k el número no
-  se mueve (4,8 µs, el loop manda) y a 256 B apenas (125 frente a 83 ns; la
-  vista era ~9 ns de esos 42). De lo que queda, el grueso es el loop: suma con
-  ensanchado `u64(b)` frente al SIMD de Rust, más el boxeo del resultado.
-- `expect_positive(-1)` con `try`: vcraft 93 ns, por delante de PyO3
-  (112 ns), Python (124 ns) y zig (277 ns).
-- En corrección, las tres pasan las tres comprobaciones nuevas. zig-maturin
-  sigue fallando `add 2**63` con `TypeError` en vez de `OverflowError`.
-- Nota sobre el `kept` de `make_range`: oscila entre 1,1 y 2,5 MiB según el
-  build (medido 1,1, 1,8, 1,9 y 2,5 con fuga siempre 0,0), también sin las
-  funciones nuevas. Es holgura del heap con divisor 1, no una fuga ni una
-  regresión de ningún cambio concreto.
+- `checksum(100k bytes)`: PyO3 1.7 µs, vcraft 4.8 µs, zig 25.7 µs. Adding it
+  surfaced a real bug: `buffer_bytes` allocated a `[]u8` of the argument's size
+  and then overwrote its `data` with the exporter's pointer,
+  abandoning one GC block per call (the profile showed 26% in
+  `GC_collect_or_expand`). Fixed by building the header from an empty literal;
+  the `checksum(new 100kB) x500` memory scenario sits at 0.0
+  kept and 0.0 leak on all three. After that, exact `bytes` no longer goes through
+  the view (`vpy_is_exact_bytes` + direct alias; the profile goes from ~7% of
+  samples in `GetBuffer`/`Release`/`PyMem_Calloc` to zero): at 100k the number does
+  not move (4.8 µs, the loop rules) and at 256 B barely (125 vs 83 ns; the
+  view was ~9 ns of those 42). Of what is left, the bulk is the loop: a sum with
+  `u64(b)` widening vs Rust's SIMD, plus boxing the result.
+- `expect_positive(-1)` under `try`: vcraft 93 ns, ahead of PyO3
+  (112 ns), Python (124 ns) and zig (277 ns).
+- On correctness, all three pass the three new checks. zig-maturin
+  still fails `add 2**63` with `TypeError` instead of `OverflowError`.
+- Note on `make_range` kept: it swings between 1.1 and 2.5 MiB across builds
+  (measured 1.1, 1.8, 1.9 and 2.5 with leak always 0.0), even without the
+  new functions. It is heap slack with divisor 1, not a leak and not a
+  regression from any particular change.
