@@ -187,13 +187,13 @@ Por prioridad. Cada punto está reproducido en este benchmark.
    (las TU grandes disparan el coste de `-O3`); medido: pasar `--cflags -O3`
    a `vcraft build` deja el binario bit-idéntico, así que no es una palanca
    útil.
-9. ✅ *Medido tras el paso 6 y ofrecido como opción `gc-free-space-divisor` (1 por
-   defecto).* `GC_set_free_space_divisor(1)`, el valor que fija V, hace crecer el heap
-   antes que recolectar. Con 2, en esta máquina: lo retenido pasa de 1,0 a 0,5 MiB
-   tras `greet` ×2M, de 1,1 a 0,3 en `make_range` y de 1,3 a 1,0 en `sum_floats`;
-   el RSS del import no cambia (1.120 KiB). Cuesta `sum_floats` 129 → 135 µs
-   (+5 %), `fib` +1,6 %, y nada medible en el resto (`add` 22 → 23 ns está en el
-   ruido).
+9. ✅ *Medido tras el paso 6, ofrecido como opción `gc-free-space-divisor` y
+   desde entonces el defecto (2).* `GC_set_free_space_divisor(1)`, el valor que
+   fija V, hace crecer el heap antes que recolectar. Con 2, en esta máquina: lo
+   retenido pasa de 1,0 a 0,5 MiB tras `greet` ×2M, de 1,1 a 0,3 en `make_range`
+   y de 1,3 a 1,0 en `sum_floats`; el RSS del import no cambia (1.120 KiB).
+   Cuesta `sum_floats` 129 → 135 µs (+5 %), `fib` +1,6 %, y nada medible en el
+   resto (`add` 22 → 23 ns está en el ruido).
 
 ### zig-maturin
 

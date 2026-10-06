@@ -73,9 +73,9 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   with no reader is a diagnostic with file, line and column instead of a
   compile error in the generated glue.
 - **Collector tuning**: `gc-free-space-divisor` in `vcraft.toml` sets Boehm's heap
-  growth divisor (default 1, V's value, which favours speed). With 2, roughly
-  half a MiB less stays resident after large workloads for a few percent of
-  allocation-heavy throughput.
+  growth divisor (default 2: roughly half a MiB less stays resident after large
+  workloads than with V's own 1, for a few percent of allocation-heavy
+  throughput; set 1 to favour speed).
 - **Distribution of vcraft itself**: `pip install vcraft` installs the tool on
   Python 3.11 or newer, as a platform wheel for Linux x86_64 (`manylinux_2_28`)
   or macOS arm64 (macOS 11.0+).

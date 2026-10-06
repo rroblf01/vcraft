@@ -20,9 +20,10 @@
 
 // The heap growth divisor, overridable from `vcraft.toml` (`gc-free-space-divisor`)
 // through `-DVCRAFT_GC_DIVISOR`. Boehm's default favours a small heap; V builds for
-// throughput with 1.
+// throughput with 1, and vcraft ships 2: roughly half a MiB less resident for a few
+// percent of allocation-heavy throughput (see benchmark/README.md).
 #ifndef VCRAFT_GC_DIVISOR
-#define VCRAFT_GC_DIVISOR 1
+#define VCRAFT_GC_DIVISOR 2
 #endif
 
 #endif

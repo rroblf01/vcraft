@@ -461,7 +461,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	// The collector's heap growth is a `-D` define for the C compiler rather than a
 	// `-d` one for V: the only reader is the C pre-initialiser, and V's `$if`
 	// cannot see a `-cflags` define while the C preprocessor can.
-	gc_define := if p.gc_free_space_divisor != 1 {
+	gc_define := if p.gc_free_space_divisor != 2 {
 		'-DVCRAFT_GC_DIVISOR=${p.gc_free_space_divisor}'
 	} else {
 		''
