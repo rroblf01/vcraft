@@ -224,13 +224,18 @@ pub fn from_py_f64_seq_arg(argv voidptr, i int, func string, name string) ![]f64
 }
 
 // from_py_str_seq_arg reads positional argument `i` as a sequence of strings.
+//
+// Each item aliases its str object's buffer instead of copying it (see
+// `from_py_str_borrowed`): a 10k-item list costs no per-item allocation, only
+// the join or whatever the function builds from them. The slice must not
+// outlive the call, because nothing pins the strs past it.
 pub fn from_py_str_seq_arg(argv voidptr, i int, func string, name string) ![]string {
 	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
 	n := int(obj.len())
 	mut out := []string{cap: n}
 	mut k := 0
 	for k < n {
-		out << from_py_string(obj.item(k), name)!
+		out << from_py_str_borrowed(obj.item(k), name)!
 		k++
 	}
 	return out
