@@ -166,7 +166,15 @@ def main() -> int:
         h.boxed(1)
     gc.collect()
     held = h.boxed(1)
-    t.equal("a PyObj result is owned once", sys.getrefcount(held), 2)
+    # An upper bound rather than an exact count: the bug this guards handed the
+    # caller a second reference on top of the owned one, which read 3 here. `== 2`
+    # stopped holding on CPython 3.14, which elides some refcount traffic, so the
+    # same owned-once list reads 2 on older versions and 1 on 3.14 (and on 3.14.0
+    # even a stored and an inline reference disagree). A leak on an eliding
+    # interpreter is invisible to refcounting; the benchmark's kept/leak
+    # scenarios are the backstop there.
+    refs = sys.getrefcount(held)
+    t.check("a PyObj result is owned once", refs <= 2, f"got {refs}")
 
     print("i64 fields")
     tally = h.Tally()
