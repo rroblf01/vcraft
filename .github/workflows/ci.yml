@@ -151,6 +151,10 @@ jobs:
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/memory/test_leaks.py
 
+      - name: "suite: fuzzed conversions"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/fuzz/test_fuzz.py 4 20000
+
   cli:
     needs: v-compiler
     # The slowest suite on its own job (see above for why it is separate).

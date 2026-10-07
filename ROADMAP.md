@@ -28,9 +28,15 @@ Each item lands on `main` with its tests and a changelog entry under
       borrowed arguments keep their reference count.
 - [ ] **Sanitizers.** A CI job builds the runtime and an example with ASan and UBSan
       and runs the runtime and codegen suites under them.
-- [ ] **Fuzzed conversions.** Random ints, floats, strings, bytes and sequences,
-      including invalid ones, through every argument reader: no crash, the right
-      exception.
+- [x] **Fuzzed conversions.** `tests/fuzz/test_fuzz.py` sends seeded random and
+      hostile values (huge ints, NaN, surrogates, NULs, non-contiguous views, bad
+      `__index__`/`__float__`, failing sequences, missing and surplus arguments)
+      through every function, method and attribute of the example: no crash, only
+      expected exceptions.
+
+- [ ] **Allocation failure raises MemoryError.** When V cannot allocate, its runtime
+      prints `malloc_noscan(...)` and the process dies with a segfault; it should
+      become a Python MemoryError, as a failed allocation in CPython does.
 
 ## Platforms
 

@@ -70,6 +70,10 @@ BORROWED = {
 
 WORKER = r"""
 import gc, json, resource, sys, tracemalloc
+# A ceiling on the worker's address space, so a scenario that runs away fails here
+# instead of exhausting the machine. Linux only: macOS does not enforce RLIMIT_AS.
+if sys.platform.startswith("linux"):
+    resource.setrlimit(resource.RLIMIT_AS, (3 * 1024 ** 3, 3 * 1024 ** 3))
 sys.path.insert(0, sys.argv[1])
 import hello_native as m
 setup, stmt, calls = json.loads(sys.argv[2])
