@@ -32,11 +32,56 @@ env:
   VC_COMMIT: 8af812feb76c678abd86a8e682fd9ab2790e519c
 
 jobs:
+  # The V compiler, once per runner OS, before anything else starts. Without
+  # this job every cell restored-or-built it on its own: when the cache key
+  # changed, all twenty cells missed at once and each spent five to six minutes
+  # building the same compiler. Saved explicitly, so the cache is written even
+  # when a later suite fails, and as soon as the build is done.
+  v-compiler:
+    name: V compiler (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: look for a cached compiler
+        id: v-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/v-src
+          key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          lookup-only: true
+
+      - name: build the V compiler from source
+        if: steps.v-cache.outputs.cache-hit != 'true'
+        run: |
+          git init -q /tmp/v-src
+          cd /tmp/v-src
+          git remote add origin https://github.com/vlang/v.git
+          git fetch -q --depth 1 origin "$V_COMMIT"
+          git checkout -q FETCH_HEAD
+          git clone https://github.com/vlang/vc.git vc
+          (cd vc && git checkout -q "$VC_COMMIT")
+          make fresh_tcc
+          make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+          # The bootstrap C sources are only read while building the compiler
+          # itself. Dropping them keeps the cached directory at ~170 MB instead
+          # of ~2 GB, which is what every job restores on a cache hit.
+          rm -rf vc
+
+      - name: save the compiler
+        if: steps.v-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/v-src
+          key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+
   # The suites run in two jobs rather than one so the slowest (cli, with its
   # dozen extension builds) does not hold the other five behind it. The suites
   # are independent -- only the cli one needs bin/vcraft, and it builds it
   # itself -- so nothing is shared between the two jobs.
   suites:
+    needs: v-compiler
     # Every supported CPython on both platforms: a wheel is built per interpreter,
     # and the runtime compiles against each version's headers, so a version left
     # out of this list is a version nobody has compiled for. Keep it in step with
@@ -56,31 +101,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # The compiler only changes when the pins do, so it is built once per
-      # runner image and pin pair and restored from the cache afterwards.
+      # Built once per runner OS by the v-compiler job, which every job here
+      # waits for, so this only ever restores it.
       - name: restore the V compiler
-        id: v-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /tmp/v-src
           key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
-
-      - name: build the V compiler from source
-        if: steps.v-cache.outputs.cache-hit != 'true'
-        run: |
-          git init -q /tmp/v-src
-          cd /tmp/v-src
-          git remote add origin https://github.com/vlang/v.git
-          git fetch -q --depth 1 origin "$V_COMMIT"
-          git checkout -q FETCH_HEAD
-          git clone https://github.com/vlang/vc.git vc
-          (cd vc && git checkout -q "$VC_COMMIT")
-          make fresh_tcc
-          make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
-          # The bootstrap C sources are only read while building the compiler
-          # itself. Dropping them keeps the cached directory at ~170 MB instead
-          # of ~2 GB, which is what every job restores on a cache hit.
-          rm -rf vc
+          fail-on-cache-miss: true
 
       - name: put V on PATH
         id: v-ready
@@ -110,6 +138,7 @@ jobs:
         run: python3 tests/codegen/test_codegen.py
 
   cli:
+    needs: v-compiler
     # The slowest suite on its own job (see above for why it is separate).
     # Same matrix: the CLI builds against each interpreter's headers.
     name: cli (${{ matrix.os }}, ${{ matrix.python }})
@@ -127,29 +156,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
+      # Built once per runner OS by the v-compiler job, which every job here
+      # waits for, so this only ever restores it.
       - name: restore the V compiler
-        id: v-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /tmp/v-src
           key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
-
-      - name: build the V compiler from source
-        if: steps.v-cache.outputs.cache-hit != 'true'
-        run: |
-          git init -q /tmp/v-src
-          cd /tmp/v-src
-          git remote add origin https://github.com/vlang/v.git
-          git fetch -q --depth 1 origin "$V_COMMIT"
-          git checkout -q FETCH_HEAD
-          git clone https://github.com/vlang/vc.git vc
-          (cd vc && git checkout -q "$VC_COMMIT")
-          make fresh_tcc
-          make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
-          # The bootstrap C sources are only read while building the compiler
-          # itself. Dropping them keeps the cached directory at ~170 MB instead
-          # of ~2 GB, which is what every job restores on a cache hit.
-          rm -rf vc
+          fail-on-cache-miss: true
 
       - name: put V on PATH
         id: v-ready
@@ -166,6 +180,7 @@ jobs:
         run: python3 tests/cli/test_cli.py
 
   free-threaded:
+    needs: v-compiler
     # The one configuration nothing else exercises: a free-threaded interpreter
     # with the GIL actually disabled. A build that merely tags `cp314t` but
     # crashes, warns, or serialises on import fails here rather than on a
@@ -186,31 +201,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # The compiler only changes when the pins do, so it is built once per
-      # runner image and pin pair and restored from the cache afterwards.
+      # Built once per runner OS by the v-compiler job, which every job here
+      # waits for, so this only ever restores it.
       - name: restore the V compiler
-        id: v-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /tmp/v-src
           key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
-
-      - name: build the V compiler from source
-        if: steps.v-cache.outputs.cache-hit != 'true'
-        run: |
-          git init -q /tmp/v-src
-          cd /tmp/v-src
-          git remote add origin https://github.com/vlang/v.git
-          git fetch -q --depth 1 origin "$V_COMMIT"
-          git checkout -q FETCH_HEAD
-          git clone https://github.com/vlang/vc.git vc
-          (cd vc && git checkout -q "$VC_COMMIT")
-          make fresh_tcc
-          make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
-          # The bootstrap C sources are only read while building the compiler
-          # itself. Dropping them keeps the cached directory at ~170 MB instead
-          # of ~2 GB, which is what every job restores on a cache hit.
-          rm -rf vc
+          fail-on-cache-miss: true
 
       - name: put V on PATH
         id: v-ready
