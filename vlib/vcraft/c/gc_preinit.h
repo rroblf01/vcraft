@@ -157,4 +157,58 @@ __attribute__((constructor)) static void vpy_gc_preinit_linux(void) {
 }
 #endif
 
+// vpy_gc_enter registers the calling thread with V's collector, once per thread.
+//
+// Every trampoline in the generated glue calls it before running any V code. The
+// collector only knows the thread that imported the module: any other thread that
+// allocated and triggered a collection aborted the process with "Collecting from
+// unknown thread", and with the GIL released or on a free-threaded interpreter the
+// collector would neither stop such a thread nor scan its stack, and could free
+// memory it was still using. A worker thread, a ThreadPoolExecutor or a threaded web
+// server is enough to get there.
+//
+// After the first call a thread pays one thread-local load. Registration is undone
+// when the thread exits, through a pthread key destructor, which runs on the exiting
+// thread itself as GC_unregister_my_thread requires: a thread left registered after
+// it is gone would be signalled by the next collection.
+#if defined(GC_THREADS) && (defined(__APPLE__) || defined(__linux__))
+#include <pthread.h>
+
+static __thread int vpy_gc_thread_known = 0;
+static pthread_key_t vpy_gc_thread_key;
+static pthread_once_t vpy_gc_thread_key_once = PTHREAD_ONCE_INIT;
+
+static void vpy_gc_thread_exit(void *unused) {
+	(void)unused;
+	GC_unregister_my_thread();
+}
+
+static void vpy_gc_thread_key_init(void) {
+	pthread_key_create(&vpy_gc_thread_key, vpy_gc_thread_exit);
+}
+
+static inline void vpy_gc_enter(void) {
+	if (vpy_gc_thread_known) {
+		return;
+	}
+	vpy_gc_thread_known = 1;
+	// The importing thread, and any thread V started itself, is already known.
+	if (GC_thread_is_registered()) {
+		return;
+	}
+	struct GC_stack_base base;
+	if (GC_get_stack_base(&base) != GC_SUCCESS) {
+		return;
+	}
+	pthread_once(&vpy_gc_thread_key_once, vpy_gc_thread_key_init);
+	if (GC_register_my_thread(&base) == GC_SUCCESS) {
+		pthread_setspecific(vpy_gc_thread_key, (void *)1);
+	}
+}
+#else
+// Without a threaded collector (`gc = none`, or another platform) there is nothing
+// to register.
+static inline void vpy_gc_enter(void) {}
+#endif
+
 #endif // VCRAFT_GC_PREINIT_H

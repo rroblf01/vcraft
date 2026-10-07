@@ -53,7 +53,7 @@ pub fn generate(opt Options) Generated {
 
 	return Generated{
 		glue_path:    os.join_path(src, '_vcraft_generated.v')
-		glue:         emit_glue(p)
+		glue:         enter_collector(emit_glue(p))
 		stub_path:    os.join_path(opt.project_root, opt.stubs_dir, opt.package, '_stubs.pyi')
 		stub:         emit_stubs(p)
 		diagnostics: p.diagnostics
@@ -85,4 +85,23 @@ fn ensure_dir_of(path string) {
 		return
 	}
 	os.mkdir_all(dir) or { return }
+}
+
+// enter_collector starts every function in the glue by registering the calling thread
+// with V's collector.
+//
+// Every one of them is an entry point Python can reach from any thread: functions,
+// methods, accessors, `__repr__`, iteration, `tp_dealloc` and `tp_traverse` alike, and
+// a function added to the emitter later is one more. Done here, over the finished
+// text, rather than in each emitter, so a new kind of trampoline cannot forget it.
+// The call is one thread-local load after a thread's first.
+fn enter_collector(glue string) string {
+	mut out := []string{cap: glue.len / 32}
+	for line in glue.split_into_lines() {
+		out << line
+		if line.starts_with('fn vcraft_generated__') && line.ends_with('{') {
+			out << '\tvcraft.gc_enter()'
+		}
+	}
+	return out.join('\n') + '\n'
 }

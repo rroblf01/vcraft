@@ -908,6 +908,81 @@ pub fn (mut n Node) link(other voidptr) {
             native.write_text(saved)
             vcraft("build", cwd=project)
 
+        print("threads")
+        # The collector only knew the thread that imported the module, so any other
+        # thread that allocated aborted the process with "Collecting from unknown
+        # thread" as soon as it triggered a collection: one worker thread was enough.
+        # Each check runs in its own process, so a crash is a failed check rather than
+        # the end of the suite, and allocates well past the first collection.
+        native.write_text(saved + """
+// build_csv allocates from the collector with the GIL released, so threads run it,
+// and collect, in parallel.
+@[vc_fn]
+@[vc_gil]
+pub fn build_csv(rows int) int {
+	mut parts := []string{}
+	for i in 0 .. rows {
+		parts << 'row-${i}'
+	}
+	return parts.join(',').len
+}
+""")
+        try:
+            proc = vcraft("build", cwd=project)
+            t.check("a project with a GIL-free allocating function builds",
+                    proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-400:])
+            # The wheel this build wrote: dist/ also holds the abi3 one from earlier.
+            threaded = sorted((w for w in (project / "dist").glob("*.whl")
+                               if "abi3" not in w.name),
+                              key=lambda w: w.stat().st_mtime, reverse=True)
+            if proc.returncode == 0 and threaded:
+                target3 = tmp / "venv-threads"
+                make_venv(target3, with_pip=True)
+                subprocess.run([str(target3 / "bin" / "python"), "-m", "pip", "install",
+                                "--no-index", "--no-deps", "--force-reinstall",
+                                str(threaded[0])], capture_output=True, text=True)
+                expect = len(",".join(f"row-{i}" for i in range(5000)))
+                probes = {
+                    "a worker thread can call the extension":
+                        "import threading, mypkg_native as m\n"
+                        "def w():\n"
+                        "    for i in range(200_000):\n"
+                        "        assert m.greet('w') == 'Hello, w!'\n"
+                        "t = threading.Thread(target=w); t.start(); t.join()\n"
+                        "print('ok')\n",
+                    "a ThreadPoolExecutor can call the extension":
+                        "from concurrent.futures import ThreadPoolExecutor\n"
+                        "import mypkg_native as m\n"
+                        "with ThreadPoolExecutor(4) as ex:\n"
+                        "    got = list(ex.map(lambda i: m.greet(str(i)), range(200_000)))\n"
+                        "assert got[-1] == 'Hello, 199999!'\n"
+                        "print('ok')\n",
+                    "GIL-free functions allocate in parallel":
+                        "import threading, mypkg_native as m\n"
+                        "bad = []\n"
+                        "def w():\n"
+                        "    for i in range(200):\n"
+                        f"        if m.build_csv(5000) != {expect}: bad.append(i)\n"
+                        "ts = [threading.Thread(target=w) for _ in range(8)]\n"
+                        "[t.start() for t in ts]; [t.join() for t in ts]\n"
+                        "assert not bad, bad\n"
+                        "print('ok')\n",
+                    "short-lived threads come and go":
+                        "import threading, mypkg_native as m\n"
+                        "for _ in range(50):\n"
+                        "    ts = [threading.Thread(target=lambda: m.build_csv(2000)) for _ in range(20)]\n"
+                        "    [t.start() for t in ts]; [t.join() for t in ts]\n"
+                        "print('ok')\n",
+                }
+                for label, code in probes.items():
+                    proc = subprocess.run([str(target3 / "bin" / "python"), "-c", code],
+                                          capture_output=True, text=True, cwd=tmp, timeout=600)
+                    t.check(label, proc.returncode == 0 and proc.stdout.strip() == "ok",
+                            f"exit {proc.returncode}: {(proc.stderr or proc.stdout).strip()[-300:]}")
+        finally:
+            native.write_text(saved)
+            vcraft("build", cwd=project)
+
         print("sdist")
         # Keywords and `[urls]` reach PKG-INFO, which is what PyPI reads for the
         # sidebar of the project page.
