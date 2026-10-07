@@ -67,7 +67,9 @@ def host_target() -> str:
     if sys.platform == "darwin":
         return "macos-arm64" if machine == "arm64" else "macos-x86_64"
     arch = "aarch64" if machine in ("aarch64", "arm64") else "x86_64"
-    return f"linux-{arch}-gnu"
+    # musl on Alpine, glibc elsewhere: the libc is part of the target.
+    libc = "musl" if "musl" in (sysconfig.get_config_var("HOST_GNU_TYPE") or "") else "gnu"
+    return f"linux-{arch}-{libc}"
 
 
 def make_venv(path: Path, with_pip: bool = False) -> Path:

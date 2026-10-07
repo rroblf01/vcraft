@@ -764,7 +764,10 @@ def main() -> int:
     import subprocess as sp
 
     suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
-    extension = next(iter(PYTHON_DIR.glob(f"{PACKAGE}*.so")), None)
+    # This interpreter's extension exactly: the directory can also hold one built by
+    # another interpreter or inside a container, which a glob would pick up.
+    exact = PYTHON_DIR / f"{PACKAGE}{sysconfig.get_config_var('EXT_SUFFIX')}"
+    extension = exact if exact.exists() else None
     if extension is not None:
         out = sp.run(["nm", "-D", "--defined-only", str(extension)],
                      capture_output=True, text=True).stdout
