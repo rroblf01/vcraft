@@ -50,7 +50,8 @@ Each item lands on `main` with its tests and a changelog entry under
       classifiers. Until then CI runs it as a non-blocking prerelease cell; the
       runtime and codegen suites already pass on 3.15.0rc1.
 - [ ] **Linux aarch64 and musllinux tested per commit**, not only built: the suites run
-      on `ubuntu-24.04-arm` and inside the musllinux image.
+      on `ubuntu-24.04-arm` (3.11 and 3.14) and, through `docker run`, inside the
+      published musllinux image. In CI; to be checked off once a run is green.
 - [ ] **V without building it.** A prebuilt V at the pinned commit for each supported
       platform, installable from PyPI (as `ziglang` ships Zig) or by
       `vcraft toolchain install`, so `pip install vcraft` is enough to start.
