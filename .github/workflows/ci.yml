@@ -263,13 +263,16 @@ jobs:
           import ftcheck_native as m
           assert not sys._is_gil_enabled(), 'importing the module re-enabled the GIL'
           assert m.add(2, 3) == 5
+          # Enough calls to trigger many collections while all eight threads
+          # run in parallel: a thread the collector does not know aborts the
+          # process here, and a dozen calls never reached a collection at all.
           seen = []
           def burn():
-              for _ in range(3):
+              for _ in range(20_000):
                   seen.append(m.greet('threads'))
-          threads = [threading.Thread(target=burn) for _ in range(4)]
+          threads = [threading.Thread(target=burn) for _ in range(8)]
           [t.start() for t in threads]
           [t.join() for t in threads]
-          assert len(seen) == 12, seen
+          assert len(seen) == 160_000, len(seen)
           print('free-threaded import and threads ok')
           "
