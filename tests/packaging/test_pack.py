@@ -131,6 +131,12 @@ def main() -> int:
             t.check("the description has no repository-relative links",
                     not re.search(r"\]\((?!https?://|mailto:|#)", body),
                     str(re.findall(r"\]\((?!https?://|mailto:|#)[^)]*\)", body)[:3]))
+            # Dot-directories survive the rewrite: `.github/...` is not `./github`.
+            t.check("dot-directory links keep their dot",
+                    packer.pypi_readme("[w](.github/workflows) [l](./LICENSE)", "9.9.9")
+                    == "[w](https://github.com/rroblf01/vcraft/blob/vcraft/v9.9.9/.github/workflows) "
+                    "[l](https://github.com/rroblf01/vcraft/blob/vcraft/v9.9.9/LICENSE)",
+                    packer.pypi_readme("[w](.github/workflows) [l](./LICENSE)", "9.9.9"))
             t.check("the licence is declared and shipped",
                     "License-Expression: MIT" in head
                     and "vcraft-0.1.0.dist-info/licenses/LICENSE" in names, head[:400])

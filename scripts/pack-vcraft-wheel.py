@@ -77,7 +77,7 @@ def pypi_readme(text: str, version: str) -> str:
     keeps describing the release it belongs to after `main` moves on.
     """
     base = f"{REPOSITORY}/blob/vcraft/v{version}/"
-    return _RELATIVE_LINK.sub(lambda m: m.group(1) + base + m.group(2).lstrip("./")
+    return _RELATIVE_LINK.sub(lambda m: m.group(1) + base + m.group(2).removeprefix("./")
                               + m.group(3), text)
 
 
