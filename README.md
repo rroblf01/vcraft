@@ -222,27 +222,26 @@ Values are converted with direct CPython calls whenever a fast path exists — f
 example a V `int` becomes `PyLong_AsLongLong`, not a round trip through a
 generic value tree.
 
-| V                                | Python                       | Notes                                    |
-| -------------------------------- | ---------------------------- | ---------------------------------------- |
-| `bool`                           | `bool`                       |                                          |
-| `i8` … `i64`, `isize`            | `int`                        | Range-checked on the way out             |
-| `u8` … `u64`, `usize`            | `int`                        | Negative inputs raise                    |
-| `f32`, `f64`                     | `float`                      |                                          |
-| `rune`                           | `str` of length 1            |                                          |
-| `string`                         | `str`                        | Decoded as UTF-8                         |
-| `[]u8`                           | `bytes`                      | No copy                                  |
-| `[]T` (contiguous)               | `list`, or `memoryview`      | Buffer protocol, no copy                 |
-| `[N]T` (contiguous)              | `memoryview`                 | Buffer protocol, no copy                 |
-| `map[string]V`                   | `dict`                       |                                          |
-| `?T`                             | `T` or `None`                |                                          |
-| `[N]T` / struct                  | `list` / `dict`              | Of field values                          |
-| enum                             | `int`                        | As its `.name`, by default               |
-| `voidptr`                        | `PyObject *`                 | Borrowed; you own the reference          |
-| `vcraft.PyObj` (result)          | any object                   | Owned; the reference goes to the caller  |
-| `&T`                             | `PyObject *` wrapping a `T`  | Stable identity across the call          |
-| `void`, `!void`                  | `None`                       |                                          |
-| `!T` / `T!`                      | `T` or raises                | See [Errors and panics](#errors-and-panics) |
-| V function type `fn (Args) Ret`   | Python callable              | Arguments become a tuple                 |
+| V                                     | Python                       | Notes                                              |
+| ------------------------------------- | ---------------------------- | -------------------------------------------------- |
+| `bool`                                | `bool`                       | Any object in, by its truth value                  |
+| `i8`, `i16`, `i32`, `int`, `i64`, `isize` | `int`                    | Range-checked: out of range raises OverflowError    |
+| `u8`, `u16`, `u32`, `u64`, `usize`    | `int`                        | Negative or out of range raises OverflowError      |
+| `f32`, `f64`                          | `float`                      | An `int` is accepted too                           |
+| `rune`                                | `int`                        | The code point                                     |
+| `string`                              | `str`                        | UTF-8                                              |
+| `[]u8`                                | `bytes`                      | Any bytes-like object in, without copying it       |
+| `[]T` of the types above, or `string` | `list`                       | Any sequence in (a list, a tuple); a list out      |
+| `voidptr`                             | any object                   | Borrowed; you own the reference                    |
+| `vcraft.PyObj` (result)               | any object                   | Owned; the reference goes to the caller            |
+| `void`, `!void`                       | `None`                       |                                                    |
+| `!T`                                  | `T`, or raises               | See [Errors and panics](#errors-and-panics)        |
+
+Fields of a `@[vc_class]` struct and method parameters follow the same table.
+`map`, `?T`, enums, tuples, fixed arrays, plain structs, V function types and class
+instances (`&T`) as parameters or results of plain functions are not supported yet;
+they are on the [roadmap](ROADMAP.md). A `@[vc_class]` is constructed from Python
+with its class, through `new_<class>` when one is declared.
 
 Anything not in this table is a compile-time diagnostic pointing at the exact
 file, line and column, not a runtime surprise.

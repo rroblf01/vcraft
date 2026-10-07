@@ -21,6 +21,18 @@ Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
   registers the calling thread with the collector on its first call (one
   thread-local check afterwards), and the thread is unregistered when it exits.
   **Rebuild your extensions** to pick this up.
+- **Narrow scalar parameters did not compile.** A function or method taking `i8`,
+  `i16`, `i32`, `u8`, `u16`, `u32` or `f32` was accepted by the generator, which then
+  wrote glue the V compiler rejected. They now read through range-checked
+  conversions: an out-of-range value raises OverflowError.
+- **Narrow class fields were written with the wrong width.** Assigning to an `f32`
+  field stored the low bytes of a double (`2.0` read back as `0.0`), and an `i8` or
+  `u8` field silently truncated out-of-range values. They now convert to their own
+  width and raise OverflowError when the value does not fit.
+- **The README promised conversions that did not exist.** `map[string]V`, `?T`,
+  enums, fixed arrays, plain structs, V function types and `&T` in plain functions
+  are rejected by the generator; the type table now says so, `rune` is documented
+  as the `int` code point it is, and every row is exercised by the CLI suite.
 
 ### Changed
 

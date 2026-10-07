@@ -12,12 +12,15 @@ Each item lands on `main` with its tests and a changelog entry under
 - [x] **Threads.** Extensions can be called from any thread: every generated entry
       point registers the calling thread with V's collector, and unregisters it on
       exit. Covered by the CLI suite and the free-threaded CI job.
-- [ ] **The documentation only promises what works.** The type table in the README
-      lists conversions the generator rejects (`map[string]V`, `?T`, enums, and
-      possibly V function types, `[N]T` and structs). Correct it now, then implement
-      the missing ones below.
-- [ ] **Documentation tests.** Every row of the type table and every example in the
-      README is compiled and run in CI, so the two cannot drift apart again.
+- [x] **The documentation only promises what works.** The type table listed
+      conversions the generator rejected (`map`, `?T`, enums, fixed arrays, structs,
+      function types, `&T`); they are now listed as not supported yet. Narrow scalar
+      parameters (`i8`…`u32`, `f32`) generated glue that did not compile, and narrow
+      class fields were written with the wrong width; both fixed.
+- [x] **Type table tests.** Every row of the type table is built and round-tripped in
+      the CLI suite, with its range checks.
+- [ ] **README example tests.** Every code example in the README compiled and run in
+      CI.
 - [ ] **Leak checks in CI.** The benchmark's memory scenarios (fresh objects per call,
       run twice) become a test that fails when the second batch keeps memory.
 - [ ] **Sanitizers.** A CI job builds the runtime and an example with ASan and UBSan
@@ -41,7 +44,8 @@ Each item lands on `main` with its tests and a changelog entry under
 
 ## Feature parity with PyO3
 
-- [ ] **Types:** `map[string]V` ↔ `dict`, `?T` ↔ `T | None`, enums, tuples.
+- [ ] **Types:** `map[string]V` ↔ `dict`, `?T` ↔ `T | None`, enums, tuples, fixed
+      arrays, plain structs, and class instances (`&T`) in plain functions.
 - [ ] **Arguments:** keyword arguments and defaults for every signature.
 - [ ] **Callbacks:** calling a Python callable from V.
 - [ ] **Class protocols:** `__len__`, `__getitem__`, `__contains__`, ordering
