@@ -16,10 +16,10 @@
 #define VCRAFT_GC_PREINIT_H
 
 // glibc only declares `struct dl_phdr_info`, `dl_iterate_phdr` and `dladdr` with
-// `_GNU_SOURCE`. Without it every Linux build fails on the own-object walk below
-// with "invalid use of undefined type 'struct dl_phdr_info'". Defined here so it
-// is in force for the `<link.h>` and `<dlfcn.h>` inclusions that follow, which are
-// this header's first ones.
+// `_GNU_SOURCE`. `vcraft build` passes `-D_GNU_SOURCE` for Linux targets, which is
+// what takes effect: by the time this header is included, the translation unit has
+// already pulled in system headers and glibc has frozen its feature set. This
+// fallback only helps something that includes this header first.
 #if defined(__linux__) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE
 #endif

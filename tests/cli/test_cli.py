@@ -278,6 +278,8 @@ def main() -> int:
         t.check("a dry run plans without a toolchain", proc.returncode == 0
                 and "platform-tag     linux_aarch64" in proc.stdout
                 and "aarch64-linux-gnu-gcc" in proc.stdout, proc.stdout)
+        t.check("a linux dry run defines _GNU_SOURCE for the GC root walk",
+                "-D_GNU_SOURCE" in proc.stdout, proc.stdout)
         t.check("a dry run writes nothing",
                 not list((project / "dist").glob("*aarch64*")))
         proc = vcraft("build", "--target", "linux-aarch64-gnu", "--release",

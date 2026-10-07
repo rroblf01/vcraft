@@ -466,6 +466,17 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	} else {
 		''
 	}
+	// glibc only declares `struct dl_phdr_info` and `dl_iterate_phdr` with
+	// `_GNU_SOURCE`, which the collector pre-initialiser needs for its Linux
+	// root walk. It has to arrive as a command-line define: by the time that
+	// header is included, the translation unit has already pulled in system
+	// headers and glibc has frozen its feature set, so a `#define` there comes
+	// too late. Accepted harmlessly by musl, which needs no such gate.
+	gnu_define := if target.os == 'linux' {
+		'-D_GNU_SOURCE'
+	} else {
+		''
+	}
 	mut args := [
 		shell_quote(opt.v),
 		'-new-compiler',
@@ -476,7 +487,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		'-path',
 		shell_quote('${opt.v_path}|@vlib'),
 		'-cflags',
-		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + gc_define + ' ' + opt.cflags),
+		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + gc_define + ' ' + gnu_define + ' ' + opt.cflags),
 	]
 	ldflags := extension_ldflags(target.os, opt.ldflags)
 	if ldflags.len > 0 {

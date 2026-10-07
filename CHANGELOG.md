@@ -134,10 +134,11 @@ packages them as wheels, with no Rust, C++ or zlib involved.
 - **`--dry-run` hid flags**: a release dry run printed the compiler invocation
   before `-prod` and the project root were added to it, so the shown command
   was not the one a real build runs. The plan now renders the full command.
-- **Linux builds failed to compile**: the collector pre-initialiser used
-  `struct dl_phdr_info` without defining `_GNU_SOURCE`, which glibc requires
-  for its declaration, so every Linux extension build broke. The define now
-  precedes the `<link.h>` and `<dlfcn.h>` inclusions.
+- **Linux builds failed to compile**: the collector pre-initialiser uses
+  `struct dl_phdr_info`, which glibc only declares with `_GNU_SOURCE`.
+  `vcraft build` now passes `-D_GNU_SOURCE` for Linux targets; a `#define` in
+  the header itself comes too late, because the generated translation unit has
+  already included system headers by then.
 
 ### Build safeguards
 
