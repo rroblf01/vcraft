@@ -31,6 +31,11 @@ Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
   width and raise OverflowError when the value does not fit.
 - **An allocation V refused surfaced as RuntimeError.** V reports it with a panic;
   the glue now raises MemoryError for it, like any failed allocation in CPython.
+- **Extensions exported more than their init function on musl.** V's own
+  `backtrace`, `backtrace_symbols` and `backtrace_symbols_fd` reached the dynamic
+  symbol table, where another library in the process could bind to them. Linux builds
+  now link with a version script that exports only `PyInit_<module>`, on glibc and
+  musl alike.
 - **The README promised conversions that did not exist.** `map[string]V`, `?T`,
   enums, fixed arrays, plain structs, V function types and `&T` in plain functions
   are rejected by the generator; the type table now says so, `rune` is documented

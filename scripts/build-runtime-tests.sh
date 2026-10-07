@@ -26,9 +26,21 @@ echo "headers: $include"
 # Extensions leave the `Py*` symbols for the interpreter to resolve at import.
 # Apple's linker refuses undefined symbols in a shared object unless told so;
 # ELF linkers allow them by default.
-macos_ldflags=()
+link_flags=()
 if [ "$(uname -s)" = Darwin ]; then
-	macos_ldflags=(-ldflags "-undefined dynamic_lookup")
+	link_flags=(-ldflags "-undefined dynamic_lookup")
+fi
+
+# On Linux, export only the init function: V hides most of its runtime, but on musl
+# its own backtrace() family reached the dynamic symbol table. A version script hides
+# everything else, whatever the libc. macOS takes `-undefined dynamic_lookup` above.
+if [ "$(uname -s)" = Linux ]; then
+	# In the repository's build/ rather than mktemp: the compiler runs in a
+	# `systemd-run` unit (scripts/vcraft-v.sh), which need not see this shell's /tmp.
+	mkdir -p "$here/build"
+	exports_file="$here/build/$(basename "$0" .sh).exports"
+	printf '{\n\tglobal: PyInit_%s;\n\tlocal: *;\n};\n' "$name" > "$exports_file"
+	link_flags=(-ldflags "-Wl,--version-script=$exports_file")
 fi
 
 # VCRAFT_SANITIZE=1 builds with AddressSanitizer and UndefinedBehaviorSanitizer, for
@@ -44,7 +56,7 @@ fi
 
 "$here/scripts/vcraft-v.sh" -shared -o "$out$suffix" \
 	${sanitize[@]+"${sanitize[@]}"} \
-	${macos_ldflags[@]+"${macos_ldflags[@]}"} \
+	${link_flags[@]+"${link_flags[@]}"} \
 	-path "$here/vlib|@vlib" \
 	-cflags "-I$include $sanitize_cflags" \
 	"$here/tests/runtime"

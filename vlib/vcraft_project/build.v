@@ -196,6 +196,11 @@ pub fn macos_retarget(tag string, deployment string) string {
 	return 'macosx_${nums[0]}_${minor}_' + parts[3..].join('_')
 }
 
+// export_script is a GNU ld version script exporting only the module's init function.
+pub fn export_script(module string) string {
+	return '{\n\tglobal: PyInit_${module};\n\tlocal: *;\n};\n'
+}
+
 // extension_ldflags returns the linker flags for an extension on `target_os`.
 //
 // An extension leaves every `Py*` symbol undefined for the interpreter that loads it to
@@ -489,7 +494,23 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		'-cflags',
 		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + gc_define + ' ' + gnu_define + ' ' + opt.cflags),
 	]
-	ldflags := extension_ldflags(target.os, opt.ldflags)
+	mut link_extra := opt.ldflags
+	if target.os == 'linux' {
+		// Export only the init function. V's `-fvisibility=hidden` already hides most of
+		// the runtime, but not everything: on musl V defines its own `backtrace`,
+		// `backtrace_symbols` and `backtrace_symbols_fd`, and they ended up in the
+		// dynamic symbol table, where another library in the process could bind to
+		// them. A version script hides every symbol but `PyInit_<module>` whatever
+		// the libc or the V version does.
+		// Absolute: V runs the linker from its own working directory, where a path
+		// relative to the project does not resolve.
+		script := absolute(compiled + '/' + p.module + '.exports')
+		os.write_file(script, export_script(p.module)) or {
+			return error('cannot write ${script}')
+		}
+		link_extra = ('-Wl,--version-script=' + script + ' ' + link_extra).trim_space()
+	}
+	ldflags := extension_ldflags(target.os, link_extra)
 	if ldflags.len > 0 {
 		args << '-ldflags'
 		args << shell_quote(ldflags)

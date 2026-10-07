@@ -351,6 +351,19 @@ def main() -> int:
                 next(n for n in entries if n.endswith("dist-info/WHEEL"))).decode()
             t.check("the wheel is not pure Python",
                     "Root-Is-Purelib: false" in wheel_meta, wheel_meta)
+            # Only the init function is exported: anything else in the dynamic symbol
+            # table can be bound by another library in the process. On musl V's own
+            # backtrace() family used to leak out.
+            if sys.platform.startswith("linux") and shutil.which("nm"):
+                so = next(n for n in entries if n.endswith(".so") and "/" not in n)
+                unpacked_so = tmp / "exports-check.so"
+                unpacked_so.write_bytes(z.read(so))
+                listing = subprocess.run(["nm", "-D", "--defined-only", str(unpacked_so)],
+                                         capture_output=True, text=True).stdout
+                exported = {line.split()[-1] for line in listing.splitlines()
+                            if len(line.split()) == 3 and line.split()[1] in "TDBRW"}
+                t.check("only PyInit is exported", exported == {"PyInit_mypkg_native"},
+                        str(sorted(exported)))
             # The project page on PyPI is the README the scaffold wrote, rendered
             # as Markdown, and every classifier has to be one PyPI accepts: an
             # unknown one rejects the whole upload.
