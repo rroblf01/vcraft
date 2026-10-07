@@ -357,10 +357,16 @@ copy) and an exception round trip per call.
   the `checksum(new 100kB) x500` memory scenario sits at 0.0
   kept and 0.0 leak on all three. After that, exact `bytes` no longer goes through
   the view (`vpy_is_exact_bytes` + direct alias; the profile goes from ~7% of
-  samples in `GetBuffer`/`Release`/`PyMem_Calloc` to zero): at 100k the number does
-  not move (4.8 µs, the loop rules) and at 256 B barely (125 vs 83 ns; the
-  view was ~9 ns of those 42). Of what is left, the bulk is the loop: a sum with
-  `u64(b)` widening vs Rust's SIMD, plus boxing the result.
+  samples in `GetBuffer`/`Release`/`PyMem_Calloc` to zero) and the exact-`bytes`
+  branch reads buffer and length with one C call into locals instead of a
+  multi-return helper (whose 8-byte result struct V allocated per call): at
+  256 B vcraft now ties PyO3 call-for-call (83 vs 83 ns, was 125 vs 83). At
+  100k the number does not move (4.8 µs), and the profile puts ~100% of samples
+  in the loop itself — which *is* vectorized (NEON `tbl`/`uaddw`), but clang
+  lowers the widening sum to nibble-split sequences, ~2.8x more instructions
+  than the single `uaddlv` LLVM emits for Rust's identical loop. Backend code
+  quality again, same class as the array-write lowering: no in-repo fix that
+  keeps the three spellings comparable.
 - `expect_positive(-1)` under `try`: vcraft 93 ns, ahead of PyO3
   (112 ns), Python (124 ns) and zig (277 ns).
 - On correctness, all three pass the three new checks. zig-maturin
