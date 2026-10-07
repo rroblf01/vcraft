@@ -118,12 +118,21 @@ pub fn bytes_arg(argv voidptr, i int, func string, name string) !BytesArg {
 		return error('missing ${name}')
 	}
 	if C.vpy_is_exact_bytes(obj.ptr) != 0 {
-		ptr, n := bytes_of(obj)
+		// Inlined rather than through `bytes_of`: a multi-return value travels
+		// in an 8-byte result struct V allocates per call, and this is the hot
+		// path of every `[]u8` call with `bytes` input.
 		unsafe {
+			mut buf := voidptr(nil)
+			mut n := isize(0)
+			if C.PyBytes_AsStringAndSize(obj.ptr, voidptr(&buf), voidptr(&n)) != 0 {
+				// Unreachable for exact `bytes`, which always exposes a buffer;
+				// kept because CPython signals failure this way, not with NULL.
+				return error('${name} is not bytes-like')
+			}
 			mut exact := []u8{}
-			exact.data = ptr
-			exact.len = n
-			exact.cap = n
+			exact.data = buf
+			exact.len = int(n)
+			exact.cap = int(n)
 			return BytesArg{
 				data: exact
 				view: nil

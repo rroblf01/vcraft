@@ -102,6 +102,10 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   allocation. The slice must not outlive the call, the same documented contract
   as `[]u8`; safe against mutation because `str` is immutable. Scalar `str`
   parameters still copy.
+- **No multi-return on the `bytes` fast path**: the exact-`bytes` branch of
+  `bytes_arg` reads the buffer and length with one C call into locals instead
+  of through `bytes_of`, whose 8-byte result struct V allocated per call. Small
+  `bytes` calls match PyO3 call-for-call.
 - **Smaller per-call state**: the `state_at` chain is only published when the
   project calls `vcraft.state_at`.
 - **Faster imports on macOS**: vcraft starts Boehm before V with only the
