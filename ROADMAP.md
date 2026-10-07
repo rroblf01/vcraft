@@ -45,8 +45,10 @@ Each item lands on `main` with its tests and a changelog entry under
 ## Platforms
 
 - [x] **macOS runners on `macos-26`**, off the deprecated `macos-14`.
-- [ ] **Python 3.15**, as soon as the final release is out (rc1 today): added to
-      `supported_pythons`, CI, the generated matrix and the classifiers.
+- [ ] **Python 3.15**, as soon as the final release is out: added to
+      `supported_pythons`, the CI matrix proper, the generated matrix and the
+      classifiers. Until then CI runs it as a non-blocking prerelease cell; the
+      runtime and codegen suites already pass on 3.15.0rc1.
 - [ ] **Linux aarch64 and musllinux tested per commit**, not only built: the suites run
       on `ubuntu-24.04-arm` and inside the musllinux image.
 - [ ] **V without building it.** A prebuilt V at the pinned commit for each supported

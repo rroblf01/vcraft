@@ -102,6 +102,14 @@ jobs:
             python: "3.12"
           - os: macos-26
             python: "3.13"
+        # The next CPython, while it is a prerelease: a heads-up that does not fail
+        # the run. It moves into the list above, and into `supported_pythons`, once
+        # it is released.
+        include:
+          - os: ubuntu-latest
+            python: "3.15"
+            experimental: true
+    continue-on-error: ${{ matrix.experimental == true }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -110,6 +118,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          allow-prereleases: true
 
       # Built once per runner OS by the v-compiler job, which every job here
       # waits for, so this only ever restores it.
@@ -179,6 +188,14 @@ jobs:
             python: "3.12"
           - os: macos-26
             python: "3.13"
+        # The next CPython, while it is a prerelease: a heads-up that does not fail
+        # the run. It moves into the list above, and into `supported_pythons`, once
+        # it is released.
+        include:
+          - os: ubuntu-latest
+            python: "3.15"
+            experimental: true
+    continue-on-error: ${{ matrix.experimental == true }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -187,6 +204,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          allow-prereleases: true
 
       # Built once per runner OS by the v-compiler job, which every job here
       # waits for, so this only ever restores it.
