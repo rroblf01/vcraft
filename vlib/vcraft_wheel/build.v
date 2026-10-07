@@ -40,7 +40,11 @@ pub mut:
 	tags []string
 	summary         string
 	description     string
+	// description_content_type is the MIME type of `description`.
+	description_content_type string
 	license         string
+	keywords        []string
+	project_urls    []string
 	requires_python string
 	classifiers     []string
 	requires_dist   []string
@@ -113,7 +117,10 @@ pub fn build(input BuildInput) ![]u8 {
 		version:         input.version
 		summary:         input.summary
 		description:     input.description
+		description_content_type: input.description_content_type
 		license:         input.license
+		keywords:        input.keywords
+		project_urls:    input.project_urls
 		requires_python: input.requires_python
 		classifiers:     input.classifiers
 		requires_dist:   input.requires_dist

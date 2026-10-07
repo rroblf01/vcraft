@@ -614,6 +614,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		}
 	}
 
+	long, long_type := p.long_description(opt.root)
 	mut wheel := vcraft_wheel.build(vcraft_wheel.BuildInput{
 		distribution:    p.name
 		version:         p.version
@@ -625,8 +626,11 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		direct_url:      if opt.editable { direct_url_json(absolute(opt.root)) } else { '' }
 		tags:            [tag]
 		summary:         p.description
-		description:     p.description
+		description:     long
+		description_content_type: long_type
 		license:         p.license
+		keywords:        p.keywords
+		project_urls:    p.urls
 		requires_python: p.requires_python
 		classifiers:     p.classifiers
 		requires_dist:   p.dependencies

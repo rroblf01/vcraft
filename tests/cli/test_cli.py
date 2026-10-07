@@ -351,6 +351,18 @@ def main() -> int:
                 next(n for n in entries if n.endswith("dist-info/WHEEL"))).decode()
             t.check("the wheel is not pure Python",
                     "Root-Is-Purelib: false" in wheel_meta, wheel_meta)
+            # The project page on PyPI is the README the scaffold wrote, rendered
+            # as Markdown, and every classifier has to be one PyPI accepts: an
+            # unknown one rejects the whole upload.
+            meta = z.read(
+                next(n for n in entries if n.endswith("dist-info/METADATA"))).decode()
+            head, _, body = meta.partition("\n\n")
+            t.check("the README is the long description",
+                    "Description-Content-Type: text/markdown" in head
+                    and body.startswith("# mypkg"), meta[:600])
+            t.check("no classifier PyPI would refuse",
+                    "Programming Language :: V\n" not in head
+                    and "Classifier: Programming Language :: Other" in head, head)
 
         print("python helpers")
         helper = project / "python" / "mypkg_helper.py"
@@ -897,7 +909,16 @@ pub fn (mut n Node) link(other voidptr) {
             vcraft("build", cwd=project)
 
         print("sdist")
+        # Keywords and `[urls]` reach PKG-INFO, which is what PyPI reads for the
+        # sidebar of the project page.
+        manifest_path = project / "vcraft.toml"
+        manifest_saved = manifest_path.read_text()
+        manifest_path.write_text(
+            manifest_saved.replace('readme = "README.md"\n',
+                                   'readme = "README.md"\nkeywords = ["fast", "v"]\n')
+            + '\n[urls]\nSource = "https://github.com/me/mypkg"\n')
         proc = vcraft("sdist", cwd=project)
+        manifest_path.write_text(manifest_saved)
         t.check("sdist succeeds", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-400:])
         sdists = list((project / "dist").glob("*.tar.gz"))
@@ -908,6 +929,13 @@ pub fn (mut n Node) link(other voidptr) {
             with tarfile.open(sdists[0]) as tf:
                 members = tf.getnames()
                 top = sdists[0].name[:-len(".tar.gz")]
+                pkg_info = tf.extractfile(f"{top}/PKG-INFO").read().decode()
+                t.check("PKG-INFO carries keywords and project URLs",
+                        "Keywords: fast,v" in pkg_info
+                        and "Project-URL: Source, https://github.com/me/mypkg" in pkg_info,
+                        pkg_info[:600])
+                t.check("PKG-INFO carries the README as Markdown",
+                        "Description-Content-Type: text/markdown" in pkg_info, pkg_info[:600])
                 # `tarfile` strips the trailing slash from a directory member, so the
                 # name compares equal either way.
                 t.check("the archive unpacks into name-version",

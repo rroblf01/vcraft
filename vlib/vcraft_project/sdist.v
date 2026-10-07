@@ -36,7 +36,7 @@ pub fn sdist(p Project, root string) ![]u8 {
 		data := os.read_file(path) or { return error('cannot read ${path}') }
 		tar.add_file('${base_name(p)}/' + name, data.bytes()) or { return err }
 	}
-	tar.add_file('${base_name(p)}/PKG-INFO', pkg_info(p).bytes()) or { return err }
+	tar.add_file('${base_name(p)}/PKG-INFO', pkg_info(p, root).bytes()) or { return err }
 	// Project Python travels as source: the wheel builder compiles it when `embed-pyc`
 	// is set, so an sdist that omits it builds a wheel without the helpers. Type stubs
 	// travel as well, because they are the interface a type checker reads.
@@ -64,13 +64,17 @@ fn base_name(p Project) string {
 // The wheel's `METADATA` plus `Metadata-Version` and nothing else is not enough: an
 // sdist's `PKG-INFO` is read by the build frontend before the package's own metadata
 // exists, so a field that only a wheel can supply has to be absent rather than wrong.
-fn pkg_info(p Project) string {
+fn pkg_info(p Project, root string) string {
+	long, long_type := p.long_description(root)
 	mut out := vcraft_wheel.render_metadata(vcraft_wheel.MetaData{
 		name:            p.name
 		version:         p.version
 		summary:         p.description
-		description:     p.description
+		description:     long
+		description_content_type: long_type
 		license:         p.license
+		keywords:        p.keywords
+		project_urls:    p.urls
 		requires_python: p.requires_python
 		classifiers:     p.classifiers
 	})

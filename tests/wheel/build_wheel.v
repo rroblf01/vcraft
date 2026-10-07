@@ -41,7 +41,7 @@ fn main() {
 		summary:      'A demo package built by vcraft'
 		license:      'MIT'
 		requires_python: '>=3.11'
-		classifiers: ['Programming Language :: V', 'Programming Language :: Python :: 3']
+		classifiers: ['Programming Language :: Other', 'Programming Language :: Python :: 3']
 	}) or {
 		eprintln('build failed: ' + err.msg())
 		exit(1)
