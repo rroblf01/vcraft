@@ -83,6 +83,8 @@ jobs:
       # commits, so a release normally rebuilds nothing but the vcraft layer.
       - name: build the architecture image
         uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: .
           file: ${{ matrix.dockerfile }}

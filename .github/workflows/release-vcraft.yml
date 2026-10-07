@@ -113,6 +113,10 @@ jobs:
       - name: rebuild the Linux binary in the manylinux image
         if: runner.os == 'Linux'
         uses: docker/build-push-action@v6
+        # No build record artifact: nothing reads it, and it is one more artifact
+        # in the run for the publish job to step around.
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: .
           file: docker/manylinux.Dockerfile
@@ -163,9 +167,13 @@ jobs:
       - name: download the distributions
         # One directory per platform artifact, not merged: both hold `bin/` and
         # `vlib/`, and merging them would overwrite one binary with the other.
+        # Only the distributions: other steps in the run can leave artifacts of
+        # their own (buildx uploads a `.dockerbuild` record), and an unfiltered
+        # download fails the whole step on one it cannot extract.
         uses: actions/download-artifact@v4
         with:
           path: dists
+          pattern: vcraft-dist-*
 
       - name: check the tag names the version being built
         # A tag of `vcraft/v0.2.0` on a tree that stamps `0.1.0` publishes a
