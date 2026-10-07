@@ -57,8 +57,14 @@ jobs:
       - name: smoke-test the image definition
         # `docker build --check` parses the Dockerfile without building anything, so
         # a broken instruction fails here in seconds rather than after the V source
-        # build an hour in.
-        run: docker build --check -f ${{ matrix.dockerfile }} .
+        # build an hour in. It gets the same BASE as the real build: without it the
+        # check resolves the Dockerfile's x86_64 default on an arm64 runner, and its
+        # InvalidBaseImagePlatform warning fails the step.
+        env:
+          BASE: ${{ matrix.base }}
+        run: |
+          docker build --check ${BASE:+--build-arg "BASE=$BASE"} \
+            -f ${{ matrix.dockerfile }} .
 
       - name: log in to ghcr.io
         uses: docker/login-action@v3
