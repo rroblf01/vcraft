@@ -24,7 +24,7 @@ import vcraft_project
 pub struct Target {
 pub mut:
 	// os is the runner: ubuntu-latest for x86_64 Linux, ubuntu-24.04-arm for aarch64
-	// Linux, macos-14, or windows-latest.
+	// Linux, macos-26, or windows-latest.
 	os string
 	// python is the interpreter version for `setup-python`, or empty when the cell
 	// builds inside a container that brings its own interpreters.
@@ -199,7 +199,7 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 				check:          interpreter
 			}
 			out << Target{
-				os:             'macos-14'
+				os:             'macos-26'
 				python:         version + 't'
 				target:         'cp' + floor + 't-macosx-arm64'
 				free_threading: true
@@ -252,7 +252,7 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 		// Built with the floor's own interpreter, so the wheel is also checked on the
 		// oldest CPython it claims to support.
 		out << Target{
-			os:     'macos-14'
+			os:     'macos-26'
 			python: p.abi3
 			abi3:   p.abi3
 			target: 'cp' + compact(p.abi3) + '-abi3-macosx-arm64'
@@ -286,7 +286,7 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 			check:     '/opt/python/cp' + floor + '-cp' + floor + '/bin/python'
 		}
 		out << Target{
-			os:     'macos-14'
+			os:     'macos-26'
 			python: version
 			target: 'cp' + floor + '-macosx-arm64'
 			args:   'build --release'

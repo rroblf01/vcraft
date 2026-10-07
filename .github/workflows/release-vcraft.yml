@@ -34,7 +34,7 @@ jobs:
         include:
           - os: ubuntu-latest
             asset: linux-x86_64
-          - os: macos-14
+          - os: macos-26
             asset: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
@@ -54,7 +54,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/v-src
-          key: v-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          key: v-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
 
       - name: build the V compiler from source
         if: steps.v-cache.outputs.cache-hit != 'true'
