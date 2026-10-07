@@ -147,6 +147,10 @@ jobs:
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/codegen/test_codegen.py
 
+      - name: "suite: leaks"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/memory/test_leaks.py
+
   cli:
     needs: v-compiler
     # The slowest suite on its own job (see above for why it is separate).

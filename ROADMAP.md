@@ -21,8 +21,11 @@ Each item lands on `main` with its tests and a changelog entry under
       the CLI suite, with its range checks.
 - [ ] **README example tests.** Every code example in the README compiled and run in
       CI.
-- [ ] **Leak checks in CI.** The benchmark's memory scenarios (fresh objects per call,
-      run twice) become a test that fails when the second batch keeps memory.
+- [x] **Leak checks in CI.** `tests/memory/test_leaks.py` runs fifteen scenarios
+      (strings, lists, bytes, views, errors, owned and borrowed objects, instances,
+      cycles, iteration, short-lived threads) twice in a fresh process and fails if
+      the second batch keeps Python objects or grows the peak RSS, and checks that
+      borrowed arguments keep their reference count.
 - [ ] **Sanitizers.** A CI job builds the runtime and an example with ASan and UBSan
       and runs the runtime and codegen suites under them.
 - [ ] **Fuzzed conversions.** Random ints, floats, strings, bytes and sequences,

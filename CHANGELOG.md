@@ -36,6 +36,8 @@ Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- **Leak checks run in CI**: a new suite, `tests/memory/test_leaks.py`, fails on
+  leaked Python objects, unbounded memory growth or drifting reference counts.
 - **macOS builds run on `macos-26`**: the vcraft release and the workflows
   `vcraft generate-ci` writes moved off `macos-14`, which GitHub has deprecated.
   Wheels still target macOS 11.0. Regenerate your workflow with
