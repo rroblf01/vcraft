@@ -432,11 +432,11 @@ first collection triggered from another one aborted the process with
 released (`@[vc_gil]`) or on free-threaded CPython it was worse in principle: the
 collector neither stopped those threads nor scanned their stacks.
 
-vcraft 0.2.1 registers each thread with the collector the first time it enters the
+vcraft 1.0 registers each thread with the collector the first time it enters the
 extension and unregisters it when the thread exits. Measured on the same Linux machine
 with `bench_vcraft_native`, 200,000 `greet`/`join_strings`/`make_range` calls per thread:
 
-| threads | 0.2.0 | 0.2.1 |
+| threads | 0.2.0 | with the fix |
 |---|---|---|
 | 1 worker | aborts | 0.2 s |
 | 8 | aborts | 1.9 s |

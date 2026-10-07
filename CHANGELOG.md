@@ -7,6 +7,30 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
+
+### Fixed
+
+- **Calling an extension from any thread but the importing one crashed Python.**
+  V's garbage collector only knew the thread that imported the module, so the first
+  collection triggered from another thread aborted the process with
+  `Collecting from unknown thread`. A single worker thread, a `ThreadPoolExecutor`,
+  `asyncio.to_thread` or a threaded web server was enough. With the GIL released
+  (`@[vc_gil]`) or on free-threaded CPython the collector also neither stopped those
+  threads nor scanned their stacks. Every function in the generated glue now
+  registers the calling thread with the collector on its first call (one
+  thread-local check afterwards), and the thread is unregistered when it exits.
+  **Rebuild your extensions** to pick this up.
+
+### Changed
+
+- **macOS builds run on `macos-26`**: the vcraft release and the workflows
+  `vcraft generate-ci` writes moved off `macos-14`, which GitHub has deprecated.
+  Wheels still target macOS 11.0. Regenerate your workflow with
+  `vcraft generate-ci`.
+- **The benchmark has a Linux run** and documents the threading crash and its fix
+  (`benchmark/README.md`).
+
 ## [0.2.0] - 2026-10-07
 
 Faster string and bytes arguments, complete PyPI pages for vcraft and for the
