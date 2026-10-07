@@ -38,6 +38,9 @@ Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- **Sanitizer runs in CI**: the runtime, codegen and fuzz suites also run against
+  extensions built with AddressSanitizer and UndefinedBehaviorSanitizer
+  (`scripts/run-sanitized.sh`).
 - **Fuzzed conversions run in CI**: `tests/fuzz/test_fuzz.py` sends seeded hostile
   arguments through every reader and fails on a crash or an unexpected exception.
 - **Leak checks run in CI**: a new suite, `tests/memory/test_leaks.py`, fails on

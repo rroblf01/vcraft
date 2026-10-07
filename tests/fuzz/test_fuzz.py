@@ -33,8 +33,11 @@ import math, random, resource, sys
 
 # A ceiling on this worker's own address space, so a draw that makes the extension
 # allocate gigabytes fails this seed instead of exhausting the machine. Linux only:
-# macOS does not enforce RLIMIT_AS.
-if sys.platform.startswith("linux"):
+# macOS does not enforce RLIMIT_AS. Not under AddressSanitizer, whose shadow memory
+# reserves terabytes of address space up front: a sanitized run is bounded by its
+# cgroup instead (scripts/run-sanitized.sh in CI, `systemd-run -p MemoryMax` locally).
+import os
+if sys.platform.startswith("linux") and not os.environ.get("VCRAFT_SANITIZE"):
     limit = 3 * 1024 ** 3
     resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 sys.path.insert(0, sys.argv[1])

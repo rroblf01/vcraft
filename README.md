@@ -1106,6 +1106,7 @@ $ python3 tests/runtime/test_runtime.py   # the CPython runtime
 $ python3 tests/codegen/test_codegen.py   # code generator, end to end
 $ python3 tests/memory/test_leaks.py      # no leaked objects, references or memory
 $ python3 tests/fuzz/test_fuzz.py         # hostile arguments: no crash, the right exception
+$ scripts/run-sanitized.sh python3 tests/fuzz/test_fuzz.py   # the same under ASan and UBSan (Linux)
 $ python3 tests/cli/test_cli.py           # the CLI against real projects and venvs
 ```
 

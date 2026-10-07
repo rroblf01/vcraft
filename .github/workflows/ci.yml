@@ -207,6 +207,48 @@ jobs:
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/cli/test_cli.py
 
+  sanitizers:
+    # The runtime, the example's glue and the conversions under AddressSanitizer and
+    # UndefinedBehaviorSanitizer: an out-of-bounds read, a use-after-free or an
+    # overflow in C or in the generated V aborts the suite here instead of corrupting
+    # a user's process. Linux only, where gcc ships both runtimes.
+    name: sanitizers (ubuntu-latest, 3.14)
+    needs: v-compiler
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: restore the V compiler
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/v-src
+          key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          fail-on-cache-miss: true
+
+      - name: put V on PATH
+        id: v-ready
+        run: echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      - name: "sanitized: runtime"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: scripts/run-sanitized.sh python3 tests/runtime/test_runtime.py
+
+      - name: "sanitized: code generator"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: scripts/run-sanitized.sh python3 tests/codegen/test_codegen.py
+
+      - name: "sanitized: fuzzed conversions"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: scripts/run-sanitized.sh python3 tests/fuzz/test_fuzz.py 4 10000
+
   free-threaded:
     needs: v-compiler
     # The one configuration nothing else exercises: a free-threaded interpreter

@@ -26,8 +26,8 @@ Each item lands on `main` with its tests and a changelog entry under
       cycles, iteration, short-lived threads) twice in a fresh process and fails if
       the second batch keeps Python objects or grows the peak RSS, and checks that
       borrowed arguments keep their reference count.
-- [ ] **Sanitizers.** A CI job builds the runtime and an example with ASan and UBSan
-      and runs the runtime and codegen suites under them.
+- [x] **Sanitizers.** `scripts/run-sanitized.sh` builds the extensions with ASan and
+      UBSan; a CI job runs the runtime, codegen and fuzz suites under them.
 - [x] **Fuzzed conversions.** `tests/fuzz/test_fuzz.py` sends seeded random and
       hostile values (huge ints, NaN, surrogates, NULs, non-contiguous views, bad
       `__index__`/`__float__`, failing sequences, missing and surplus arguments)

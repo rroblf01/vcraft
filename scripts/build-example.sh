@@ -29,10 +29,22 @@ if [ "$(uname -s)" = Darwin ]; then
 	macos_ldflags=(-ldflags "-undefined dynamic_lookup")
 fi
 
+# VCRAFT_SANITIZE=1 builds with AddressSanitizer and UndefinedBehaviorSanitizer, for
+# the CI job that runs the suites under them. gcc rather than V's default tcc, which
+# has no sanitizers; the interpreter then needs the ASan runtime preloaded.
+sanitize=()
+if [ -n "${VCRAFT_SANITIZE:-}" ]; then
+	sanitize=(-cc gcc -ldflags "-fsanitize=address,undefined")
+	sanitize_cflags="-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+else
+	sanitize_cflags=""
+fi
+
 "$here/scripts/vcraft-v.sh" -enable-globals -shared -o "$project/python/$module$suffix" \
+	${sanitize[@]+"${sanitize[@]}"} \
 	${macos_ldflags[@]+"${macos_ldflags[@]}"} \
 	-path "$here/vlib|@vlib" \
-	-cflags "-I$include" \
+	-cflags "-I$include $sanitize_cflags" \
 	"$project"
 
 # For macOS V appends `.dylib` to an output name that does not already end in it,
