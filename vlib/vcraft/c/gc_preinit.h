@@ -15,6 +15,15 @@
 #ifndef VCRAFT_GC_PREINIT_H
 #define VCRAFT_GC_PREINIT_H
 
+// glibc only declares `struct dl_phdr_info`, `dl_iterate_phdr` and `dladdr` with
+// `_GNU_SOURCE`. Without it every Linux build fails on the own-object walk below
+// with "invalid use of undefined type 'struct dl_phdr_info'". Defined here so it
+// is in force for the `<link.h>` and `<dlfcn.h>` inclusions that follow, which are
+// this header's first ones.
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #if (defined(__APPLE__) || defined(__linux__)) && defined(GC_THREADS)
 #include <dlfcn.h>
 
