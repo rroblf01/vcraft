@@ -765,6 +765,22 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 	}
 }
 
+// scalar_narrower names the runtime converter for a scalar narrower than the width its
+// strategy reads (`int`, `u64`, `f64`), or returns '' when the plain reader fits.
+fn scalar_narrower(v_type string) string {
+	return match v_type {
+		'i8' { 'i8_from_py_int' }
+		'i16' { 'i16_from_py_int' }
+		'i32' { 'i32_from_py_int' }
+		'rune' { 'rune_from_py_int' }
+		'u8' { 'u8_from_py_uint' }
+		'u16' { 'u16_from_py_uint' }
+		'u32' { 'u32_from_py_uint' }
+		'f32' { 'f32_from_py_f64' }
+		else { '' }
+	}
+}
+
 // reader_expr returns the statement that reads positional argument `index` into the
 // local `local`, with the V type a Python value maps onto.
 //
@@ -773,11 +789,24 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 // something is pending.
 pub fn reader_expr(strategy Strategy, local string, index int, func string, param string,
 	param_type string) string {
+	// A width narrower than the reader's result does not convert implicitly in V:
+	// `i8`, `i16`, `i32`, `u8`, `u16`, `u32` and `f32` parameters generated glue that
+	// did not compile. They read the object and go through the same range-checked
+	// narrower their sequences use, so an out-of-range value raises OverflowError.
+	narrower := scalar_narrower(param_type.trim_space())
 	call := match strategy {
 		.bool { "vcraft.from_py_bool_arg(args, ${index}, '${func}', '${param}')" }
-		.int { "vcraft.from_py_int_arg(args, ${index}, '${func}', '${param}')" }
-		.uint { "vcraft.from_py_uint_arg(args, ${index}, '${func}', '${param}')" }
-		.float { "vcraft.from_py_f64_arg(args, ${index}, '${func}', '${param}')" }
+		.int, .uint, .float {
+			if narrower.len > 0 {
+				"vcraft.${narrower}(vcraft.required_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }, '${param}')"
+			} else if strategy == .int {
+				"vcraft.from_py_int_arg(args, ${index}, '${func}', '${param}')"
+			} else if strategy == .uint {
+				"vcraft.from_py_uint_arg(args, ${index}, '${func}', '${param}')"
+			} else {
+				"vcraft.from_py_f64_arg(args, ${index}, '${func}', '${param}')"
+			}
+		}
 		.str { "vcraft.from_py_string_arg(args, ${index}, '${func}', '${param}')" }
 		// A `[]u8` parameter takes any bytes-like object without copying it. Exact
 		// `bytes` aliases the object with no view at all; anything else goes
@@ -882,7 +911,15 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 // unbox_expr renders the call that converts an incoming `PyObject *` into the V type
 // a field holds. A setter cannot copy the bytes: the object behind an int is a
 // `PyLong` with CPython's own layout.
-pub fn unbox_expr(strategy Strategy, value string) string {
+pub fn unbox_expr(strategy Strategy, value string, v_type string) string {
+	// A narrow field is converted to its own width, range-checked. Unboxing it at the
+	// strategy's width and then copying `sizeof(field)` bytes of that wider local wrote
+	// the low bytes of an `f64` into an `f32` field (garbage) and truncated an
+	// out-of-range `i8` without a word.
+	narrower := scalar_narrower(v_type.trim_space())
+	if narrower.len > 0 && strategy in [.int, .uint, .float] {
+		return 'vcraft.${narrower}(vcraft.borrow(' + value + '), ' + vstring_literal('value') + ')'
+	}
 	return match strategy {
 		.bool { 'vcraft.unbox_bool(' + value + ')' }
 		.int { 'vcraft.unbox_int(' + value + ', ' + vstring_literal('value') + ')' }

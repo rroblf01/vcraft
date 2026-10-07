@@ -983,6 +983,136 @@ pub fn build_csv(rows int) int {
             native.write_text(saved)
             vcraft("build", cwd=project)
 
+        print("every documented conversion")
+        # One function per row of the README's type table, each called with a value in
+        # range and one out of it. The table once promised conversions the generator
+        # rejected, and accepted narrow widths whose glue did not compile or whose field
+        # setters wrote garbage; this keeps the two in step.
+        native.write_text(saved + """
+@[vc_fn]
+pub fn t_bool(x bool) bool { return x }
+@[vc_fn]
+pub fn t_i8(x i8) i8 { return x }
+@[vc_fn]
+pub fn t_i16(x i16) i16 { return x }
+@[vc_fn]
+pub fn t_i32(x i32) i32 { return x }
+@[vc_fn]
+pub fn t_i64(x i64) i64 { return x }
+@[vc_fn]
+pub fn t_isize(x isize) isize { return x }
+@[vc_fn]
+pub fn t_u8(x u8) u8 { return x }
+@[vc_fn]
+pub fn t_u16(x u16) u16 { return x }
+@[vc_fn]
+pub fn t_u32(x u32) u32 { return x }
+@[vc_fn]
+pub fn t_u64(x u64) u64 { return x }
+@[vc_fn]
+pub fn t_usize(x usize) usize { return x }
+@[vc_fn]
+pub fn t_f32(x f32) f32 { return x }
+@[vc_fn]
+pub fn t_f64(x f64) f64 { return x }
+@[vc_fn]
+pub fn t_rune(x rune) rune { return x }
+@[vc_fn]
+pub fn t_string(x string) string { return x }
+@[vc_fn]
+pub fn t_bytes(x []u8) []u8 { return x }
+@[vc_fn]
+pub fn t_list(x []int) []int { return x }
+@[vc_fn]
+pub fn t_void() {}
+@[vc_fn]
+pub fn t_result(x int) !int {
+	if x < 0 {
+		return error('negative')
+	}
+	return x
+}
+
+@[vc_class]
+pub struct Narrow {
+mut:
+	@[vc_field] level i8
+	@[vc_field] ratio f32
+	@[vc_field] count u16
+}
+
+@[vc_methods]
+pub fn (mut n Narrow) scale(by f32) f32 {
+	n.ratio = n.ratio * by
+	return n.ratio
+}
+""")
+        try:
+            proc = vcraft("build", cwd=project)
+            t.check("every documented type compiles",
+                    proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-600:])
+            built = sorted((w for w in (project / "dist").glob("*.whl")
+                            if "abi3" not in w.name),
+                           key=lambda w: w.stat().st_mtime, reverse=True)
+            if proc.returncode == 0 and built:
+                target4 = tmp / "venv-types"
+                make_venv(target4, with_pip=True)
+                subprocess.run([str(target4 / "bin" / "python"), "-m", "pip", "install",
+                                "--no-index", "--no-deps", "--force-reinstall", str(built[0])],
+                               capture_output=True, text=True)
+                probe = """
+import mypkg_native as m
+def outcome(f):
+    try:
+        return repr(f())
+    except Exception as exc:
+        return type(exc).__name__
+cases = [
+    ("bool", lambda: m.t_bool(1), "True"),
+    ("i8", lambda: m.t_i8(-128), "-128"), ("i8 over", lambda: m.t_i8(128), "OverflowError"),
+    ("i16", lambda: m.t_i16(32767), "32767"), ("i16 over", lambda: m.t_i16(32768), "OverflowError"),
+    ("i32", lambda: m.t_i32(-2**31), repr(-2**31)), ("i32 over", lambda: m.t_i32(2**31), "OverflowError"),
+    ("i64", lambda: m.t_i64(2**62), repr(2**62)), ("i64 over", lambda: m.t_i64(2**63), "OverflowError"),
+    ("isize", lambda: m.t_isize(-7), "-7"),
+    ("u8", lambda: m.t_u8(255), "255"), ("u8 over", lambda: m.t_u8(256), "OverflowError"),
+    ("u16", lambda: m.t_u16(65535), "65535"), ("u16 negative", lambda: m.t_u16(-1), "OverflowError"),
+    ("u32", lambda: m.t_u32(2**32 - 1), repr(2**32 - 1)), ("u32 over", lambda: m.t_u32(2**32), "OverflowError"),
+    ("u64", lambda: m.t_u64(2**64 - 1), repr(2**64 - 1)), ("u64 negative", lambda: m.t_u64(-1), "OverflowError"),
+    ("usize", lambda: m.t_usize(9), "9"),
+    ("f32", lambda: m.t_f32(1.5), "1.5"), ("f32 type", lambda: m.t_f32("x"), "TypeError"),
+    ("f64", lambda: m.t_f64(0.1), "0.1"),
+    ("rune", lambda: m.t_rune(0x1F600), repr(0x1F600)),
+    ("string", lambda: m.t_string("España"), repr("España")),
+    ("bytes", lambda: m.t_bytes(b"ab"), repr(b"ab")),
+    ("bytearray", lambda: m.t_bytes(bytearray(b"ab")), repr(b"ab")),
+    ("list", lambda: m.t_list([1, 2]), "[1, 2]"), ("tuple", lambda: m.t_list((1, 2)), "[1, 2]"),
+    ("void", lambda: m.t_void(), "None"),
+    ("result ok", lambda: m.t_result(3), "3"), ("result error", lambda: m.t_result(-1), "RuntimeError"),
+]
+n = m.Narrow()
+def assign(attr, value):
+    setattr(n, attr, value)
+    return getattr(n, attr)
+cases += [
+    ("i8 field", lambda: assign("level", -5), "-5"),
+    ("i8 field over", lambda: assign("level", 200), "OverflowError"),
+    ("i8 field kept", lambda: n.level, "-5"),
+    ("f32 field", lambda: assign("ratio", 2.0), "2.0"),
+    ("u16 field", lambda: assign("count", 65535), "65535"),
+    ("f32 method", lambda: n.scale(1.5), "3.0"),
+]
+bad = [(label, got, want) for label, f, want in cases if (got := outcome(f)) != want]
+print("ok" if not bad else bad)
+"""
+                proc = subprocess.run([str(target4 / "bin" / "python"), "-c", probe],
+                                      capture_output=True, text=True, cwd=tmp, timeout=300)
+                t.check("every documented conversion round-trips, with range checks",
+                        proc.stdout.strip() == "ok",
+                        (proc.stdout + proc.stderr).strip()[-600:])
+        finally:
+            native.write_text(saved)
+            vcraft("build", cwd=project)
+
         print("sdist")
         # Keywords and `[urls]` reach PKG-INFO, which is what PyPI reads for the
         # sidebar of the project page.

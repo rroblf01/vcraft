@@ -156,6 +156,16 @@ pub fn rune_from_py_int(obj PyObj, name string) !rune {
 	return rune(value)
 }
 
+// u8_from_py_uint reads a Python int into a u8.
+pub fn u8_from_py_uint(obj PyObj, name string) !u8 {
+	value := from_py_uint(obj, name)!
+	if value > 255 {
+		raise(.overflow_error, '${name}: value out of range for u8')
+		return error('${name}: out of range')
+	}
+	return u8(value)
+}
+
 // u16_from_py_uint reads a Python int into an u16.
 pub fn u16_from_py_uint(obj PyObj, name string) !u16 {
 	value := from_py_uint(obj, name)!

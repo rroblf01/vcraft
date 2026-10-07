@@ -58,6 +58,18 @@ pub fn unexpected_kwarg(name string, keyword string) {
 	raise(.type_error, "${name}() got an unexpected keyword argument '${keyword}'")
 }
 
+// required_arg returns positional argument `i`, raising TypeError when it is missing.
+// The narrow scalar parameters read it through this and then convert it with the
+// matching `*_from_py_*` narrower.
+pub fn required_arg(argv voidptr, i int, func string, name string) !PyObj {
+	obj := arg_at(argv, i)
+	if obj.is_null() {
+		raise(.type_error, '${func}() missing required argument: ${name}')
+		return error('missing ${name}')
+	}
+	return obj
+}
+
 // from_py_int_arg reads positional argument `i` as an int.
 pub fn from_py_int_arg(argv voidptr, i int, func string, name string) !int {
 	obj := arg_at(argv, i)

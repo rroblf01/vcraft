@@ -153,7 +153,7 @@ fn emit_field_accessors(p Project, c Class) string {
 		// The converted value is written through the field's address rather than
 		// assigned, because assigning would need the field itself to be `mut`, and a
 		// plain `@[vc_field]` does not have to be.
-		conv := unbox_expr(lookup(f.v_type), 'value')
+		conv := unbox_expr(lookup(f.v_type), 'value', f.v_type)
 		// No `mut` on the parameters: V wraps a C callback whose parameters are `mut`,
 		// and the wrapper shifts the incoming arguments.
 		//
