@@ -161,6 +161,17 @@ fn cmd_new(args Args) {
 	if args.options['module'] != '' {
 		p.module = args.options['module']
 	}
+	// V compiles a file matching `*_test.v` as a test file and silently drops its
+	// module export, so a module ending in `_test` builds an empty shared object
+	// that fails at import. Refused here, where the message can name the name.
+	if p.module.ends_with('_test') {
+		eprintln('error: module `${p.module}` ends in `_test`, and V would compile its source as a test file with no module export; pick a module that does not end in `_test`')
+		exit(2)
+	}
+	if name.ends_with('_test') {
+		eprintln('error: name `${name}` ends in `_test`, and V treats `*_test` files as test files; pick a name that does not end in `_test`')
+		exit(2)
+	}
 	root := if args.positional.len > 1 { args.positional[1] } else { name }
 	written := vcraft_project.write_scaffold(root, p) or {
 		eprintln('error: ${err.msg()}')
@@ -282,6 +293,9 @@ fn cmd_info(args Args) {
 	}
 	println('free-threading   ${p.free_threading}')
 	println('strip            ${p.strip}')
+	if p.gc_free_space_divisor != 2 {
+		println('gc-free-space-divisor ${p.gc_free_space_divisor}')
+	}
 	println('python           ${vcraft_project.interpreter_version("python3")}')
 	println('extension        ${vcraft_project.extension_suffix("python3")}')
 	println('platform         ${vcraft_project.platform_tag("python3")}')

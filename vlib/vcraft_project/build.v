@@ -458,6 +458,25 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 			os.setenv(name, '1', true)
 		}
 	}
+	// The collector's heap growth is a `-D` define for the C compiler rather than a
+	// `-d` one for V: the only reader is the C pre-initialiser, and V's `$if`
+	// cannot see a `-cflags` define while the C preprocessor can.
+	gc_define := if p.gc_free_space_divisor != 2 {
+		'-DVCRAFT_GC_DIVISOR=${p.gc_free_space_divisor}'
+	} else {
+		''
+	}
+	// glibc only declares `struct dl_phdr_info` and `dl_iterate_phdr` with
+	// `_GNU_SOURCE`, which the collector pre-initialiser needs for its Linux
+	// root walk. It has to arrive as a command-line define: by the time that
+	// header is included, the translation unit has already pulled in system
+	// headers and glibc has frozen its feature set, so a `#define` there comes
+	// too late. Accepted harmlessly by musl, which needs no such gate.
+	gnu_define := if target.os == 'linux' {
+		'-D_GNU_SOURCE'
+	} else {
+		''
+	}
 	mut args := [
 		shell_quote(opt.v),
 		'-new-compiler',
@@ -468,7 +487,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		'-path',
 		shell_quote('${opt.v_path}|@vlib'),
 		'-cflags',
-		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + opt.cflags),
+		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + gc_define + ' ' + gnu_define + ' ' + opt.cflags),
 	]
 	ldflags := extension_ldflags(target.os, opt.ldflags)
 	if ldflags.len > 0 {
@@ -493,6 +512,31 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		args << '-cc'
 		args << shell_quote(cc)
 	}
+	// The rest of the command is toolchain-independent, so it is assembled before
+	// the dry-run return: `--dry-run` must show the command as it would run,
+	// including `-prod` and the project root. Only the toolchain check and the
+	// compilation itself stay after the return.
+	// vcraft's own C code has to be told which API it is compiling against. Under
+	// `Py_LIMITED_API` CPython hides the concrete object structs behind the stable ABI,
+	// so the runtime reaches for its accessors instead of reading a struct field, and
+	// that switch is a `-d` define rather than a `cflags` one.
+	if limited.len > 0 {
+		args << '-d'
+		args << 'vcraft_limited_api'
+	}
+	// The object header is 16 bytes with the GIL and 32 without it, so the V mirrors
+	// of CPython's structs have a free-threaded shape selected the same way. Keyed
+	// off the project flag rather than the interpreter, because a cross build cannot
+	// ask a foreign interpreter anything; the flag and the interpreter are checked
+	// against each other above whenever the interpreter can run here.
+	if p.free_threading {
+		args << '-d'
+		args << 'vcraft_free_threaded'
+	}
+	if opt.release {
+		args << '-prod'
+	}
+	args << shell_quote(opt.root.trim_right('/'))
 	if opt.dry_run {
 		// Before the toolchain check: planning is pure and has to work where the
 		// compiler does not exist, which is the whole point of verifying a target
@@ -517,27 +561,6 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	} else if !target.is_host() {
 		return error('target `${target.name}` is not this machine; pass --cc for the cross compiler to use')
 	}
-	// vcraft's own C code has to be told which API it is compiling against. Under
-	// `Py_LIMITED_API` CPython hides the concrete object structs behind the stable ABI,
-	// so the runtime reaches for its accessors instead of reading a struct field, and
-	// that switch is a `-d` define rather than a `cflags` one.
-	if limited.len > 0 {
-		args << '-d'
-		args << 'vcraft_limited_api'
-	}
-	// The object header is 16 bytes with the GIL and 32 without it, so the V mirrors
-	// of CPython's structs have a free-threaded shape selected the same way. Keyed
-	// off the project flag rather than the interpreter, because a cross build cannot
-	// ask a foreign interpreter anything; the flag and the interpreter are checked
-	// against each other above whenever the interpreter can run here.
-	if p.free_threading {
-		args << '-d'
-		args << 'vcraft_free_threaded'
-	}
-	if opt.release {
-		args << '-prod'
-	}
-	args << shell_quote(opt.root.trim_right('/'))
 	// For macOS V names the shared object itself: an `-o` that does not end in `.dylib`
 	// gets `.dylib` appended, so `x.cpython-311-darwin.so` is written as
 	// `x.cpython-311-darwin.so.dylib` and CPython, which only imports its EXT_SUFFIX,

@@ -13,6 +13,11 @@ import v.token
 // calling it per declaration would turn a build into a quadratic number of parses.
 pub fn collect_file(path string, mut p Project) {
 	lines := read_lines(path)
+	// A textual match is enough: a false positive, such as the name in a comment,
+	// only costs the publishing the trampolines did unconditionally before.
+	if !p.uses_state_at && lines.any(it.contains('state_at(')) {
+		p.uses_state_at = true
+	}
 	ast := astquery.parse(path)
 	for decl in astquery.declarations(ast) {
 		match decl.kind {
@@ -103,16 +108,20 @@ fn find_in(ast &flat.FlatAst, id flat.NodeId, wanted string) ?flat.NodeId {
 }
 
 // params_of reads the declared parameters of a function node, skipping a method
-// receiver.
+// receiver (always the first parameter of a method node, whatever its shape:
+// `mut c Counter` arrives as `&Counter`, `c &Counter` the same, `c Counter`
+// as `Counter`).
 fn params_of(ast &flat.FlatAst, id flat.NodeId, is_method bool) []Param {
 	node := ast.node(id)
 	mut out := []Param{}
+	mut receiver_skipped := false
 	for child in ast.children_of(node) {
 		c := ast.node(child)
 		if c.kind != .param {
 			continue
 		}
-		if is_method && out.len == 0 && is_receiver(c.typ) {
+		if is_method && !receiver_skipped {
+			receiver_skipped = true
 			continue
 		}
 		out << Param{
@@ -121,12 +130,6 @@ fn params_of(ast &flat.FlatAst, id flat.NodeId, is_method bool) []Param {
 		}
 	}
 	return out
-}
-
-// is_receiver reports whether a parameter type is a method receiver rather than an
-// argument.
-fn is_receiver(v_type string) bool {
-	return v_type.starts_with('&') || v_type == 'mut'
 }
 
 // build_func fills in the parts of a function that come from the tree.
@@ -586,6 +589,9 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 		return
 	}
 	mut m := build_func(decl, ast, block, true)
+	m.origin = path
+	m.line = decl.line
+	m.column = decl.column
 	m.property = attr_property in block.attrs
 	m.is_iter = attr_iter in block.attrs
 	m.is_next = attr_next in block.attrs
@@ -619,6 +625,19 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 			'error: `@[vc_static] ${decl.name}` is not supported yet; a static method still needs a receiver in V')
 		return
 	}
+	if m.raw {
+		report(mut p, path, decl,
+			'error: `@[vc_raw] ${decl.name}` is only for module functions; a method takes its arguments through the same marshalling rules as a function')
+		return
+	}
+	if m.property && m.params.len > 0 {
+		report(mut p, path, decl,
+			'error: `@[vc_property] ${decl.name}` takes ${m.params.len} argument(s); a property getter takes none')
+		return
+	}
+	// Same rule as for functions: an unsupported parameter or return type is a
+	// diagnostic here, not a compile error in the generated glue.
+	validate(mut p, path, decl, m)
 	// The flag is set before the method is appended. V copies a struct on assignment, so
 	// a field set afterwards is set on the local and the list keeps a copy without it --
 	// which reads as "the annotation was ignored" rather than as a lost assignment.
@@ -1025,6 +1044,15 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule')
 			return
 		}
+		// A `[]T` parameter reads each element, so the element needs a reader of
+		// its own. Without one the glue names a function that does not exist,
+		// and the error points at the generated file instead of here.
+		if lookup(param.v_type) == .seq &&
+			!element_is_readable(element_type(param.v_type)) {
+			report(mut p, path, decl,
+				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds `${element_type(param.v_type)}`, which has no sequence reader; a sequence holds bool, integers, floats or strings')
+			return
+		}
 	}
 	// `@[vc_gil]` promises the call touches no Python, and `@[vc_raw]` promises the
 	// opposite: the function handles `PyObject *` itself. Both together would release
@@ -1042,6 +1070,14 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 	if f.v_ret.len > 0 && lookup(f.v_ret) == .unsupported {
 		report(mut p, path, decl,
 			'error: cannot expose `${decl.name}`: return type `${f.v_ret}` has no marshalling rule')
+		return
+	}
+	// A returned `[]T` boxes each element, so the element needs a rule of its own. A
+	// slice of structs or of slices would otherwise generate glue that does not
+	// compile, and the error would point at the generated file instead of here.
+	if lookup(f.v_ret) == .seq && !element_is_boxable(element_type(f.v_ret)) {
+		report(mut p, path, decl,
+			'error: cannot expose `${decl.name}`: return type `${f.v_ret}` has elements of type `${element_type(f.v_ret)}`, which have no marshalling rule; a returned list holds bool, integers, floats or strings')
 	}
 }
 

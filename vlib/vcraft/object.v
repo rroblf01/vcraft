@@ -127,7 +127,9 @@ pub fn (o PyObj) type() PyObj {
 // type_is reports whether the object is an instance of `wanted` or of a class
 // deriving from it.
 pub fn (o PyObj) type_is(wanted PyObj) bool {
-	return C.PyType_IsSubtype(C.PyObject_Type(o.ptr), wanted.ptr) == 1
+	// Through the shim, which borrows the type: `PyObject_Type` returned a new
+	// reference here that nothing released.
+	return C.vpy_is_instance(o.ptr, wanted.ptr) == 1
 }
 
 // type_name returns the name of the object's type, for error messages.
@@ -150,12 +152,15 @@ pub fn (o PyObj) len() isize {
 	return C.PyObject_Length(o.ptr)
 }
 
-// item returns the i-th element of a sequence as a borrowed reference, which is
-// what PyList_GetItem and PyTuple_GetItem both hand back. It raises IndexError on
-// an out-of-range index.
+// item returns the i-th element of a list or a tuple as a borrowed reference, which
+// is what PyList_GetItem and PyTuple_GetItem both hand back. It raises IndexError on
+// an out-of-range index and TypeError for any other kind of object.
+//
+// It used PySequence_GetItem, whose reference is a new one, and every caller treated
+// it as borrowed, so each element read kept a reference nothing released.
 pub fn (o PyObj) item(i int) PyObj {
 	unsafe {
-		return borrow(C.PySequence_GetItem(o.ptr, isize(i)))
+		return borrow(C.vpy_seq_item(o.ptr, isize(i)))
 	}
 }
 

@@ -16,6 +16,17 @@ module vcraft
 // Pulled into the extension by the driver. Accessors for CPython data symbols.
 #flag @VMODROOT/c/shim.c
 #include "c/shim.h"
+// glibc declares `struct dl_phdr_info` and `dl_iterate_phdr` only with
+// `_GNU_SOURCE`, which the header below needs for its Linux root walk. A `#define`
+// there comes too late (system headers precede it in the generated TU), so it
+// arrives as a compiler flag instead. Here rather than in any one driver, so every
+// way of building an extension gets it: `vcraft build`, `scripts/build-example.sh`
+// and plain `v`.
+$if linux {
+	#flag -D_GNU_SOURCE
+}
+// Before V's collector starts on macOS; see the header.
+#include "c/gc_preinit.h"
 
 #include <Python.h>
 
@@ -63,6 +74,7 @@ fn C.vpy_buffer_get(obj voidptr, view voidptr) int
 fn C.vpy_buffer_ptr(view voidptr) voidptr
 fn C.vpy_buffer_len(view voidptr) int
 fn C.vpy_buffer_release(view voidptr)
+fn C.vpy_is_exact_bytes(obj voidptr) int
 fn C.vpy_state_init()
 fn C.vpy_enter_state(block voidptr) voidptr
 fn C.vpy_leave_state(previous voidptr)
@@ -156,7 +168,7 @@ fn C.PyUnicode_FromFormat(format voidptr) voidptr
 
 fn C.PyBytes_FromStringAndSize(s voidptr, len isize) voidptr
 
-fn C.PyBytes_AsStringAndSize(o voidptr, len voidptr) voidptr
+fn C.PyBytes_AsStringAndSize(o voidptr, s voidptr, len voidptr) int
 
 // ------------------------------------------------------------------ tuples
 
@@ -173,6 +185,8 @@ fn C.PyTuple_SetItem(t voidptr, i isize, item voidptr) int
 fn C.PyList_New(size isize) voidptr
 
 fn C.PyList_Append(l voidptr, item voidptr) int
+
+fn C.PyList_SetItem(l voidptr, i isize, item voidptr) int
 
 fn C.PySequence_GetItem(o voidptr, i isize) voidptr
 
@@ -202,6 +216,20 @@ fn C.vpy_call_exec(fn_ptr voidptr, module voidptr) int
 fn C.vpy_hash(self voidptr) isize
 fn C.vpy_hash_bits() isize
 fn C.vpy_type_check(o voidptr, typ voidptr) int
+
+fn C.vpy_exact_long_as_i64(o voidptr, out &i64) int
+
+fn C.vpy_is_instance(o voidptr, typ voidptr) int
+
+fn C.vpy_seq_item(o voidptr, i isize) voidptr
+
+fn C.vpy_seq_fill_f64(o voidptr, out &f64, n isize) isize
+
+fn C.vpy_seq_fill_i64(o voidptr, out &i64, n isize) isize
+
+fn C.vpy_list_from_i64(items &i64, n isize) voidptr
+
+fn C.vpy_list_from_f64(items &f64, n isize) voidptr
 fn C.vpy_not_implemented() voidptr
 fn C.PyTuple_New(size isize) voidptr
 fn C.PyTuple_SET_ITEM(tuple voidptr, index isize, item voidptr)

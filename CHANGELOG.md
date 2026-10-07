@@ -62,9 +62,85 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   an image. It caches the V compiler between runs.
 - **Container images**: manylinux and musllinux images with V and vcraft
   preinstalled.
+- **Returning lists and objects**: functions and methods can return `[]T`
+  (boxed into a Python list), `vcraft.PyObj` (its reference is handed to the
+  caller) and `voidptr` (borrowed, increfed for the caller).
+- **`i64` throughout**: class fields, method parameters and sequence parameters
+  accept `i64` as well as `int` (with this V compiler, `int` is already 64 bits).
+- **Narrow sequence parameters**: `[]i8`, `[]i16`, `[]i32`, `[]isize`, `[]rune`,
+  `[]u16`, `[]u32`, `[]usize`, `[]f32` and `[]bool` convert with the same
+  TypeError/OverflowError behaviour as scalar parameters. A sequence element
+  with no reader is a diagnostic with file, line and column instead of a
+  compile error in the generated glue.
+- **Collector tuning**: `gc-free-space-divisor` in `vcraft.toml` sets Boehm's heap
+  growth divisor (default 2: roughly half a MiB less stays resident after large
+  workloads than with V's own 1, for a few percent of allocation-heavy
+  throughput; set 1 to favour speed).
 - **Distribution of vcraft itself**: `pip install vcraft` installs the tool on
   Python 3.11 or newer, as a platform wheel for Linux x86_64 (`manylinux_2_28`)
   or macOS arm64 (macOS 11.0+).
+
+### Changed
+
+- **Methods work in place**: methods, accessors and slots operate on the
+  instance's state block through a pointer, as PyO3 works through its cell,
+  instead of copying the struct in and out per call. As in PyO3, a method that
+  fails halfway keeps the fields it already wrote.
+- **Cheaper calls**: each trampoline checks arity with a single comparison, reads
+  an exact `int` argument with one type check in C, and keeps one `_setjmp`
+  panic guard per call (about 5 ns) so a V panic becomes a Python exception
+  instead of killing the interpreter.
+- **One-pass conversions**: `[]int`, `[]i64` and `[]f64` arguments are filled in
+  a single C pass, and returned lists of those element types are built in a
+  single C pass with `PyList_SET_ITEM`.
+- **No-view fast path for exact `bytes`**: a `[]u8` argument that is exactly
+  `bytes` aliases the object directly instead of allocating, acquiring and
+  releasing a buffer view. Anything else bytes-like still goes through the
+  view, which pins the exporter for the call.
+- **Smaller per-call state**: the `state_at` chain is only published when the
+  project calls `vcraft.state_at`.
+- **Faster imports on macOS**: vcraft starts Boehm before V with only the
+  module's own `__DATA` registered as roots, instead of scanning every loaded
+  image. Import falls from about 3.5 ms to about 0.6 ms and the memory kept
+  after two million calls from about 14 MiB to about 1 MiB. Linux builds do the
+  same with the module's own writable segments (not yet measured there). See
+  `benchmark/README.md` for the full before/after tables.
+
+### Fixed
+
+- **Leaked list items**: `PyObj.item` on lists and tuples borrows instead of
+  returning a new reference the caller treated as borrowed, so the items of a
+  sequence passed on every call are freed again.
+- **Leaked results**: a raw result takes its reference instead of handing Python
+  a pointer nobody owned, which used to crash the interpreter on exit.
+- **Method diagnostics**: an unsupported parameter or return type on a
+  `@[vc_methods]` method is reported with file, line and column instead of
+  failing later as a compile error in the generated glue.
+- **Lost C-level conversion errors**: when a CPython conversion set an exception
+  while reading an argument, the runtime consumed it for its own message and
+  the call failed with `SystemError: ... returned NULL without an exception
+  set`. The original exception (e.g. OverflowError for a negative `u64`) now
+  reaches the caller.
+- **`u64` results**: a function returning an unsigned width never compiled; the
+  result local starts as `u64(0)`.
+- **Dead `bytes_of`**: `from_py_bytes`'s helper called
+  `PyBytes_AsStringAndSize` with two arguments instead of three, which never
+  compiled wherever V kept it. It now passes the buffer and length out-pointers
+  and reports failure with a null pointer.
+- **Abandoned buffer backing**: `buffer_bytes` allocated a `[]u8` of the
+  argument's length and then overwrote its `data` with the exporter's pointer,
+  so every `[]u8` call left a GC block of the argument's size behind for the
+  collector. The slice header is now built from an empty literal.
+- **`--dry-run` hid flags**: a release dry run printed the compiler invocation
+  before `-prod` and the project root were added to it, so the shown command
+  was not the one a real build runs. The plan now renders the full command.
+- **Linux builds failed to compile**: the collector pre-initialiser uses
+  `struct dl_phdr_info`, which glibc only declares with `_GNU_SOURCE`.
+  `vcraft build` now passes `-D_GNU_SOURCE` for Linux targets, and
+  `vlib/vcraft/cpython.c.v` carries `#flag linux -D_GNU_SOURCE` so the example
+  script and manual `v` builds get it too. A `#define` in the header itself
+  comes too late, because the generated translation unit has already included
+  system headers by then.
 
 ### Build safeguards
 

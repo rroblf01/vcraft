@@ -122,6 +122,7 @@ int vpy_buffer_get(void *obj, void *view);
 void *vpy_buffer_ptr(void *view);
 long vpy_buffer_len(void *view);
 void vpy_buffer_release(void *view);
+int vpy_is_exact_bytes(void *obj);
 
 PyObject *vpy_none(void);
 PyObject *vpy_notimplemented(void);
@@ -149,5 +150,19 @@ PyObject *vpy_exc_system_error(void);
 PyObject *vpy_exc_overflow_error(void);
 PyObject *vpy_exc_zero_division_error(void);
 PyObject *vpy_exc_arithmetic_error(void);
+
+// Fast paths for the common argument types, and an instance check that borrows.
+int vpy_exact_long_as_i64(PyObject *o, long long *out);
+int vpy_is_instance(PyObject *o, PyObject *type);
+
+// Reading a list or a tuple: a borrowed item, and one-pass conversions of the leading
+// items that need no Python call.
+PyObject *vpy_seq_item(PyObject *o, Py_ssize_t i);
+Py_ssize_t vpy_seq_fill_f64(PyObject *o, double *out, Py_ssize_t n);
+Py_ssize_t vpy_seq_fill_i64(PyObject *o, long long *out, Py_ssize_t n);
+
+// Building a list from a slice of plain numbers in one pass.
+PyObject *vpy_list_from_i64(const long long *items, Py_ssize_t n);
+PyObject *vpy_list_from_f64(const double *items, Py_ssize_t n);
 
 #endif // VCRAFT_SHIM_H

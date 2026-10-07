@@ -67,11 +67,18 @@ pub fn buffer_view(argv voidptr, i int, func string, name string) !voidptr {
 //
 // The slice and the view share the exporter's memory. See the module comment for why
 // the slice must not outlive the call.
+//
+// The header is built field by field from an empty literal: allocating `len`
+// first and then overwriting `data` would abandon a GC block of the argument's
+// size on every call, which is exactly the garbage a zero-copy path exists to
+// avoid.
 pub fn buffer_bytes(view voidptr) []u8 {
 	unsafe {
-		n := C.vpy_buffer_len(view)
-		mut out := []u8{len: n, cap: n}
+		n := int(C.vpy_buffer_len(view))
+		mut out := []u8{}
 		out.data = C.vpy_buffer_ptr(view)
+		out.len = n
+		out.cap = n
 		return out
 	}
 }
@@ -84,6 +91,56 @@ pub fn buffer_bytes(view voidptr) []u8 {
 pub fn buffer_release(view voidptr) {
 	unsafe {
 		C.vpy_buffer_release(view)
+	}
+}
+
+// BytesArg is a `[]u8` argument together with whatever keeps it alive for the
+// call: a buffer view, or nothing for exact `bytes`. `bytes` is immutable and
+// the argument itself keeps the object alive, so aliasing it needs no view and
+// pays no acquisition. The generated wrapper holds one, defers `release`, and
+// reads `data`.
+pub struct BytesArg {
+pub:
+	data []u8
+	view voidptr
+}
+
+// bytes_arg reads positional argument `i` as bytes without copying.
+//
+// Exact `bytes` aliases the object directly. Anything else bytes-like goes
+// through `buffer_view`, whose reference pins the exporter. Missing and
+// non-bytes-like arguments fail exactly as `buffer_view` reports them, so the
+// slow path stays the single place that shapes those errors.
+pub fn bytes_arg(argv voidptr, i int, func string, name string) !BytesArg {
+	obj := arg_at(argv, i)
+	if obj.is_null() {
+		raise(.type_error, '${func}() missing required argument: ${name}')
+		return error('missing ${name}')
+	}
+	if C.vpy_is_exact_bytes(obj.ptr) != 0 {
+		ptr, n := bytes_of(obj)
+		unsafe {
+			mut exact := []u8{}
+			exact.data = ptr
+			exact.len = n
+			exact.cap = n
+			return BytesArg{
+				data: exact
+				view: nil
+			}
+		}
+	}
+	view := buffer_view(argv, i, func, name)!
+	return BytesArg{
+		data: buffer_bytes(view)
+		view: view
+	}
+}
+
+// release gives the view back, or nothing for exact `bytes`.
+pub fn (b BytesArg) release() {
+	if b.view != unsafe { nil } {
+		unsafe { C.vpy_buffer_release(b.view) }
 	}
 }
 

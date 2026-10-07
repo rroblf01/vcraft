@@ -43,6 +43,7 @@ def build_driver(tmp: Path) -> Path:
         "\tprintln('free=' + table.bool_of('free-threading', false).str())\n"
         "\tprintln('strip=' + table.bool_of('strip', false).str())\n"
         "\tprintln('embed=' + table.bool_of('embed-pyc', false).str())\n"
+        "\tprintln('divisor=' + table.int_of('gc-free-space-divisor', 1).str())\n"
         "\tprintln('classifiers=' + pkg.string_list_of('classifiers').str())\n"
         "\tprintln('deps=' + pkg.string_list_of('dependencies').str())\n"
         "\tprintln('classifier0=' + table.subtable('classifier').string_of('text', '<none>'))\n"
@@ -127,6 +128,23 @@ def main() -> int:
         t.equal("a false boolean", got.get("strip"), "false")
         t.equal("a packaging boolean", got.get("embed"), "true")
 
+        print("integers")
+        got = parse(driver, tmp,
+                    "gc-free-space-divisor = 2\n"
+                    "\n"
+                    "[package]\n"
+                    'name = "x"\n')
+        t.equal("an integer", got.get("divisor"), "2")
+        got = parse(driver, tmp,
+                    "[package]\n"
+                    'name = "x"\n')
+        t.equal("a missing integer takes the default", got.get("divisor"), "1")
+        got = parse(driver, tmp,
+                    'gc-free-space-divisor = "many"\n'
+                    "\n"
+                    "[package]\n"
+                    'name = "x"\n')
+        t.equal("a mistyped integer takes the default", got.get("divisor"), "1")
         print("arrays")
         got = parse(driver, tmp,
                     "[package]\n"

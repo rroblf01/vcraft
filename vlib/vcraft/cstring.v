@@ -70,9 +70,15 @@ pub fn utf8_of(obj PyObj) (voidptr, int) {
 }
 
 // bytes_of returns the buffer and length of a Python bytes object. The pointer
-// is owned by the object.
+// is owned by the object. On failure CPython sets the exception and the
+// pointer comes back null.
 pub fn bytes_of(obj PyObj) (voidptr, int) {
-	mut size := int(0)
-	p := unsafe { C.PyBytes_AsStringAndSize(obj.ptr, &size) }
-	return p, size
+	unsafe {
+		mut buf := voidptr(nil)
+		mut size := isize(0)
+		if C.PyBytes_AsStringAndSize(obj.ptr, &buf, &size) != 0 {
+			return nil, 0
+		}
+		return buf, int(size)
+	}
 }

@@ -595,6 +595,19 @@ void vpy_buffer_release(void *view) {
 	PyMem_Free(view);
 }
 
+// vpy_is_exact_bytes reports whether obj is exactly bytes, not a subclass.
+//
+// Only exact bytes take the no-view fast path: bytes is immutable, so its buffer
+// cannot move for the duration of the call, and the argument itself keeps the
+// object alive. Everything else -- bytearray, memoryview, exotic exporters --
+// goes through a view, which also pins the exporter with a reference.
+int vpy_is_exact_bytes(void *obj) {
+	if (obj == NULL) {
+		return 0;
+	}
+	return Py_TYPE((PyObject *)obj) == &PyBytes_Type;
+}
+
 PyObject *vpy_none(void) {
 	return Py_None;
 }
@@ -689,4 +702,154 @@ PyObject *vpy_exc_arithmetic_error(void) {
 
 PyObject *vpy_exc_overflow_error(void) {
 	return PyExc_OverflowError;
+}
+
+// vpy_exact_long_as_i64 is the fast path for reading an integer argument.
+//
+// It covers the case nearly every call is: an exact `int` that fits in 64 bits. One
+// pointer comparison decides it, where the general reader asks `PyType_IsSubtype`
+// twice (once to refuse `bool`, once to accept `int`) and then consults the error
+// indicator. Returns 1 with the value stored, or 0 with nothing stored and no Python
+// error left set, in which case the caller takes the general path: a subclass, a
+// `bool`, another type and an overflow all end up there, with their usual messages.
+int vpy_exact_long_as_i64(PyObject *o, long long *out) {
+	if (o == NULL || !PyLong_CheckExact(o)) {
+		return 0;
+	}
+	int overflow = 0;
+	long long value = PyLong_AsLongLongAndOverflow(o, &overflow);
+	if (overflow != 0) {
+		return 0;
+	}
+	if (value == -1 && PyErr_Occurred()) {
+		PyErr_Clear();
+		return 0;
+	}
+	*out = value;
+	return 1;
+}
+
+// vpy_is_instance reports whether `o` is an instance of `type` or of a subclass.
+//
+// `PyObject_Type` would answer the same question with a new reference to the type,
+// which the caller then has to release; reading `Py_TYPE` borrows it.
+int vpy_is_instance(PyObject *o, PyObject *type) {
+	if (o == NULL || type == NULL) {
+		return 0;
+	}
+	return PyType_IsSubtype(Py_TYPE(o), (PyTypeObject *)type);
+}
+
+// vpy_seq_item returns item `i` of a list or a tuple as a borrowed reference.
+//
+// `PySequence_GetItem` answers for any sequence, but with a new reference, and the
+// runtime's sequence readers treated it as borrowed: every element read kept one
+// reference that was never released, so the elements of a temporary list were never
+// freed. A list or a tuple, the only sequences a `[]T` parameter accepts, hands out
+// borrowed references of its own.
+PyObject *vpy_seq_item(PyObject *o, Py_ssize_t i) {
+	if (PyList_Check(o)) {
+		return PyList_GetItem(o, i);
+	}
+	if (PyTuple_Check(o)) {
+		return PyTuple_GetItem(o, i);
+	}
+	PyErr_SetString(PyExc_TypeError, "expected a list or a tuple");
+	return NULL;
+}
+
+// vpy_seq_at reads item `i` of a list or a tuple whose length the caller has checked.
+static PyObject *vpy_seq_at(PyObject *o, int is_list, Py_ssize_t i) {
+#ifdef Py_LIMITED_API
+	return is_list ? PyList_GetItem(o, i) : PyTuple_GetItem(o, i);
+#else
+	return is_list ? PyList_GET_ITEM(o, i) : PyTuple_GET_ITEM(o, i);
+#endif
+}
+
+// vpy_seq_fill_f64 converts the leading items of a list or a tuple of exact floats
+// and ints into `out`, which holds `n` doubles, `n` being the sequence's length.
+//
+// It returns how many it converted. It stops at the first item that is anything
+// else, without raising, and the caller converts the rest one at a time with the
+// general reader, which raises the usual error for whichever item is wrong. One pass
+// in C with no Python error state consulted is what makes the common case cheap.
+Py_ssize_t vpy_seq_fill_f64(PyObject *o, double *out, Py_ssize_t n) {
+	int is_list = PyList_Check(o);
+	for (Py_ssize_t i = 0; i < n; i++) {
+		PyObject *item = vpy_seq_at(o, is_list, i);
+		if (item != NULL && PyFloat_CheckExact(item)) {
+#ifdef Py_LIMITED_API
+			out[i] = PyFloat_AsDouble(item);
+#else
+			out[i] = PyFloat_AS_DOUBLE(item);
+#endif
+			continue;
+		}
+		long long value;
+		if (vpy_exact_long_as_i64(item, &value)) {
+			out[i] = (double)value;
+			continue;
+		}
+		return i;
+	}
+	return n;
+}
+
+// vpy_seq_fill_i64 is `vpy_seq_fill_f64` for exact ints that fit in 64 bits.
+Py_ssize_t vpy_seq_fill_i64(PyObject *o, long long *out, Py_ssize_t n) {
+	int is_list = PyList_Check(o);
+	for (Py_ssize_t i = 0; i < n; i++) {
+		if (!vpy_exact_long_as_i64(vpy_seq_at(o, is_list, i), &out[i])) {
+			return i;
+		}
+	}
+	return n;
+}
+
+// vpy_list_from_i64 builds a list of ints from `n` 64-bit integers.
+//
+// The generic `to_py_list` boxes each element through a function pointer and stores
+// it with `PyList_SetItem`, which checks its arguments every time. For the element
+// types that are plain numbers the whole loop runs here instead. Returns a new
+// reference, or NULL with an exception set.
+PyObject *vpy_list_from_i64(const long long *items, Py_ssize_t n) {
+	PyObject *list = PyList_New(n);
+	if (list == NULL) {
+		return NULL;
+	}
+	for (Py_ssize_t i = 0; i < n; i++) {
+		PyObject *value = PyLong_FromLongLong(items[i]);
+		if (value == NULL) {
+			Py_DECREF(list);
+			return NULL;
+		}
+#ifdef Py_LIMITED_API
+		PyList_SetItem(list, i, value);
+#else
+		PyList_SET_ITEM(list, i, value);
+#endif
+	}
+	return list;
+}
+
+// vpy_list_from_f64 is `vpy_list_from_i64` for doubles.
+PyObject *vpy_list_from_f64(const double *items, Py_ssize_t n) {
+	PyObject *list = PyList_New(n);
+	if (list == NULL) {
+		return NULL;
+	}
+	for (Py_ssize_t i = 0; i < n; i++) {
+		PyObject *value = PyFloat_FromDouble(items[i]);
+		if (value == NULL) {
+			Py_DECREF(list);
+			return NULL;
+		}
+#ifdef Py_LIMITED_API
+		PyList_SetItem(list, i, value);
+#else
+		PyList_SET_ITEM(list, i, value);
+#endif
+	}
+	return list;
 }

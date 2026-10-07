@@ -1,0 +1,17 @@
+.{
+    .name = .bench_zig,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.14.0",
+    .fingerprint = 0x5dddb3f454c0b8a8,
+    .dependencies = .{
+        .@"zig-maturin" = .{
+            .url = "git+https://github.com/rroblf01/zig-maturin#8e6071fe5982497a9c9c05fc26584c60eda5b919",
+            .hash = "zig_maturin-1.0.1-YRu0QgylAwBMs9VSaApG_g-hUbj3GPbFD1kDzj-iH-RI",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

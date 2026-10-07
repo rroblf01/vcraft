@@ -88,6 +88,79 @@ pub fn total(values []int) int {
 	return sum
 }
 
+// Sums a sequence of 64-bit integers.
+@[vc_fn]
+pub fn total64(values []i64) i64 {
+	mut sum := i64(0)
+	for v in values {
+		sum += v
+	}
+	return sum
+}
+
+// Averages a sequence of numbers, ints and floats alike.
+@[vc_fn]
+pub fn mean(values []f64) f64 {
+	if values.len == 0 {
+		return 0.0
+	}
+	mut sum := 0.0
+	for v in values {
+		sum += v
+	}
+	return sum / f64(values.len)
+}
+
+// Counts up from zero, returning the numbers as a list.
+@[vc_fn]
+pub fn count_up(n i64) []i64 {
+	mut out := []i64{cap: int(n)}
+	for i in i64(0) .. n {
+		out << i
+	}
+	return out
+}
+
+// Halves each number, returning floats.
+@[vc_fn]
+pub fn halves(values []f64) []f64 {
+	return values.map(it / 2.0)
+}
+
+// Squares of zero up to `n`, as ints.
+@[vc_fn]
+pub fn squares(n int) []int {
+	mut out := []int{cap: n}
+	for i in 0 .. n {
+		out << i * i
+	}
+	return out
+}
+
+// Splits text on spaces into a list of words.
+@[vc_fn]
+pub fn words(text string) []string {
+	return text.split(' ')
+}
+
+// Wraps an integer in a one-element list it builds itself.
+//
+// A `PyObj` result is a reference the function owns, and the caller receives it.
+@[vc_fn]
+pub fn boxed(n i64) vcraft.PyObj {
+	return vcraft.to_py_list([n], fn (x i64) vcraft.PyObj {
+		return vcraft.to_py_int(x)
+	})
+}
+
+// Returns the object it was given, without the raw escape hatch.
+//
+// A `voidptr` result is borrowed, so the wrapper takes a reference of its own.
+@[vc_fn]
+pub fn identity(obj voidptr) voidptr {
+	return obj
+}
+
 // Takes any Python object and returns it unchanged.
 @[vc_fn]
 @[vc_raw]
@@ -469,4 +542,30 @@ pub fn (mut c Countdown) advance() !int {
 	}
 	c.current--
 	return c.current + 1
+}
+
+// A running total too large for 32 bits.
+//
+// The field is an i64, which the generated getter, setter and repr have to box at its
+// full width.
+@[vc_class]
+pub struct Tally {
+mut:
+	@[vc_field] sum i64
+}
+
+// A tally at zero.
+@[vc_fn]
+pub fn new_tally() &Tally {
+	return &Tally{}
+}
+
+// add_then_fail adds `by` to the sum and then panics.
+//
+// A method works on the instance in place, as a PyO3 method does, so the write that
+// happened before the panic stays.
+@[vc_methods]
+pub fn (mut t Tally) add_then_fail(by i64) {
+	t.sum += by
+	panic('failed after writing')
 }

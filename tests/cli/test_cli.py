@@ -129,6 +129,14 @@ def main() -> int:
         t.check("new refuses to overwrite", proc.returncode != 0, proc.stdout)
         t.check("and says why", "already exists" in proc.stderr, proc.stderr.strip())
 
+        proc = vcraft("new", "mypkg_test", cwd=tmp)
+        t.check("new refuses a _test name", proc.returncode != 0, proc.stdout)
+        t.check("and names the reason", "_test" in proc.stderr, proc.stderr.strip())
+        t.check("and writes nothing", not (tmp / "mypkg_test").exists())
+        proc = vcraft("new", "okpkg", "--module=ok_test", cwd=tmp)
+        t.check("new refuses a _test module", proc.returncode != 0, proc.stdout)
+        t.check("and writes nothing for it either", not (tmp / "okpkg").exists())
+
         # Inheritance, on a project of its own: a chain three deep, declared
         # subclass-first, which is the order that breaks anything relying on declaration
         # order, and the diagnostics for the ways `@[vc_base]` can be wrong.
@@ -270,8 +278,18 @@ def main() -> int:
         t.check("a dry run plans without a toolchain", proc.returncode == 0
                 and "platform-tag     linux_aarch64" in proc.stdout
                 and "aarch64-linux-gnu-gcc" in proc.stdout, proc.stdout)
+        t.check("a linux dry run defines _GNU_SOURCE for the GC root walk",
+                "-D_GNU_SOURCE" in proc.stdout, proc.stdout)
+        t.check("the runtime carries the define for every other driver",
+                "#flag -D_GNU_SOURCE" in (ROOT / "vlib" / "vcraft" / "cpython.c.v").read_text()
+                and "$if linux" in (ROOT / "vlib" / "vcraft" / "cpython.c.v").read_text())
         t.check("a dry run writes nothing",
                 not list((project / "dist").glob("*aarch64*")))
+        proc = vcraft("build", "--target", "linux-aarch64-gnu", "--release",
+                      "--dry-run", cwd=project)
+        t.check("a release dry run shows the command as it would run",
+                proc.returncode == 0 and "-prod" in proc.stdout
+                and "command " in proc.stdout, proc.stdout)
         proc = vcraft("build", "--target", "linux-aarch64-gnu", cwd=project)
         t.check("a real aarch64 build needs its compiler", proc.returncode != 0)
         t.check("and names it", "aarch64-linux-gnu-gcc" in proc.stderr,
@@ -300,6 +318,11 @@ def main() -> int:
 
         t.check("the glue is generated",
                 (project / "src" / "_vcraft_generated.v").exists())
+        # The scaffolded project never calls `vcraft.state_at`, so nothing can read the
+        # state chain and no trampoline should pay to publish it.
+        glue_text = (project / "src" / "_vcraft_generated.v").read_text()
+        t.check("an unread state chain is not published",
+                "vcraft.enter_state(" not in glue_text)
         t.check("a stub is generated",
                 (project / "python" / "mypkg_native" / "_stubs.pyi").exists(),
                 str(list((project / "python").rglob("*.pyi"))))

@@ -75,7 +75,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 15,
+            glue.count("add_function_owned") == 23,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -117,6 +117,96 @@ def main() -> int:
     t.equal("total over a tuple", h.total((5, 5)), 10)
     t.equal("total of empty", h.total([]), 0)
     t.equal("text signature", h.add.__doc__, "add(a: int, b: int) -> int")
+
+    print("sequence arguments")
+    t.equal("an i64 sequence", h.total64([2**40, 1]), 2**40 + 1)
+    t.equal("an i64 tuple", h.total64((3, 4)), 7)
+    t.equal("a float sequence", h.mean([1.0, 2.0, 6.0]), 3.0)
+    t.equal("ints in a float sequence", h.mean([1, 2.0, 3]), 2.0)
+    t.equal("an empty float sequence", h.mean([]), 0.0)
+    t.raises("a bad item after good ones", TypeError, "expected float",
+             lambda: h.mean([1.0, 2.0, "x"]))
+    t.raises("an int subclass is read the slow way", TypeError, "expected int",
+             lambda: h.total64([1, True]))
+    t.raises("an item too large for 64 bits", OverflowError, "out of range",
+             lambda: h.total64([1, 2**64]))
+    # Each item read used to keep a reference nobody released, so the items of a
+    # temporary list were never freed.
+    item = 12345.5
+    before = sys.getrefcount(item)
+    for _ in range(50):
+        h.mean([item] * 10)
+        h.total([7] * 10)
+    t.equal("reading a sequence keeps no reference", sys.getrefcount(item), before)
+
+    print("returned lists and objects")
+    # Each of these failed to build before: a `[]T` result called `to_py_list` with one
+    # argument, a `PyObj` result crashed the generator, and a `voidptr` result took
+    # `.ptr` of a pointer.
+    t.check("a list of numbers is built in one pass",
+            "vcraft.to_py_i64_list(result)" in glue)
+    t.check("any other list is boxed per element",
+            "vcraft.to_py_list(result, fn (x string) vcraft.PyObj" in glue)
+    t.equal("an i64 list", h.count_up(4), [0, 1, 2, 3])
+    t.equal("an empty list", h.count_up(0), [])
+    t.equal("a string list", h.words("hola qué tal"), ["hola", "qué", "tal"])
+    t.equal("a float list", h.halves([1, 3]), [0.5, 1.5])
+    t.equal("an int list", h.squares(3), [0, 1, 4])
+    t.equal("an i64 list at full width", h.count_up(2)[-1] + 2**40, 2**40 + 1)
+    t.equal("a PyObj result", h.boxed(2**40), [2**40])
+    t.check("a PyObj signature", h.boxed.__doc__.startswith("boxed(n: int) -> Any"),
+            h.boxed.__doc__)
+    probe = object()
+    before = sys.getrefcount(probe)
+    for _ in range(100):
+        h.identity(probe)
+    t.check("a voidptr result is the same object", h.identity(probe) is probe)
+    t.equal("a voidptr result keeps the count", sys.getrefcount(probe), before)
+    for _ in range(100):
+        h.boxed(1)
+    gc.collect()
+    held = h.boxed(1)
+    # An upper bound rather than an exact count: the bug this guards handed the
+    # caller a second reference on top of the owned one, which read 3 here. `== 2`
+    # stopped holding on CPython 3.14, which elides some refcount traffic, so the
+    # same owned-once list reads 2 on older versions and 1 on 3.14 (and on 3.14.0
+    # even a stored and an inline reference disagree). A leak on an eliding
+    # interpreter is invisible to refcounting; the benchmark's kept/leak
+    # scenarios are the backstop there.
+    refs = sys.getrefcount(held)
+    t.check("a PyObj result is owned once", refs <= 2, f"got {refs}")
+
+    print("i64 fields")
+    tally = h.Tally()
+    tally.sum = 2**40
+    t.equal("an i64 field holds 64 bits", tally.sum, 2**40)
+    t.equal("an i64 field in the repr", repr(tally), f"Tally(sum: {2**40})")
+    tally = h.Tally()
+    t.raises("a method can panic", RuntimeError, "failed after writing",
+             lambda: tally.add_then_fail(5))
+    t.equal("a method works in place, so a write before a panic stays", tally.sum, 5)
+
+    print("collector")
+    # Enough allocation to run V's collector some five hundred times: `repeat` builds
+    # its result by concatenation, a few hundred KiB per call. On macOS the runtime
+    # registers the module's own data as the collector's only static roots, so a root it
+    # missed would show up here as a V value freed while still in use: a wrong result,
+    # an error that loses its message, or a crash.
+    wrong = 0
+    for i in range(3_000):
+        if h.repeat("ab", 400) != "ab" * 400:
+            wrong += 1
+        if h.greet(f"n{i}") != f"Hello, n{i}!":
+            wrong += 1
+        if h.words(f"a b{i}") != ["a", f"b{i}"]:
+            wrong += 1
+        if i % 10 == 0:
+            try:
+                h.parse_int("x")
+                wrong += 1
+            except ValueError as exc:
+                wrong += "invalid literal" not in str(exc)
+    t.equal("values survive hundreds of collections", wrong, 0)
 
     print("raw escape hatch")
     sentinel = [1, 2, 3]
@@ -342,11 +432,9 @@ def main() -> int:
             "vcraft.tuple_of_one(g_vc_type_counter)" in glue)
     t.check("the base level is published", "vcraft.publish_base(1," in glue)
     t.check("the chain is restored on the way out", "vcraft.leave_state(previous)" in glue)
-    # One per trampoline that loads a subclass's state, and none in a trampoline of a
-    # class with no base: there is no generation above it to point at. The generated state
-    # constructor is the one that does not publish, because it builds the block rather
-    # than running a method against it.
-    loaders = glue.count("mut state := BoundedCounterState{}") - 1
+    # One per trampoline that works on a subclass's state, and none in a trampoline of a
+    # class with no base: there is no generation above it to point at.
+    loaders = glue.count("mut state := unsafe { &BoundedCounterState(")
     t.check("one published level per subclass trampoline",
             glue.count("publish_base(1,") == loaders,
             f"{glue.count('publish_base(1,')} published, {loaders} trampolines")
@@ -491,11 +579,11 @@ def main() -> int:
     t.check("as immutable bytes", type(h.echoed(b"abc")) is bytes)
 
     print("buffers in the generated file")
-    t.check("the view is acquired",
-            "vcraft.buffer_view(args, 0, 'checksum', 'data')" in glue)
+    t.check("the argument is acquired",
+            "vcraft.bytes_arg(args, 0, 'checksum', 'data')" in glue)
     t.check("and released on every path",
-            "defer { vcraft.buffer_release(arg0_view) }" in glue)
-    t.check("the slice aliases it", "vcraft.buffer_bytes(arg0_view)" in glue)
+            "defer { arg0_bytes.release() }" in glue)
+    t.check("the slice aliases it", "arg0_bytes.data" in glue)
     t.check("a return copies out", "vcraft.to_py_bytes_slice(result)" in glue)
 
     print("the GIL is released")

@@ -84,13 +84,27 @@ def main() -> int:
             check(f"TypeError for {expected[:24]!r}", False, "no exception raised")
 
     print("dynamic symbol table")
-    out = subprocess.run(
-        ["nm", "-D", "--defined-only", str(SO)], capture_output=True, text=True
-    ).stdout
+    if sys.platform == "darwin":
+        # Apple's nm has no `-D`: `-g` lists the external symbols, and the
+        # undefined ones carry no address, so the same three-field filter keeps
+        # only what is defined. Mach-O prefixes every name with one underscore.
+        proc = ["nm", "-g", str(SO)]
+        kinds = ("T", "D", "B", "S")
+
+        def normalize(name: str) -> str:
+            return name[1:] if name.startswith("_") else name
+    else:
+        proc = ["nm", "-D", "--defined-only", str(SO)]
+        kinds = ("T", "D", "B", "R", "W")
+
+        def normalize(name: str) -> str:
+            return name
+
+    out = subprocess.run(proc, capture_output=True, text=True).stdout
     exported = [
-        line.split()[-1]
+        normalize(line.split()[-1])
         for line in out.splitlines()
-        if len(line.split()) == 3 and line.split()[1] in ("T", "D", "B", "R", "W")
+        if len(line.split()) == 3 and line.split()[1] in kinds
     ]
     check("PyInit_probe is exported", "PyInit_probe" in exported)
     check(

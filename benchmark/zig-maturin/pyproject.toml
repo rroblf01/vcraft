@@ -1,0 +1,18 @@
+[project]
+name = "bench_zig"
+version = "0.1.0"
+description = "A Python extension written in Zig"
+requires-python = ">=3.12"
+dependencies = []
+license = { text = "MIT" }
+
+[build-system]
+requires = ["zig-maturin"]
+build-backend = "zig_maturin.buildapi"
+
+[tool.zig-maturin]
+module-name = "bench_zig"
+zig-source = "src/main.zig"
+# Build one wheel for all CPython >= this version (Limited API / stable ABI).
+# Comment out for per-version (full API) builds.
+# abi3 = "3.12"

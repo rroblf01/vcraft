@@ -41,6 +41,36 @@ def noop() -> None: ...
 """Sums a sequence of integers."""
 def total(values: Sequence[Any]) -> int: ...
 
+"""Sums a sequence of 64-bit integers."""
+def total64(values: Sequence[Any]) -> int: ...
+
+"""Averages a sequence of numbers, ints and floats alike."""
+def mean(values: Sequence[Any]) -> float: ...
+
+"""Counts up from zero, returning the numbers as a list."""
+def count_up(n: int) -> Sequence[Any]: ...
+
+"""Halves each number, returning floats."""
+def halves(values: Sequence[Any]) -> Sequence[Any]: ...
+
+"""Squares of zero up to `n`, as ints."""
+def squares(n: int) -> Sequence[Any]: ...
+
+"""Splits text on spaces into a list of words."""
+def words(text: str) -> Sequence[Any]: ...
+
+"""Wraps an integer in a one-element list it builds itself.
+
+	A `PyObj` result is a reference the function owns, and the caller receives it.
+"""
+def boxed(n: int) -> Any: ...
+
+"""Returns the object it was given, without the raw escape hatch.
+
+	A `voidptr` result is borrowed, so the wrapper takes a reference of its own.
+"""
+def identity(obj: Any) -> Any: ...
+
 """Takes any Python object and returns it unchanged."""
 def passthrough(obj: Any) -> Any: ...
 
@@ -138,9 +168,9 @@ class BoundedCounter(Counter):
 """
 class Pair:
     tag: int
-    peer: int
+    peer: Any
     def link(self, other: Any) -> None: ...
-    def other(self) -> None: ...
+    def other(self) -> Any: ...
 
 """A countdown that yields its values one at a time.
 
@@ -154,3 +184,12 @@ class Countdown:
     start: int
     def rewind(self) -> None: ...
     def advance(self) -> int: ...
+
+"""A running total too large for 32 bits.
+
+	The field is an i64, which the generated getter, setter and repr have to box at its
+	full width.
+"""
+class Tally:
+    sum: int
+    def add_then_fail(self, by: int) -> None: ...

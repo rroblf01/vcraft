@@ -9,12 +9,9 @@ module vcraft_codegen
 // The shape of a trampoline is fixed. For a plain function:
 //
 //	fn vcraft_generated__wrap_add(self voidptr, args voidptr, nargs isize) voidptr {
-//		vcraft.require_nargs('add', 2, int(nargs))
-//		if vcraft.error_is_set() { return unsafe { nil } }
+//		if nargs != 2 { vcraft.wrong_nargs('add', 2, int(nargs)) return unsafe { nil } }
 //		arg0 := vcraft.from_py_int_arg(args, 0, 'add', 'a') or { return unsafe { nil } }
 //		arg1 := vcraft.from_py_int_arg(args, 1, 'add', 'b') or { return unsafe { nil } }
-//		vcraft.reject_extra_args('add', 2, int(nargs))
-//		if vcraft.error_is_set() { return unsafe { nil } }
 //		mut result := 0
 //		defer { if message := recover() { vcraft.raise_runtime_error('panic in V code: ${message}') } }
 //		result = add(arg0, arg1)
@@ -383,6 +380,17 @@ fn emit_nogil_failure(inner string) string {
 		'\t\t' + inner + '\n'
 }
 
+// emit_nargs_check renders the arity check at the top of a positional trampoline.
+//
+// One comparison on the success path. The message, and the choice between too few
+// and too many, only run when it fails. Checking before any argument is read also
+// means a reader never sees an index past `nargs`.
+fn emit_nargs_check(f Func) string {
+	return '\tif nargs != ${f.params.len} {\n' +
+		"\t\tvcraft.wrong_nargs('${f.name}', ${f.params.len}, int(nargs))\n" +
+		'\t\treturn unsafe { nil }\n\t}\n'
+}
+
 // emit_method_trampoline renders a method of a class.
 //
 // It is the ordinary trampoline wrapped in the two statements that move the V value
@@ -396,8 +404,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 	if f.params.len > 0 {
-		w.write_string("\tvcraft.require_nargs('${f.name}', ${f.params.len}, int(nargs))\n")
-		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+		w.write_string(emit_nargs_check(f))
 	}
 	mut names := []string{}
 	for i, param in f.params {
@@ -405,13 +412,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 		names << name
 		w.write_string('\t${reader_expr(lookup(param.v_type), name, i, f.name, param.name, param.v_type)}\n')
 	}
-	if f.params.len > 0 {
-		w.write_string("\tvcraft.reject_extra_args('${f.name}', ${f.params.len}, int(nargs))\n")
-		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
-	}
-	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
-	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
-		'${c.size_fn}())\n')
+	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
 	has_value := ret != .void
@@ -464,11 +465,9 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	}
 	// The instance is written back before anything can fail, so a method that
 	// raises leaves the object consistent.
-	w.write_string('\tvcraft.store_state(voidptr(&state), vcraft.instance_storage(self), ' +
-		'${c.size_fn}())\n')
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	if has_value {
-		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
 	} else {
 		w.write_string('\treturn vcraft.to_py_none().ptr\n')
 	}
@@ -483,9 +482,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
 	w.write_string('fn ${f.trampoline}(self voidptr, closure voidptr) voidptr {\n')
-	w.write_string('\tmut state := ' + c.state_type() + '{}\n')
-	w.write_string('\tvcraft.load_state(vcraft.instance_storage(self), voidptr(&state), ' +
-		'${c.size_fn}())\n')
+	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
 	if f.nogil {
@@ -518,7 +515,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 			w.write_string(emit_nogil_close())
 		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
-		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
 	} else if ret != .void {
 		// A plain getter: the call is assigned to the `result` declared above. Without
 		// this the value is computed and dropped on the floor, and the getter returns the
@@ -527,7 +524,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}
-		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
 	} else {
 		// A property returning nothing has no `result` to assign: it was never declared,
 		// and assigning to it is a compile error rather than a warning.
@@ -535,7 +532,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}
-		w.write_string('\treturn ${return_expr(ret, 'result', false)}\n')
+		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
 	}
 	w.write_string('}\n')
 	return w.str()
@@ -570,8 +567,7 @@ pub fn emit_trampoline(f Func) string {
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 
 	if f.params.len > 0 {
-		w.write_string("\tvcraft.require_nargs('${f.name}', ${f.params.len}, int(nargs))\n")
-		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+		w.write_string(emit_nargs_check(f))
 	}
 
 	// `@[vc_raw]` keeps the declared signature but skips every conversion: each
@@ -594,10 +590,6 @@ pub fn emit_trampoline(f Func) string {
 		w.write_string('\t${reader_expr(strategy, name, i, f.name, param.name, param.v_type)}\n')
 	}
 
-	if f.params.len > 0 {
-		w.write_string("\tvcraft.reject_extra_args('${f.name}', ${f.params.len}, int(nargs))\n")
-		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
-	}
 
 	ret := lookup(f.v_ret)
 	has_value := f.raw || ret != .void
@@ -668,7 +660,7 @@ pub fn emit_trampoline(f Func) string {
 		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 		if has_value {
-			w.write_string('\treturn ${return_expr(ret, 'result', f.raw)}\n')
+			w.write_string('\treturn ${return_expr(ret, 'result', f.raw, f.v_ret)}\n')
 		} else {
 			w.write_string('\treturn vcraft.to_py_none().ptr\n')
 		}
@@ -676,7 +668,7 @@ pub fn emit_trampoline(f Func) string {
 		return w.str()
 	}
 
-	w.write_string('\treturn ${return_expr(ret, 'result', f.raw)}\n}\n')
+	w.write_string('\treturn ${return_expr(ret, 'result', f.raw, f.v_ret)}\n}\n')
 	return w.str()
 }
 
@@ -684,8 +676,9 @@ pub fn emit_trampoline(f Func) string {
 //
 // A raw result is a `voidptr` the V side already owns a reference to, so it is
 // wrapped as-is without touching the reference count. Everything else is a real
-// V value that has to be boxed.
-pub fn return_expr(strategy Strategy, value string, raw bool) string {
+// V value that has to be boxed. `v_type` is the declared value type, which a
+// sequence needs to choose how each element is boxed.
+pub fn return_expr(strategy Strategy, value string, raw bool, v_type string) string {
 	if raw {
 		// A raw function hands back a borrowed pointer, so the wrapper takes the
 		// reference itself. Without this the caller receives a pointer it never
@@ -697,17 +690,70 @@ pub fn return_expr(strategy Strategy, value string, raw bool) string {
 	// `.pyref`, where it is the object itself rather than a pointer to one.
 	return match strategy {
 		.pyref { boxed_expr(strategy, value) + '.ptr' }
+		// A `voidptr` result is borrowed, the same contract as a raw one, and it is
+		// already a pointer: boxing it and taking `.ptr` does not compile.
+		.pyobj { 'vcraft.borrow(${value}).new_ref().ptr' }
+		.seq { '${seq_boxed_expr(element_type(v_type), value)}.ptr' }
 		else { '${boxed_expr(strategy, value)}.ptr' }
 	}
 }
 
+// seq_boxed_expr boxes a returned `[]T` as a list. Slices of the plain number types
+// the runtime has a one-pass builder for use it; every other element type goes through
+// `to_py_list` with a boxing rule.
+fn seq_boxed_expr(element string, value string) string {
+	return match element {
+		'i64' { 'vcraft.to_py_i64_list(${value})' }
+		'int' { 'vcraft.to_py_int_list(${value})' }
+		'f64' { 'vcraft.to_py_f64_list(${value})' }
+		else { 'vcraft.to_py_list(${value}, ${element_box_fn(element)})' }
+	}
+}
+
+// element_box_fn renders the boxing rule `vcraft.to_py_list` applies to each element
+// of a returned `[]T`, as an anonymous function from `T` to an object.
+//
+// The runtime cannot pick the rule itself: the element type is only known here. Each
+// rule widens to the one width its boxer takes, so every integer width shares
+// `to_py_int`. An element with no rule is refused by `validate` before this runs.
+pub fn element_box_fn(element string) string {
+	boxed := match lookup(element) {
+		.int { 'vcraft.to_py_int(i64(x))' }
+		.uint { 'vcraft.to_py_uint(u64(x))' }
+		.float { 'vcraft.to_py_f64(f64(x))' }
+		.str { 'vcraft.to_py_string(x)' }
+		.bool { 'vcraft.to_py_bool(x)' }
+		else { 'vcraft.to_py_none()' }
+	}
+	return 'fn (x ${element}) vcraft.PyObj { return ${boxed} }'
+}
+
+// element_is_boxable reports whether a returned `[]T` has an element rule.
+pub fn element_is_boxable(element string) bool {
+	return lookup(element) in [.int, .uint, .float, .str, .bool]
+}
+
+// element_is_readable reports whether a `[]T` parameter has an element reader.
+//
+// `[]u8` never reaches this: it is a buffer, read through the buffer protocol
+// rather than as a sequence.
+pub fn element_is_readable(element string) bool {
+	if element == 'u8' {
+		return false
+	}
+	return lookup(element) in [.int, .uint, .float, .str, .bool]
+}
+
 // zero_value is the initial value of a result local. It has to be valid V for the
-// declared type, which rules out `T(0)` for strings and slices.
+// declared type, which rules out `T(0)` for strings and slices. A uint result
+// starts as `u64(0)` rather than `0`: the local is assigned the declared width
+// before it is boxed, and `to_py_uint` takes nothing narrower.
 pub fn zero_value(strategy Strategy, v_type string) string {
 	return match strategy {
 		.void { 'unsafe { nil }' }
 		.bool { 'false' }
-		.int, .uint { '0' }
+		.int { '0' }
+		.uint { 'u64(0)' }
 		.float { '0.0' }
 		.str { "''" }
 		// `.bytes` is always a `[]u8`: a string literal would not compile where a slice
@@ -733,22 +779,48 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 		.uint { "vcraft.from_py_uint_arg(args, ${index}, '${func}', '${param}')" }
 		.float { "vcraft.from_py_f64_arg(args, ${index}, '${func}', '${param}')" }
 		.str { "vcraft.from_py_string_arg(args, ${index}, '${func}', '${param}')" }
-		// A `[]u8` parameter takes any bytes-like object without copying it. Three
-		// statements rather than one: the view is acquired, its release is deferred so
-		// every path gives it back, and the slice aliases it for the call. The slice
-		// must not outlive the call, because the release drops the exporter's reference.
+		// A `[]u8` parameter takes any bytes-like object without copying it. Exact
+		// `bytes` aliases the object with no view at all; anything else goes
+		// through a view whose deferred release pins the exporter for the call.
+		// The slice must not outlive the call, because the release drops the
+		// exporter's reference.
 		.bytes {
-			"\t${local}_view := vcraft.buffer_view(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }\n" +
-				'\tdefer { vcraft.buffer_release(${local}_view) }\n' +
-				'\t${local} := vcraft.buffer_bytes(${local}_view)'
+			"\t${local}_bytes := vcraft.bytes_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }\n" +
+				'\tdefer { ${local}_bytes.release() }\n' +
+				'\t${local} := ${local}_bytes.data'
 		}
 		.seq {
 			element := element_type(param_type)
 			match lookup(element) {
-				.int { "vcraft.from_py_int_seq_arg(args, ${index}, '${func}', '${param}')" }
-				.uint { "vcraft.from_py_uint_seq_arg(args, ${index}, '${func}', '${param}')" }
-				.float { "vcraft.from_py_f64_seq_arg(args, ${index}, '${func}', '${param}')" }
+				// An `i64` element has its own reader: V does not convert a `[]int` into
+				// a `[]i64`, so the int reader's result does not compile there. The
+				// narrower widths have theirs for the same reason; only `int` itself
+				// uses the one-pass C reader.
+				.int {
+					if element == 'i64' {
+						"vcraft.from_py_i64_seq_arg(args, ${index}, '${func}', '${param}')"
+					} else if element == 'int' {
+						"vcraft.from_py_int_seq_arg(args, ${index}, '${func}', '${param}')"
+					} else {
+						"vcraft.from_py_${element}_seq_arg(args, ${index}, '${func}', '${param}')"
+					}
+				}
+				.uint {
+					if element == 'u64' {
+						"vcraft.from_py_uint_seq_arg(args, ${index}, '${func}', '${param}')"
+					} else {
+						"vcraft.from_py_${element}_seq_arg(args, ${index}, '${func}', '${param}')"
+					}
+				}
+				.float {
+					if element == 'f64' {
+						"vcraft.from_py_f64_seq_arg(args, ${index}, '${func}', '${param}')"
+					} else {
+						"vcraft.from_py_${element}_seq_arg(args, ${index}, '${func}', '${param}')"
+					}
+				}
 				.str { "vcraft.from_py_str_seq_arg(args, ${index}, '${func}', '${param}')" }
+				.bool { "vcraft.from_py_bool_seq_arg(args, ${index}, '${func}', '${param}')" }
 				else { "vcraft.from_py_int_seq_arg(args, ${index}, '${func}', '${param}')" }
 			}
 		}
