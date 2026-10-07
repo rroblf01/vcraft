@@ -23,7 +23,7 @@ usage:
   vcraft publish               upload the built distributions to PyPI
   vcraft info                  show what vcraft resolved for this project
   vcraft clean                 remove build output
-  vcraft version               print the version
+  vcraft version, --version     print the version
 
 build options:
   --release                    compile with -prod
@@ -119,6 +119,12 @@ fn takes_value(name string) bool {
 }
 
 fn main() {
+	// `--version` is what every packaging tool answers, and what a CI log or a bug
+	// report reaches for first; `vcraft version` stays for scripts that use it.
+	if os.args.len == 2 && os.args[1] in ['--version', '-V'] {
+		println(vcraft_project.version)
+		exit(0)
+	}
 	args := parse_args(os.args[1..]) or {
 		eprintln('error: ${err.msg()}')
 		eprintln('')

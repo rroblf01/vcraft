@@ -1298,6 +1298,13 @@ pub fn (mut n Node) link(other voidptr) {
         t.check("V never retries a failed build with its 0.5.2 release",
                 "-new-compiler" in proc.stdout, proc.stdout)
 
+        print("--version")
+        for flag in ("--version", "-V"):
+            proc = vcraft(flag, cwd=project)
+            t.check(f"{flag} prints the version",
+                    proc.returncode == 0 and re.fullmatch(r"\d+\.\d+\.\d+\S*", proc.stdout.strip()),
+                    proc.stdout + proc.stderr)
+
         print("errors")
         proc = vcraft("build", "--out-dir", cwd=project)
         t.check("a missing option value fails", proc.returncode != 0)
