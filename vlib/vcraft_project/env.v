@@ -12,7 +12,7 @@ import vcraft_wheel
 // runner that has V configured for something else.
 
 // version is vcraft's own version, and the version it stamps into a wheel's `WHEEL`.
-pub const version = '0.1.0'
+pub const version = '0.2.0'
 
 // vlib_path returns the `-path` value for the V compiler.
 //

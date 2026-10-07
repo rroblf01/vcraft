@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 # The tag of the machine running the suite, e.g. `linux_x86_64` or
 # `macosx_11_0_arm64`. pip refuses a wheel tagged for another platform, so a
 # hard-coded Linux tag fails the install step on every other host.
+# The version the real binary reports: the one env.v stamps, not this fixture's.
+STAMPED = re.search(r"pub const version = '([^']+)'",
+                    (ROOT / "vlib" / "vcraft_project" / "env.v").read_text()).group(1)
+
 PLATFORM = sysconfig.get_platform().replace("-", "_").replace(".", "_")
 
 
@@ -259,7 +263,7 @@ def main() -> int:
                 [str(venv_dir / "bin" / "vcraft"), "version"],
                 capture_output=True, text=True)
             t.check("the installed console script runs the real binary",
-                    proc.returncode == 0 and proc.stdout.strip() == "0.1.0",
+                    proc.returncode == 0 and proc.stdout.strip() == STAMPED,
                     (proc.stderr or proc.stdout).strip()[-200:])
         else:
             print("  skip no built binary for the real payload")
