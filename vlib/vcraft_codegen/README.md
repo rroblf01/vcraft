@@ -35,7 +35,7 @@ fn vcraft_generated__wrap_add(self voidptr, args voidptr, nargs isize) voidptr {
 	mut result := 0
 	defer {
 		if message := recover() {
-			vcraft.raise_runtime_error('panic in V code: ${message}')
+			vcraft.raise_panic(message)
 		}
 	}
 	result = add(arg0, arg1)

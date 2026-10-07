@@ -34,9 +34,11 @@ Each item lands on `main` with its tests and a changelog entry under
       through every function, method and attribute of the example: no crash, only
       expected exceptions.
 
-- [ ] **Allocation failure raises MemoryError.** When V cannot allocate, its runtime
-      prints `malloc_noscan(...)` and the process dies with a segfault; it should
-      become a Python MemoryError, as a failed allocation in CPython does.
+- [x] **Allocation failure raises MemoryError.** An allocation V refuses is a panic,
+      which the glue now raises as MemoryError instead of RuntimeError. Out of reach:
+      an allocation the system grants and then cannot back is the OOM killer's, as
+      for pure Python; and under an address-space limit (`RLIMIT_AS`) Boehm's own
+      marker can fault before V sees the failure.
 
 ## Platforms
 

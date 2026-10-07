@@ -13,7 +13,7 @@ module vcraft_codegen
 //		arg0 := vcraft.from_py_int_arg(args, 0, 'add', 'a') or { return unsafe { nil } }
 //		arg1 := vcraft.from_py_int_arg(args, 1, 'add', 'b') or { return unsafe { nil } }
 //		mut result := 0
-//		defer { if message := recover() { vcraft.raise_runtime_error('panic in V code: ${message}') } }
+//		defer { if message := recover() { vcraft.raise_panic(message) } }
 //		result = add(arg0, arg1)
 //		if vcraft.error_is_set() { return unsafe { nil } }
 //		return vcraft.to_py_int(result).ptr
@@ -349,7 +349,7 @@ fn emit_nogil_open() string {
 	w.write_string('\tmut saved := vcraft.allow_threads()\n')
 	w.write_string('\tdefer {\n')
 	w.write_string("\t\tif message := recover() {\n")
-	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+	w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 	w.write_string('\t\t}\n')
 	w.write_string('\t}\n')
 	w.write_string('\tdefer {\n')
@@ -424,7 +424,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	} else {
 		w.write_string('\tdefer {\n')
 		w.write_string('\t\tif message := recover() {\n')
-		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
@@ -490,7 +490,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 	} else {
 		w.write_string('\tdefer {\n')
 		w.write_string('\t\tif message := recover() {\n')
-		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
@@ -613,7 +613,7 @@ pub fn emit_trampoline(f Func) string {
 	} else {
 		w.write_string('\tdefer {\n')
 		w.write_string('\t\tif message := recover() {\n')
-		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}

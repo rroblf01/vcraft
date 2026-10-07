@@ -15,7 +15,7 @@ module vcraft_codegen
 //		mut state := unsafe { &Counter(vcraft.instance_storage(self)) }
 //		if isnil(state) { vcraft.raise_runtime_error('Counter instance has no state') return unsafe { nil } }
 //		defer {
-//			if message := recover() { vcraft.raise_runtime_error('panic in V code: ${message}') }
+//			if message := recover() { vcraft.raise_panic(message) }
 //		}
 //		state.increment(arg0)
 //		if vcraft.error_is_set() { return unsafe { nil } }
@@ -272,7 +272,7 @@ fn emit_iter_trampoline(p Project, c Class, f Func) string {
 	} else {
 		w.write_string('\tdefer {\n')
 		w.write_string('\t\tif message := recover() {\n')
-		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
@@ -307,7 +307,7 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 	} else {
 		w.write_string('\tdefer {\n')
 		w.write_string('\t\tif message := recover() {\n')
-		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
@@ -397,7 +397,7 @@ fn emit_class_new(c Class) string {
 	}
 	w.write_string('\tdefer {\n')
 	w.write_string('\t\tif message := recover() {\n')
-	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+	w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 	w.write_string('\t\t}\n')
 	w.write_string('\t}\n')
 	w.write_string('\tinitial := ${c.newstate_fn}()\n')

@@ -89,8 +89,8 @@ def main() -> int:
             "vcraft.raise_from_error(err)" in glue)
     t.check("void result returns None", "vcraft.to_py_none().ptr" in glue)
     t.check("panic guard is inlined", "if message := recover()" in glue)
-    t.check("guard message is escaped", "panic in V code: \\${message}" in glue
-            or "panic in V code: ${message}" in glue)
+    t.check("the guard hands the panic to the runtime",
+            "vcraft.raise_panic(message)" in glue)
 
     print("docstrings and signatures")
     t.check("module docstring is a literal",

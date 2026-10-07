@@ -29,6 +29,8 @@ Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
   field stored the low bytes of a double (`2.0` read back as `0.0`), and an `i8` or
   `u8` field silently truncated out-of-range values. They now convert to their own
   width and raise OverflowError when the value does not fit.
+- **An allocation V refused surfaced as RuntimeError.** V reports it with a panic;
+  the glue now raises MemoryError for it, like any failed allocation in CPython.
 - **The README promised conversions that did not exist.** `map[string]V`, `?T`,
   enums, fixed arrays, plain structs, V function types and `&T` in plain functions
   are rejected by the generator; the type table now says so, `rune` is documented

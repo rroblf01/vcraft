@@ -1026,6 +1026,12 @@ pub fn t_list(x []int) []int { return x }
 @[vc_fn]
 pub fn t_void() {}
 @[vc_fn]
+pub fn t_oom() int {
+	// An allocation V refuses, which it reports by panicking.
+	_ = unsafe { malloc_noscan(-1) }
+	return 0
+}
+@[vc_fn]
 pub fn t_result(x int) !int {
 	if x < 0 {
 		return error('negative')
@@ -1088,6 +1094,8 @@ cases = [
     ("list", lambda: m.t_list([1, 2]), "[1, 2]"), ("tuple", lambda: m.t_list((1, 2)), "[1, 2]"),
     ("void", lambda: m.t_void(), "None"),
     ("result ok", lambda: m.t_result(3), "3"), ("result error", lambda: m.t_result(-1), "RuntimeError"),
+    ("allocation failure", lambda: m.t_oom(), "MemoryError"),
+    ("alive after it", lambda: m.t_i8(1), "1"),
 ]
 n = m.Narrow()
 def assign(attr, value):
