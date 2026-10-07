@@ -280,6 +280,9 @@ def main() -> int:
                 and "aarch64-linux-gnu-gcc" in proc.stdout, proc.stdout)
         t.check("a linux dry run defines _GNU_SOURCE for the GC root walk",
                 "-D_GNU_SOURCE" in proc.stdout, proc.stdout)
+        t.check("the runtime carries the define for every other driver",
+                "#flag -D_GNU_SOURCE" in (ROOT / "vlib" / "vcraft" / "cpython.c.v").read_text()
+                and "$if linux" in (ROOT / "vlib" / "vcraft" / "cpython.c.v").read_text())
         t.check("a dry run writes nothing",
                 not list((project / "dist").glob("*aarch64*")))
         proc = vcraft("build", "--target", "linux-aarch64-gnu", "--release",

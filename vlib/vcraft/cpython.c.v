@@ -16,6 +16,15 @@ module vcraft
 // Pulled into the extension by the driver. Accessors for CPython data symbols.
 #flag @VMODROOT/c/shim.c
 #include "c/shim.h"
+// glibc declares `struct dl_phdr_info` and `dl_iterate_phdr` only with
+// `_GNU_SOURCE`, which the header below needs for its Linux root walk. A `#define`
+// there comes too late (system headers precede it in the generated TU), so it
+// arrives as a compiler flag instead. Here rather than in any one driver, so every
+// way of building an extension gets it: `vcraft build`, `scripts/build-example.sh`
+// and plain `v`.
+$if linux {
+	#flag -D_GNU_SOURCE
+}
 // Before V's collector starts on macOS; see the header.
 #include "c/gc_preinit.h"
 

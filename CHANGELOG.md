@@ -136,9 +136,11 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   was not the one a real build runs. The plan now renders the full command.
 - **Linux builds failed to compile**: the collector pre-initialiser uses
   `struct dl_phdr_info`, which glibc only declares with `_GNU_SOURCE`.
-  `vcraft build` now passes `-D_GNU_SOURCE` for Linux targets; a `#define` in
-  the header itself comes too late, because the generated translation unit has
-  already included system headers by then.
+  `vcraft build` now passes `-D_GNU_SOURCE` for Linux targets, and
+  `vlib/vcraft/cpython.c.v` carries `#flag linux -D_GNU_SOURCE` so the example
+  script and manual `v` builds get it too. A `#define` in the header itself
+  comes too late, because the generated translation unit has already included
+  system headers by then.
 
 ### Build safeguards
 
