@@ -108,7 +108,7 @@ def main() -> int:
         t("version", "Version: 0.1.0" in meta)
         t("summary", "Summary: A demo package built by vcraft" in meta)
         t("requires-python", "Requires-Python: >=3.11" in meta)
-        t("classifiers survive", "Classifier: Programming Language :: V" in meta)
+        t("classifiers survive", "Classifier: Programming Language :: Other" in meta)
 
         print("record")
         record = z.read("vcraft_demo-0.1.0.dist-info/RECORD").decode()

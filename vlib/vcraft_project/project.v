@@ -21,7 +21,7 @@ import os
 //	minimum-version = "3.11"
 //
 //	[[classifiers]]
-//	text = "Programming Language :: V"
+//	text = "Programming Language :: Other"
 
 // Project is a parsed `vcraft.toml`.
 pub struct Project {
@@ -39,6 +39,14 @@ pub mut:
 	license string
 	// requires_python is the `Requires-Python` field.
 	requires_python string
+	// readme is the file, relative to the project root, whose text becomes the long
+	// description PyPI shows on the project page. Missing is not an error: the
+	// one-line description is used instead.
+	readme string
+	// keywords go into METADATA as `Keywords`.
+	keywords []string
+	// urls are `Project-URL` entries, `Label, https://...`, from the `[urls]` table.
+	urls []string
 	// minimum_version is the oldest CPython this builds against. It picks the ABI
 	// tag, and it is separate from `requires_python` because one says what the code
 	// needs to run and the other says what it was compiled for.
@@ -76,9 +84,14 @@ pub fn default_project(name string) Project {
 		description:     'A Python extension written in V.'
 		license:         'MIT'
 		requires_python: '>=3.11'
+		readme:          'README.md'
 		minimum_version: '3.11'
 		gc_free_space_divisor: 2
-		classifiers: ['Programming Language :: V', 'Programming Language :: Python :: 3']
+		// Trove classifiers PyPI accepts. There is no `Programming Language :: V`, and
+		// PyPI refuses the whole upload over one unknown classifier, so V projects say
+		// `Other`, the classifier PyPI keeps for languages it does not list.
+		classifiers: ['Programming Language :: Other', 'Programming Language :: Python :: 3',
+			'Programming Language :: Python :: Implementation :: CPython']
 	}
 }
 
@@ -113,6 +126,15 @@ pub fn load(root string) !Project {
 	}
 	p.classifiers = classifiers
 	p.dependencies = pkg.string_list_of('dependencies')
+	p.readme = pkg.string_of('readme', p.readme)
+	p.keywords = pkg.string_list_of('keywords')
+	// `[urls]` maps a label to an address, as in PEP 621's `[project.urls]`, and each
+	// becomes one `Project-URL`. Read in file order so the page lists them as written.
+	for e in table.subtable('urls').entries {
+		if e.value.kind == .string && e.value.text.len > 0 {
+			p.urls << '${e.name}, ${e.value.text}'
+		}
+	}
 	// The root-level keys, before any table. A key written after `[package]` belongs to
 	// that table in TOML, and a lookup that ignores the table it is in returns nothing
 	// rather than an error.
@@ -162,6 +184,12 @@ pub fn (p Project) render() string {
 	out += 'description = ${quote(p.description)}\n'
 	out += 'license = ${quote(p.license)}\n'
 	out += 'requires-python = ${quote(p.requires_python)}\n'
+	if p.readme.len > 0 {
+		out += 'readme = ${quote(p.readme)}\n'
+	}
+	if p.keywords.len > 0 {
+		out += 'keywords = [' + p.keywords.map(quote(it)).join(', ') + ']\n'
+	}
 	if p.dependencies.len > 0 {
 		out += 'dependencies = ['
 		for i, d in p.dependencies {
@@ -177,5 +205,35 @@ pub fn (p Project) render() string {
 		out += '[[classifier]]\n'
 		out += 'text = ${quote(c)}\n\n'
 	}
+	if p.urls.len > 0 {
+		out += '[urls]\n'
+		for u in p.urls {
+			label := u.all_before(', ')
+			out += '${label} = ${quote(u.all_after(', '))}\n'
+		}
+	}
 	return out
+}
+
+// long_description returns the text PyPI shows on the project page and its MIME type.
+//
+// The `readme` file when it exists, typed by its extension, so a Markdown README renders
+// as Markdown rather than as its source. Otherwise the one-line description as plain
+// text, which is what a project without a README had before.
+pub fn (p Project) long_description(root string) (string, string) {
+	if p.readme.len > 0 {
+		path := root.trim_right('/') + '/' + p.readme
+		if text := os.read_file(path) {
+			lower := p.readme.to_lower()
+			kind := if lower.ends_with('.md') || lower.ends_with('.markdown') {
+				'text/markdown'
+			} else if lower.ends_with('.rst') {
+				'text/x-rst'
+			} else {
+				'text/plain'
+			}
+			return text, kind
+		}
+	}
+	return p.description, ''
 }

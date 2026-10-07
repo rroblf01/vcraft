@@ -13,9 +13,16 @@ pub mut:
 	version     string
 	summary     string
 	description string
+	// description_content_type is the MIME type of `description`, e.g.
+	// `text/markdown`. Without it PyPI renders a Markdown README as plain text.
+	description_content_type string
 	license     string
+	// keywords, e.g. `parser`, written comma-separated.
+	keywords []string
+	// project_urls, each `Label, https://...`.
+	project_urls []string
 	requires_python string
-	// classifiers, e.g. `Programming Language :: V`.
+	// classifiers, e.g. `Programming Language :: Other`. PyPI rejects unknown ones.
 	classifiers []string
 	// requires_dist, e.g. `requests>=2`.
 	requires_dist []string
@@ -37,6 +44,12 @@ pub fn render_metadata(m MetaData) string {
 	if m.license.len > 0 {
 		out += 'License: ${m.license}\n'
 	}
+	if m.keywords.len > 0 {
+		out += 'Keywords: ${m.keywords.join(',')}\n'
+	}
+	for u in m.project_urls {
+		out += 'Project-URL: ${u}\n'
+	}
 	if m.requires_python.len > 0 {
 		out += 'Requires-Python: ${m.requires_python}\n'
 	}
@@ -45,6 +58,9 @@ pub fn render_metadata(m MetaData) string {
 	}
 	for r in m.requires_dist {
 		out += 'Requires-Dist: ${r}\n'
+	}
+	if m.description.len > 0 && m.description_content_type.len > 0 {
+		out += 'Description-Content-Type: ${m.description_content_type}\n'
 	}
 	if m.description.len > 0 {
 		out += '\n${m.description}\n'

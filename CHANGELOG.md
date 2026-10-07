@@ -5,7 +5,55 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Until 1.0, minor releases may change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
-## [0.1.0] - Unreleased
+## [Unreleased]
+
+## [0.2.0] - 2026-10-07
+
+Faster string and bytes arguments, complete PyPI pages for vcraft and for the
+projects it builds, and a fix that let new projects be published at all.
+
+### Added
+
+- **PyPI project pages for your packages**: `readme` in `[package]` (default
+  `README.md`, which `vcraft new` writes) becomes the long description PyPI shows,
+  typed from its extension so Markdown renders as Markdown. `keywords` and a `[urls]`
+  table (`Source = "https://..."`) fill in the sidebar. Wheels and sdists carry all
+  three.
+- **`vcraft --version`** and `-V`, alongside `vcraft version`.
+- **A real PyPI page for vcraft itself**: the README as description, licence,
+  project links, keywords and classifiers. Repository links in the README point at
+  the release on GitHub so they resolve from pypi.org.
+
+### Changed
+
+- **Borrowed `str` sequences**: a `[]string` argument aliases each item's UTF-8
+  buffer instead of copying it, so a 10k-item list costs no per-item
+  allocation. The slice must not outlive the call, the same documented contract
+  as `[]u8`; safe against mutation because `str` is immutable. Scalar `str`
+  parameters still copy.
+- **Cheaper `bytes` arguments**: the exact-`bytes` branch of
+  `bytes_arg` reads the buffer and length with one C call into locals instead
+  of through `bytes_of`, whose 8-byte result struct V allocated per call. Small
+  `bytes` calls match PyO3 call-for-call.
+- **The scaffolded README reads as a project page**: installation and usage first,
+  development instructions last, since it is now what PyPI shows.
+
+### Fixed
+
+- **New projects could not be uploaded to PyPI**: `vcraft new` declared the
+  classifier `Programming Language :: V`, which PyPI does not know, and PyPI rejects
+  an upload with any unknown classifier. New projects use
+  `Programming Language :: Other` and `Implementation :: CPython`. Existing projects
+  should replace the `Programming Language :: V` entry in their `vcraft.toml`.
+
+### Upgrading
+
+Replace `text = "Programming Language :: V"` in `vcraft.toml` with
+`text = "Programming Language :: Other"`. Workflows written by
+`vcraft generate-ci` name the 0.2.0 images: regenerate them with
+`vcraft generate-ci` after upgrading.
+
+## [0.1.0] - 2026-10-07
 
 The first release. vcraft builds native CPython extensions from V source and
 packages them as wheels, with no Rust, C++ or zlib involved.
@@ -97,15 +145,6 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   `bytes` aliases the object directly instead of allocating, acquiring and
   releasing a buffer view. Anything else bytes-like still goes through the
   view, which pins the exporter for the call.
-- **Borrowed `str` sequences**: a `[]string` argument aliases each item's UTF-8
-  buffer instead of copying it, so a 10k-item list costs no per-item
-  allocation. The slice must not outlive the call, the same documented contract
-  as `[]u8`; safe against mutation because `str` is immutable. Scalar `str`
-  parameters still copy.
-- **No multi-return on the `bytes` fast path**: the exact-`bytes` branch of
-  `bytes_arg` reads the buffer and length with one C call into locals instead
-  of through `bytes_of`, whose 8-byte result struct V allocated per call. Small
-  `bytes` calls match PyO3 call-for-call.
 - **Smaller per-call state**: the `state_at` chain is only published when the
   project calls `vcraft.state_at`.
 - **Faster imports on macOS**: vcraft starts Boehm before V with only the
@@ -168,4 +207,6 @@ platform tag, so the binary loads on every macOS the tag claims. If you set the
 variable yourself, the tag follows your value. A `universal2` interpreter tag
 becomes the single architecture that was actually compiled.
 
+[Unreleased]: https://github.com/rroblf01/vcraft/compare/vcraft/v0.2.0...HEAD
+[0.2.0]: https://github.com/rroblf01/vcraft/compare/vcraft/v0.1.0...vcraft/v0.2.0
 [0.1.0]: https://github.com/rroblf01/vcraft/releases/tag/vcraft/v0.1.0

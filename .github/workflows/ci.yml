@@ -32,38 +32,25 @@ env:
   VC_COMMIT: 8af812feb76c678abd86a8e682fd9ab2790e519c
 
 jobs:
-  # The suites run in two jobs rather than one so the slowest (cli, with its
-  # dozen extension builds) does not hold the other five behind it. The suites
-  # are independent -- only the cli one needs bin/vcraft, and it builds it
-  # itself -- so nothing is shared between the two jobs.
-  suites:
-    # Every supported CPython on both platforms: a wheel is built per interpreter,
-    # and the runtime compiles against each version's headers, so a version left
-    # out of this list is a version nobody has compiled for. Keep it in step with
-    # `supported_pythons` in vlib/vcraft_project/build.v.
-    name: suites (${{ matrix.os }}, ${{ matrix.python }})
+  # The V compiler, once per runner OS, before anything else starts. Without
+  # this job every cell restored-or-built it on its own: when the cache key
+  # changed, all twenty cells missed at once and each spent five to six minutes
+  # building the same compiler. Saved explicitly, so the cache is written even
+  # when a later suite fails, and as soon as the build is done.
+  v-compiler:
+    name: V compiler (${{ matrix.os }})
     strategy:
-      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-15]
-        python: ["3.11", "3.12", "3.13", "3.14"]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-
-      # The compiler only changes when the pins do, so it is built once per
-      # runner image and pin pair and restored from the cache afterwards.
-      - name: restore the V compiler
+      - name: look for a cached compiler
         id: v-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /tmp/v-src
           key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          lookup-only: true
 
       - name: build the V compiler from source
         if: steps.v-cache.outputs.cache-hit != 'true'
@@ -81,6 +68,57 @@ jobs:
           # itself. Dropping them keeps the cached directory at ~170 MB instead
           # of ~2 GB, which is what every job restores on a cache hit.
           rm -rf vc
+
+      - name: save the compiler
+        if: steps.v-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/v-src
+          key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+
+  # The suites run in two jobs rather than one so the slowest (cli, with its
+  # dozen extension builds) does not hold the other five behind it. The suites
+  # are independent -- only the cli one needs bin/vcraft, and it builds it
+  # itself -- so nothing is shared between the two jobs.
+  suites:
+    needs: v-compiler
+    # Every supported CPython on both platforms: a wheel is built per interpreter,
+    # and the runtime compiles against each version's headers, so a version left
+    # out of this list is a version nobody has compiled for. Keep it in step with
+    # `supported_pythons` in vlib/vcraft_project/build.v.
+    name: suites (${{ matrix.os }}, ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+        # macOS runs the oldest and newest supported CPython only. Hosted macOS
+        # runners are scarce, and with every version the cells queued for minutes
+        # before starting; what breaks on macOS so far has been the platform
+        # (linking, deployment target, compiler choice), not one Python version.
+        # Linux keeps every version.
+        exclude:
+          - os: macos-15
+            python: "3.12"
+          - os: macos-15
+            python: "3.13"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # Built once per runner OS by the v-compiler job, which every job here
+      # waits for, so this only ever restores it.
+      - name: restore the V compiler
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/v-src
+          key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          fail-on-cache-miss: true
 
       - name: put V on PATH
         id: v-ready
@@ -110,6 +148,7 @@ jobs:
         run: python3 tests/codegen/test_codegen.py
 
   cli:
+    needs: v-compiler
     # The slowest suite on its own job (see above for why it is separate).
     # Same matrix: the CLI builds against each interpreter's headers.
     name: cli (${{ matrix.os }}, ${{ matrix.python }})
@@ -118,6 +157,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-15]
         python: ["3.11", "3.12", "3.13", "3.14"]
+        # macOS runs the oldest and newest supported CPython only. Hosted macOS
+        # runners are scarce, and with every version the cells queued for minutes
+        # before starting; what breaks on macOS so far has been the platform
+        # (linking, deployment target, compiler choice), not one Python version.
+        # Linux keeps every version.
+        exclude:
+          - os: macos-15
+            python: "3.12"
+          - os: macos-15
+            python: "3.13"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -127,39 +176,31 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
+      # Built once per runner OS by the v-compiler job, which every job here
+      # waits for, so this only ever restores it.
       - name: restore the V compiler
-        id: v-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /tmp/v-src
           key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
-
-      - name: build the V compiler from source
-        if: steps.v-cache.outputs.cache-hit != 'true'
-        run: |
-          git init -q /tmp/v-src
-          cd /tmp/v-src
-          git remote add origin https://github.com/vlang/v.git
-          git fetch -q --depth 1 origin "$V_COMMIT"
-          git checkout -q FETCH_HEAD
-          git clone https://github.com/vlang/vc.git vc
-          (cd vc && git checkout -q "$VC_COMMIT")
-          make fresh_tcc
-          make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
-          # The bootstrap C sources are only read while building the compiler
-          # itself. Dropping them keeps the cached directory at ~170 MB instead
-          # of ~2 GB, which is what every job restores on a cache hit.
-          rm -rf vc
+          fail-on-cache-miss: true
 
       - name: put V on PATH
         id: v-ready
         run: echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      # The CLI suite checks this repository's workflows and the action with
+      # PyYAML, and skips those checks without it: that is how a renamed job once
+      # broke them with nothing in CI noticing.
+      - name: install PyYAML for the workflow checks
+        run: python3 -m pip install -q pyyaml
 
       - name: "suite: cli"
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/cli/test_cli.py
 
   free-threaded:
+    needs: v-compiler
     # The one configuration nothing else exercises: a free-threaded interpreter
     # with the GIL actually disabled. A build that merely tags `cp314t` but
     # crashes, warns, or serialises on import fails here rather than on a
@@ -170,6 +211,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-15]
         python: ["3.13t", "3.14t"]
+        # One free-threaded cell on macOS, for the same reason as above.
+        exclude:
+          - os: macos-15
+            python: "3.13t"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -180,31 +225,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # The compiler only changes when the pins do, so it is built once per
-      # runner image and pin pair and restored from the cache afterwards.
+      # Built once per runner OS by the v-compiler job, which every job here
+      # waits for, so this only ever restores it.
       - name: restore the V compiler
-        id: v-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /tmp/v-src
           key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
-
-      - name: build the V compiler from source
-        if: steps.v-cache.outputs.cache-hit != 'true'
-        run: |
-          git init -q /tmp/v-src
-          cd /tmp/v-src
-          git remote add origin https://github.com/vlang/v.git
-          git fetch -q --depth 1 origin "$V_COMMIT"
-          git checkout -q FETCH_HEAD
-          git clone https://github.com/vlang/vc.git vc
-          (cd vc && git checkout -q "$VC_COMMIT")
-          make fresh_tcc
-          make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
-          # The bootstrap C sources are only read while building the compiler
-          # itself. Dropping them keeps the cached directory at ~170 MB instead
-          # of ~2 GB, which is what every job restores on a cache hit.
-          rm -rf vc
+          fail-on-cache-miss: true
 
       - name: put V on PATH
         id: v-ready

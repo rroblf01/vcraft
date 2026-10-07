@@ -14,6 +14,7 @@ import base64
 import hashlib
 import importlib.util
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -29,6 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 # The tag of the machine running the suite, e.g. `linux_x86_64` or
 # `macosx_11_0_arm64`. pip refuses a wheel tagged for another platform, so a
 # hard-coded Linux tag fails the install step on every other host.
+# The version the real binary reports: the one env.v stamps, not this fixture's.
+STAMPED = re.search(r"pub const version = '([^']+)'",
+                    (ROOT / "vlib" / "vcraft_project" / "env.v").read_text()).group(1)
+
 PLATFORM = sysconfig.get_platform().replace("-", "_").replace(".", "_")
 
 
@@ -120,6 +125,39 @@ def main() -> int:
                     meta[:120])
             t.check("metadata names the oldest supported Python",
                     "Requires-Python: >=3.11" in meta, meta[:200])
+            # PyPI renders the description from the METADATA body; without a
+            # content type it shows the Markdown source as plain text, and with
+            # no body at all the project page is empty.
+            head, _, body = meta.partition("\n\n")
+            t.check("the README is the description, as Markdown",
+                    "Description-Content-Type: text/markdown" in head
+                    and body.startswith("# vcraft"), head[-200:])
+            t.check("the description has no repository-relative links",
+                    not re.search(r"\]\((?!https?://|mailto:|#)", body),
+                    str(re.findall(r"\]\((?!https?://|mailto:|#)[^)]*\)", body)[:3]))
+            # Dot-directories survive the rewrite: `.github/...` is not `./github`.
+            t.check("dot-directory links keep their dot",
+                    packer.pypi_readme("[w](.github/workflows) [l](./LICENSE)", "9.9.9")
+                    == "[w](https://github.com/rroblf01/vcraft/blob/vcraft/v9.9.9/.github/workflows) "
+                    "[l](https://github.com/rroblf01/vcraft/blob/vcraft/v9.9.9/LICENSE)",
+                    packer.pypi_readme("[w](.github/workflows) [l](./LICENSE)", "9.9.9"))
+            t.check("the licence is declared and shipped",
+                    "License-Expression: MIT" in head
+                    and "vcraft-0.1.0.dist-info/licenses/LICENSE" in names, head[:400])
+            t.check("the project links to its repository and changelog",
+                    "Project-URL: Source, https://github.com/" in head
+                    and "Project-URL: Changelog," in head, head[:600])
+            # PyPI rejects the whole upload on one unknown classifier, so they are
+            # checked against the canonical list when it is installed.
+            try:
+                from trove_classifiers import classifiers as known
+            except ImportError:
+                print("  skip no trove-classifiers to validate against")
+            else:
+                listed = [line.split(": ", 1)[1] for line in head.splitlines()
+                          if line.startswith("Classifier: ")]
+                unknown = [c for c in listed if c not in known]
+                t.check("every classifier is one PyPI accepts", not unknown, str(unknown))
             tag = z.read("vcraft-0.1.0.dist-info/WHEEL").decode()
             t.check("the wheel tag names the platform",
                     f"Tag: py3-none-{PLATFORM}" in tag, tag)
@@ -225,7 +263,7 @@ def main() -> int:
                 [str(venv_dir / "bin" / "vcraft"), "version"],
                 capture_output=True, text=True)
             t.check("the installed console script runs the real binary",
-                    proc.returncode == 0 and proc.stdout.strip() == "0.1.0",
+                    proc.returncode == 0 and proc.stdout.strip() == STAMPED,
                     (proc.stderr or proc.stdout).strip()[-200:])
         else:
             print("  skip no built binary for the real payload")

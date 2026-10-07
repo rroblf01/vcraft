@@ -1,14 +1,20 @@
 # vcraft
 
-**Native Python extensions for V, written in V.**
+**Native Python extensions written in V.**
 
-`vcraft` is to the V language what **PyO3 + maturin** is to Rust: a set of bindings for the CPython C API, plus a build and packaging toolchain that turns a directory of V source files into a distributable Python wheel.
+[![PyPI](https://img.shields.io/pypi/v/vcraft.svg)](https://pypi.org/project/vcraft/)
+[![Python versions](https://img.shields.io/pypi/pyversions/vcraft.svg)](https://pypi.org/project/vcraft/)
+[![CI](https://github.com/rroblf01/vcraft/actions/workflows/ci.yml/badge.svg)](https://github.com/rroblf01/vcraft/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rroblf01/vcraft/blob/main/LICENSE)
 
-There is **no Rust and no C++ in the pipeline**. A `.v` file compiles to a CPython extension module, the annotations you write on your V declarations become the Python API surface, and `vcraft build` produces a wheel you can upload to PyPI.
+`vcraft` is to the [V language](https://vlang.io) what **PyO3 + maturin** is to Rust:
+CPython bindings written in V, a code generator that turns annotated V declarations
+into a Python API, and a build tool that compiles the result and writes a wheel you
+can upload to PyPI. There is no Rust, no C++ and no zlib anywhere in the pipeline.
 
 ```v
-// src/lib.v
-module mi_extension_nativa
+// src/my_extension.v
+module my_extension
 
 // Adds two integers and returns the result.
 @[vc_fn]
@@ -18,42 +24,93 @@ pub fn add(a int, b int) int {
 ```
 
 ```python
->>> import mi_extension_nativa as m
+>>> import my_extension as m
 >>> m.add(2, 3)
 5
+>>> help(m.add)
+add(a: int, b: int) -> int
+    Adds two integers and returns the result.
 ```
 
-```bash
-vcraft new mi_extension_nativa
-cd mi_extension_nativa
-vcraft develop
-vcraft build --release
+## Highlights
+
+- **One annotation per declaration.** `@[vc_fn]`, `@[vc_class]`, `@[vc_methods]`,
+  `@[vc_field]` and friends become functions, classes, methods and properties, with
+  docstrings and a generated `.pyi` stub for type checkers.
+- **Fast calls.** The generated glue calls your V functions with their real types
+  through `METH_FASTCALL`: no boxing layer, no reflection. Call overhead is on par
+  with or below PyO3 in the [benchmarks](#performance).
+- **Real Python semantics.** V errors become exceptions (custom exception classes
+  included), panics are caught instead of killing the interpreter, classes support
+  inheritance, equality, hashing, iteration and garbage-collected reference cycles.
+- **Zero-copy and GIL-free.** `[]u8` and `[]string` parameters alias Python's buffers,
+  `@[vc_gil]` releases the GIL around a call, and free-threaded CPython (3.13t,
+  3.14t) is supported.
+- **Wheels without the toolchain zoo.** `vcraft build` writes the wheel itself
+  (DEFLATE, ZIP, RECORD, tags) for regular, abi3 and free-threaded builds,
+  manylinux and musllinux, and refuses version combinations that would only fail
+  after install.
+- **CI included.** `vcraft generate-ci` writes a GitHub Actions matrix that builds,
+  installs and imports every wheel, using published manylinux/musllinux images and a
+  reusable action.
+
+## Quick start
+
+**1. Install vcraft** (Linux x86_64 or macOS arm64, Python 3.11+):
+
+```console
+$ pip install vcraft
+$ vcraft --version
 ```
 
----
+**2. Install a V compiler.** `pip` ships the tool, not the toolchain, the same way
+maturin needs Rust. vcraft needs a V newer than the 0.5.2 release, so build it from
+the commit vcraft is tested with (about five minutes, once):
+
+```console
+$ git init -q ~/v-src && cd ~/v-src
+$ git remote add origin https://github.com/vlang/v.git
+$ git fetch -q --depth 1 origin 0137eb5d8ebc5d183259309ed08ea06ba9bc27d6 && git checkout -q FETCH_HEAD
+$ git clone -q https://github.com/vlang/vc.git vc && (cd vc && git checkout -q 8af812feb76c678abd86a8e682fd9ab2790e519c)
+$ make fresh_tcc && make local=1 -j4
+$ export PATH="$HOME/v-src:$PATH"
+```
+
+You also need a C compiler (gcc or clang) and the CPython headers, which most Python
+installs already include.
+
+**3. Create, develop and build a project:**
+
+```console
+$ vcraft new my_extension
+$ cd my_extension
+$ python -m venv .venv && source .venv/bin/activate
+$ vcraft develop                      # build and install into the active venv
+$ python -c "import my_extension_native as m; print(m.greet('world'))"
+Hello, world!
+$ vcraft build --release              # dist/my_extension-0.1.0-cp314-cp314-<platform>.whl
+```
+
+**4. Ship it.** `vcraft generate-ci` writes a GitHub Actions workflow that builds a
+wheel per supported Python and platform, installs and imports each one, and is ready
+to publish to PyPI. See [Continuous integration](#continuous-integration).
 
 ## Table of contents
 
-- [Table of contents](#table-of-contents)
 - [Why](#why)
 - [How it works](#how-it-works)
-- [Try it](#try-it)
 - [The annotation vocabulary](#the-annotation-vocabulary)
 - [Type marshalling](#type-marshalling)
 - [Classes and properties](#classes-and-properties)
-  - [Inheritance](#inheritance)
-  - [Reference fields and cycles](#reference-fields-and-cycles)
-  - [Custom error types](#custom-error-types)
-  - [Buffers without copying](#buffers-without-copying)
-  - [Iterators](#iterators)
 - [Errors and panics](#errors-and-panics)
 - [The command line](#the-command-line)
+- [Wheels](#wheels)
 - [Generated project layout](#generated-project-layout)
 - [Continuous integration](#continuous-integration)
 - [Configuration](#configuration)
-- [Roadmap](#roadmap)
-- [Status](#status)
-- [Requirements](#requirements)
+- [Performance](#performance)
+- [Project status](#project-status)
+- [Development](#development)
 - [Design notes](#design-notes)
 - [License](#license)
 
@@ -85,14 +142,14 @@ A CPython extension module is nothing more than a shared library that exports a
 single symbol, `PyInit_<name>`. V can already produce exactly that:
 
 ```
-v -shared -o mi_extension_nativa/_core.cpython-314-x86_64-linux-gnu.so src/
+v -shared -o my_extension/_core.cpython-314-x86_64-linux-gnu.so src/
 ```
 
 Three properties of V's `-shared` mode make this work cleanly:
 
 1. **Symbol control.** `-shared` compiles with `-fvisibility=hidden` and
    `-Wl,--exclude-libs,ALL`, so only declarations carrying an `@[export: '...']`
-   attribute appear in the dynamic symbol table. `PyInit_mi_extension_nativa` is
+   attribute appear in the dynamic symbol table. `PyInit_my_extension` is
    exported; nothing else is.
 2. **Automatic lifecycle.** V emits `_vinit_caller` and `_vcleanup_caller` as ELF
    constructors and destructors, so the V runtime and its garbage collector are
@@ -110,14 +167,14 @@ discovers the annotated declarations, and emits the glue that CPython needs:
 src/lib.v  ──vcraft codegen──▶  src/_vcraft_generated.v
                                           │
                                           ▼
-                         v -shared  ──▶  mi_extension_nativa/
+                         v -shared  ──▶  my_extension/
                                             ├── __init__.py
                                             ├── helpers.py
                                             ├── _stubs.pyi
                                             └── _core.cpython-314-x86_64-linux-gnu.so
                                           │
                                           ▼
-                              dist/mi_extension_nativa-0.1.0-cp314-cp314-linux_x86_64.whl
+                              dist/my_extension-0.1.0-cp314-cp314-linux_x86_64.whl
 ```
 
 The generated glue is a normal V file. It calls your functions with their real V
@@ -789,9 +846,8 @@ subset that is parsed, and for the compiler constraints that shaped it.
 ## Wheels
 
 ```console
-$ ./scripts/build-wheel-test.sh
-/home/you/vpy/build/vcraft_demo-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl
-$ pip install build/vcraft_demo-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl
+$ vcraft build --release
+$ pip install dist/my_extension-0.1.0-cp314-cp314-linux_x86_64.whl
 ```
 
 A wheel is written from scratch in V: DEFLATE, the ZIP container, `METADATA`, `WHEEL`,
@@ -855,17 +911,17 @@ an aarch64 or musl wheel -- happens in CI, where the images carry the toolchains
 
 ## Generated project layout
 
-What `vcraft new mi_extension_nativa` writes:
+What `vcraft new my_extension` writes:
 
 ```
-mi_extension_nativa/
+my_extension/
 ├── vcraft.toml                 packaging configuration (see Configuration)
-├── v.mod                       Module { name: 'mi_extension_nativa' }
+├── v.mod                       Module { name: 'my_extension' }
 ├── pyproject.toml              names the PEP 517/660 build backend
 ├── vcraft_build.py             the backend, emitted by the vcraft that wrote it
 ├── README.md  .gitignore
 └── src/
-    └── mi_extension_nativa_native.v   your code
+    └── my_extension_native.v   your code
 ```
 
 A build adds `src/_vcraft_generated.v` and `python/<module>/_stubs.pyi`, both
@@ -880,77 +936,42 @@ next to it. Both land in the same wheel.
 
 ## Continuous integration
 
-`vcraft` is a PEP 517 build backend, so the entire
-[cibuildwheel](https://cibuildwheel.pypa.io) ecosystem works with it unchanged.
-That means one workflow covers Linux, macOS and Windows, every supported CPython,
-and free-threaded builds, with no V-specific plumbing.
+`vcraft generate-ci` writes `.github/workflows/build.yml` for your project:
 
-```yaml
-name: wheels
-
-on:
-  push:
-    tags: ['v*']
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pypa/cibuildwheel@v3
-        env:
-          CIBW_BEFORE_ALL_LINUX: "true"   # v is already in the image
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheels
-          path: wheelhouse/*.whl
-
-  publish:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: wheels
-          path: dist
-      - uses: pypa/gh-action-pypi-publish@release/v1
+```console
+$ vcraft generate-ci
 ```
 
-Linux wheels are built inside `ghcr.io/vcraft/manylinux`, an image derived from
-`quay.io/pypa/manylinux_2_28` with the V compiler and `vcraft` already present, so
-`CIBW_BEFORE_ALL_LINUX` has nothing left to install. A musllinux image based on
-Alpine covers the musl targets. Both are built from `docker/`, published by
-`.github/workflows/release-images.yml`, and verified by building a project inside
-each image and importing the result -- see [`docker/README.md`](docker/README.md)
-for why V is compiled from source in both.
+The matrix is derived from `vcraft.toml`:
 
-For the one-liner experience, `vcraft-action@v1` mirrors `maturin-action`: it
-installs a pinned `vcraft` release, builds the V compiler from a pinned source
-commit -- no V release is newer than the flags vcraft passes -- and runs any
-`vcraft` command. It can also do it inside a manylinux container, in which case
-nothing is installed at all. Linux and macOS (arm64) runners are supported;
-Windows runners are refused with a clear error.
+- **Regular builds:** one wheel per supported CPython from the project's
+  `minimum-version` up, for manylinux x86_64 and aarch64 and for macOS arm64.
+- **`abi3`:** one wheel per platform covers every CPython from the floor up, plus
+  musllinux x86_64 and aarch64.
+- **`free-threading`:** 3.13t and 3.14t wheels for Linux and macOS.
+
+Linux wheels are built inside published images that already carry V and vcraft,
+`ghcr.io/rroblf01/vcraft-manylinux` (derived from PyPA's `manylinux_2_28`) and
+`ghcr.io/rroblf01/vcraft-musllinux` (Alpine), each on a native runner for its
+architecture. Every wheel is then installed and imported in the image or
+interpreter it was built for before the job passes, so a wheel that would fail on a
+user's machine fails in CI instead. See [`docker/README.md`](docker/README.md) for
+how the images are built.
+
+The build step uses the vcraft action, which mirrors `maturin-action`. On a runner
+it installs vcraft from PyPI and a cached V compiler; with `container:` it runs
+inside one of the images instead. Linux and macOS runners are supported; Windows
+runners are refused with a clear error.
 
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
-    vcraft-version: v0.1.0
+    vcraft-version: v0.2.0
     args: build --release
 ```
 
-`vcraft generate-ci github` writes a workflow into `.github/workflows/build.yml`
-with one cell per supported CPython from the project's `minimum-version` up (or one
-per platform for abi3, or 3.13t and 3.14t for free-threading). Every wheel is
-installed and imported in the image or interpreter it was built for before the job
-passes.
+vcraft is also a PEP 517 build backend (`pip install .` works), so other
+wheel-building tools can drive it, but only the workflow above is tested.
 
 ---
 
@@ -965,18 +986,25 @@ abi3 = "3.11"              # optional: one stable-ABI wheel for 3.11 and newer
 free-threading = false     # true: build for a free-threaded CPython (3.13t+)
 strip = false
 embed-pyc = false
+gc-free-space-divisor = 2  # Boehm heap growth: 1 favours speed, 2 memory
 
 [package]
-name = "mi-extension-nativa"
+name = "my-extension"
 version = "0.1.0"
-module = "mi_extension_nativa"
+module = "my_extension"
 description = "A Python extension written in V."
 license = "MIT"
 requires-python = ">=3.11"
+readme = "README.md"         # the PyPI project page, rendered as Markdown
+keywords = ["fast", "parsing"]
 dependencies = []
 
 [[classifier]]
-text = "Programming Language :: V"
+text = "Programming Language :: Other"
+
+[urls]
+Source = "https://github.com/me/my-extension"
+Issues = "https://github.com/me/my-extension/issues"
 ```
 
 The root keys must come before the first table: in TOML a key written after
@@ -989,6 +1017,13 @@ The root keys must come before the first table: in TOML a key written after
 | `free-threading`  | `false`   | Build for a free-threaded interpreter and declare it GIL-free   |
 | `strip`           | `false`   | Strip the extension                                             |
 | `embed-pyc`       | `false`   | Ship sourceless `.pyc` files instead of the project's `.py`     |
+| `gc-free-space-divisor` | `2` | Boehm heap growth divisor; `1` trades memory for speed       |
+
+In `[package]`, `readme` names the file PyPI shows as the project page (`.md` is
+rendered as Markdown, `.rst` as reStructuredText); `vcraft new` writes a
+`README.md` and points at it. Classifiers must be ones PyPI knows, or it rejects
+the upload: V has none of its own, so use `Programming Language :: Other`. Each
+entry of `[urls]` becomes a link in the PyPI sidebar.
 
 `vcraft build` refuses the combinations that would compile and then fail later: an
 interpreter older than 3.11, an `abi3` floor below 3.11 or above the interpreter
@@ -997,202 +1032,89 @@ stable ABI), and `free-threading` on anything older than 3.13.
 
 ---
 
-## Try it
+## Performance
 
-The fastest way to try it needs no checkout at all:
+Same thirteen functions implemented with PyO3, vcraft and zig-maturin, plus pure
+Python, measured on Python 3.13, macOS arm64. Time per call, lower is better:
 
-```console
-$ pip install vcraft
-$ vcraft --help
-```
+| workload | PyO3 | vcraft | pure Python |
+|---|---|---|---|
+| `add(1, 2)`: call overhead | 28 ns | **23 ns** | 16 ns |
+| `greet(name)`: str in, new str out | 54 ns | **34 ns** | 33 ns |
+| `fib(25)`: pure compute | 120.2 µs | **119.4 µs** | 5.19 ms |
+| `sum_floats(100k)`: list[float] in | 456.6 µs | **133.9 µs** | 778.0 µs |
+| `Counter()`: object construction | 37 ns | **34 ns** | 38 ns |
+| `c.add(1)`: method call | 28 ns | **22 ns** | 26 ns |
+| `count_primes(1e6)`: compute + native alloc | **2.01 ms** | 3.76 ms | 41.60 ms |
 
-That installs the `vcraft` command for Linux x86_64 or macOS arm64. Two things
-to know before building anything with it. First, compiling still needs a V
-compiler -- `pip` ships the tool, not the toolchain, the same way `maturin`
-needs Rust. The action and the images install or build one; locally, build V
-from source at the commit pinned in `docker/` (no V release is newer than the
-flags vcraft passes). Second, there is no sdist on PyPI on purpose: a source
-distribution of a launcher with no binary installs something that cannot run,
-so only platform wheels are published.
-
-The repository ships two working examples, both built by hand rather than by
-`vcraft`, because they predate the code generator.
-
-A CPython extension module written in V, built with `v -shared`, imported by
-CPython 3.14:
-
-```console
-$ ./scripts/build-probe.sh
-$ python3 examples/probe/test_probe.py
-...
-gate 0 passed
-```
-
-The runtime itself, exercised through a hand-written extension that uses it exactly
-as the generated glue will:
-
-```console
-$ ./scripts/build-runtime-tests.sh
-$ python3 tests/runtime/test_runtime.py
-...
-all 36 checks passed
-```
-
-And the code generator, end to end: it runs the real generator, checks the shape of
-the glue it produced, then runs the real compiler and exercises the module:
-
-```console
-$ ./scripts/build-example.sh hello hello_native
-$ python3 tests/codegen/test_codegen.py
-...
-all 47 checks passed
-```
-
-`examples/hello` is a working project with seven annotated functions covering scalars,
-strings, a sequence, a void return, error propagation and the raw escape hatch. You
-write the seven functions; the generator writes the rest.
-
-That second one covers module construction, `METH_NOARGS` and `METH_FASTCALL`,
-integers and floats and strings and bytes and lists in both directions, docstrings,
-`error` and `panic` translation, and reference counting. Read
-[`examples/probe/README.md`](examples/probe/README.md) for what the first one proves
-and [`vlib/vcraft/README.md`](vlib/vcraft/README.md) for the compiler behaviours the
-runtime uncovered, and [`vlib/vcraft_codegen/README.md`](vlib/vcraft_codegen/README.md)
-for the ones the generator did.
+The vcraft wheel is the smallest of the three and its clean release build the
+fastest. Methodology, every workload, memory use and import time are in
+[`benchmark/README.md`](benchmark/README.md) and
+[`benchmark/results.md`](benchmark/results.md).
 
 ---
 
-## Roadmap
+## Project status
 
-- [x] **Gate 0**: a V shared object that CPython imports as an extension module
-- [x] **Runtime**: `PyObj`, module construction, marshalling, argument parsing,
-      error and panic translation, covered by 36 checks
-- [x] **Code generator**: annotations, docstrings, signatures, `.pyi` stubs,
-      covered by 143 checks against a working example
-- [x] **Classes**: instances, scalar fields as read/write attributes, methods,
-      properties, `__repr__`, docstrings and `__dealloc__`
-- [x] **Class operators**: `__eq__`, `__ne__` and `__hash__`, with `NotImplemented` for
-      the ordering operators
-- [x] **Inheritance**: `@[vc_base]`, any order of declaration, chains of any depth up to
-      the runtime's published levels, and a diagnostic for each way it can be wrong
-- [x] **Cycle collection**: `@[vc_ref]` reference fields, `Py_TPFLAGS_HAVE_GC`,
-      `tp_traverse` and `tp_clear`, verified by freeing a pair that points at each other
-      in both a normal and an abi3 build
-- [x] **Errors**: `!T` translation, `raise_domain` for a specific Python exception,
-      `recover()`-based panic capture
-- [x] **Custom error types**: `@[vc_error]`, an exception chosen from `code()`, an
-      arbitrary class through `raise_custom`, and a generated raiser for the rest
-- [x] **Wheels**: DEFLATE, ZIP container, `METADATA`, `WHEEL`, `RECORD` with SHA-256,
-      tag computation and PEP 427 file names, editable installs with PEP 660, and
-      sourceless `.pyc` packaging, verified by real installs
-- [x] **CLI**: `vcraft new`, `build`, `develop`, `sdist`, `publish`, `info`, `clean`
-- [x] **Distribution**: `vcraft` itself ships as platform wheels on PyPI
-      (`pip install vcraft`), assembled by `scripts/pack-vcraft-wheel.py` with the
-      executable bit preserved, published per tag after every suite passes on both
-      platforms, with trusted publishing and no tarballs
-- [x] **abi3**: stable-ABI builds with multi-phase initialisation, verified by a real
-      `pip install`
-- [x] **PEP 517**: `pip install .` and `pip install <sdist>` both work
-- [x] **Free-threading**: checked against the interpreter rather than assumed, so a
-      `cp314t` wheel cannot be produced from a GIL build; the object-header mirror
-      follows the 32-byte free-threaded layout, the module declares itself GIL-free,
-      and both are verified by importing with the GIL disabled on 3.13t and 3.14t
-- [x] **Cross-compilation**: `--target` with canonical names and Rust-style
-      aliases, `--manylinux`/`--musllinux` policies, `--cc`/`--cflags`/`--ldflags`,
-      `--dry-run` planning, a toolchain check that fails before compiling, real
-      manylinux and musllinux wheels built and imported in their images, an exact
-      `manylinux_2_17` auditwheel match, and an abi3 wheel imported on 3.11–3.14
-- [x] **CI**: `vcraft generate-ci` emits a matrix derived from the project's ABI
-      choice, with `rroblf01/vcraft/actions/vcraft-action@v1`
-- [x] **CI images and action releases**: manylinux and musllinux images with V built
-      from source, published as multi-arch manifests and verified by building inside
-      each one; the action builds locally or in a container, released with floating
-      `v1` tags
-- [x] **Zero-copy buffers, `@[vc_gil]`, iterators**: buffer-protocol `[]u8` parameters
-      that alias instead of copying, GIL release with exact pairing on every path and
-      per-thread state, and `@[vc_iter]`/`@[vc_next]` slots
-- [ ] Apple Silicon and aarch64 verification (covered by `ci.yml` on macos-15 and
-      by the native-arm image builds; musllinux x86_64 is verified locally in
-      its image)
-- [ ] Windows support (explicitly out of scope for now: the compiler arguments
-      are quoted for a POSIX shell, the action refuses Windows runners, and no
-      Windows wheel has ever been built)
+**Alpha.** The feature set above works and is tested, but until 1.0 a minor release
+may change the annotation vocabulary, the `vcraft.toml` keys or the CLI; every
+change is listed in the [changelog](CHANGELOG.md).
 
-See [Status](#status) for what actually works today.
+What is tested on every commit:
 
----
+- CPython 3.11, 3.12, 3.13 and 3.14 on Linux x86_64, and 3.11 and 3.14 on macOS
+  arm64, with the full suite: runtime, code generator, wheel writer, packaging and
+  the CLI end to end.
+- Free-threaded CPython 3.13t and 3.14t on Linux and 3.14t on macOS, importing with
+  the GIL disabled and calling from several threads.
 
-## Status
+Known limitations:
 
-Early development. The central bet is **verified**: see
-[`examples/probe`](examples/probe) for a CPython extension module written in V,
-built with `v -shared` and imported from CPython 3.14. It exercises module
-creation, `METH_NOARGS` and `METH_FASTCALL` builtins, argument marshalling,
-error propagation and docstrings, and it checks that the dynamic symbol table
-exposes only `PyInit_probe`.
-
-```
-$ ./scripts/build-probe.sh
-$ python3 examples/probe/test_probe.py
-...
-gate 0 passed
-```
-
-Building it produced seven compiler constraints that shaped the design. They are the
-kind that produce a wrong answer rather than an error, so they are written up in
-full in [`vlib/vcraft/README.md`](vlib/vcraft/README.md) and summarised here:
-
-1. The V C backend emits no prototypes for `fn C.` declarations, so a module that
-   binds to CPython **must** `#include <Python.h>`. Without it gcc applies the
-   implicit `int` return rule, truncates the returned `PyObject *` to 32 bits,
-   and the interpreter segfaults on a module that loaded cleanly.
-2. A sibling `.c.v` file only exports its declarations to the module named by its
-   own `module` line.
-3. CPython's builtin exception types are data symbols, so each one needs a small C
-   accessor, with a header.
-4. A generic function called across modules gets no forward declaration and does
-   not compile, so the panic guard is inlined per trampoline instead of shared.
-5. A `mut` receiver method on a struct from another module generates C that
-   passes the struct by value where a pointer is expected. That rules out a reader
-   object with a cursor, and is why the argument helpers take an explicit index.
-6. A file matching `*_test.v` is compiled as a V test file and its module export is
-   silently dropped.
-7. The object header is 16 bytes with the GIL and 32 without it, so every struct
-   mirrored from a header has two shapes. The wrong one imports on a GIL
-   interpreter and segfaults on a free-threaded one with nothing pointing at the
-   mirror.
-
-One further note on running the compiler at all. A bare `v` invocation is not safe
-unattended: when a C compilation fails, V retries by bootstrapping the whole V
-compiler from source, which builds all of `vlib/v` and is easily a multi-gigabyte,
-multi-minute event. `-new-compiler` disables that retry and surfaces the real error
-instead. `scripts/vcraft-v.sh` is the single entry point for invoking V in this
-repository; it passes `-new-compiler`, bounds `VJOBS` and parallelism, and puts a
-kernel-enforced ceiling on the build. A normal build peaks around 100 MiB.
-
-The code generator, classes and the wheel writer are being written. Do not depend on
-this yet.
-
----
+- **Windows is not supported.** vcraft quotes its compiler arguments for a POSIX
+  shell, and the action refuses Windows runners.
+- **V has to be built from source** at the pinned commit until V publishes a release
+  newer than 0.5.2.
+- **aarch64 Linux** wheels and images are built on native runners but are not part
+  of the per-commit test matrix.
+- Extensions use single-phase initialisation, so a module is shared by all
+  subinterpreters.
 
 ## Requirements
 
-- A V compiler newer than the 0.5.2 release: vcraft passes flags 0.5.2 predates
-  (`-new-compiler` fails there with "Unknown argument"), so build V from source
-  at the commit pinned in `docker/` -- the images, the action and CI all do
-  exactly that, and the pins are the documented minimum
-- CPython 3.11 to 3.14, every one tested in CI on Linux and macOS; 3.13t and
-  3.14t for free-threaded builds
-- A C toolchain: gcc or clang, plus the CPython development headers (MSVC is
-  untested: vcraft quotes its compiler arguments for a POSIX shell and Windows
-  builds are explicitly unsupported for now)
-- Docker, only for manylinux wheels
+- Python 3.11 to 3.14, or 3.13t/3.14t for free-threaded builds
+- Linux (glibc or musl) or macOS
+- A V compiler built from the pinned commit (see [Quick start](#quick-start))
+- gcc or clang, and the CPython development headers
+- Docker, only to build manylinux or musllinux wheels locally
 
-On a normal Linux install the CPython headers are usually already present:
+---
 
+## Development
+
+```console
+$ git clone https://github.com/rroblf01/vcraft && cd vcraft
+$ ./scripts/build-vcraft.sh            # builds bin/vcraft
 ```
-/usr/include/python3.14/Python.h
+
+Each test suite is a standalone, standard-library-only script that builds what it
+needs:
+
+```console
+$ python3 tests/project/check_toml.py     # vcraft.toml parser
+$ python3 tests/packaging/test_pack.py    # the PyPI wheel of vcraft itself
+$ python3 tests/wheel/test_wheel.py       # wheel writer, checked with zipfile and pip
+$ python3 tests/runtime/test_runtime.py   # the CPython runtime
+$ python3 tests/codegen/test_codegen.py   # code generator, end to end
+$ python3 tests/cli/test_cli.py           # the CLI against real projects and venvs
 ```
+
+They run against whichever `python3` is first on `PATH`. Inside this repository,
+invoke V only through `scripts/vcraft-v.sh`: a bare `v` answers a failed C compile
+by bootstrapping the whole compiler, a multi-gigabyte, multi-minute detour, and the
+wrapper turns that off and bounds the build's memory.
+
+Releases are cut by pushing tags; see the release workflows in
+[`.github/workflows`](.github/workflows).
 
 ---
 
@@ -1254,6 +1176,33 @@ and is passed to the compiler with `-path`, so `VMODULES` is never touched.
 **A module name ending in `_test` is rejected.** V would treat the file as a test
 file and silently drop its module export. `vcraft new` says so instead of producing
 an empty shared object.
+
+
+### Compiler constraints
+
+Building the first extension uncovered seven V compiler behaviours that produce a
+wrong answer rather than an error. They shaped the runtime and are written up in full
+in [`vlib/vcraft/README.md`](vlib/vcraft/README.md):
+
+1. The V C backend emits no prototypes for `fn C.` declarations, so a module that
+   binds to CPython **must** `#include <Python.h>`. Without it gcc applies the
+   implicit `int` return rule, truncates the returned `PyObject *` to 32 bits,
+   and the interpreter segfaults on a module that loaded cleanly.
+2. A sibling `.c.v` file only exports its declarations to the module named by its
+   own `module` line.
+3. CPython's builtin exception types are data symbols, so each one needs a small C
+   accessor, with a header.
+4. A generic function called across modules gets no forward declaration and does
+   not compile, so the panic guard is inlined per trampoline instead of shared.
+5. A `mut` receiver method on a struct from another module generates C that
+   passes the struct by value where a pointer is expected. That rules out a reader
+   object with a cursor, and is why the argument helpers take an explicit index.
+6. A file matching `*_test.v` is compiled as a V test file and its module export is
+   silently dropped.
+7. The object header is 16 bytes with the GIL and 32 without it, so every struct
+   mirrored from a header has two shapes. The wrong one imports on a GIL
+   interpreter and segfaults on a free-threaded one with nothing pointing at the
+   mirror.
 
 ---
 

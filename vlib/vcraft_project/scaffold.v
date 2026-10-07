@@ -140,19 +140,16 @@ fn example_source(p Project) string {
 
 // readme is the README a new project starts with.
 fn readme(p Project) string {
+	// This file is the project's PyPI page as well as its repository front page, so it
+	// opens with what a user needs, installing and using the package, and leaves the
+	// build instructions for the end.
 	mut out := '# ${p.name}\n\n'
 	out += '${p.description}\n\n'
-	out += 'A Python extension written in V and built with vcraft.\n\n'
-	out += '## Build\n\n'
+	out += '## Installation\n\n'
 	out += '```console\n'
-	out += '$ vcraft build\n'
-	out += '$ pip install dist/*.whl\n'
+	out += '$ pip install ${p.name}\n'
 	out += '```\n\n'
-	out += '## Test\n\n'
-	out += '```console\n'
-	out += '$ vcraft develop\n'
-	out += '```\n\n'
-	out += '## Use\n\n'
+	out += '## Usage\n\n'
 	out += '```python\n'
 	out += '>>> import ${p.module} as m\n'
 	out += ">>> m.greet('world')\n"
@@ -162,6 +159,12 @@ fn readme(p Project) string {
 	out += '>>> c = m.Counter()\n'
 	out += '>>> c.increment()\n'
 	out += '1\n'
+	out += '```\n\n'
+	out += '## Development\n\n'
+	out += 'Written in [V](https://vlang.io) and built with [vcraft](https://github.com/rroblf01/vcraft).\n\n'
+	out += '```console\n'
+	out += '$ vcraft develop          # build and install into the active virtualenv\n'
+	out += '$ vcraft build --release  # write a wheel into dist/\n'
 	out += '```\n'
 	return out
 }

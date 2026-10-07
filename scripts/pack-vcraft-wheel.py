@@ -13,7 +13,8 @@ Layout inside the wheel::
     vcraft_tool/_launch.py       finds bin/vcraft next to itself and execs it
     vcraft_tool/bin/vcraft      the compiled binary, executable bit preserved
     vcraft_tool/vlib/...        the V modules `-path` points at when building
-    vcraft-0.1.0.dist-info/...
+    vcraft-0.1.0.dist-info/...  METADATA with the README as its description,
+                                and licenses/LICENSE
 
 Deliberately no sdist: a source distribution of a launcher with no binary
 installs something that cannot run. Wheels only.
@@ -29,9 +30,79 @@ import argparse
 import base64
 import hashlib
 import os
+import re
 import sys
 import zipfile
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+REPOSITORY = "https://github.com/rroblf01/vcraft"
+
+SUMMARY = ("Native Python extensions written in V: CPython bindings, "
+           "a code generator and a wheel builder in one tool")
+
+KEYWORDS = "v,vlang,python-extension,cpython,bindings,ffi,wheel,build-backend,pyo3,maturin"
+
+CLASSIFIERS = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Other",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: System :: Software Distribution",
+]
+
+# A Markdown link or image whose target is a path in the repository rather than a
+# URL or an in-page anchor.
+_RELATIVE_LINK = re.compile(r"(\]\()(?!https?://|mailto:|#)([^)\s]+)(\))")
+
+
+def pypi_readme(text: str, version: str) -> str:
+    """The README as PyPI should render it.
+
+    PyPI shows the description on its own page, where a link such as
+    `vlib/vcraft/README.md` resolves against pypi.org and 404s. Each one is pointed
+    at the file on GitHub, at the tag this version was released from, so the page
+    keeps describing the release it belongs to after `main` moves on.
+    """
+    base = f"{REPOSITORY}/blob/vcraft/v{version}/"
+    return _RELATIVE_LINK.sub(lambda m: m.group(1) + base + m.group(2).removeprefix("./")
+                              + m.group(3), text)
+
+
+def metadata(version: str, readme: str) -> str:
+    """Core metadata 2.4: License-Expression and License-File need it."""
+    head = [
+        "Metadata-Version: 2.4",
+        "Name: vcraft",
+        f"Version: {version}",
+        f"Summary: {SUMMARY}",
+        f"Keywords: {KEYWORDS}",
+        "Author: Ricardo Robles",
+        "License-Expression: MIT",
+        "License-File: LICENSE",
+        f"Project-URL: Homepage, {REPOSITORY}",
+        f"Project-URL: Source, {REPOSITORY}",
+        f"Project-URL: Documentation, {REPOSITORY}#readme",
+        f"Project-URL: Changelog, {REPOSITORY}/blob/main/CHANGELOG.md",
+        f"Project-URL: Issues, {REPOSITORY}/issues",
+        *(f"Classifier: {c}" for c in CLASSIFIERS),
+        "Requires-Python: >=3.11",
+        "Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM",
+    ]
+    # The description is the message body, after one blank line, as in an email.
+    return "\n".join(head) + "\n\n" + pypi_readme(readme, version)
 
 INIT_PY = '''"""The vcraft pip package: a launcher for the bundled binary."""
 __version__ = "{version}"
@@ -98,7 +169,9 @@ def _add(archive: zipfile.ZipFile, name: str, data: bytes,
     archive.writestr(info, data)
 
 
-def build_wheel(version: str, platform: str, binary: Path, vlib: Path) -> bytes:
+def build_wheel(version: str, platform: str, binary: Path, vlib: Path,
+                readme: Path = ROOT / "README.md",
+                license_file: Path = ROOT / "LICENSE") -> bytes:
     import io
 
     dist_info = f"vcraft-{version}.dist-info"
@@ -119,14 +192,9 @@ def build_wheel(version: str, platform: str, binary: Path, vlib: Path) -> bytes:
                 continue
             put(f"vcraft_tool/vlib/{path.relative_to(vlib).as_posix()}",
                 path.read_bytes())
-        metadata = (
-            "Metadata-Version: 2.1\n"
-            "Name: vcraft\n"
-            f"Version: {version}\n"
-            "Summary: Build Python extension modules written in V\n"
-            "Requires-Python: >=3.11\n"
-        )
-        put(f"{dist_info}/METADATA", metadata.encode())
+        put(f"{dist_info}/METADATA",
+            metadata(version, readme.read_text(encoding="utf-8")).encode())
+        put(f"{dist_info}/licenses/LICENSE", license_file.read_bytes())
         wheel_file = (
             "Wheel-Version: 1.0\n"
             "Generator: vcraft pack script\n"
