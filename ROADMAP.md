@@ -19,8 +19,10 @@ Each item lands on `main` with its tests and a changelog entry under
       class fields were written with the wrong width; both fixed.
 - [x] **Type table tests.** Every row of the type table is built and round-tripped in
       the CLI suite, with its range checks.
-- [ ] **README example tests.** Every code example in the README compiled and run in
-      CI.
+- [x] **README example tests.** `tests/docs/test_readme.py` builds every V example
+      in the README in a fresh project; `<!-- readme-test: continue -->` joins a block
+      to the one before, `skip` marks an illustration. One example (`parse`) did not
+      compile and was completed.
 - [x] **Leak checks in CI.** `tests/memory/test_leaks.py` runs fifteen scenarios
       (strings, lists, bytes, views, errors, owned and borrowed objects, instances,
       cycles, iteration, short-lived threads) twice in a fresh process and fails if

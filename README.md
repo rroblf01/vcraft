@@ -316,6 +316,7 @@ An `@[vc_eq]` and an `@[vc_hash]` function fill the type's comparison and hash s
 They are free functions rather than methods, because V allows exactly one receiver per
 method and a comparison needs both operands:
 
+<!-- readme-test: continue -->
 ```v
 @[vc_eq]
 pub fn counter_eq(a voidptr, b voidptr) bool {
@@ -366,6 +367,7 @@ Docstrings reach `__doc__` on the type, its methods, its properties and its fiel
 matter: a subclass may be written before its base, or in a file that sorts
 earlier, and the generator orders the classes itself.
 
+<!-- readme-test: continue -->
 ```v
 @[vc_class]
 @[vc_base(Counter)]
@@ -526,10 +528,10 @@ including one the caller defined in Python:
 ```v
 @[vc_fn]
 pub fn parse(text string, missing voidptr) !int {
-	if !is_digits(text) {
+	if text.len == 0 || !text.bytes().all(it.is_digit()) {
 		return vcraft.raise_custom(missing, 'not a number')
 	}
-	// ...
+	return text.int()
 }
 ```
 
@@ -713,6 +715,7 @@ A V `panic` prints a message and calls `exit(1)`, which inside CPython would tak
 the whole interpreter down with it. V 0.5 has Go-style recovery, so every generated
 wrapper installs a frame:
 
+<!-- readme-test: skip -->
 ```v
 fn _vcraft_generated__wrap_first_char(text string) string {
 	defer {
@@ -1106,6 +1109,7 @@ $ python3 tests/runtime/test_runtime.py   # the CPython runtime
 $ python3 tests/codegen/test_codegen.py   # code generator, end to end
 $ python3 tests/memory/test_leaks.py      # no leaked objects, references or memory
 $ python3 tests/fuzz/test_fuzz.py         # hostile arguments: no crash, the right exception
+$ python3 tests/docs/test_readme.py       # every V example in this README builds
 $ scripts/run-sanitized.sh python3 tests/fuzz/test_fuzz.py   # the same under ASan and UBSan (Linux)
 $ python3 tests/cli/test_cli.py           # the CLI against real projects and venvs
 ```

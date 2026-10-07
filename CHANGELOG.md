@@ -38,6 +38,8 @@ Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- **README examples are built in CI** (`tests/docs/test_readme.py`). The
+  `raise_custom` example called a helper the README never defined; it is complete now.
 - **Sanitizer runs in CI**: the runtime, codegen and fuzz suites also run against
   extensions built with AddressSanitizer and UndefinedBehaviorSanitizer
   (`scripts/run-sanitized.sh`).

@@ -1356,6 +1356,7 @@ print("ok" if not bad else bad)
                                      "tests/codegen/test_codegen.py",
                                      "tests/memory/test_leaks.py",
                                      "tests/fuzz/test_fuzz.py",
+                                     "tests/docs/test_readme.py",
                                      "tests/cli/test_cli.py"]),
                     "a suite CI never runs is a suite that rots")
             ci_text = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
