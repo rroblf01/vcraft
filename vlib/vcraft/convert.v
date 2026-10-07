@@ -203,6 +203,38 @@ pub fn from_py_string(obj PyObj, name string) !string {
 	return from_utf8(ptr, size)
 }
 
+// from_py_str_borrowed reads a Python str without copying it: the V string
+// aliases the str object's UTF-8 buffer for exactly the call.
+//
+// Same checks and errors as `from_py_string`; only the copy is skipped. The
+// argument keeps the str alive for the call's duration, so the alias must not
+// outlive the call -- the same documented contract as `buffer_bytes`, and for
+// the same reason: V's collector cannot see CPython's memory. Safe against
+// mutation rather than lifetime only because `str` is immutable: nothing can
+// change the aliased bytes under the reader, which a `bytearray` alias cannot
+// promise.
+pub fn from_py_str_borrowed(obj PyObj, name string) !string {
+	if !obj.type_is(str_type()) {
+		set_error(pyexc_obj(.type_error), '${name}: expected str, got ${obj.type_name()}')
+		return error('${name}: expected str')
+	}
+	// Inlined rather than through `utf8_of`: a multi-return value travels in an
+	// 8-byte result struct V allocates per call, which would put one GC block per
+	// item back into exactly the loop this function exists to keep allocation-free.
+	unsafe {
+		mut size := int(0)
+		ptr := C.PyUnicode_AsUTF8AndSize(obj.ptr, voidptr(&size))
+		if ptr == nil {
+			// CPython set the exception (usually MemoryError); it stays set.
+			return error('${name}: cannot read str')
+		}
+		mut out := string{}
+		out.str = &u8(ptr)
+		out.len = size
+		return out
+	}
+}
+
 // from_py_bytes reads a Python bytes object into a V string holding the same
 // bytes. The result aliases CPython's buffer, so a caller that needs it to
 // outlive the source object must copy it.

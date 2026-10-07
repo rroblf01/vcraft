@@ -97,6 +97,15 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   `bytes` aliases the object directly instead of allocating, acquiring and
   releasing a buffer view. Anything else bytes-like still goes through the
   view, which pins the exporter for the call.
+- **Borrowed `str` sequences**: a `[]string` argument aliases each item's UTF-8
+  buffer instead of copying it, so a 10k-item list costs no per-item
+  allocation. The slice must not outlive the call, the same documented contract
+  as `[]u8`; safe against mutation because `str` is immutable. Scalar `str`
+  parameters still copy.
+- **No multi-return on the `bytes` fast path**: the exact-`bytes` branch of
+  `bytes_arg` reads the buffer and length with one C call into locals instead
+  of through `bytes_of`, whose 8-byte result struct V allocated per call. Small
+  `bytes` calls match PyO3 call-for-call.
 - **Smaller per-call state**: the `state_at` chain is only published when the
   project calls `vcraft.state_at`.
 - **Faster imports on macOS**: vcraft starts Boehm before V with only the
