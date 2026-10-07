@@ -20,7 +20,9 @@ $ ./run.sh --quick    # fewer repeats, to check the harness
 It needs `uv`, `cargo`, `zig` 0.16 and a `v` built at the commit pinned in `docker/` on
 `PATH`. It installs nothing outside `benchmark/.venv`. `BENCH_PYTHON` picks the interpreter
 (3.13 by default, the newest all three support). The full result is written to
-[`results.md`](results.md) and [`results.json`](results.json).
+[`results.md`](results.md) and [`results.json`](results.json). Those hold the macOS run;
+the Linux run is kept beside them as [`results-linux.md`](results-linux.md) and
+[`results-linux.json`](results-linux.json).
 
 ## What is measured
 
@@ -398,3 +400,50 @@ sequence, a method with an argument, and an attribute read.
   through `METH_VARARGS` there, tuple included).
 - `c.value`: vcraft and zig tie at 15 ns, PyO3 at 21.
 - Correctness: all four pass the five new checks everywhere.
+
+## Linux run
+
+Linux x86_64 (AMD Ryzen 5 3600, glibc 2.44), CPython 3.13.13, vcraft 0.2.0. The first
+run off macOS; full figures in [`results-linux.md`](results-linux.md).
+
+| workload | PyO3 | vcraft | zig-maturin | Python |
+|---|---|---|---|---|
+| `add` | 73 ns | **65 ns** | 87 ns | 37 ns |
+| `fib(25)` | 202.6 µs | **107.2 µs** | 323.2 µs | 9.41 ms |
+| `count_primes(1e6)` | 1.95 ms | 2.37 ms | **1.89 ms** | 96.80 ms |
+| `sum_floats(100k)` | 889.0 µs | **231.4 µs** | 1.13 ms | 1.53 ms |
+| `greet` | 138 ns | **129 ns** | 224 ns | 75 ns |
+| `checksum(100kB)` | **13.6 µs** | 41.9 µs | 39.4 µs | 2.17 ms |
+| `join_strings(10k)` | 536.3 µs | 304.7 µs | **292.8 µs** | 72.2 µs |
+| `c.add(1)` | 65 ns | **62 ns** | 87 ns | 63 ns |
+
+The shape holds from macOS: vcraft leads on call overhead, recursion and
+`list[float]` conversion, PyO3 on the byte loop, and pure Python still wins
+`join_strings` because `str.join` never leaves C. Import costs vcraft 684 KiB of RSS
+here, against 648 KiB for PyO3, rather than the 3.7× gap measured on macOS.
+
+## Threads: what this benchmark did not measure
+
+Every workload above runs on the thread that imported the module. Run on any other
+thread, vcraft 0.2.0 crashed: the V collector only knew the importing thread, and the
+first collection triggered from another one aborted the process with
+`Collecting from unknown thread`. One worker thread was enough; so was a
+`ThreadPoolExecutor`, a threaded web server, or `asyncio.to_thread`. With the GIL
+released (`@[vc_gil]`) or on free-threaded CPython it was worse in principle: the
+collector neither stopped those threads nor scanned their stacks.
+
+vcraft 0.2.1 registers each thread with the collector the first time it enters the
+extension and unregisters it when the thread exits. Measured on the same Linux machine
+with `bench_vcraft_native`, 200,000 `greet`/`join_strings`/`make_range` calls per thread:
+
+| threads | 0.2.0 | 0.2.1 |
+|---|---|---|
+| 1 worker | aborts | 0.2 s |
+| 8 | aborts | 1.9 s |
+| 16 | aborts | 3.7 s |
+| `ThreadPoolExecutor(4)`, 500k `greet` | aborts | completes |
+
+On free-threaded 3.14t with the GIL disabled, eight threads allocating in a
+`@[vc_gil]` function in parallel and a thousand short-lived threads all complete with
+correct results. The CLI suite and the free-threaded CI job now cover these cases.
+
