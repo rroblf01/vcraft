@@ -14,6 +14,7 @@ import base64
 import hashlib
 import importlib.util
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -120,6 +121,33 @@ def main() -> int:
                     meta[:120])
             t.check("metadata names the oldest supported Python",
                     "Requires-Python: >=3.11" in meta, meta[:200])
+            # PyPI renders the description from the METADATA body; without a
+            # content type it shows the Markdown source as plain text, and with
+            # no body at all the project page is empty.
+            head, _, body = meta.partition("\n\n")
+            t.check("the README is the description, as Markdown",
+                    "Description-Content-Type: text/markdown" in head
+                    and body.startswith("# vcraft"), head[-200:])
+            t.check("the description has no repository-relative links",
+                    not re.search(r"\]\((?!https?://|mailto:|#)", body),
+                    str(re.findall(r"\]\((?!https?://|mailto:|#)[^)]*\)", body)[:3]))
+            t.check("the licence is declared and shipped",
+                    "License-Expression: MIT" in head
+                    and "vcraft-0.1.0.dist-info/licenses/LICENSE" in names, head[:400])
+            t.check("the project links to its repository and changelog",
+                    "Project-URL: Source, https://github.com/" in head
+                    and "Project-URL: Changelog," in head, head[:600])
+            # PyPI rejects the whole upload on one unknown classifier, so they are
+            # checked against the canonical list when it is installed.
+            try:
+                from trove_classifiers import classifiers as known
+            except ImportError:
+                print("  skip no trove-classifiers to validate against")
+            else:
+                listed = [line.split(": ", 1)[1] for line in head.splitlines()
+                          if line.startswith("Classifier: ")]
+                unknown = [c for c in listed if c not in known]
+                t.check("every classifier is one PyPI accepts", not unknown, str(unknown))
             tag = z.read("vcraft-0.1.0.dist-info/WHEEL").decode()
             t.check("the wheel tag names the platform",
                     f"Tag: py3-none-{PLATFORM}" in tag, tag)
