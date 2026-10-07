@@ -92,6 +92,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-15]
         python: ["3.11", "3.12", "3.13", "3.14"]
+        # macOS runs the oldest and newest supported CPython only. Hosted macOS
+        # runners are scarce, and with every version the cells queued for minutes
+        # before starting; what breaks on macOS so far has been the platform
+        # (linking, deployment target, compiler choice), not one Python version.
+        # Linux keeps every version.
+        exclude:
+          - os: macos-15
+            python: "3.12"
+          - os: macos-15
+            python: "3.13"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -147,6 +157,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-15]
         python: ["3.11", "3.12", "3.13", "3.14"]
+        # macOS runs the oldest and newest supported CPython only. Hosted macOS
+        # runners are scarce, and with every version the cells queued for minutes
+        # before starting; what breaks on macOS so far has been the platform
+        # (linking, deployment target, compiler choice), not one Python version.
+        # Linux keeps every version.
+        exclude:
+          - os: macos-15
+            python: "3.12"
+          - os: macos-15
+            python: "3.13"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -191,6 +211,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-15]
         python: ["3.13t", "3.14t"]
+        # One free-threaded cell on macOS, for the same reason as above.
+        exclude:
+          - os: macos-15
+            python: "3.13t"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

@@ -1062,10 +1062,11 @@ change is listed in the [changelog](CHANGELOG.md).
 
 What is tested on every commit:
 
-- CPython 3.11, 3.12, 3.13 and 3.14 on Linux x86_64 and macOS arm64, with the full
-  suite: runtime, code generator, wheel writer, packaging and the CLI end to end.
-- Free-threaded CPython 3.13t and 3.14t, importing with the GIL disabled and calling
-  from several threads.
+- CPython 3.11, 3.12, 3.13 and 3.14 on Linux x86_64, and 3.11 and 3.14 on macOS
+  arm64, with the full suite: runtime, code generator, wheel writer, packaging and
+  the CLI end to end.
+- Free-threaded CPython 3.13t and 3.14t on Linux and 3.14t on macOS, importing with
+  the GIL disabled and calling from several threads.
 
 Known limitations:
 
