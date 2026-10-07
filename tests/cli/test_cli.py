@@ -1122,13 +1122,16 @@ pub fn (mut n Node) link(other voidptr) {
                         t.check(f"{workflow_file} parses", False, str(exc))
             ci = yaml.safe_load(
                 (ROOT / ".github" / "workflows" / "ci.yml").read_text())
-            matrix = ci["jobs"]["tests"]["strategy"]["matrix"]
-            # Either an `include:` list of cells or a plain list of runners;
-            # both spellings mean the same thing and the check accepts both so
-            # the workflow stays editable.
-            runners = [cell.get("os", "") for cell in matrix.get("include", [])
-                       if isinstance(cell, dict)]
-            runners += [os for os in matrix.get("os", []) if isinstance(os, str)]
+            # Every job's matrix, whatever the jobs are called: the suites can be
+            # split across jobs. Either an `include:` list of cells or a plain list
+            # of runners; both spellings mean the same thing and the check accepts
+            # both so the workflow stays editable.
+            runners = []
+            for job in ci["jobs"].values():
+                matrix = job.get("strategy", {}).get("matrix", {})
+                runners += [cell.get("os", "") for cell in matrix.get("include", [])
+                            if isinstance(cell, dict)]
+                runners += [os for os in matrix.get("os", []) if isinstance(os, str)]
             t.check("CI runs where the developers cannot",
                     any(r.startswith("macos-") for r in runners), str(runners))
             t.check("CI runs every suite",

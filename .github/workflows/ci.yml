@@ -155,6 +155,12 @@ jobs:
         id: v-ready
         run: echo "/tmp/v-src" >> "$GITHUB_PATH"
 
+      # The CLI suite checks this repository's workflows and the action with
+      # PyYAML, and skips those checks without it: that is how a renamed job once
+      # broke them with nothing in CI noticing.
+      - name: install PyYAML for the workflow checks
+        run: python3 -m pip install -q pyyaml
+
       - name: "suite: cli"
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/cli/test_cli.py
