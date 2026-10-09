@@ -1007,7 +1007,7 @@ runners are refused with a clear error.
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
-    vcraft-version: v0.2.0
+    vcraft-version: v1.0.0
     args: build --release
 ```
 
@@ -1098,9 +1098,9 @@ fastest. Methodology, every workload, memory use and import time are in
 
 ## Project status
 
-**Alpha.** The feature set above works and is tested, but until 1.0 a minor release
-may change the annotation vocabulary, the `vcraft.toml` keys or the CLI; every
-change is listed in the [changelog](CHANGELOG.md).
+**Stable since 1.0.** The annotation vocabulary, the `vcraft.toml` keys and the CLI
+change only with a deprecation period (see [Stability](#stability)); every change is
+listed in the [changelog](CHANGELOG.md).
 
 What is tested on every commit:
 
