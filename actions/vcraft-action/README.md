@@ -12,7 +12,7 @@ container builds, Docker on the runner.
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
-    vcraft-version: v0.2.0
+    vcraft-version: v1.0.0
     args: build --release
 ```
 
@@ -24,7 +24,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/rroblf01/vcraft-manylinux:0.2.0
+      image: ghcr.io/rroblf01/vcraft-manylinux:1.0.0
     steps:
       - uses: actions/checkout@v5
       - run: vcraft build --target linux-x86_64-gnu --manylinux 2_28
@@ -34,7 +34,7 @@ jobs:
 
 | Input               | Default           | Meaning                                 |
 | ------------------- | ----------------- | --------------------------------------- |
-| `vcraft-version`    | `v0.2.0`          | The vcraft release to install from PyPI |
+| `vcraft-version`    | `v1.0.0`          | The vcraft release to install from PyPI |
 | `args`              | `build --release` | The vcraft command to run               |
 | `container`         | `''`              | An image to build inside instead        |
 | `working-directory` | `.`               | The project directory to run vcraft in  |
