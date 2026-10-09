@@ -122,7 +122,14 @@ fn install_into(dir string, jobs int) ! {
 	build := 'make -C ${q} local=1 -j${jobs} VEXE=./v'
 	println('+ ${build}')
 	if os.system(build) != 0 {
-		return error('`${build}` failed; nothing was installed')
+		// The Makefile's last step compiles and runs a script for V's own CI after the
+		// compiler is built, and on musl that step fails to link at the pinned commit
+		// (the cached `builtin` object exports `backtrace`, which calls a function that
+		// is static in another object). A compiler that reports the pin is complete.
+		if !v_matches_pin(dir + '/v') {
+			return error('`${build}` failed; nothing was installed')
+		}
+		eprintln('warning: `${build}` failed after building V; the compiler itself works')
 	}
 	os.rmdir_all(dir + '/vc') or {}
 	if !v_matches_pin(dir + '/v') {
