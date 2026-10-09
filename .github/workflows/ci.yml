@@ -250,9 +250,7 @@ jobs:
       contents: read
       packages: read
     env:
-      # Still the 0.2.0 image, built with the previous V pin; moves to the 1.0 image
-      # once the images are re-released.
-      MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:0.2.0
+      MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:1.0.0
     steps:
       - uses: actions/checkout@v5
 
