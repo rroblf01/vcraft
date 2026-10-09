@@ -44,7 +44,7 @@ SUMMARY = ("Native Python extensions written in V: CPython bindings, "
 KEYWORDS = "v,vlang,python-extension,cpython,bindings,ffi,wheel,build-backend,pyo3,maturin"
 
 CLASSIFIERS = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Operating System :: MacOS",
