@@ -26,6 +26,13 @@ the README.
 
 ### Added
 
+- **Keyword arguments and defaults.** Every parameter can be passed by name, in any
+  order; a `?T` parameter may be left out and arrives as `none`; and
+  `@[vc_defaults: 'step=1, label="item"']` gives other bool, integer, float and string
+  parameters defaults. Errors match Python's (missing, repeated, unknown and surplus
+  arguments), signatures and stubs show the defaults, and a fully positional call
+  costs what it did before. The README used to say keywords were supported; now they
+  are.
 - **Optional, dict, tuple and fixed-array conversions.** `?T` of a scalar or string
   maps to `T | None` both ways; `map[string]T` to a `dict` with `str` keys; a
   multi-value result `(A, B)` to a `tuple`; and `[N]T` takes any sequence of exactly

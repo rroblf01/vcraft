@@ -244,7 +244,7 @@ fn emit_class_methods(c Class) string {
 }
 
 fn method_flags(m Func) string {
-	return if m.params.len == 0 { 'vcraft.meth_noargs' } else { 'vcraft.meth_fastcall' }
+	return if m.params.len == 0 { 'vcraft.meth_noargs' } else { 'vcraft.meth_fastcall_keywords' }
 }
 
 // emit_class_new renders `tp_new`.

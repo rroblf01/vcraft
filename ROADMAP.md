@@ -18,8 +18,8 @@ checked off here when it does.
 - [x] **API review and freeze.** `@[vc_gil]` became `@[vc_nogil]`, `@[vc_methods]`
       became `@[vc_method]`, build settings moved into `[build]`, classifiers became
       `classifiers = [...]`; the old forms warn until 2.0. Policy: README, *Stability*.
-- [ ] **Keyword arguments and defaults** for every signature: they decide how every
-      function is called from Python, so they are fixed before the promise is.
+- [x] **Keyword arguments and defaults** for every function and method: any
+      parameter by name, `?T` optional, `@[vc_defaults]` for the rest.
 - [x] **`?T`, `map[string]T`, multi-value results and `[N]T`** of scalars and
       strings, as parameters and results (a tuple only as a result).
 - [ ] **Migration guide** from 0.2: the classifier, regenerating the CI workflow, and

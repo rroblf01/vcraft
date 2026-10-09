@@ -36,6 +36,8 @@ RSS_GROWTH_LIMIT = 4 * 1024 * 1024   # bytes of peak RSS
 SCENARIOS = {
     "str in, str out": ("", "m.greet('world')", 100_000),
     "str built in V": ("", "m.repeat('ab', 500)", 20_000),
+    # Keyword calls go through the binding into per-parameter slots.
+    "keyword call": ("", "m.repeat(text='ab', n=50)", 50_000),
     "list of str out": ("", "m.words('alpha beta gamma delta')", 50_000),
     "list of int out": ("", "m.count_up(1000)", 5_000),
     "new list of float in": ("", "m.mean([i * 0.5 for i in range(1000)])", 5_000),

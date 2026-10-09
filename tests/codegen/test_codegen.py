@@ -219,7 +219,7 @@ def main() -> int:
     # RuntimeError, so `except ZeroDivisionError` around a call into V keeps working.
     t.raises("V error from a float function", ZeroDivisionError, "division by zero",
              lambda: h.divide(1.0, 0.0))
-    t.raises("too few arguments", TypeError, "takes 2 positional",
+    t.raises("too few arguments", TypeError, "missing required argument: 'b'",
              lambda: h.add(1))
     t.raises("too many arguments", TypeError, "takes at most", lambda: h.add(1, 2, 3))
     t.raises("wrong argument type", TypeError, "expected int", lambda: h.add("x", 1))
@@ -247,7 +247,7 @@ def main() -> int:
              "name must not be empty", lambda: h.greet(""))
     t.raises("argument type error", TypeError, "expected str",
              lambda: h.greet(123))
-    t.raises("arity error", TypeError, "positional argument",
+    t.raises("arity error names the missing parameter", TypeError, "add() missing",
              lambda: h.add(1))
 
     print("panics")

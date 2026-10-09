@@ -100,6 +100,7 @@ to publish to PyPI. See [Continuous integration](#continuous-integration).
 - [How it works](#how-it-works)
 - [The annotation vocabulary](#the-annotation-vocabulary)
 - [Type marshalling](#type-marshalling)
+- [Keyword arguments and defaults](#keyword-arguments-and-defaults)
 - [Classes and properties](#classes-and-properties)
 - [Errors and panics](#errors-and-panics)
 - [The command line](#the-command-line)
@@ -201,6 +202,7 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_ref]`     | struct fields   | Exposes the field as a strong reference to another instance  |
 | `@[vc_error]`   | `pub struct`    | Makes the struct usable as the error of a `!T` function      |
 | `@[vc_static]`  | methods         | Registers the method as a `staticmethod`                    |
+| `@[vc_defaults]`| `pub fn`, methods | Default values: `@[vc_defaults: 'step=1, name="x"']`     |
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
 | `@[vc_nogil]`     | `pub fn`        | Runs the call with the GIL released                         |
 | `@[vc_iter]`    | methods         | Makes the instance its own iterator (`__iter__`)            |
@@ -250,6 +252,38 @@ with its class, through `new_<class>` when one is declared.
 
 Anything not in this table is a compile-time diagnostic pointing at the exact
 file, line and column, not a runtime surprise.
+
+---
+
+## Keyword arguments and defaults
+
+Every parameter can be passed by position or by name, as in a Python function. A `?T`
+parameter may be left out and arrives as `none`; any other parameter gets a default
+from `@[vc_defaults]`, since V has no default arguments of its own:
+
+```v
+// Formats a count, with an optional step and label.
+@[vc_fn]
+@[vc_defaults: 'step=1, label="item"']
+pub fn describe(count int, step int, label string, unit ?string) string {
+	suffix := unit or { '' }
+	return '${label}: ${count * step}${suffix}'
+}
+```
+
+```python
+>>> m.describe(3)
+'item: 3'
+>>> m.describe(3, label="box", unit="kg")
+'box: 3kg'
+>>> m.describe()
+TypeError: describe() missing required argument: 'count'
+```
+
+Defaults are literals of the parameter's type (a number, `true`/`false`, or a quoted
+string), for bool, integer, float and string parameters; anything else is a
+diagnostic. A call that passes every parameter by position costs what it did before
+keywords existed: one comparison.
 
 ---
 
@@ -1163,8 +1197,10 @@ prototypes for `fn C.` declarations, so any module that binds to CPython must
 
 **`METH_FASTCALL` is the default calling convention.** It is the cheapest way
 CPython can pass positional arguments, and it lets the generated wrapper read the
-arguments as a borrowed pointer array. Keyword arguments fall back to
-`METH_FASTCALL | METH_KEYWORDS`.
+arguments as a borrowed pointer array. Functions with parameters are registered
+as `METH_FASTCALL | METH_KEYWORDS`: a call that passes every parameter by position uses
+the array as it is, and only a call with keywords or left-out parameters is bound into
+per-parameter slots first.
 
 **Annotations come from the source text.** V's parse tree does not keep
 declaration attributes; they live in the type checker. V's own `v.astquery`

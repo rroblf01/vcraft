@@ -42,6 +42,10 @@ pub const attr_error = 'vc_error'
 // where `@[vc_field]` is a boolean.
 pub const attr_ref = 'vc_ref'
 
+// attr_defaults gives parameters default values: `@[vc_defaults: 'step=1, name="x"']`.
+// V has no default arguments of its own, so they are declared on the function.
+pub const attr_defaults = 'vc_defaults'
+
 pub const attr_eq = 'vc_eq'
 
 // attr_iter marks a method as the class's `__iter__`: the instance is its own iterator,
@@ -71,6 +75,7 @@ pub fn canonical_attr(name string) string {
 
 pub const known_attrs = [
 	attr_fn,
+	attr_defaults,
 	attr_raw,
 	attr_eq,
 	attr_hash,
@@ -94,6 +99,16 @@ pub mut:
 	// v_type is the type as written, which for a parameter is never a result
 	// type and so needs no splitting.
 	v_type string
+	// default is the value from `@[vc_defaults]` as written there, e.g. `1` or `"x"`,
+	// or empty when the parameter has none. Validated against the type before any
+	// glue is written.
+	default string
+}
+
+// optional reports whether a caller may leave the parameter out: it has a default, or
+// it is `?T`, which defaults to None.
+pub fn (p Param) optional() bool {
+	return p.default.len > 0 || p.v_type.trim_space().starts_with('?')
 }
 
 // Func is one function the generator will export. It is filled in piecewise as the
@@ -117,6 +132,9 @@ pub mut:
 	raw bool
 	// nogil marks a pure V function the wrapper may call with the GIL released.
 	nogil bool
+	// unknown_defaults are names in `@[vc_defaults]` that are not parameters, kept for
+	// a diagnostic once the declaration's position is known.
+	unknown_defaults []string
 	// property marks a method exposed as a Python property rather than a call.
 	property bool
 	// static marks a method that takes no receiver.

@@ -144,6 +144,19 @@ fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 			flat.empty_node
 		}, is_method)
 	}
+	defaults := parse_defaults(block.args[attr_defaults] or { '' })
+	for name, value in defaults {
+		mut found := false
+		for mut param in f.params {
+			if param.name == name {
+				param.default = value
+				found = true
+			}
+		}
+		if !found {
+			f.unknown_defaults << name
+		}
+	}
 	f.v_ret, f.returns_result = split_result(decl.type_name)
 	f.trampoline = if is_method {
 		'vcraft_generated__method_${decl.receiver.to_lower()}_${decl.name}'
@@ -1036,8 +1049,87 @@ fn report(mut p Project, path string, decl astquery.Declaration, message string)
 	}
 }
 
+// parse_defaults splits `step=1, name="a, b"` into its pairs. Commas and `=` inside a
+// quoted value belong to the value.
+pub fn parse_defaults(text string) map[string]string {
+	mut out := map[string]string{}
+	mut parts := []string{}
+	mut current := []u8{}
+	mut quote := u8(0)
+	for ch in text.bytes() {
+		if quote != 0 {
+			current << ch
+			if ch == quote {
+				quote = 0
+			}
+		} else if ch == `"` || ch == `'` {
+			quote = ch
+			current << ch
+		} else if ch == `,` {
+			parts << current.bytestr()
+			current = []u8{}
+		} else {
+			current << ch
+		}
+	}
+	parts << current.bytestr()
+	for part in parts {
+		eq := part.index('=') or { continue }
+		name := part[..eq].trim_space()
+		if name.len > 0 {
+			out[name] = part[eq + 1..].trim_space()
+		}
+	}
+	return out
+}
+
+// default_fits reports whether a default written in `@[vc_defaults]` is a literal of
+// the parameter's kind: a quoted string for a str, true or false for a bool, a whole
+// number for an integer (not negative for an unsigned one), and a number for a float.
+pub fn default_fits(strategy Strategy, value string) bool {
+	v := value.trim_space()
+	if v.len == 0 {
+		return false
+	}
+	is_int := (v[0] == `-` && v.len > 1 && v[1..].bytes().all(it.is_digit())) || v.bytes().all(it.is_digit())
+	return match strategy {
+		.str { v.len >= 2 && (v[0] == `"` || v[0] == `'`) && v[v.len - 1] == v[0] }
+		.bool { v in ['true', 'false'] }
+		.int { is_int }
+		.uint { is_int && v[0] != `-` }
+		.float { is_int || v.f64() != 0.0 || v in ['0.0', '0.', '.0'] }
+		else { false }
+	}
+}
+
 // validate rejects a declaration the generator cannot honour, with a position.
 fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
+	for name in f.unknown_defaults {
+		report(mut p, path, decl,
+			'error: `@[vc_defaults]` on `${decl.name}` names `${name}`, which is not one of its parameters')
+		return
+	}
+	for param in f.params {
+		if param.default.len == 0 {
+			continue
+		}
+		strategy := lookup(param.v_type)
+		if strategy == .optional {
+			report(mut p, path, decl,
+				'error: `@[vc_defaults]` on `${decl.name}` gives `${param.name}` a default, but `${param.v_type}` already defaults to None')
+			return
+		}
+		if strategy !in [.bool, .int, .uint, .float, .str] {
+			report(mut p, path, decl,
+				'error: `@[vc_defaults]` on `${decl.name}`: `${param.name}` has type `${param.v_type}`; defaults are for bool, integer, float and string parameters')
+			return
+		}
+		if !default_fits(strategy, param.default) {
+			report(mut p, path, decl,
+				'error: `@[vc_defaults]` on `${decl.name}`: `${param.default}` is not a `${param.v_type}` default for `${param.name}`')
+			return
+		}
+	}
 	for param in f.params {
 		if lookup(param.v_type) == .unsupported {
 			report(mut p, path, decl,

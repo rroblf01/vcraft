@@ -142,7 +142,7 @@ pub fn glue_module_body(p Project) string {
 	// rejects a redefinition of an iteration variable in the same scope.
 	for f in p.funcs {
 		flags := if f.params.len == 0 { 'vcraft.meth_noargs' } else {
-			'vcraft.meth_fastcall'
+			'vcraft.meth_fastcall_keywords'
 		}
 		w.write_string('\tg_vc_module.add_function_owned(' + vstring_literal(f.name) +
 			', voidptr(' + f.trampoline + '), ' + flags + ',\n')
@@ -380,15 +380,74 @@ fn emit_nogil_failure(inner string) string {
 		'\t\t' + inner + '\n'
 }
 
-// emit_nargs_check renders the arity check at the top of a positional trampoline.
+// emit_bind renders the argument binding at the top of a trampoline with parameters.
 //
-// One comparison on the success path. The message, and the choice between too few
-// and too many, only run when it fails. Checking before any argument is read also
-// means a reader never sees an index past `nargs`.
-fn emit_nargs_check(f Func) string {
-	return '\tif nargs != ${f.params.len} {\n' +
-		"\t\tvcraft.wrong_nargs('${f.name}', ${f.params.len}, int(nargs))\n" +
-		'\t\treturn unsafe { nil }\n\t}\n'
+// Every parameter can be passed by position or by name, and an optional one can be left
+// out. A call that passes every parameter by position, the common case, takes the raw
+// array as it is: one comparison, as before keywords. Anything else is bound into one
+// slot per parameter, and `args` points at the slots from then on, so the readers below
+// take every parameter by index either way.
+fn emit_bind(f Func) string {
+	n := f.params.len
+	names := f.params.map(vstring_literal(it.name)).join(', ')
+	optional := f.params.map(if it.optional() { 'true' } else { 'false' }).join(', ')
+	// `bound` is on the stack and outlives every use of `args`, which never leaves this
+	// call; V asks for `unsafe` to take its address, and in `-prod` to zero it.
+	return '\tmut args := raw_args\n' + '\tmut bound := unsafe { [${n}]voidptr{} }\n' +
+		'\tif kwnames != unsafe { nil } || nargs != ${n} {\n' +
+		'\t\tslots := unsafe { voidptr(&bound[0]) }\n' +
+		'\t\tif !vcraft.bind_args(raw_args, nargs, kwnames, slots, [${names}], [${optional}], ${vstring_literal(f.name)}) {\n' +
+		'\t\t\treturn unsafe { nil }\n\t\t}\n' + '\t\targs = slots\n\t}\n'
+}
+
+// param_reader reads one parameter, applying its default when the caller left it out.
+//
+// A `?T` parameter's reader already turns a missing slot into `none`. A parameter with an
+// `@[vc_defaults]` value starts as that value and is only read when it was passed; its
+// reader runs inside the `if`, which is why defaults are refused for the readers that
+// pin a buffer until the end of the call.
+fn param_reader(param Param, local string, index int, func string) string {
+	strategy := lookup(param.v_type)
+	if param.default.len == 0 {
+		return reader_expr(strategy, local, index, func, param.name, param.v_type)
+	}
+	given := '${local}_given'
+	return 'mut ${local} := ${v_default(param)}\n' +
+		'\tif !vcraft.arg_at(args, ${index}).is_null() {\n' +
+		'\t\t${reader_expr(strategy, given, index, func, param.name, param.v_type)}\n' +
+		'\t\t${local} = ${given}\n\t}'
+}
+
+// v_default is a parameter's default as a V expression of its type.
+fn v_default(param Param) string {
+	t := param.v_type.trim_space()
+	value := param.default.trim_space()
+	if lookup(t) == .str {
+		return vstring_literal(value[1..value.len - 1])
+	}
+	if lookup(t) == .bool {
+		return value
+	}
+	return '${t}(${value})'
+}
+
+// python_default is a parameter's default as Python writes it, for signatures and stubs.
+fn python_default(param Param) string {
+	if param.default.len == 0 {
+		return if param.optional() { 'None' } else { '' }
+	}
+	value := param.default.trim_space()
+	return match value {
+		'true' { 'True' }
+		'false' { 'False' }
+		else {
+			if value[0] == `'` || value[0] == `"` {
+				'"' + value[1..value.len - 1].replace('"', '\\"') + '"'
+			} else {
+				value
+			}
+		}
+	}
 }
 
 // emit_method_trampoline renders a method of a class.
@@ -400,17 +459,17 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	signature := if f.params.len == 0 {
 		'self voidptr, args voidptr'
 	} else {
-		'self voidptr, args voidptr, nargs isize'
+		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 	if f.params.len > 0 {
-		w.write_string(emit_nargs_check(f))
+		w.write_string(emit_bind(f))
 	}
 	mut names := []string{}
 	for i, param in f.params {
 		name := local_name(i)
 		names << name
-		w.write_string('\t${reader_expr(lookup(param.v_type), name, i, f.name, param.name, param.v_type)}\n')
+		w.write_string('\t${param_reader(param, name, i, f.name)}\n')
 	}
 	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
 	w.write_string(emit_enter_state(p, c))
@@ -562,12 +621,12 @@ pub fn emit_trampoline(f Func) string {
 	signature := if f.params.len == 0 {
 		'self voidptr, args voidptr'
 	} else {
-		'self voidptr, args voidptr, nargs isize'
+		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 
 	if f.params.len > 0 {
-		w.write_string(emit_nargs_check(f))
+		w.write_string(emit_bind(f))
 	}
 
 	// `@[vc_raw]` keeps the declared signature but skips every conversion: each
@@ -584,10 +643,9 @@ pub fn emit_trampoline(f Func) string {
 			w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 			continue
 		}
-		strategy := lookup(param.v_type)
 		name := local_name(i)
 		names << name
-		w.write_string('\t${reader_expr(strategy, name, i, f.name, param.name, param.v_type)}\n')
+		w.write_string('\t${param_reader(param, name, i, f.name)}\n')
 	}
 
 
@@ -940,7 +998,8 @@ pub fn python_signature(f Func) string {
 fn param_list(f Func) string {
 	mut parts := []string{}
 	for param in f.params {
-		parts << '${param.name}: ${describe(param.v_type)}'
+		default := python_default(param)
+		parts << '${param.name}: ${describe(param.v_type)}' + if default.len > 0 { ' = ${default}' } else { '' }
 	}
 	return parts.join(', ')
 }
@@ -1144,10 +1203,11 @@ fn composite_reader(strategy Strategy, local string, index int, func string, par
 	obj := '${local}_obj'
 	fetch := "${obj} := vcraft.required_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }"
 	return match strategy {
-		// None is `none`; anything else must convert like the plain parameter would.
+		// Left out or None is `none`; anything else must convert like the plain
+		// parameter would.
 		.optional {
-			'${fetch}\n\tmut ${local} := ${t}(none)\n' +
-				'\tif !vcraft.is_none_ptr(${obj}.ptr) {\n\t\t${local} = ${value_from_obj(t[1..], obj, param)}\n\t}'
+			'${obj} := vcraft.arg_at(args, ${index})\n\tmut ${local} := ${t}(none)\n' +
+				'\tif !${obj}.is_null() && !vcraft.is_none_ptr(${obj}.ptr) {\n\t\t${local} = ${value_from_obj(t[1..], obj, param)}\n\t}'
 		}
 		.dict {
 			element := t['map[string]'.len..]

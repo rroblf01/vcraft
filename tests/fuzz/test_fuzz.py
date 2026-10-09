@@ -147,8 +147,10 @@ for _ in range(calls):
         args.append(wrong())
     elif roll < 0.3 and args:
         args.pop()
+    # Now and then a keyword nothing declares, which the binding must refuse cleanly.
+    kwargs = {"bogus": anything()} if rng.random() < 0.05 else {}
     try:
-        f(*args)
+        f(*args, **kwargs)
     except EXPECTED:
         pass
     # Methods and attributes take the same hostile values.

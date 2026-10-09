@@ -53,6 +53,65 @@ pub fn reject_extra_args(name string, expected int, given int) {
 	}
 }
 
+// bind_args places the arguments of a METH_FASTCALL | METH_KEYWORDS call in one slot
+// per parameter, in declaration order, so the readers can take them by index as they
+// take a positional call's.
+//
+// `args` holds `nargs` positional values followed by one value per name in `kwnames`, a
+// tuple of str or null. `out` has `names.len` slots, zeroed by the caller: a slot left
+// null is a parameter the caller left out, which only an optional one may be. Raises
+// TypeError, and returns false, for what Python itself refuses: too many positional
+// arguments, an unknown or repeated keyword, or a missing required parameter.
+pub fn bind_args(args voidptr, nargs isize, kwnames voidptr, out voidptr, names []string,
+	optional []bool, func string) bool {
+	n := names.len
+	if nargs > n {
+		raise(.type_error, '${func}() takes at most ${n} argument${if n == 1 { '' } else { 's' }} (${nargs} given)')
+		return false
+	}
+	for i in 0 .. int(nargs) {
+		unsafe {
+			*(&voidptr(out) + i) = *(&voidptr(args) + i)
+		}
+	}
+	if kwnames != unsafe { nil } {
+		count := int(C.PyTuple_Size(kwnames))
+		for k in 0 .. count {
+			key := borrow(C.PyTuple_GetItem(kwnames, isize(k)))
+			data, size := utf8_of(key)
+			if data == unsafe { nil } {
+				return false
+			}
+			keyword := unsafe { tos(&u8(data), size) }
+			mut slot := -1
+			for j, name in names {
+				if name == keyword {
+					slot = j
+					break
+				}
+			}
+			if slot < 0 {
+				unexpected_kwarg(func, keyword.clone())
+				return false
+			}
+			if unsafe { *(&voidptr(out) + slot) } != unsafe { nil } {
+				raise(.type_error, "${func}() got multiple values for argument '${keyword}'")
+				return false
+			}
+			unsafe {
+				*(&voidptr(out) + slot) = *(&voidptr(args) + int(nargs) + k)
+			}
+		}
+	}
+	for j in 0 .. n {
+		if unsafe { *(&voidptr(out) + j) } == unsafe { nil } && !optional[j] {
+			raise(.type_error, "${func}() missing required argument: '${names[j]}'")
+			return false
+		}
+	}
+	return true
+}
+
 // unexpected_kwarg reports an unknown keyword argument.
 pub fn unexpected_kwarg(name string, keyword string) {
 	raise(.type_error, "${name}() got an unexpected keyword argument '${keyword}'")

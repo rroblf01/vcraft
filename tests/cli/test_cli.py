@@ -1084,6 +1084,17 @@ pub fn t_fixed(a [3]f64) [3]f64 {
 	return [a[2], a[1], a[0]]!
 }
 
+@[vc_fn]
+@[vc_defaults: 'step=1, label="item", loud=false']
+pub fn t_kw(count int, step int, label string, loud bool) string {
+	text := '${label}:${count}:${step}'
+	return if loud { text.to_upper() } else { text }
+}
+@[vc_fn]
+pub fn t_kw_opt(a int, b ?int) int {
+	return a + (b or { 100 })
+}
+
 @[vc_class]
 pub struct Narrow {
 mut:
@@ -1147,6 +1158,16 @@ cases = [
     ("tuple result", lambda: m.t_pair(1), repr((2, "n=1"))),
     ("fixed array", lambda: m.t_fixed((1.0, 2.0, 3.0)), repr([3.0, 2.0, 1.0])),
     ("fixed array length", lambda: m.t_fixed([1.0]), "ValueError"),
+    ("defaults", lambda: m.t_kw(3), repr("item:3:1")),
+    ("keywords in any order", lambda: m.t_kw(loud=True, count=2), repr("ITEM:2:1")),
+    ("positional and keyword", lambda: m.t_kw(3, label="z"), repr("z:3:1")),
+    ("missing required", lambda: m.t_kw(), "TypeError"),
+    ("repeated argument", lambda: m.t_kw(3, count=4), "TypeError"),
+    ("unknown keyword", lambda: m.t_kw(3, colour=1), "TypeError"),
+    ("too many positional", lambda: m.t_kw(1, 2, "a", True, 5), "TypeError"),
+    ("optional left out", lambda: m.t_kw_opt(1), "101"),
+    ("optional by keyword", lambda: m.t_kw_opt(b=5, a=1), "6"),
+    ("plain function by keyword", lambda: m.add(a=2, b=3), "5"),
     ("allocation failure", lambda: m.t_oom(), "MemoryError"),
     ("alive after it", lambda: m.t_i8(1), "1"),
 ]
@@ -1219,6 +1240,20 @@ print("ok" if not bad else bad)
         proc = vcraft("info", cwd=project)
         t.check("a project vcraft new writes draws no warning", "warning" not in proc.stderr,
                 proc.stderr[-300:])
+
+        print("defaults the generator refuses")
+        for label, attr, decl, needle in [
+            ("an unknown parameter", "@[vc_defaults: 'nope=1']", "pub fn d1(a int) int { return a }", "not one of its parameters"),
+            ("a default of the wrong kind", "@[vc_defaults: 'a=\"x\"']", "pub fn d2(a int) int { return a }", "is not a `int` default"),
+            ("a default on ?T", "@[vc_defaults: 'a=5']", "pub fn d3(a ?int) int { return a or { 0 } }", "already defaults to None"),
+            ("a default on bytes", "@[vc_defaults: 'a=1']", "pub fn d4(a []u8) int { return a.len }", "defaults are for bool"),
+            ("a negative unsigned default", "@[vc_defaults: 'a=-1']", "pub fn d5(a u32) u32 { return a }", "is not a `u32` default"),
+        ]:
+            native.write_text(saved + "\n@[vc_fn]\n" + attr + "\n" + decl + "\n")
+            proc = vcraft("build", cwd=project)
+            t.check(f"{label} is a diagnostic", proc.returncode != 0 and needle in proc.stderr,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved)
 
         print("composite types the generator refuses")
         for label, decl, needle in [
