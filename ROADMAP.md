@@ -62,8 +62,10 @@ Each item lands on `main` with its tests and a changelog entry under
 
 ## Feature parity with PyO3
 
-- [ ] **Types:** `map[string]V` ↔ `dict`, `?T` ↔ `T | None`, enums, tuples, fixed
-      arrays, plain structs, and class instances (`&T`) in plain functions.
+- [x] **`?T`, `map[string]T`, multi-value results and `[N]T`** of scalars and
+      strings, as parameters and results (a tuple only as a result).
+- [ ] **More types:** enums, plain structs, maps with non-string keys, nested
+      composites, and class instances (`&T`) in plain functions.
 - [ ] **Arguments:** keyword arguments and defaults for every signature.
 - [ ] **Callbacks:** calling a Python callable from V.
 - [ ] **Class protocols:** `__len__`, `__getitem__`, `__contains__`, ordering

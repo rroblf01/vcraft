@@ -300,7 +300,7 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 	ret := lookup(f.v_ret)
 	has_value := ret != .void
 	if has_value {
-		w.write_string('\tmut result := ${zero_value(ret, f.v_ret)}\n')
+		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
 	}
 	if f.nogil {
 		w.write_string(emit_nogil_open())
@@ -316,10 +316,10 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
 		if has_value {
 			if f.nogil {
-				w.write_string('\tresult = ${call} or {\n' + emit_nogil_failure(inner) +
+				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n' + emit_nogil_failure(inner) +
 					'\t}\n')
 			} else {
-				w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
+				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n\t\t${inner}\n\t}\n')
 			}
 		} else {
 			if f.nogil {
@@ -333,7 +333,7 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	} else if has_value {
-		w.write_string('\tresult = ${call}\n')
+		w.write_string('\t${result_target(ret, f.v_ret)} = ${call}\n')
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}

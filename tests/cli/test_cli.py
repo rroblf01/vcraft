@@ -1054,6 +1054,34 @@ pub fn t_result(x int) !int {
 	return x
 }
 
+@[vc_fn]
+pub fn t_opt(x ?int) int {
+	return x or { -1 }
+}
+@[vc_fn]
+pub fn t_opt_out(x int) ?string {
+	if x < 0 {
+		return none
+	}
+	return 'n${x}'
+}
+@[vc_fn]
+pub fn t_dict(m map[string]int) map[string]int {
+	mut out := map[string]int{}
+	for k, v in m {
+		out[k] = v * 2
+	}
+	return out
+}
+@[vc_fn]
+pub fn t_pair(x int) (int, string) {
+	return x + 1, 'n=${x}'
+}
+@[vc_fn]
+pub fn t_fixed(a [3]f64) [3]f64 {
+	return [a[2], a[1], a[0]]!
+}
+
 @[vc_class]
 pub struct Narrow {
 mut:
@@ -1109,6 +1137,14 @@ cases = [
     ("list", lambda: m.t_list([1, 2]), "[1, 2]"), ("tuple", lambda: m.t_list((1, 2)), "[1, 2]"),
     ("void", lambda: m.t_void(), "None"),
     ("result ok", lambda: m.t_result(3), "3"), ("result error", lambda: m.t_result(-1), "RuntimeError"),
+    ("optional int", lambda: m.t_opt(4), "4"), ("optional None", lambda: m.t_opt(None), "-1"),
+    ("optional wrong type", lambda: m.t_opt("x"), "TypeError"),
+    ("optional result", lambda: m.t_opt_out(2), repr("n2")), ("optional result None", lambda: m.t_opt_out(-1), "None"),
+    ("dict", lambda: m.t_dict({"a": 1, "b": 2}), repr({"a": 2, "b": 4})),
+    ("dict not a dict", lambda: m.t_dict([1]), "TypeError"), ("dict int key", lambda: m.t_dict({1: 1}), "TypeError"),
+    ("tuple result", lambda: m.t_pair(1), repr((2, "n=1"))),
+    ("fixed array", lambda: m.t_fixed((1.0, 2.0, 3.0)), repr([3.0, 2.0, 1.0])),
+    ("fixed array length", lambda: m.t_fixed([1.0]), "ValueError"),
     ("allocation failure", lambda: m.t_oom(), "MemoryError"),
     ("alive after it", lambda: m.t_i8(1), "1"),
 ]
@@ -1125,6 +1161,18 @@ cases += [
     ("f32 method", lambda: n.scale(1.5), "3.0"),
 ]
 bad = [(label, got, want) for label, f, want in cases if (got := outcome(f)) != want]
+# The dict and tuple paths handle references by hand: run them twice and keep
+# nothing the second time.
+import gc, tracemalloc
+def churn():
+    for _ in range(20_000):
+        m.t_dict({"a": 1, "b": 2}); m.t_pair(3); m.t_opt_out(1); m.t_fixed([1.0, 2.0, 3.0])
+    gc.collect()
+churn(); tracemalloc.start(); churn()
+first = tracemalloc.get_traced_memory()[0]; churn()
+grew = tracemalloc.get_traced_memory()[0] - first
+if grew > 64 * 1024:
+    bad.append(("composite types leak", grew, 0))
 print("ok" if not bad else bad)
 """
                 proc = subprocess.run([str(target4 / "bin" / "python"), "-c", probe],
@@ -1135,6 +1183,18 @@ print("ok" if not bad else bad)
         finally:
             native.write_text(saved)
             vcraft("build", cwd=project)
+
+        print("composite types the generator refuses")
+        for label, decl, needle in [
+            ("a tuple parameter", "pub fn t_tp(p (int, int)) int { return 0 }", "only allows as a result"),
+            ("a map with non-string keys", "pub fn t_mk(m map[int]int) int { return 0 }", "no marshalling rule"),
+            ("an optional slice", "pub fn t_os(x ?[]int) int { return 0 }", "no marshalling rule"),
+        ]:
+            native.write_text(saved + "\n@[vc_fn]\n" + decl + "\n")
+            proc = vcraft("build", cwd=project)
+            t.check(f"{label} is a diagnostic", proc.returncode != 0 and needle in proc.stderr,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved)
 
         print("sdist")
         # Keywords and `[urls]` reach PKG-INFO, which is what PyPI reads for the

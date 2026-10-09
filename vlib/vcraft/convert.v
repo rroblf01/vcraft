@@ -425,3 +425,51 @@ pub fn repr_bool(value bool) string {
 pub fn repr_string(value string) string {
 	return "'${value}'"
 }
+
+// ---------------------------------------------------------------- dict, tuple
+
+// dict_items reads a `dict` into its keys and values, alternating: key, value, key, ...
+//
+// The references are borrowed from the dict, which the caller holds for the call, so
+// nothing here is released. Anything that is not a `dict` (or a subclass) is a
+// TypeError naming the parameter, like the scalar readers.
+pub fn dict_items(obj PyObj, name string) ![]PyObj {
+	if !obj.type_is(dict_type()) {
+		raise(.type_error, '${name}: expected dict, got ${obj.type_name()}')
+		return error('${name}: not a dict')
+	}
+	mut out := []PyObj{}
+	mut pos := isize(0)
+	mut key := unsafe { nil }
+	mut value := unsafe { nil }
+	for C.PyDict_Next(obj.ptr, &pos, &key, &value) != 0 {
+		out << borrow(key)
+		out << borrow(value)
+	}
+	return out
+}
+
+// new_dict returns a new empty `dict`, owned by the caller.
+pub fn new_dict() PyObj {
+	return steal(C.PyDict_New())
+}
+
+// dict_set_owned stores `value` under `key` and releases the caller's references to
+// both: the dict takes its own. A key or value that failed to box (null, with the
+// exception set) is skipped, and the exception stays for the trampoline to report.
+pub fn dict_set_owned(d PyObj, key PyObj, value PyObj) {
+	if !key.is_null() && !value.is_null() {
+		C.PyDict_SetItem(d.ptr, key.ptr, value.ptr)
+	}
+	key.decref()
+	value.decref()
+}
+
+// tuple_of builds a `tuple` from owned items; the tuple steals each reference.
+pub fn tuple_of(items []PyObj) PyObj {
+	t := C.PyTuple_New(isize(items.len))
+	for i, item in items {
+		C.PyTuple_SetItem(t, isize(i), item.ptr)
+	}
+	return steal(t)
+}

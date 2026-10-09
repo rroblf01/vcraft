@@ -231,15 +231,20 @@ generic value tree.
 | `string`                              | `str`                        | UTF-8                                              |
 | `[]u8`                                | `bytes`                      | Any bytes-like object in, without copying it       |
 | `[]T` of the types above, or `string` | `list`                       | Any sequence in (a list, a tuple); a list out      |
+| `[N]T` of the types above             | `list`                       | Any sequence of exactly N items in; a list out     |
+| `?T` of the types above               | `T` or `None`                | `none` is `None`, both ways                        |
+| `map[string]T` of the types above     | `dict`                       | `str` keys; a new dict out                         |
+| `(A, B, ...)`, as a result            | `tuple`                      | A multi-value return                               |
 | `voidptr`                             | any object                   | Borrowed; you own the reference                    |
 | `vcraft.PyObj` (result)               | any object                   | Owned; the reference goes to the caller            |
 | `void`, `!void`                       | `None`                       |                                                    |
 | `!T`                                  | `T`, or raises               | See [Errors and panics](#errors-and-panics)        |
 
 Fields of a `@[vc_class]` struct and method parameters follow the same table.
-`map`, `?T`, enums, tuples, fixed arrays, plain structs, V function types and class
-instances (`&T`) as parameters or results of plain functions are not supported yet;
-they are on the [roadmap](ROADMAP.md). A `@[vc_class]` is constructed from Python
+Enums, plain structs, V function types, maps with non-string keys, nested
+composites (`?[]int`, `map[string][]int`) and class instances (`&T`) as parameters or
+results of plain functions are not supported yet; they are on the
+[roadmap](ROADMAP.md). A `@[vc_class]` is constructed from Python
 with its class, through `new_<class>` when one is declared.
 
 Anything not in this table is a compile-time diagnostic pointing at the exact

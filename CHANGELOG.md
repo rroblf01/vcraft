@@ -11,6 +11,11 @@ Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
 
 ### Added
 
+- **Optional, dict, tuple and fixed-array conversions.** `?T` of a scalar or string
+  maps to `T | None` both ways; `map[string]T` to a `dict` with `str` keys; a
+  multi-value result `(A, B)` to a `tuple`; and `[N]T` takes any sequence of exactly
+  N items and returns a `list`. Stubs name the precise types (`int | None`,
+  `dict[str, int]`, `tuple[int, str]`). Other composites stay a diagnostic.
 - **`vcraft toolchain install`** builds the V compiler vcraft is tested with into
   `~/.cache/vcraft` (or `$VCRAFT_HOME`), and vcraft finds it there by itself;
   `vcraft toolchain` reports which compiler is used and whether it is the pinned

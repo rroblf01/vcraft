@@ -1044,6 +1044,20 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule')
 			return
 		}
+		// A multi-value type exists in V only as a result: a function cannot take one,
+		// and a Python tuple has no V parameter type to land in.
+		if lookup(param.v_type) == .tuple {
+			report(mut p, path, decl,
+				'error: cannot expose `${decl.name}`: parameter `${param.name}` has the multi-value type `${param.v_type}`, which V only allows as a result')
+			return
+		}
+		// A fixed-size array is read as the slice of its element, so the element needs
+		// a sequence reader, as for `[]T`.
+		if lookup(param.v_type) == .fixed && !element_is_readable(fixed_element(param.v_type)) {
+			report(mut p, path, decl,
+				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds `${fixed_element(param.v_type)}`, which has no sequence reader')
+			return
+		}
 		// A `[]T` parameter reads each element, so the element needs a reader of
 		// its own. Without one the glue names a function that does not exist,
 		// and the error points at the generated file instead of here.

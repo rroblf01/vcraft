@@ -31,6 +31,17 @@ pub enum Strategy {
 	pyref
 	// Seq accepts any Python iterable and builds a V slice from it.
 	seq
+	// Optional is `?T` of a scalar or a string: `none` in V is `None` in Python, both ways.
+	optional
+	// Dict is `map[string]T` of a scalar or a string: a `dict` with `str` keys in, a new
+	// `dict` out.
+	dict
+	// Tuple is a multi-value return, `(A, B)`, which Python receives as a `tuple`. V has
+	// no tuple type for a parameter, so it exists only as a result.
+	tuple
+	// Fixed is a fixed-size array, `[N]T`: any sequence of exactly N items in, a `list`
+	// out.
+	fixed
 	// Unsupported means the generator refuses to emit code for it.
 	unsupported
 }
@@ -52,6 +63,30 @@ pub fn lookup(v_type string) Strategy {
 	// is the same type written out.
 	if base == 'PyObj' || base == 'vcraft.PyObj' {
 		return .pyref
+	}
+	// The composite types are recognised by their shape before the scalar names, and
+	// only over element types that are themselves plain values: anything else stays
+	// unsupported, so it is a diagnostic rather than glue that does not compile.
+	if base.starts_with('?') {
+		return if is_plain_value(base[1..]) { Strategy.optional } else { Strategy.unsupported }
+	}
+	if base.starts_with('map[') {
+		if base.starts_with('map[string]') && is_plain_value(base['map[string]'.len..]) {
+			return .dict
+		}
+		return .unsupported
+	}
+	if base.starts_with('(') && base.ends_with(')') {
+		parts := tuple_parts(base)
+		return if parts.len >= 2 && parts.all(is_plain_value(it)) {
+			Strategy.tuple
+		} else {
+			Strategy.unsupported
+		}
+	}
+	if base.starts_with('[') && !base.starts_with('[]') {
+		n, element := fixed_parts(base)
+		return if n > 0 && is_plain_value(element) { Strategy.fixed } else { Strategy.unsupported }
 	}
 	return match base {
 		'bool' { Strategy.bool }
@@ -83,6 +118,10 @@ pub fn describe(v_type string) string {
 		// arm returned an unset string that crashed the generator inside `+`.
 		.pyobj, .pyref { 'Any' }
 		.seq { 'Sequence[Any]' }
+		.optional { describe(v_type.trim_space()[1..]) + ' | None' }
+		.dict { 'dict[str, ' + describe(v_type.trim_space()['map[string]'.len..]) + ']' }
+		.tuple { 'tuple[' + tuple_parts(v_type.trim_space()).map(describe(it)).join(', ') + ']' }
+		.fixed { 'list[' + describe(fixed_element(v_type)) + ']' }
 		.unsupported { 'Any' }
 	}
 }
@@ -103,4 +142,37 @@ pub fn split_result(declared string) (string, bool) {
 		return text[..text.len - 1].trim_space(), true
 	}
 	return text, false
+}
+
+// is_plain_value reports whether a type is a scalar or a string: the element types the
+// composite strategies accept.
+pub fn is_plain_value(v_type string) bool {
+	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str]
+}
+
+// tuple_parts splits a multi-value type, `(int, string)`, into its element types.
+pub fn tuple_parts(v_type string) []string {
+	inner := v_type.trim_space()
+	if !inner.starts_with('(') || !inner.ends_with(')') {
+		return []string{}
+	}
+	return inner[1..inner.len - 1].split(',').map(it.trim_space()).filter(it.len > 0)
+}
+
+// fixed_parts splits a fixed-size array type, `[3]int`, into its length and element
+// type. The length is 0 when it is not a plain number, such as a constant's name.
+pub fn fixed_parts(v_type string) (int, string) {
+	t := v_type.trim_space()
+	close := t.index(']') or { return 0, '' }
+	size := t[1..close]
+	if size.len == 0 || !size.bytes().all(it.is_digit()) {
+		return 0, ''
+	}
+	return size.int(), t[close + 1..]
+}
+
+// fixed_element is the element type of a fixed-size array.
+pub fn fixed_element(v_type string) string {
+	_, element := fixed_parts(v_type)
+	return element
 }
