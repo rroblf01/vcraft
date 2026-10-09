@@ -119,6 +119,14 @@ fn takes_value(name string) bool {
 }
 
 fn main() {
+	// A binary V compiles sets VEXE to the compiler that built it, for itself and every
+	// process it starts. vcraft runs other V compilers -- the user's, the installed
+	// toolchain -- and V locates its own vlib and thirdparty through VEXE when it is set:
+	// a pip-installed vcraft would point them at the path of the compiler that built the
+	// release, which does not exist on the user's machine. V's Makefile also writes the
+	// compiler it builds to $VEXE, so `vcraft toolchain install` overwrote the user's own
+	// V with it. Cleared before anything runs.
+	os.unsetenv('VEXE')
 	// `--version` is what every packaging tool answers, and what a CI log or a bug
 	// report reaches for first; `vcraft version` stays for scripts that use it.
 	if os.args.len == 2 && os.args[1] in ['--version', '-V'] {
