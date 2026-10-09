@@ -43,7 +43,15 @@ RUN git init -q /opt/v-src \
 # libc itself and links the system's Boehm (`gc-dev` above) instead of the bundled
 # archive, so there is nothing native to build. V falls back from the missing tcc to
 # the system compiler with a warning, which is noise in a build log but not an error.
-RUN cd /opt/v-src && make local=1 -j"$(nproc)" \
+#
+# The Makefile's last step builds and runs a script for V's own CI once the compiler
+# exists, and at the pinned commit that step fails to link on musl: the cached
+# `builtin` object exports `backtrace`, which calls a function that is static in
+# another object. It is not part of the compiler, so a failed make is accepted when
+# the `./v` it left behind (the checkout is fresh, so it was built just now) reports
+# the pinned commit. vcraft's own builds, which follow, do not hit it.
+RUN cd /opt/v-src && { make local=1 -j"$(nproc)" \
+        || ./v version | grep -q " $(echo "$V_COMMIT" | cut -c1-7)\$"; } \
     && ln -s /opt/v-src/v /usr/local/bin/v \
     && v version
 
