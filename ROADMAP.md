@@ -15,9 +15,9 @@ checked off here when it does.
 
 ### Surface to freeze
 
-- [ ] **API review and freeze.** The annotations, the `vcraft.toml` keys and the CLI
-      commands and options reviewed together, renamed where a name would be regretted,
-      and frozen, with a written deprecation policy.
+- [x] **API review and freeze.** `@[vc_gil]` became `@[vc_nogil]`, `@[vc_methods]`
+      became `@[vc_method]`, build settings moved into `[build]`, classifiers became
+      `classifiers = [...]`; the old forms warn until 2.0. Policy: README, *Stability*.
 - [ ] **Keyword arguments and defaults** for every signature: they decide how every
       function is called from Python, so they are fixed before the promise is.
 - [x] **`?T`, `map[string]T`, multi-value results and `[N]T`** of scalars and

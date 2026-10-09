@@ -9,6 +9,21 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
 
+### Renamed (the old names keep working throughout 1.x, with a warning)
+
+- **`@[vc_gil]` is now `@[vc_nogil]`**: it releases the GIL, which the old name read
+  as the opposite of.
+- **`@[vc_methods]` is now `@[vc_method]`**: it goes on one method at a time.
+- **Build settings moved into a `[build]` table** in `vcraft.toml` (`minimum-version`,
+  `abi3`, `free-threading`, `strip`, `embed-pyc`, `gc-free-space-divisor`). As
+  top-level keys they had to precede every table, and written after `[package]` they
+  were silently ignored; the same keys found under `[package]` are now reported.
+- **Classifiers are written `classifiers = [...]`** in `[package]`; `[[classifier]]`
+  tables are still read.
+
+The public surface and the deprecation policy are written down under *Stability* in
+the README.
+
 ### Added
 
 - **Optional, dict, tuple and fixed-array conversions.** `?T` of a scalar or string
@@ -24,6 +39,9 @@ Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
 
 ### Fixed
 
+- **A misspelt annotation was silently ignored.** The check for unknown annotations
+  looked for a `vc.` prefix, which none has, so `@[vc_fnn]` left its function out of
+  the module without a word. It is now an error naming the annotation.
 - **The compilers vcraft runs inherited its VEXE.** A binary V compiles sets
   VEXE to the compiler that built it, and V locates its own vlib and thirdparty
   through VEXE: a pip-installed vcraft pointed the user's V at the release build's

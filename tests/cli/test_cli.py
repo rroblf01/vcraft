@@ -119,8 +119,10 @@ def main() -> int:
         toml = (project / "vcraft.toml").read_text()
         t.check("the manifest names the package", 'name = "mypkg"' in toml, toml)
         t.check("the manifest names the module", 'module = "mypkg_native"' in toml)
-        t.check("the manifest has classifiers", "[[classifier]]" in toml)
-        t.check("the manifest has a minimum version", "minimum-version" in toml)
+        t.check("the manifest has classifiers, as a list",
+                "classifiers = [" in toml and "[[classifier]]" not in toml, toml)
+        t.check("the manifest has a minimum version, under [build]",
+                "[build]\nminimum-version" in toml, toml)
 
         vmod = (project / "v.mod").read_text()
         t.check("v.mod declares base_url", 'base_url: "src"' in vmod, vmod)
@@ -165,11 +167,11 @@ def main() -> int:
                 "@[vc_fn]\npub fn new_mid() &Mid {\n\treturn &Mid{ mid: 2 }\n}\n\n"
                 "@[vc_fn]\npub fn new_grandchild() &Grandchild {\n"
                 "\treturn &Grandchild{ depth: 3 }\n}\n\n"
-                "@[vc_methods]\npub fn (mut g Grandchild) total() int {\n"
+                "@[vc_method]\npub fn (mut g Grandchild) total() int {\n"
                 "\tmut mid := unsafe { &Mid(vcraft.state_at(1)) }\n"
                 "\tmut root := unsafe { &Root(vcraft.state_at(2)) }\n"
                 "\treturn mid.mid + root.root\n}\n\n"
-                "@[vc_methods]\npub fn (mut g Grandchild) bump_root() {\n"
+                "@[vc_method]\npub fn (mut g Grandchild) bump_root() {\n"
                 "\tmut root := unsafe { &Root(vcraft.state_at(2)) }\n"
                 "\troot.root += 10\n}\n" + extra)
 
@@ -801,7 +803,7 @@ mut:
 \t@[vc_field] current int
 }
 
-@[vc_methods]
+@[vc_method]
 @[vc_next]
 pub fn (mut c Lonely) advance() int {
 \treturn c.current
@@ -815,7 +817,7 @@ mut:
 \t@[vc_field] current int
 }
 
-@[vc_methods]
+@[vc_method]
 @[vc_iter]
 pub fn (mut c Stuck) rewind() {
 }
@@ -828,7 +830,7 @@ mut:
 \t@[vc_field] current int
 }
 
-@[vc_methods]
+@[vc_method]
 @[vc_iter]
 pub fn (mut c Nosy) rewind(from int) {
 }
@@ -841,7 +843,7 @@ mut:
 \t@[vc_field] current int
 }
 
-@[vc_methods]
+@[vc_method]
 @[vc_iter]
 pub fn (mut c Greedy) rewind() int {
 \treturn c.current
@@ -851,7 +853,7 @@ pub fn (mut c Greedy) rewind() int {
         it_diagnostic("nogil on a raw function", """
 @[vc_fn]
 @[vc_raw]
-@[vc_gil]
+@[vc_nogil]
 pub fn touch(ptr voidptr) voidptr {
 \treturn ptr
 }
@@ -872,7 +874,7 @@ mut:
 	@[vc_ref(Node)] peer vcraft.PyObj
 }
 
-@[vc_methods]
+@[vc_method]
 pub fn (mut n Node) link(other voidptr) {
 	n.peer = vcraft.retain(other)
 }
@@ -933,7 +935,7 @@ pub fn (mut n Node) link(other voidptr) {
 // build_csv allocates from the collector with the GIL released, so threads run it,
 // and collect, in parallel.
 @[vc_fn]
-@[vc_gil]
+@[vc_nogil]
 pub fn build_csv(rows int) int {
 	mut parts := []string{}
 	for i in 0 .. rows {
@@ -1090,7 +1092,7 @@ mut:
 	@[vc_field] count u16
 }
 
-@[vc_methods]
+@[vc_method]
 pub fn (mut n Narrow) scale(by f32) f32 {
 	n.ratio = n.ratio * by
 	return n.ratio
@@ -1183,6 +1185,40 @@ print("ok" if not bad else bad)
         finally:
             native.write_text(saved)
             vcraft("build", cwd=project)
+
+        print("names from before 1.0 keep working, with a warning")
+        manifest_path = project / "vcraft.toml"
+        manifest_saved = manifest_path.read_text()
+        native.write_text(saved.replace("@[vc_method]", "@[vc_methods]", 1))
+        proc = vcraft("build", cwd=project)
+        t.check("@[vc_methods] still builds, with a deprecation warning",
+                proc.returncode == 0 and "`@[vc_methods]` is deprecated" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved + "\n@[vc_fnn]\npub fn typo() int { return 1 }\n")
+        proc = vcraft("build", cwd=project)
+        t.check("a misspelt annotation is an error, not a silently missing function",
+                proc.returncode != 0 and "unknown vcraft annotation `vc_fnn`" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved)
+        manifest_path.write_text(
+            'minimum-version = "3.12"\nabi3 = "3.12"\n\n'
+            + manifest_saved.replace("[build]\n", "[old-build]\n")
+            .replace('classifiers = ["Programming Language :: Other"',
+                     'strip = true\nclassifiers = ["Programming Language :: Other"')
+            + '\n[[classifier]]\ntext = "Topic :: Utilities"\n')
+        proc = vcraft("info", cwd=project)
+        t.check("top-level build keys are read, with a warning to move them",
+                "abi3             3.12" in proc.stdout and "move `abi3` into a [build] table" in proc.stderr,
+                (proc.stdout + proc.stderr)[-500:])
+        t.check("a build key under [package] is reported as ignored",
+                "`strip` under [package] is ignored" in proc.stderr, proc.stderr[-400:])
+        t.check("[[classifier]] tables are read, with a warning",
+                "Topic :: Utilities" in proc.stdout and "`[[classifier]]` goes in vcraft 2.0" in proc.stderr,
+                (proc.stdout + proc.stderr)[-500:])
+        manifest_path.write_text(manifest_saved)
+        proc = vcraft("info", cwd=project)
+        t.check("a project vcraft new writes draws no warning", "warning" not in proc.stderr,
+                proc.stderr[-300:])
 
         print("composite types the generator refuses")
         for label, decl, needle in [

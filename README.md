@@ -34,7 +34,7 @@ add(a: int, b: int) -> int
 
 ## Highlights
 
-- **One annotation per declaration.** `@[vc_fn]`, `@[vc_class]`, `@[vc_methods]`,
+- **One annotation per declaration.** `@[vc_fn]`, `@[vc_class]`, `@[vc_method]`,
   `@[vc_field]` and friends become functions, classes, methods and properties, with
   docstrings and a generated `.pyi` stub for type checkers.
 - **Fast calls.** The generated glue calls your V functions with their real types
@@ -44,7 +44,7 @@ add(a: int, b: int) -> int
   included), panics are caught instead of killing the interpreter, classes support
   inheritance, equality, hashing, iteration and garbage-collected reference cycles.
 - **Zero-copy and GIL-free.** `[]u8` and `[]string` parameters alias Python's buffers,
-  `@[vc_gil]` releases the GIL around a call, and free-threaded CPython (3.13t,
+  `@[vc_nogil]` releases the GIL around a call, and free-threaded CPython (3.13t,
   3.14t) is supported.
 - **Wheels without the toolchain zoo.** `vcraft build` writes the wheel itself
   (DEFLATE, ZIP, RECORD, tags) for regular, abi3 and free-threaded builds,
@@ -109,6 +109,7 @@ to publish to PyPI. See [Continuous integration](#continuous-integration).
 - [Configuration](#configuration)
 - [Performance](#performance)
 - [Project status](#project-status)
+- [Stability](#stability)
 - [Development](#development)
 - [Design notes](#design-notes)
 - [License](#license)
@@ -127,7 +128,7 @@ V compiles to fast native code through a tiny C backend and has no runtime depen
 | Binding generation | `#[pyfunction]`    | `@[vc_fn]`                      |
 | Class bindings     | `#[pyclass]`       | `@[vc_class]`                   |
 | Error translation  | `Result<T, E>`     | `!T` / `error` / `recover()`    |
-| GIL handling       | `Python::detach`   | `@[vc_gil]`                     |
+| GIL handling       | `Python::detach`   | `@[vc_nogil]`                     |
 | Build tool         | maturin            | `vcraft build`                  |
 | Local install      | `maturin develop`  | `vcraft develop`                |
 | CI                 | `maturin-action`   | `vcraft-action@v1`              |
@@ -193,7 +194,7 @@ that immediately precedes each declaration. Any name works; these are the ones
 | --------------- | --------------- | ---------------------------------------------------------- |
 | `@[vc_fn]`      | `pub fn`        | Exports the function as a module-level Python callable      |
 | `@[vc_class]`   | `pub struct`    | Creates a Python type backed by the V struct                |
-| `@[vc_methods]` | methods         | Adds the method to the class of its receiver                |
+| `@[vc_method]` | methods         | Adds the method to the class of its receiver                |
 | `@[vc_field]`   | struct fields   | Exposes the field as an attribute of the instance           |
 | `@[vc_property]`| methods         | Registers the method as a Python `property`                 |
 | `@[vc_base]`    | `pub struct`    | Makes the class inherit the named one                       |
@@ -201,7 +202,7 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_error]`   | `pub struct`    | Makes the struct usable as the error of a `!T` function      |
 | `@[vc_static]`  | methods         | Registers the method as a `staticmethod`                    |
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
-| `@[vc_gil]`     | `pub fn`        | Runs the call with the GIL released                         |
+| `@[vc_nogil]`     | `pub fn`        | Runs the call with the GIL released                         |
 | `@[vc_iter]`    | methods         | Makes the instance its own iterator (`__iter__`)            |
 | `@[vc_next]`    | methods         | Produces one item per call (`__next__`)                     |
 
@@ -276,20 +277,20 @@ pub fn new_counter() &Counter {
 }
 
 // increment adds step to value and returns the new total.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c Counter) increment() int {
 	c.value += c.step
 	return c.value
 }
 
 // set_step changes how much each increment adds.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c Counter) set_step(step int) {
 	c.step = step
 }
 
 // is_zero reports whether the value is still zero.
-@[vc_methods]
+@[vc_method]
 @[vc_property]
 pub fn (c &Counter) is_zero() bool {
 	return c.value == 0
@@ -355,7 +356,7 @@ another type is `False` rather than a `TypeError`, which is what `NotImplemented
 An `@[vc_field]` becomes a read/write attribute. Assigning the wrong type raises
 `TypeError`, and deleting one raises `AttributeError`: both come for free from
 registering a setter, rather than from a hand-written check per field. An
-`@[vc_property]` method becomes a read-only property, and a plain `@[vc_methods]`
+`@[vc_property]` method becomes a read-only property, and a plain `@[vc_method]`
 method takes arguments like any other exposed function.
 
 The constructor runs in `tp_new` and takes no arguments, so `Counter(1)` is a
@@ -386,7 +387,7 @@ mut:
 // inheritance, so `c.value` does not compile here. `vcraft.state_at(1)` is the
 // base's own struct inside the live state of the instance the method is running
 // on.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c BoundedCounter) bump(by int) !int {
 	mut base := unsafe { &Counter(vcraft.state_at(1)) }
 	if base.value + by > c.limit {
@@ -452,7 +453,7 @@ mut:
 //
 // `retain`, not `steal`: a function parameter is borrowed, and the field has to keep the
 // object alive on its own.
-@[vc_methods]
+@[vc_method]
 pub fn (mut n Node) link(other voidptr) {
 	n.peer = vcraft.retain(other)
 }
@@ -620,14 +621,14 @@ mut:
 }
 
 // rewind resets the countdown, so the same instance can be iterated twice.
-@[vc_methods]
+@[vc_method]
 @[vc_iter]
 pub fn (mut c Countdown) rewind() {
 	c.current = c.start
 }
 
 // next yields the current value and steps down, refusing past zero.
-@[vc_methods]
+@[vc_method]
 @[vc_next]
 pub fn (mut c Countdown) advance() !int {
 	if c.current <= 0 {
@@ -748,7 +749,7 @@ The guard is inlined per trampoline rather than shared through a helper. V emits
 forward declaration for a generic function called across modules, so a shared
 wrapper fails to compile with an implicit-declaration error.
 
-`@[vc_gil]` marks a function as pure V with no Python interaction. The GIL is
+`@[vc_nogil]` marks a function as pure V with no Python interaction. The GIL is
 released around the call, so long-running V code runs in parallel the way
 `py.allow_threads` does in PyO3:
 
@@ -758,7 +759,7 @@ released around the call, so long-running V code runs in parallel the way
 // Nothing in here touches Python, raises, or allocates in a way the collector would
 // need the interpreter for.
 @[vc_fn]
-@[vc_gil]
+@[vc_nogil]
 pub fn spin(iterations int) int {
 	mut total := 0
 	for i in 0 .. iterations {
@@ -780,7 +781,7 @@ Python calls, no `raise_domain`, no touching a `PyObj` while released:
 `raise_domain` sets a Python exception, which without the GIL corrupts the
 interpreter state rather than reporting anything. A `!T` function fails with a plain
 `error(...)` instead, and the wrapper turns it into an exception after it holds the
-GIL again. `@[vc_gil]` on a `@[vc_raw]` function is refused outright: raw means the
+GIL again. `@[vc_nogil]` on a `@[vc_raw]` function is refused outright: raw means the
 function handles `PyObject *` itself, which is the opposite of pure.
 
 The pairing is exact on every path -- success, `!T` failure, and panic -- because an
@@ -987,13 +988,6 @@ Packaging configuration lives in `vcraft.toml` at the project root. `vcraft new`
 writes one; `pyproject.toml` only names the build backend.
 
 ```toml
-minimum-version = "3.11"   # oldest CPython the CI matrix builds a wheel for
-abi3 = "3.11"              # optional: one stable-ABI wheel for 3.11 and newer
-free-threading = false     # true: build for a free-threaded CPython (3.13t+)
-strip = false
-embed-pyc = false
-gc-free-space-divisor = 2  # Boehm heap growth: 1 favours speed, 2 memory
-
 [package]
 name = "my-extension"
 version = "0.1.0"
@@ -1003,18 +997,26 @@ license = "MIT"
 requires-python = ">=3.11"
 readme = "README.md"         # the PyPI project page, rendered as Markdown
 keywords = ["fast", "parsing"]
+classifiers = ["Programming Language :: Other", "Programming Language :: Python :: 3"]
 dependencies = []
 
-[[classifier]]
-text = "Programming Language :: Other"
+[build]
+minimum-version = "3.11"     # oldest CPython the CI matrix builds a wheel for
+abi3 = "3.11"                # optional: one stable-ABI wheel for 3.11 and newer
+free-threading = false       # true: build for a free-threaded CPython (3.13t+)
+strip = false
+embed-pyc = false
+gc-free-space-divisor = 2    # Boehm heap growth: 1 favours speed, 2 memory
 
 [urls]
 Source = "https://github.com/me/my-extension"
 Issues = "https://github.com/me/my-extension/issues"
 ```
 
-The root keys must come before the first table: in TOML a key written after
-`[package]` belongs to `[package]`.
+Before 1.0 the build keys were top-level keys and classifiers were `[[classifier]]`
+tables; both are still read throughout 1.x, with a warning saying what to change.
+
+The keys of `[build]`:
 
 | Key               | Default   | Meaning                                                        |
 | ----------------- | --------- | -------------------------------------------------------------- |
@@ -1084,6 +1086,23 @@ Known limitations:
   of the per-commit test matrix.
 - Extensions use single-phase initialisation, so a module is shared by all
   subinterpreters.
+
+## Stability
+
+vcraft follows [Semantic Versioning](https://semver.org/). From 1.0, the annotations,
+the `vcraft.toml` keys, the CLI commands and options, and the Python behaviour of the
+conversions in the type table are the public surface:
+
+- A **minor** release (1.1, 1.2...) only adds to it: new annotations, keys, options and
+  types.
+- A name that is replaced keeps working for the rest of 1.x, and every use of it draws
+  a warning naming its replacement. It is removed in **2.0**, never before.
+- Generated glue, the runtime's V API under `vlib/vcraft`, and the wheel's internals
+  are not part of the surface: they change whenever the generator needs them to.
+
+Renamed in 1.0, still accepted with a warning: `@[vc_gil]` (now `@[vc_nogil]`),
+`@[vc_methods]` (now `@[vc_method]`), top-level build keys in `vcraft.toml` (now in
+`[build]`) and `[[classifier]]` tables (now `classifiers = [...]`).
 
 ## Requirements
 
