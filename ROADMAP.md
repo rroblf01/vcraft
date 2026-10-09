@@ -58,8 +58,8 @@ checked off here when it does.
 - [x] **The action's V cache keyed per runner image** (`ImageOS`/`ImageVersion`).
 - [x] **`SECURITY.md`**, and PyPI provenance attestations confirmed on every published
       file.
-- [ ] **Benchmark re-run** with thread registration in every call, to confirm its cost
-      is negligible.
+- [x] **Benchmark re-run** on Linux: thread registration costs nothing measurable;
+      keywords cost ~5 ns, as in PyO3; a per-call allocation found on the way is gone.
 - [ ] **Images re-released** for 1.0 with the new V pin, and the musl CI job moved to
       them.
 

@@ -447,3 +447,34 @@ On free-threaded 3.14t with the GIL disabled, eight threads allocating in a
 `@[vc_nogil]` function in parallel and a thousand short-lived threads all complete with
 correct results. The CLI suite and the free-threaded CI job now cover these cases.
 
+## vcraft 1.0 on Linux
+
+The same machine and interpreter as the Linux run above, after the 1.0 work; full
+figures in [`results-linux.md`](results-linux.md), which this run replaced.
+
+| workload | vcraft 0.2.0 | vcraft 1.0 | PyO3 | Python |
+|---|---|---|---|---|
+| `add` | 65 ns | 73 ns | 72 ns | 35 ns |
+| `fib(25)` | 107.2 µs | 102.4 µs | 205.5 µs | 9.28 ms |
+| `greet` | 129 ns | 114 ns | 135 ns | 78 ns |
+| `make_range(100k)` | 2.75 ms | 2.31 ms | 2.18 ms | 2.22 ms |
+| `Counter()` | 93 ns | 103 ns | 90 ns | 79 ns |
+| `c.add(1)` | 62 ns | 66 ns | 68 ns | 63 ns |
+
+What moved, and why:
+
+- **Thread registration costs nothing measurable.** Every call now checks a
+  thread-local flag before anything else (see *Threads* above); a build with the check
+  removed measured the same, and so did one compiled with the previous V pin.
+- **Keyword arguments cost about 5 ns on a call with parameters.** Functions are now
+  registered as `METH_FASTCALL | METH_KEYWORDS`, whose CPython dispatcher does slightly
+  more than plain `METH_FASTCALL`. It is the convention PyO3 always uses, and `add` now
+  sits with PyO3's.
+- **A per-call allocation, found by bisecting this table, is gone.** The first version
+  of keyword binding declared its slot array on every call and took its address, which
+  V answers by moving the array to the collector's heap. The slots are now created only
+  when a call uses keywords or leaves a parameter out; `Counter()` went from 112 ns back
+  to 103 ns.
+- The rest is within run-to-run noise, which is about ±10% for one run on this
+  machine.
+

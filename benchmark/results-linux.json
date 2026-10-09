@@ -8,16 +8,16 @@
     "pyo3": {
       "sizes": {
         "wheel_file": "bench_pyo3-0.1.0-cp313-cp313-manylinux_2_34_x86_64.whl",
-        "wheel": 265559,
+        "wheel": 265560,
         "extension": 637328,
         "extension_stripped": 474744,
         "files_in_wheel": 6
       },
-      "build_s": 10.845396349001021,
+      "build_s": 7.999215222000203,
       "import": {
-        "first_s": 0.0010974450015055481,
-        "warm_s": 0.0004803319989150623,
-        "rss_bytes": 663552
+        "first_s": 0.001510298001448973,
+        "warm_s": 0.0004444530004548142,
+        "rss_bytes": 544768
       },
       "speed": {
         "correctness": {
@@ -38,60 +38,60 @@
           "add 2**63 overflows": "ok"
         },
         "speed_ns": {
-          "add": 72.86728109993419,
-          "fib(25)": 202607.58450058347,
-          "count_primes(1e6)": 1949880.5249986616,
-          "sum_floats(100k)": 888975.5219988729,
-          "make_range(100k)": 2334744.214995226,
-          "greet": 137.53509775006023,
-          "checksum(100kB)": 13612.935750006727,
-          "echo_bytes(100kB)": 3709.4370599970716,
-          "join_strings(10k)": 536331.9829993998,
-          "expect_positive(err)": 220.5052364997755,
-          "Counter()": 96.08237120010017,
-          "c.increment()": 51.555303299937805,
-          "c.add(1)": 65.11756809995859,
-          "c.value": 48.34851390005497
+          "add": 71.72705699995277,
+          "fib(25)": 205466.8999999194,
+          "count_primes(1e6)": 1910309.494996909,
+          "sum_floats(100k)": 859025.8229996834,
+          "make_range(100k)": 2182051.195004533,
+          "greet": 135.11494925023726,
+          "checksum(100kB)": 13360.761950025335,
+          "echo_bytes(100kB)": 3730.026260000159,
+          "join_strings(10k)": 510240.35900081805,
+          "expect_positive(err)": 211.6240724999443,
+          "Counter()": 89.96399589996145,
+          "c.increment()": 51.00534280009015,
+          "c.add(1)": 67.57301310008188,
+          "c.value": 48.714100399956806
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 28962816,
+          "peak": 29638656,
           "kept": 4096,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 33464320,
+          "peak": 34418688,
           "kept": 1007616,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 38785024,
+          "peak": 39022592,
           "kept": 9998336,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 29237248,
+          "peak": 29876224,
           "kept": 479232,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 28794880,
+          "peak": 29319168,
           "kept": 106496,
           "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 29196288,
+          "peak": 29691904,
           "kept": 311296,
           "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 28409856,
+          "peak": 29188096,
           "kept": 49152,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 28049408,
+          "peak": 29540352,
           "kept": 4096,
           "leak": 0
         }
@@ -100,16 +100,16 @@
     "vcraft": {
       "sizes": {
         "wheel_file": "bench_vcraft-0.1.0-cp313-cp313-linux_x86_64.whl",
-        "wheel": 274730,
-        "extension": 519952,
-        "extension_stripped": 459112,
+        "wheel": 265121,
+        "extension": 501144,
+        "extension_stripped": 443432,
         "files_in_wheel": 4
       },
-      "build_s": 12.041330275998916,
+      "build_s": 5.2789666169992415,
       "import": {
-        "first_s": 0.0007160530003602616,
-        "warm_s": 0.0008079439994617132,
-        "rss_bytes": 700416
+        "first_s": 0.0006669630001852056,
+        "warm_s": 0.0006580530007340712,
+        "rss_bytes": 733184
       },
       "speed": {
         "correctness": {
@@ -130,60 +130,60 @@
           "add 2**63 overflows": "ok"
         },
         "speed_ns": {
-          "add": 65.15789099994436,
-          "fib(25)": 107245.67050010592,
-          "count_primes(1e6)": 2366479.8999925554,
-          "sum_floats(100k)": 231364.73500017019,
-          "make_range(100k)": 2754608.349996488,
-          "greet": 129.0441754999847,
-          "checksum(100kB)": 41870.4292998882,
-          "echo_bytes(100kB)": 1771.2463124962596,
-          "join_strings(10k)": 304664.30750038853,
-          "expect_positive(err)": 231.06454299977486,
-          "Counter()": 93.44367869998678,
-          "c.increment()": 49.4217680001384,
-          "c.add(1)": 61.842309500025294,
-          "c.value": 33.36520100001508
+          "add": 73.36865770012082,
+          "fib(25)": 102366.11425034425,
+          "count_primes(1e6)": 2139870.9999994026,
+          "sum_floats(100k)": 247817.841500364,
+          "make_range(100k)": 2305685.1649926105,
+          "greet": 114.39552474985248,
+          "checksum(100kB)": 39388.22735008216,
+          "echo_bytes(100kB)": 1750.7902350007498,
+          "join_strings(10k)": 321379.92450043384,
+          "expect_positive(err)": 229.99460400023963,
+          "Counter()": 102.87254249988109,
+          "c.increment()": 47.92861719997745,
+          "c.add(1)": 66.2870431000556,
+          "c.value": 33.5388684499776
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 28946432,
-          "kept": 143360,
+          "peak": 29782016,
+          "kept": 151552,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 36671488,
-          "kept": 4091904,
+          "peak": 37113856,
+          "kept": 4120576,
           "leak": 450560
         },
         "count_primes(10M) x5": {
-          "peak": 59183104,
+          "peak": 59670528,
           "kept": 20045824,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 30048256,
-          "kept": 1155072,
+          "peak": 30490624,
+          "kept": 827392,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 28798976,
+          "peak": 29483008,
           "kept": 98304,
           "leak": 4096
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 29351936,
+          "peak": 29667328,
           "kept": 200704,
           "leak": 4096
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 29454336,
-          "kept": 512000,
+          "peak": 30027776,
+          "kept": 520192,
           "leak": 4096
         },
         "Counter() x1M": {
-          "peak": 28913664,
+          "peak": 29597696,
           "kept": 143360,
           "leak": 0
         }
@@ -192,16 +192,16 @@
     "zig-maturin": {
       "sizes": {
         "wheel_file": "bench_zig-0.1.0-cp313-cp313-manylinux_2_28_x86_64.whl",
-        "wheel": 1009818,
+        "wheel": 1009816,
         "extension": 3540944,
         "extension_stripped": 582896,
         "files_in_wheel": 4
       },
-      "build_s": 23.371199762999822,
+      "build_s": 16.59476062899921,
       "import": {
-        "first_s": 0.00022629100021731574,
-        "warm_s": 0.00022774200078856666,
-        "rss_bytes": 225280
+        "first_s": 0.0002043410004262114,
+        "warm_s": 0.00019247099953645375,
+        "rss_bytes": 184320
       },
       "speed": {
         "correctness": {
@@ -222,60 +222,60 @@
           "add 2**63 overflows": "TypeError: expected int, got int"
         },
         "speed_ns": {
-          "add": 87.27154174994212,
-          "fib(25)": 323198.4514995929,
-          "count_primes(1e6)": 1894911.4899987762,
-          "sum_floats(100k)": 1130768.7325006556,
-          "make_range(100k)": 2276199.5699966066,
-          "greet": 224.14329500043095,
-          "checksum(100kB)": 39363.11690013099,
-          "echo_bytes(100kB)": 1808.4696100004294,
-          "join_strings(10k)": 292798.30050018063,
-          "expect_positive(err)": 221.9516895002016,
-          "Counter()": 76.7130748999989,
-          "c.increment()": 65.59102549999807,
-          "c.add(1)": 86.65112860016961,
-          "c.value": 31.869653550074876
+          "add": 84.71949609993317,
+          "fib(25)": 316558.729999997,
+          "count_primes(1e6)": 1874546.1200023782,
+          "sum_floats(100k)": 1086827.3774985936,
+          "make_range(100k)": 2230443.619992002,
+          "greet": 210.07023550009762,
+          "checksum(100kB)": 40252.993749982124,
+          "echo_bytes(100kB)": 1837.7560975022789,
+          "join_strings(10k)": 286265.76099941303,
+          "expect_positive(err)": 218.62843849976343,
+          "Counter()": 77.9182412999944,
+          "c.increment()": 67.79004660002101,
+          "c.add(1)": 86.64074259995687,
+          "c.value": 31.798286350021957
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 29048832,
+          "peak": 29675520,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 32804864,
+          "peak": 33546240,
           "kept": 1679360,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 38567936,
-          "kept": 9998336,
+          "peak": 39268352,
+          "kept": 10006528,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 28917760,
+          "peak": 29827072,
           "kept": 479232,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 29110272,
+          "peak": 29687808,
           "kept": 102400,
           "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 28979200,
+          "peak": 29605888,
           "kept": 204800,
           "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 28647424,
-          "kept": 45056,
+          "peak": 29716480,
+          "kept": 49152,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 28946432,
+          "peak": 29487104,
           "kept": 0,
           "leak": 0
         }
@@ -284,8 +284,8 @@
     "python": {
       "sizes": {},
       "import": {
-        "first_s": 0.0017567480008437997,
-        "warm_s": 0.00010758999997051433,
+        "first_s": 0.0001000400006887503,
+        "warm_s": 0.00010101999941980466,
         "rss_bytes": 4096
       },
       "speed": {
@@ -307,60 +307,60 @@
           "add 2**63 overflows": "n/a"
         },
         "speed_ns": {
-          "add": 37.36974130006274,
-          "fib(25)": 9408140.61999845,
-          "count_primes(1e6)": 96802882.60005909,
-          "sum_floats(100k)": 1530778.5749973846,
-          "make_range(100k)": 2340485.2049952755,
-          "greet": 74.58662320004805,
-          "checksum(100kB)": 2171621.5099968393,
-          "echo_bytes(100kB)": 1996.5810000030613,
-          "join_strings(10k)": 72153.53369992954,
-          "expect_positive(err)": 231.29965199950675,
-          "Counter()": 82.56603089994314,
-          "c.increment()": 58.47185670008912,
-          "c.add(1)": 63.133475999893555,
-          "c.value": 12.16132385002311
+          "add": 34.835524699974485,
+          "fib(25)": 9282701.939991968,
+          "count_primes(1e6)": 92725410.89994775,
+          "sum_floats(100k)": 1534516.5625012668,
+          "make_range(100k)": 2221440.9800017164,
+          "greet": 77.73145840001234,
+          "checksum(100kB)": 2213627.1549970843,
+          "echo_bytes(100kB)": 2059.1346550008893,
+          "join_strings(10k)": 71467.15250000852,
+          "expect_positive(err)": 225.05753849964094,
+          "Counter()": 78.51947570015909,
+          "c.increment()": 59.32918350008549,
+          "c.add(1)": 63.09062010004709,
+          "c.value": 12.401663350010494
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 28467200,
+          "peak": 28921856,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 32337920,
+          "peak": 32944128,
           "kept": 1695744,
           "leak": -16384
         },
         "count_primes(10M) x5": {
-          "peak": 38260736,
+          "peak": 38694912,
           "kept": 9998336,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 28889088,
+          "peak": 29163520,
           "kept": 401408,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 27824128,
+          "peak": 29106176,
           "kept": 98304,
           "leak": 4096
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 27979776,
+          "peak": 28733440,
           "kept": 200704,
           "leak": 4096
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 28012544,
+          "peak": 28594176,
           "kept": 40960,
           "leak": 4096
         },
         "Counter() x1M": {
-          "peak": 28008448,
+          "peak": 28471296,
           "kept": 0,
           "leak": 0
         }
