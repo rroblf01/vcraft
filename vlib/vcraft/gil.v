@@ -2,7 +2,7 @@ module vcraft
 
 // Running V code without the global interpreter lock.
 //
-// `@[vc_gil]` marks a function as pure V with no Python interaction, and the generated
+// `@[vc_nogil]` marks a function as pure V with no Python interaction, and the generated
 // wrapper releases the GIL around the call so long-running V code runs in parallel the
 // way `py.allow_threads` does in PyO3. The wrapper looks like this:
 //
@@ -43,7 +43,7 @@ module vcraft
 // The contract on the V side is absolute: no Python calls, no `raise_domain`, no
 // touching a `PyObj`, while released. `raise_domain` sets a Python exception, which
 // without the GIL corrupts the interpreter state rather than reporting anything. The
-// generator cannot verify purity, so `@[vc_gil]` on a `@[vc_raw]` function is refused:
+// generator cannot verify purity, so `@[vc_nogil]` on a `@[vc_raw]` function is refused:
 // raw means the function handles `PyObject *` itself, which is the opposite of pure.
 
 // allow_threads releases the GIL and returns the state to restore.

@@ -296,7 +296,7 @@ So every generated trampoline publishes the block it loaded, plus one pointer pe
 generation above the class it belongs to, and a method asks for the level it wants:
 
 ```v
-@[vc_methods]
+@[vc_method]
 pub fn (mut c BoundedCounter) bump(by int) !int {
 	mut base := unsafe { &Counter(vcraft.state_at(1)) }
 	// ...
@@ -395,7 +395,7 @@ pair leaves the GIL count wrong and crashes the next thread switch inside CPytho
 found the hard way, as a segfault in `PyErr_Occurred` with nothing in the frame
 pointing back at the missing re-acquire.
 
-## The state chain is per-thread because of `@[vc_gil]`
+## The state chain is per-thread because of `@[vc_nogil]`
 
 With the GIL held, one global chain would do. A released call runs concurrently with a
 held one, so two threads in two trampolines would publish into the same slots and each

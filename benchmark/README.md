@@ -429,7 +429,7 @@ thread, vcraft 0.2.0 crashed: the V collector only knew the importing thread, an
 first collection triggered from another one aborted the process with
 `Collecting from unknown thread`. One worker thread was enough; so was a
 `ThreadPoolExecutor`, a threaded web server, or `asyncio.to_thread`. With the GIL
-released (`@[vc_gil]`) or on free-threaded CPython it was worse in principle: the
+released (`@[vc_nogil]`) or on free-threaded CPython it was worse in principle: the
 collector neither stopped those threads nor scanned their stacks.
 
 vcraft 1.0 registers each thread with the collector the first time it enters the
@@ -444,6 +444,6 @@ with `bench_vcraft_native`, 200,000 `greet`/`join_strings`/`make_range` calls pe
 | `ThreadPoolExecutor(4)`, 500k `greet` | aborts | completes |
 
 On free-threaded 3.14t with the GIL disabled, eight threads allocating in a
-`@[vc_gil]` function in parallel and a thousand short-lived threads all complete with
+`@[vc_nogil]` function in parallel and a thousand short-lived threads all complete with
 correct results. The CLI suite and the free-threaded CI job now cover these cases.
 

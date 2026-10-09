@@ -565,10 +565,10 @@ fn find_eq_owner(fname string, classes []Class) int {
 fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	decl astquery.Declaration, mut p Project) {
 	block := read_above(lines, decl.line)
-	// `@[vc_eq]` and `@[vc_hash]` stand in for `@[vc_methods]` on the two slots they
+	// `@[vc_eq]` and `@[vc_hash]` stand in for `@[vc_method]` on the two slots they
 	// fill. They are separate annotations rather than modifiers because the receiver
 	// signature is different -- two receivers for eq, an integer result for hash -- and
-	// a user who writes `@[vc_methods] @[vc_eq]` would get a method *and* an operator.
+	// a user who writes `@[vc_method] @[vc_eq]` would get a method *and* an operator.
 	if attr_methods !in block.attrs {
 		return
 	}
@@ -581,7 +581,7 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	}
 	if target < 0 {
 		report(mut p, path, decl,
-			'error: `${decl.name}` is annotated @[vc_methods] but `${decl.receiver}` is not annotated @[vc_class]')
+			'error: `${decl.name}` is annotated @[vc_method] but `${decl.receiver}` is not annotated @[vc_class]')
 		return
 	}
 	if find_fn_node(ast, decl.name) == none {
@@ -1068,14 +1068,14 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 			return
 		}
 	}
-	// `@[vc_gil]` promises the call touches no Python, and `@[vc_raw]` promises the
+	// `@[vc_nogil]` promises the call touches no Python, and `@[vc_raw]` promises the
 	// opposite: the function handles `PyObject *` itself. Both together would release
 	// the GIL around code that reads the objects it was given, which corrupts the
 	// interpreter rather than failing loudly, so the combination is refused here where
 	// the message can name both annotations.
 	if f.nogil && f.raw {
 		report(mut p, path, decl,
-			'error: `@[vc_gil]` on `${decl.name}` contradicts `@[vc_raw]`: raw means the function handles `PyObject *` itself, and touching one without the GIL corrupts the interpreter')
+			'error: `@[vc_nogil]` on `${decl.name}` contradicts `@[vc_raw]`: raw means the function handles `PyObject *` itself, and touching one without the GIL corrupts the interpreter')
 		return
 	}
 	if f.raw {
@@ -1105,7 +1105,20 @@ pub fn report_unknown_attrs(lines []string, path string, mut p Project) {
 		}
 		indent := line.len - trimmed.len
 		for name in parse_attr_names(line) {
-			if name.starts_with('vc.') && name !in known_attrs {
+			// `vc_`, the prefix every annotation has. This compared against `vc.`, which
+			// none has, so a misspelt annotation was never reported and the declaration
+			// it was on was silently left out of the module.
+			if !name.starts_with('vc_') {
+				continue
+			}
+			if name in deprecated_attrs {
+				p.diagnostics << Diagnostic{
+					file:    path
+					line:    i + 1
+					column:  indent + 1
+					message: 'warning: `@[${name}]` is deprecated and goes in vcraft 2.0; write `@[${deprecated_attrs[name]}]`'
+				}
+			} else if name !in known_attrs {
 				p.diagnostics << Diagnostic{
 					file:    path
 					line:    i + 1

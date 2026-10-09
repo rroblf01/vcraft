@@ -189,14 +189,14 @@ pub fn new_counter() &Counter {
 }
 
 // increment adds step to value and returns the new total.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c Counter) increment() int {
 	c.value += c.step
 	return c.value
 }
 
 // set_step changes how much each increment adds.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c Counter) set_step(step int) {
 	c.step = step
 }
@@ -205,7 +205,7 @@ pub fn (mut c Counter) set_step(step int) {
 //
 // The receiver is by value. vcraft copies the struct in before the call and back
 // out after it, so a mutating method is written the idiomatic V way.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c Counter) double() {
 	c.value *= 2
 }
@@ -241,7 +241,7 @@ fn base_of() &Counter {
 }
 
 // at_limit reports whether the counter has reached its limit.
-@[vc_methods]
+@[vc_method]
 @[vc_property]
 pub fn (mut c BoundedCounter) at_limit() bool {
 	return base_of().value >= c.limit
@@ -256,7 +256,7 @@ pub fn (mut c BoundedCounter) at_limit() bool {
 // shadows an inherited attribute of the same name, so `b.step` would reach this method
 // rather than the field. That is Python's rule, not vcraft's, and the example would be a
 // poor advertisement for a shadowing nobody asked for.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c BoundedCounter) bump(by int) !int {
 	mut base := base_of()
 	if base.value + by > c.limit {
@@ -301,7 +301,7 @@ pub fn counter_hash(self voidptr) int {
 }
 
 // is_zero reports whether the value is still zero.
-@[vc_methods]
+@[vc_method]
 @[vc_property]
 pub fn (c &Counter) is_zero() bool {
 	return c.value == 0
@@ -334,7 +334,7 @@ pub fn new_pair() &Pair {
 
 // link makes two instances point at each other, which is the cycle the collector
 // exists to break.
-@[vc_methods]
+@[vc_method]
 pub fn (mut p Pair) link(other voidptr) {
 	// `retain`, not `steal`: a function parameter is borrowed, and the field has to keep
 	// the object alive on its own.
@@ -345,7 +345,7 @@ pub fn (mut p Pair) link(other voidptr) {
 //
 // `state_at(0)` is the block the trampoline loaded, which for a class with no base is
 // the class's own struct, so the peer's own struct is one step along.
-@[vc_methods]
+@[vc_method]
 pub fn (p &Pair) other() vcraft.PyObj {
 	if vcraft.is_null(p.peer) {
 		return vcraft.to_py_none()
@@ -447,12 +447,12 @@ pub fn checked(value int, exc voidptr) !int {
 
 // spin burns time in pure V, so threads can prove the GIL is really released.
 //
-// `@[vc_gil]` is a promise, not a hint: nothing in here touches Python, raises, or
+// `@[vc_nogil]` is a promise, not a hint: nothing in here touches Python, raises, or
 // allocates in a way the collector would need the interpreter for. The wrapper releases
 // the GIL around the call, so N threads each burn their own core instead of queuing
 // behind one lock.
 @[vc_fn]
-@[vc_gil]
+@[vc_nogil]
 pub fn spin(iterations int) int {
 	mut total := 0
 	for i in 0 .. iterations {
@@ -465,10 +465,10 @@ pub fn spin(iterations int) int {
 // GIL is exercised too: the wrapper re-acquires before it raises.
 //
 // A plain `error(...)`, not `raise_domain`: setting a Python exception is touching
-// Python, which a `@[vc_gil]` function must never do. The wrapper turns the value into
+// Python, which a `@[vc_nogil]` function must never do. The wrapper turns the value into
 // a RuntimeError after it holds the GIL again.
 @[vc_fn]
-@[vc_gil]
+@[vc_nogil]
 pub fn spin_checked(iterations int) !int {
 	if iterations < 0 {
 		return error('iterations must not be negative')
@@ -524,7 +524,7 @@ pub fn new_countdown() &Countdown {
 }
 
 // rewind resets the countdown, so the same instance can be iterated twice.
-@[vc_methods]
+@[vc_method]
 @[vc_iter]
 pub fn (mut c Countdown) rewind() {
 	c.current = c.start
@@ -534,7 +534,7 @@ pub fn (mut c Countdown) rewind() {
 //
 // `StopIteration` is raised the way every domain failure is: at the point of failure,
 // with the pending exception set before the error value travels out.
-@[vc_methods]
+@[vc_method]
 @[vc_next]
 pub fn (mut c Countdown) advance() !int {
 	if c.current <= 0 {
@@ -564,7 +564,7 @@ pub fn new_tally() &Tally {
 //
 // A method works on the instance in place, as a PyO3 method does, so the write that
 // happened before the panic stays.
-@[vc_methods]
+@[vc_method]
 pub fn (mut t Tally) add_then_fail(by i64) {
 	t.sum += by
 	panic('failed after writing')

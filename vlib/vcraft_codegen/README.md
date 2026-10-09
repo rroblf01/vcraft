@@ -87,9 +87,9 @@ place as the stub a type checker reads.
 | -------------- | --------------- | ----------------------------------------------------- |
 | `@[vc_fn]`     | `pub fn`        | Exports the function as a module-level callable        |
 | `@[vc_raw]`    | `pub fn`        | No conversion: `voidptr` in, `voidptr` out            |
-| `@[vc_gil]`    | `pub fn`        | Call with the GIL released                             |
+| `@[vc_nogil]`    | `pub fn`        | Call with the GIL released                             |
 | `@[vc_class]`  | `pub struct`    | Expose the struct as a Python type                     |
-| `@[vc_methods]`| methods         | Add the method to its receiver's class                 |
+| `@[vc_method]`| methods         | Add the method to its receiver's class                 |
 | `@[vc_field]`  | struct fields   | Expose the field as an instance attribute              |
 | `@[vc_property]` | methods       | Register the method as a Python `property`             |
 | `@[vc_static]` | methods         | Register the method as a `staticmethod`                |
@@ -111,7 +111,7 @@ src/lib.v:12:1: error: cannot expose `add`: type `map[string]int` of parameter
 `lookup` has no marshalling rule
 ```
 
-So is a `@[vc_methods]` method whose receiver is not a `@[vc_class]`, a class
+So is a `@[vc_method]` method whose receiver is not a `@[vc_class]`, a class
 declared twice, and a declaration whose signature cannot be read. The scan collects
 every diagnostic and reports them all at once, so a project with five mistakes takes
 one build to fix rather than five.

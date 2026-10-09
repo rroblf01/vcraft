@@ -70,7 +70,7 @@ pub fn incref(o PyObj) PyObj {
 // one -- so storing one without retaining it leaves a field pointing at an object whose
 // last reference Python has already dropped.
 //
-//	@[vc_methods]
+//	@[vc_method]
 //	pub fn (mut n Node) link(other voidptr) {
 //		n.peer = vcraft.retain(other)
 //	}

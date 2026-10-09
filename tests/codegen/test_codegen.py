@@ -587,7 +587,7 @@ def main() -> int:
     t.check("a return copies out", "vcraft.to_py_bytes_slice(result)" in glue)
 
     print("the GIL is released")
-    # `@[vc_gil]` marks a function as pure V, and the wrapper releases the GIL around
+    # `@[vc_nogil]` marks a function as pure V, and the wrapper releases the GIL around
     # the call. Four threads burning CPU each get their own core instead of queuing
     # behind one lock; on a GIL build without the release this would take four times
     # as long, and with an unbalanced release it would crash the interpreter.

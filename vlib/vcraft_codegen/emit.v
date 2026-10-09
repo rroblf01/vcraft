@@ -333,7 +333,7 @@ fn emit_error_raiser(e ErrorType) string {
 	return w.str()
 }
 
-// emit_nogil_open renders the GIL release and its guards for a `@[vc_gil]` call.
+// emit_nogil_open renders the GIL release and its guards for a `@[vc_nogil]` call.
 //
 // The release is paired in a `defer` rather than only on the fall-through path, because
 // a panic unwinds past the explicit release. The `saved != nil` guard is what keeps that
@@ -360,7 +360,7 @@ fn emit_nogil_open() string {
 	return w.str()
 }
 
-// emit_nogil_close renders the re-acquire after a `@[vc_gil]` call returns.
+// emit_nogil_close renders the re-acquire after a `@[vc_nogil]` call returns.
 //
 // Paired with the `nil` assignment: without it the deferred restore would fire on the
 // way out and restore twice, which leaves the GIL count wrong and crashes the next
@@ -369,7 +369,7 @@ fn emit_nogil_close() string {
 	return '\tvcraft.end_allow_threads(saved)\n' + '\tsaved = unsafe { nil }\n'
 }
 
-// emit_nogil_failure renders the failure path of a `@[vc_gil]` call that returns `!T`.
+// emit_nogil_failure renders the failure path of a `@[vc_nogil]` call that returns `!T`.
 //
 // The error is raised here rather than captured because the GIL is re-acquired first:
 // raising touches Python, and the whole point of the release is that nothing between
@@ -604,7 +604,7 @@ pub fn emit_trampoline(f Func) string {
 	// A raw function's result is a pointer the V side already owns, so it is
 	// handed back without touching the reference count.
 	//
-	// `@[vc_gil]` replaces the guard with the release and its own pair of guards: the
+	// `@[vc_nogil]` replaces the guard with the release and its own pair of guards: the
 	// recover defer first so it runs last, already holding the GIL, and the restore
 	// defer second so it runs first. Everything between them runs without the GIL and
 	// must not touch Python.

@@ -12,11 +12,16 @@ pub const attr_fn = 'vc_fn'
 
 pub const attr_raw = 'vc_raw'
 
-pub const attr_nogil = 'vc_gil'
+// attr_nogil releases the GIL around a call. It was spelled `vc_gil` before 1.0, which
+// read as the opposite; that name is still accepted, with a warning.
+pub const attr_nogil = 'vc_nogil'
 
 pub const attr_class = 'vc_class'
 
-pub const attr_methods = 'vc_methods'
+// attr_methods exposes one method. It was spelled `vc_methods` before 1.0, after
+// PyO3's `#[pymethods]`, which annotates a whole impl block that V does not have; that
+// name is still accepted, with a warning.
+pub const attr_methods = 'vc_method'
 
 pub const attr_field = 'vc_field'
 
@@ -52,6 +57,18 @@ pub const attr_hash = 'vc_hash'
 // known_attrs is every annotation the generator reacts to. Anything else in a
 // `vc.` namespace is a typo and is reported rather than ignored, because a
 // silently ignored annotation means a function quietly missing from the module.
+// deprecated_attrs maps a name from before 1.0 to the one that replaced it. Both
+// work throughout 1.x; the old one draws a warning and goes in 2.0.
+pub const deprecated_attrs = {
+	'vc_gil':     'vc_nogil'
+	'vc_methods': 'vc_method'
+}
+
+// canonical_attr is the current name of an annotation, given either spelling.
+pub fn canonical_attr(name string) string {
+	return deprecated_attrs[name] or { name }
+}
+
 pub const known_attrs = [
 	attr_fn,
 	attr_raw,

@@ -47,7 +47,7 @@ pub fn read_inline(lines []string, line int) AttrBlock {
 	if line < 1 || line > lines.len {
 		return block
 	}
-	block.attrs = parse_attr_names(lines[line - 1])
+	block.attrs = parse_attr_names(lines[line - 1]).map(canonical_attr(it))
 	block.args = parse_attr_args(lines[line - 1])
 	block.doc = doc_above(lines, line)
 	return block
@@ -129,7 +129,7 @@ pub fn read_above(lines []string, line int) AttrBlock {
 		}
 		i = start - 1
 	}
-	block.attrs = attrs_acc
+	block.attrs = attrs_acc.map(canonical_attr(it))
 
 	// Then the doc comment, which must be contiguous lines directly above the
 	// attributes, ignoring blank lines.
@@ -178,7 +178,7 @@ fn join_lines(lines []string) string {
 // parse_attrs reads the names and the single argument of an annotation block.
 pub fn parse_attrs(text string) AttrBlock {
 	mut out := AttrBlock{}
-	out.attrs = parse_attr_names(text)
+	out.attrs = parse_attr_names(text).map(canonical_attr(it))
 	out.args = parse_attr_args(text)
 	return out
 }
