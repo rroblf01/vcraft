@@ -60,7 +60,7 @@ checked off here when it does.
       file.
 - [x] **Benchmark re-run** on Linux: thread registration costs nothing measurable;
       keywords cost ~5 ns, as in PyO3; a per-call allocation found on the way is gone.
-- [ ] **Images re-released** for 1.0 with the new V pin, and the musl CI job moved to
+- [x] **Images re-released** for 1.0 with the new V pin, and the musl CI job moved to
       them.
 
 ## In 1.x
