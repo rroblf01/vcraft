@@ -85,6 +85,13 @@ the README.
 
 ### Changed
 
+- **Actions run on Node 24**, which GitHub is moving every action to: checkout v5,
+  setup-python v6, cache v5, upload-artifact v6, download-artifact v7,
+  build-push-action v7, setup-buildx-action v4, login-action v4, action-gh-release v3,
+  in this repository's workflows, the action and the workflow `vcraft generate-ci`
+  writes. The action keys its V cache on the runner image, not just its OS.
+- **`SECURITY.md`** says how to report a vulnerability and how to verify a download;
+  **`MIGRATING.md`** walks a 0.x project to 1.0.
 - **V pinned to `36be926`** (vc snapshot `6851aaf`), from `0137eb5`. Every suite
   passes with it; it also stops V picking tcc implicitly on macOS 27. CI, the release,
   the action, both images and `vcraft toolchain install` move together; the musl CI

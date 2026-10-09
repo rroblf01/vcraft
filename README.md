@@ -1134,6 +1134,9 @@ conversions in the type table are the public surface:
 - Generated glue, the runtime's V API under `vlib/vcraft`, and the wheel's internals
   are not part of the surface: they change whenever the generator needs them to.
 
+Upgrading a 0.x project: [MIGRATING.md](MIGRATING.md). Reporting a vulnerability:
+[SECURITY.md](SECURITY.md).
+
 Renamed in 1.0, still accepted with a warning: `@[vc_gil]` (now `@[vc_nogil]`),
 `@[vc_methods]` (now `@[vc_method]`), top-level build keys in `vcraft.toml` (now in
 `[build]`) and `[[classifier]]` tables (now `classifiers = [...]`).

@@ -22,8 +22,7 @@ checked off here when it does.
       parameter by name, `?T` optional, `@[vc_defaults]` for the rest.
 - [x] **`?T`, `map[string]T`, multi-value results and `[N]T`** of scalars and
       strings, as parameters and results (a tuple only as a result).
-- [ ] **Migration guide** from 0.2: the classifier, regenerating the CI workflow, and
-      rebuilding extensions for the thread fix.
+- [x] **Migration guide** from 0.x: [MIGRATING.md](MIGRATING.md).
 
 ### Correctness
 
@@ -53,12 +52,12 @@ checked off here when it does.
 
 ### Release hygiene
 
-- [ ] **Actions off Node 20**, which GitHub is retiring: checkout, setup-python,
-      cache, upload/download-artifact and the docker actions moved to their current
-      majors.
-- [ ] **The action's V cache keyed per runner image**, so a compiler built on one
-      macOS image is never restored on another.
-- [ ] **`SECURITY.md`**, and PyPI attestations checked on the published files.
+- [x] **Actions off Node 20**, each moved to its first Node 24 major, in our
+      workflows, the action and the workflow `vcraft generate-ci` writes; the CLI suite
+      refuses a Node 20 major anywhere.
+- [x] **The action's V cache keyed per runner image** (`ImageOS`/`ImageVersion`).
+- [x] **`SECURITY.md`**, and PyPI provenance attestations confirmed on every published
+      file.
 - [ ] **Benchmark re-run** with thread registration in every call, to confirm its cost
       is negligible.
 - [ ] **Images re-released** for 1.0 with the new V pin, and the musl CI job moved to
