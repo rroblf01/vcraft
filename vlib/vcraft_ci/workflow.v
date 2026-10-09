@@ -93,13 +93,13 @@ pub fn workflow(p vcraft_project.Project, vcraft_action string, free_threading b
 		}
 	}
 	w.write_string('\n    steps:\n')
-	w.write_string('      - uses: actions/checkout@v4\n\n')
+	w.write_string('      - uses: actions/checkout@v5\n\n')
 	w.write_string('      - name: set up Python\n')
 	w.write_string('        id: python\n')
 	w.write_string('        if: ')
 	w.write_string(gha_if_empty('matrix.container'))
 	w.write_string('\n')
-	w.write_string('        uses: actions/setup-python@v5\n')
+	w.write_string('        uses: actions/setup-python@v6\n')
 	w.write_string('        with:\n')
 	w.write_string('          python-version: ' + gha('matrix.python') + '\n\n')
 	// The action installs V and vcraft itself on a runner cell, so there is no
@@ -114,7 +114,7 @@ pub fn workflow(p vcraft_project.Project, vcraft_action string, free_threading b
 		gha("matrix.free-threading && matrix.container == '' && format(' --interpreter {0}', steps.python.outputs.python-path) || ''") +
 		'\n\n')
 	w.write_string('      - name: upload\n')
-	w.write_string('        uses: actions/upload-artifact@v4\n')
+	w.write_string('        uses: actions/upload-artifact@v6\n')
 	w.write_string('        with:\n')
 	w.write_string('          name: ' + gha('matrix.target') + '\n')
 	w.write_string('          path: dist/*.whl\n\n')

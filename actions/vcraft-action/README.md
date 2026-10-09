@@ -26,7 +26,7 @@ jobs:
     container:
       image: ghcr.io/rroblf01/vcraft-manylinux:0.2.0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: vcraft build --target linux-x86_64-gnu --manylinux 2_28
 ```
 

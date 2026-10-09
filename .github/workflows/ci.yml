@@ -46,7 +46,7 @@ jobs:
     steps:
       - name: look for a cached compiler
         id: v-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/v-src
           key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
@@ -71,7 +71,7 @@ jobs:
 
       - name: save the compiler
         if: steps.v-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/v-src
           key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
@@ -117,10 +117,10 @@ jobs:
     continue-on-error: ${{ matrix.experimental == true }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
           allow-prereleases: true
@@ -128,7 +128,7 @@ jobs:
       # Built once per runner OS by the v-compiler job, which every job here
       # waits for, so this only ever restores it.
       - name: restore the V compiler
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/v-src
           key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
@@ -208,10 +208,10 @@ jobs:
     continue-on-error: ${{ matrix.experimental == true }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
           allow-prereleases: true
@@ -219,7 +219,7 @@ jobs:
       # Built once per runner OS by the v-compiler job, which every job here
       # waits for, so this only ever restores it.
       - name: restore the V compiler
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/v-src
           key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
@@ -254,10 +254,10 @@ jobs:
       # once the images are re-released.
       MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:0.2.0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: log in to ghcr.io
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -290,15 +290,15 @@ jobs:
       matrix:
         os: [ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
       - name: restore the V compiler
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/v-src
           key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
@@ -338,18 +338,18 @@ jobs:
             python: "3.13t"
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: set up a free-threaded Python
         id: ft-python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
 
       # Built once per runner OS by the v-compiler job, which every job here
       # waits for, so this only ever restores it.
       - name: restore the V compiler
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/v-src
           key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}

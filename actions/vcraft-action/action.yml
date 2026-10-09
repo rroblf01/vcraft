@@ -41,13 +41,23 @@ runs:
 
     # The compiler only changes with the pins, so it is built once per runner
     # image and restored afterwards: a cold build is several minutes per cell.
+    # The runner image, not just the OS: a compiler built on one macOS image must not
+    # be restored on another, whose SDK and libc it was not built against. GitHub's
+    # hosted runners set ImageOS and ImageVersion; the expression context cannot read
+    # the runner's environment, so a shell step hands them over.
+    - name: identify the runner image
+      id: image
+      if: ${{ inputs.container == '' }}
+      shell: bash
+      run: echo "name=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
     - name: restore the V compiler
       id: v-cache
       if: ${{ inputs.container == '' }}
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: /tmp/v-src
-        key: vcraft-v-${{ runner.os }}-${{ runner.arch }}-36be92642c49a8fe9213ea4b96c6bf56b67b668c-6851aaf3f9e696b30b26e406f16095b0002acaab
+        key: vcraft-v-${{ steps.image.outputs.name }}-${{ runner.arch }}-36be92642c49a8fe9213ea4b96c6bf56b67b668c-6851aaf3f9e696b30b26e406f16095b0002acaab
 
     - name: install the V compiler
       if: ${{ inputs.container == '' && steps.v-cache.outputs.cache-hit != 'true' }}
