@@ -60,6 +60,10 @@ Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
 
 ### Changed
 
+- **V pinned to `36be926`** (vc snapshot `6851aaf`), from `0137eb5`. Every suite
+  passes with it; it also stops V picking tcc implicitly on macOS 27. CI, the release,
+  the action, both images and `vcraft toolchain install` move together; the musl CI
+  job keeps the 0.2.0 image, and its older V, until the images are re-released.
 - **README examples are built in CI** (`tests/docs/test_readme.py`). The
   `raise_custom` example called a helper the README never defined; it is complete now.
 - **Sanitizer runs in CI**: the runtime, codegen and fuzz suites also run against

@@ -10,11 +10,11 @@ import os
 // pins appear in CI, the images and the action; the CLI suite checks they agree.
 
 // v_commit is the V commit vcraft builds and tests with.
-pub const v_commit = '0137eb5d8ebc5d183259309ed08ea06ba9bc27d6'
+pub const v_commit = '36be92642c49a8fe9213ea4b96c6bf56b67b668c'
 
 // vc_commit is the matching snapshot of `vlang/vc`, the C bootstrap V builds from. A newer
 // snapshot enforces checker rules the pinned V sources predate.
-pub const vc_commit = '8af812feb76c678abd86a8e682fd9ab2790e519c'
+pub const vc_commit = '6851aaf3f9e696b30b26e406f16095b0002acaab'
 
 // toolchain_root is where installed compilers live: `$VCRAFT_HOME`, else
 // `$XDG_CACHE_HOME/vcraft`, else `~/.cache/vcraft`.
@@ -43,7 +43,7 @@ pub fn installed_v() string {
 }
 
 // v_matches_pin reports whether a compiler is the pinned commit, by asking it: `v version`
-// prints `V 0.5.2 0137eb5`, the short hash of the commit it was built from.
+// prints `V 0.5.2 36be926`, the short hash of the commit it was built from.
 pub fn v_matches_pin(v string) bool {
 	return v_reported_commit(v).len >= 7 && v_commit.starts_with(v_reported_commit(v))
 }

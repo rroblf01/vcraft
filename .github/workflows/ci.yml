@@ -28,8 +28,8 @@ concurrency:
 # newer than the flags vcraft passes, so a release binary fails every build.
 # Same pins as docker/*, the vcraft-action and release-vcraft.yml.
 env:
-  V_COMMIT: 0137eb5d8ebc5d183259309ed08ea06ba9bc27d6
-  VC_COMMIT: 8af812feb76c678abd86a8e682fd9ab2790e519c
+  V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
+  VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
 
 jobs:
   # The V compiler, once per runner OS, before anything else starts. Without
@@ -250,6 +250,8 @@ jobs:
       contents: read
       packages: read
     env:
+      # Still the 0.2.0 image, built with the previous V pin; moves to the 1.0 image
+      # once the images are re-released.
       MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:0.2.0
     steps:
       - uses: actions/checkout@v4

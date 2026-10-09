@@ -47,7 +47,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: /tmp/v-src
-        key: vcraft-v-${{ runner.os }}-${{ runner.arch }}-0137eb5d8ebc5d183259309ed08ea06ba9bc27d6-8af812feb76c678abd86a8e682fd9ab2790e519c
+        key: vcraft-v-${{ runner.os }}-${{ runner.arch }}-36be92642c49a8fe9213ea4b96c6bf56b67b668c-6851aaf3f9e696b30b26e406f16095b0002acaab
 
     - name: install the V compiler
       if: ${{ inputs.container == '' && steps.v-cache.outputs.cache-hit != 'true' }}
@@ -58,8 +58,8 @@ runs:
       # .github/workflows/ci.yml; when a newer V release exists this goes back
       # to downloading it.
       env:
-        V_COMMIT: 0137eb5d8ebc5d183259309ed08ea06ba9bc27d6
-        VC_COMMIT: 8af812feb76c678abd86a8e682fd9ab2790e519c
+        V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
+        VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
       run: |
         git init -q /tmp/v-src
         cd /tmp/v-src
