@@ -46,7 +46,10 @@ the README.
   `~/.cache/vcraft` (or `$VCRAFT_HOME`), and vcraft finds it there by itself;
   `vcraft toolchain` reports which compiler is used and whether it is the pinned
   commit. `vcraft build` without any V now says how to get one. Building V takes a
-  few minutes and about 6 GB of memory at its peak.
+  few minutes and about 6 GB of memory at its peak. On musl (Alpine), where the last
+  step of V's Makefile fails to link at the pinned commit after the compiler is
+  built, a compiler that reports the pin is accepted with a warning; the musllinux
+  image does the same.
 
 ### Fixed
 
