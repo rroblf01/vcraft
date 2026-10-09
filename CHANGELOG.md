@@ -2,12 +2,16 @@
 
 All notable changes to vcraft are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
-[Semantic Versioning](https://semver.org/). Until 1.0, minor releases may change the
+[Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
-Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
+## [1.0.0] - 2026-10-09
+
+The first stable release: from here on the annotation vocabulary, the `vcraft.toml`
+keys and the CLI change only with a deprecation period. Upgrading from 0.x is
+described in [MIGRATING.md](MIGRATING.md).
 
 ### Renamed (the old names keep working throughout 1.x, with a warning)
 
@@ -317,6 +321,7 @@ platform tag, so the binary loads on every macOS the tag claims. If you set the
 variable yourself, the tag follows your value. A `universal2` interpreter tag
 becomes the single architecture that was actually compiled.
 
-[Unreleased]: https://github.com/rroblf01/vcraft/compare/vcraft/v0.2.0...HEAD
+[Unreleased]: https://github.com/rroblf01/vcraft/compare/vcraft/v1.0.0...HEAD
+[1.0.0]: https://github.com/rroblf01/vcraft/compare/vcraft/v0.2.0...vcraft/v1.0.0
 [0.2.0]: https://github.com/rroblf01/vcraft/compare/vcraft/v0.1.0...vcraft/v0.2.0
 [0.1.0]: https://github.com/rroblf01/vcraft/releases/tag/vcraft/v0.1.0
