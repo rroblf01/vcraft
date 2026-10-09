@@ -52,11 +52,13 @@ Each item lands on `main` with its tests and a changelog entry under
 - [ ] **Linux aarch64 and musllinux tested per commit**, not only built: the suites run
       on `ubuntu-24.04-arm` (3.11 and 3.14) and, through `docker run`, inside the
       published musllinux image. In CI; to be checked off once a run is green.
+- [x] **V in one command.** `vcraft toolchain install` builds the pinned V into vcraft's
+      cache and vcraft finds it; `vcraft toolchain` reports it.
 - [ ] **V without building it.** A prebuilt V at the pinned commit for each supported
-      platform, installable from PyPI (as `ziglang` ships Zig) or by
-      `vcraft toolchain install`, so `pip install vcraft` is enough to start.
-- [ ] **Windows: decided.** Either supported, with a CI job, or documented as out of
-      scope for 1.x with the reasons.
+      platform (as `ziglang` ships Zig on PyPI), so not even the five-minute build is
+      needed.
+- [x] **Windows: decided.** Out of scope for 1.x (decided 2026-10-07); see
+      [After 1.0](#after-10).
 
 ## Feature parity with PyO3
 
@@ -87,3 +89,14 @@ Each item lands on `main` with its tests and a changelog entry under
       instead of a pinned commit.
 - [ ] **Security:** `SECURITY.md`, and PyPI attestations checked.
 - [ ] **A real project** published to PyPI with vcraft, as the reference example.
+
+## After 1.0
+
+Decided against for 1.x, written down so the decision can be revisited with its reasons.
+
+- **Windows.** vcraft quotes every compiler argument for a POSIX shell, its build
+  scripts are bash, the action refuses Windows runners, and no Windows wheel has ever
+  been built. Supporting it means a cmd/PowerShell-safe build driver, MSVC or MinGW
+  with V, `.pyd` naming and a CI job, which would delay 1.0 considerably. Until then
+  the README and `vcraft build` say plainly that Windows is not supported.
+

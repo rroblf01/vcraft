@@ -353,6 +353,12 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		// satisfy it, e.g. a musl policy on a glibc machine.
 		target = target.with_policy(opt.manylinux, opt.musllinux)!
 	}
+	// Windows is out of scope for 1.x (ROADMAP.md, "After 1.0"): the build quotes for a
+	// POSIX shell and no Windows wheel has ever been built or tested. Refused here, by
+	// name, rather than producing a `.pyd` nobody has loaded.
+	if target.os == 'windows' {
+		return error('Windows is not supported by vcraft 1.x; build on Linux or macOS (see ROADMAP.md)')
+	}
 	// The free-threaded build is whatever interpreter the caller named, and this is
 	// the check: a GIL interpreter produces a `cp314t`-tagged wheel full of GIL code,
 	// which the installer accepts and the free-threaded runtime then refuses to load.

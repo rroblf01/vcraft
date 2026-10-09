@@ -63,18 +63,17 @@ $ pip install vcraft
 $ vcraft --version
 ```
 
-**2. Install a V compiler.** `pip` ships the tool, not the toolchain, the same way
-maturin needs Rust. vcraft needs a V newer than the 0.5.2 release, so build it from
-the commit vcraft is tested with (about five minutes, once):
+**2. Install the V compiler.** `pip` ships the tool, not the toolchain, the same way
+maturin needs Rust. vcraft needs a V newer than the 0.5.2 release, so it builds the
+commit it is tested with into its own cache (about five minutes, once; needs git,
+make and a C compiler):
 
 ```console
-$ git init -q ~/v-src && cd ~/v-src
-$ git remote add origin https://github.com/vlang/v.git
-$ git fetch -q --depth 1 origin 0137eb5d8ebc5d183259309ed08ea06ba9bc27d6 && git checkout -q FETCH_HEAD
-$ git clone -q https://github.com/vlang/vc.git vc && (cd vc && git checkout -q 8af812feb76c678abd86a8e682fd9ab2790e519c)
-$ make fresh_tcc && make local=1 -j4
-$ export PATH="$HOME/v-src:$PATH"
+$ vcraft toolchain install
+$ vcraft toolchain          # which compiler vcraft uses, and whether it is the pinned one
 ```
+
+vcraft finds it there by itself. `VCRAFT_V=/path/to/v` uses another V instead.
 
 You also need a C compiler (gcc or clang) and the CPython headers, which most Python
 installs already include.
@@ -1085,7 +1084,7 @@ Known limitations:
 
 - Python 3.11 to 3.14, or 3.13t/3.14t for free-threaded builds
 - Linux (glibc or musl) or macOS
-- A V compiler built from the pinned commit (see [Quick start](#quick-start))
+- A V compiler at the pinned commit: `vcraft toolchain install` builds it
 - gcc or clang, and the CPython development headers
 - Docker, only to build manylinux or musllinux wheels locally
 

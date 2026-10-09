@@ -27,8 +27,10 @@ pub fn vlib_path() string {
 
 // v_compiler returns the V compiler to use.
 //
-// `VCRAFT_V` wins, then a `v` beside this binary, then `v` on `PATH`. The middle case is
-// what makes a downloaded release work without asking anyone to configure anything.
+// `VCRAFT_V` wins, then a `v` beside this binary, then the pinned compiler
+// `vcraft toolchain install` built, then `v` on `PATH`. The pinned one comes before
+// `PATH` because it is the commit vcraft is tested with, and the `v` on `PATH` is often
+// a release too old for the flags vcraft passes.
 pub fn v_compiler() string {
 	if os.getenv('VCRAFT_V') != '' {
 		return os.getenv('VCRAFT_V')
@@ -36,6 +38,10 @@ pub fn v_compiler() string {
 	beside := os.executable().all_before_last('/') + '/v'
 	if os.exists(beside) {
 		return beside
+	}
+	installed := installed_v()
+	if installed != '' {
+		return installed
 	}
 	return 'v'
 }

@@ -1539,6 +1539,66 @@ print("ok" if not bad else bad)
                     proc.returncode == 0 and re.fullmatch(r"\d+\.\d+\.\d+\S*", proc.stdout.strip()),
                     proc.stdout + proc.stderr)
 
+        print("toolchain")
+        # vcraft pins the V commit it is tested with, in its own source and in every
+        # place that builds V; a pin moved in one place and not the others is a CI
+        # that tests one compiler and a user who gets another.
+        toolchain_v = (ROOT / "vlib" / "vcraft_project" / "toolchain.v").read_text()
+        pin_v = re.search(r"pub const v_commit = '([0-9a-f]{40})'", toolchain_v).group(1)
+        pin_vc = re.search(r"pub const vc_commit = '([0-9a-f]{40})'", toolchain_v).group(1)
+        for place in [".github/workflows/ci.yml", ".github/workflows/release-vcraft.yml",
+                      "actions/vcraft-action/action.yml", "docker/manylinux.Dockerfile",
+                      "docker/musllinux.Dockerfile"]:
+            text = (ROOT / place).read_text()
+            t.check(f"{place} pins the same V", pin_v in text and pin_vc in text,
+                    f"expected {pin_v[:7]} and {pin_vc[:7]}")
+        no_v = {k: v for k, v in os.environ.items() if k not in ("VCRAFT_V",)}
+        no_v["VCRAFT_HOME"] = str(tmp / "no-toolchain")
+        no_v["PATH"] = "/usr/bin:/bin"
+        proc = subprocess.run([str(VCRAFT), "toolchain"], cwd=project, env=no_v,
+                              capture_output=True, text=True)
+        t.check("toolchain reports a missing compiler",
+                proc.returncode != 0 and "vcraft toolchain install" in proc.stdout,
+                proc.stdout + proc.stderr)
+        proc = subprocess.run([str(VCRAFT), "build"], cwd=project, env=no_v,
+                              capture_output=True, text=True)
+        t.check("build without a compiler says how to get one",
+                proc.returncode != 0 and "vcraft toolchain install" in proc.stderr,
+                proc.stderr.strip()[-300:])
+        # An installed toolchain is found without PATH or VCRAFT_V. A stand-in that
+        # answers `version` like the pinned V keeps this check off the network.
+        fake_home = tmp / "toolchain-home"
+        fake_dir = fake_home / f"v-{pin_v[:12]}"
+        fake_dir.mkdir(parents=True)
+        fake_v = fake_dir / "v"
+        fake_v.write_text(f"#!/bin/sh\necho 'V 0.5.2 {pin_v[:7]}'\n")
+        fake_v.chmod(0o755)
+        found = dict(no_v, VCRAFT_HOME=str(fake_home))
+        proc = subprocess.run([str(VCRAFT), "toolchain"], cwd=project, env=found,
+                              capture_output=True, text=True)
+        # A binary V compiles sets VEXE to the compiler that built it, and V trusts VEXE
+        # to find its own vlib: vcraft must not hand that to the compilers it runs, or a
+        # pip-installed vcraft points the user's V at a path that does not exist.
+        seen = tmp / "vexe-seen.txt"
+        probe_v = tmp / "probe-v"
+        probe_v.write_text(f"#!/bin/sh\necho 'V 0.5.2 {pin_v[:7]}'\necho \"[$VEXE]\" > {seen}\n")
+        probe_v.chmod(0o755)
+        subprocess.run([str(VCRAFT), "toolchain"], cwd=project,
+                       env=dict(found, VCRAFT_V=str(probe_v), VEXE="/nonexistent/v"),
+                       capture_output=True, text=True)
+        t.check("the compilers vcraft runs do not inherit VEXE",
+                seen.exists() and seen.read_text().strip() == "[]",
+                seen.read_text() if seen.exists() else "probe never ran")
+        t.check("an installed toolchain is found and recognised as the pin",
+                proc.returncode == 0 and str(fake_v) in proc.stdout
+                and "the pinned commit" in proc.stdout, proc.stdout + proc.stderr)
+
+        print("windows is refused by name")
+        proc = vcraft("build", "--target", "windows-amd64", "--dry-run", cwd=project)
+        t.check("a Windows target is refused with a reason",
+                proc.returncode != 0 and "Windows is not supported" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
+
         print("errors")
         proc = vcraft("build", "--out-dir", cwd=project)
         t.check("a missing option value fails", proc.returncode != 0)

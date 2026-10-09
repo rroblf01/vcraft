@@ -9,8 +9,20 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
 
+### Added
+
+- **`vcraft toolchain install`** builds the V compiler vcraft is tested with into
+  `~/.cache/vcraft` (or `$VCRAFT_HOME`), and vcraft finds it there by itself;
+  `vcraft toolchain` reports which compiler is used and whether it is the pinned
+  commit. `vcraft build` without any V now says how to get one. Building V takes a
+  few minutes and about 6 GB of memory at its peak.
+
 ### Fixed
 
+- **The compilers vcraft runs inherited its VEXE.** A binary V compiles sets
+  VEXE to the compiler that built it, and V locates its own vlib and thirdparty
+  through VEXE: a pip-installed vcraft pointed the user's V at the release build's
+  compiler path, which does not exist on their machine. vcraft now clears it.
 - **Calling an extension from any thread but the importing one crashed Python.**
   V's garbage collector only knew the thread that imported the module, so the first
   collection triggered from another thread aborted the process with
