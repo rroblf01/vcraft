@@ -240,6 +240,11 @@ pub fn (t CrossTarget) default_cc() string {
 	if t.os == 'linux' && t.arch == 'aarch64' && t.libc == 'gnu' {
 		return 'aarch64-linux-gnu-gcc'
 	}
+	// The other direction, from an aarch64 host. Without it the build fell back to the
+	// host's own cc, which compiled an aarch64 extension and tagged it x86_64.
+	if t.os == 'linux' && t.arch == 'x86_64' && t.libc == 'gnu' {
+		return 'x86_64-linux-gnu-gcc'
+	}
 	if t.os == 'linux' && t.arch == 'x86_64' && t.libc == 'musl' {
 		return 'x86_64-linux-musl-gcc'
 	}

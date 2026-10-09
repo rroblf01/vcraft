@@ -7,6 +7,116 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+Work towards 1.0.0; see [ROADMAP.md](ROADMAP.md).
+
+### Renamed (the old names keep working throughout 1.x, with a warning)
+
+- **`@[vc_gil]` is now `@[vc_nogil]`**: it releases the GIL, which the old name read
+  as the opposite of.
+- **`@[vc_methods]` is now `@[vc_method]`**: it goes on one method at a time.
+- **Build settings moved into a `[build]` table** in `vcraft.toml` (`minimum-version`,
+  `abi3`, `free-threading`, `strip`, `embed-pyc`, `gc-free-space-divisor`). As
+  top-level keys they had to precede every table, and written after `[package]` they
+  were silently ignored; the same keys found under `[package]` are now reported.
+- **Classifiers are written `classifiers = [...]`** in `[package]`; `[[classifier]]`
+  tables are still read.
+
+The public surface and the deprecation policy are written down under *Stability* in
+the README.
+
+### Added
+
+- **Keyword arguments and defaults.** Every parameter can be passed by name, in any
+  order; a `?T` parameter may be left out and arrives as `none`; and
+  `@[vc_defaults: 'step=1, label="item"']` gives other bool, integer, float and string
+  parameters defaults. Errors match Python's (missing, repeated, unknown and surplus
+  arguments), signatures and stubs show the defaults, and a fully positional call
+  costs what it did before. The README used to say keywords were supported; now they
+  are.
+- **Optional, dict, tuple and fixed-array conversions.** `?T` of a scalar or string
+  maps to `T | None` both ways; `map[string]T` to a `dict` with `str` keys; a
+  multi-value result `(A, B)` to a `tuple`; and `[N]T` takes any sequence of exactly
+  N items and returns a `list`. Stubs name the precise types (`int | None`,
+  `dict[str, int]`, `tuple[int, str]`). Other composites stay a diagnostic.
+- **`vcraft toolchain install`** builds the V compiler vcraft is tested with into
+  `~/.cache/vcraft` (or `$VCRAFT_HOME`), and vcraft finds it there by itself;
+  `vcraft toolchain` reports which compiler is used and whether it is the pinned
+  commit. `vcraft build` without any V now says how to get one. Building V takes a
+  few minutes and about 6 GB of memory at its peak.
+
+### Fixed
+
+- **Cross-compiling to x86_64 from an aarch64 machine produced a mislabelled wheel.**
+  vcraft named a cross compiler for aarch64 targets but none for `linux-x86_64-gnu`, so
+  from an aarch64 host the build used the host's own `cc`, compiled an aarch64
+  extension and tagged it x86_64. It now uses `x86_64-linux-gnu-gcc`, and refuses to
+  build when that is missing.
+- **A misspelt annotation was silently ignored.** The check for unknown annotations
+  looked for a `vc.` prefix, which none has, so `@[vc_fnn]` left its function out of
+  the module without a word. It is now an error naming the annotation.
+- **The compilers vcraft runs inherited its VEXE.** A binary V compiles sets
+  VEXE to the compiler that built it, and V locates its own vlib and thirdparty
+  through VEXE: a pip-installed vcraft pointed the user's V at the release build's
+  compiler path, which does not exist on their machine. vcraft now clears it.
+- **Calling an extension from any thread but the importing one crashed Python.**
+  V's garbage collector only knew the thread that imported the module, so the first
+  collection triggered from another thread aborted the process with
+  `Collecting from unknown thread`. A single worker thread, a `ThreadPoolExecutor`,
+  `asyncio.to_thread` or a threaded web server was enough. With the GIL released
+  (`@[vc_gil]`) or on free-threaded CPython the collector also neither stopped those
+  threads nor scanned their stacks. Every function in the generated glue now
+  registers the calling thread with the collector on its first call (one
+  thread-local check afterwards), and the thread is unregistered when it exits.
+  **Rebuild your extensions** to pick this up.
+- **Narrow scalar parameters did not compile.** A function or method taking `i8`,
+  `i16`, `i32`, `u8`, `u16`, `u32` or `f32` was accepted by the generator, which then
+  wrote glue the V compiler rejected. They now read through range-checked
+  conversions: an out-of-range value raises OverflowError.
+- **Narrow class fields were written with the wrong width.** Assigning to an `f32`
+  field stored the low bytes of a double (`2.0` read back as `0.0`), and an `i8` or
+  `u8` field silently truncated out-of-range values. They now convert to their own
+  width and raise OverflowError when the value does not fit.
+- **An allocation V refused surfaced as RuntimeError.** V reports it with a panic;
+  the glue now raises MemoryError for it, like any failed allocation in CPython.
+- **Extensions exported more than their init function on musl.** V's own
+  `backtrace`, `backtrace_symbols` and `backtrace_symbols_fd` reached the dynamic
+  symbol table, where another library in the process could bind to them. Linux builds
+  now link with a version script that exports only `PyInit_<module>`, on glibc and
+  musl alike.
+- **The README promised conversions that did not exist.** `map[string]V`, `?T`,
+  enums, fixed arrays, plain structs, V function types and `&T` in plain functions
+  are rejected by the generator; the type table now says so, `rune` is documented
+  as the `int` code point it is, and every row is exercised by the CLI suite.
+
+### Changed
+
+- **Actions run on Node 24**, which GitHub is moving every action to: checkout v5,
+  setup-python v6, cache v5, upload-artifact v6, download-artifact v7,
+  build-push-action v7, setup-buildx-action v4, login-action v4, action-gh-release v3,
+  in this repository's workflows, the action and the workflow `vcraft generate-ci`
+  writes. The action keys its V cache on the runner image, not just its OS.
+- **`SECURITY.md`** says how to report a vulnerability and how to verify a download;
+  **`MIGRATING.md`** walks a 0.x project to 1.0.
+- **V pinned to `36be926`** (vc snapshot `6851aaf`), from `0137eb5`. Every suite
+  passes with it; it also stops V picking tcc implicitly on macOS 27. CI, the release,
+  the action, both images and `vcraft toolchain install` move together; the musl CI
+  job keeps the 0.2.0 image, and its older V, until the images are re-released.
+- **README examples are built in CI** (`tests/docs/test_readme.py`). The
+  `raise_custom` example called a helper the README never defined; it is complete now.
+- **Sanitizer runs in CI**: the runtime, codegen and fuzz suites also run against
+  extensions built with AddressSanitizer and UndefinedBehaviorSanitizer
+  (`scripts/run-sanitized.sh`).
+- **Fuzzed conversions run in CI**: `tests/fuzz/test_fuzz.py` sends seeded hostile
+  arguments through every reader and fails on a crash or an unexpected exception.
+- **Leak checks run in CI**: a new suite, `tests/memory/test_leaks.py`, fails on
+  leaked Python objects, unbounded memory growth or drifting reference counts.
+- **macOS builds run on `macos-26`**: the vcraft release and the workflows
+  `vcraft generate-ci` writes moved off `macos-14`, which GitHub has deprecated.
+  Wheels still target macOS 11.0. Regenerate your workflow with
+  `vcraft generate-ci`.
+- **The benchmark has a Linux run** and documents the threading crash and its fix
+  (`benchmark/README.md`).
+
 ## [0.2.0] - 2026-10-07
 
 Faster string and bytes arguments, complete PyPI pages for vcraft and for the

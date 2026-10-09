@@ -19,8 +19,8 @@
 FROM alpine:3.23
 
 # Same pins as manylinux.Dockerfile; see there for why they are commits and not tags.
-ARG V_COMMIT=0137eb5d8ebc5d183259309ed08ea06ba9bc27d6
-ARG VC_COMMIT=8af812feb76c678abd86a8e682fd9ab2790e519c
+ARG V_COMMIT=36be92642c49a8fe9213ea4b96c6bf56b67b668c
+ARG VC_COMMIT=6851aaf3f9e696b30b26e406f16095b0002acaab
 
 # A C toolchain, CPython with its headers, and the libraries V links against.
 # `gc-dev` is Boehm, which V links by default; without it every V build fails at the

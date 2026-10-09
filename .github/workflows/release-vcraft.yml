@@ -23,8 +23,8 @@ permissions:
 # build with "Unknown argument". Same pins as docker/* and the vcraft-action;
 # when V cuts a newer release these steps go back to downloading it.
 env:
-  V_COMMIT: 0137eb5d8ebc5d183259309ed08ea06ba9bc27d6
-  VC_COMMIT: 8af812feb76c678abd86a8e682fd9ab2790e519c
+  V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
+  VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
 
 jobs:
   build:
@@ -34,16 +34,16 @@ jobs:
         include:
           - os: ubuntu-latest
             asset: linux-x86_64
-          - os: macos-14
+          - os: macos-26
             asset: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: set up Python
         # The suites build venvs, so the interpreter needs ensurepip. Runner
         # Pythons do not guarantee that; a pinned CPython does.
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
@@ -51,10 +51,10 @@ jobs:
       # so a release normally skips the five-minute compiler build.
       - name: restore the V compiler
         id: v-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/v-src
-          key: v-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          key: v-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
 
       - name: build the V compiler from source
         if: steps.v-cache.outputs.cache-hit != 'true'
@@ -97,14 +97,14 @@ jobs:
       # tag outright, so this is also what makes the upload possible at all.
       - name: set up buildx
         if: runner.os == 'Linux'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Reads the layer cache release-images.yml writes to the registry, so the
       # tinycc, Boehm and V layers come from it and only vcraft rebuilds. Read
       # only: the image release owns that cache.
       - name: log in to ghcr.io
         if: runner.os == 'Linux'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -112,7 +112,7 @@ jobs:
 
       - name: rebuild the Linux binary in the manylinux image
         if: runner.os == 'Linux'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         # No build record artifact: nothing reads it, and it is one more artifact
         # in the run for the publish job to step around.
         env:
@@ -139,7 +139,7 @@ jobs:
       # job rather than published as tarballs: PyPI is the only distribution
       # channel, and the tarballs existed only for the action to download.
       - name: upload the distribution
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: vcraft-dist-${{ matrix.asset }}
           path: |
@@ -162,7 +162,7 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: download the distributions
         # One directory per platform artifact, not merged: both hold `bin/` and
@@ -170,7 +170,7 @@ jobs:
         # Only the distributions: other steps in the run can leave artifacts of
         # their own (buildx uploads a `.dockerbuild` record), and an unfiltered
         # download fails the whole step on one it cannot extract.
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: dists
           pattern: vcraft-dist-*
@@ -214,6 +214,6 @@ jobs:
       - name: publish the GitHub release notes
         # Notes only, no assets: the tarballs used to live here for the action
         # to download, and PyPI is the distribution channel now.
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true

@@ -165,6 +165,19 @@ pub fn raise_runtime_error(message string) {
 	raise(.runtime_error, message)
 }
 
+// raise_panic turns a V panic caught by a trampoline into a Python exception.
+//
+// A panic V raises because an allocation failed becomes MemoryError, as a failed
+// allocation does anywhere else in CPython; every other panic is a RuntimeError naming
+// the V message. Both keep the "panic in V code" prefix, so the origin is visible.
+pub fn raise_panic(message string) {
+	if message == 'memory allocation failure' {
+		raise(.memory_error, 'panic in V code: ${message}')
+		return
+	}
+	raise(.runtime_error, 'panic in V code: ${message}')
+}
+
 // raise_domain raises the Python exception a domain failure maps to, and returns an
 // error carrying the same message.
 //

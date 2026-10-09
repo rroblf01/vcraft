@@ -29,11 +29,11 @@ FROM ${BASE}
 # build scripts pass. When the host's V moves, move both commits to ones from just
 # before its date -- the `vc` bootstrap one in particular, which has to stay
 # contemporary with V itself.
-ARG V_COMMIT=0137eb5d8ebc5d183259309ed08ea06ba9bc27d6
+ARG V_COMMIT=36be92642c49a8fe9213ea4b96c6bf56b67b668c
 # The `vc` bootstrap snapshot. A newer bootstrap enforces checker rules the V sources
 # predate, and the build fails on the compiler's own sources with errors about the
 # wrong strictness.
-ARG VC_COMMIT=8af812feb76c678abd86a8e682fd9ab2790e519c
+ARG VC_COMMIT=6851aaf3f9e696b30b26e406f16095b0002acaab
 # tinycc moves on its `mob` branch with no releases, so it is pinned too: an unpinned
 # clone makes the image depend on the day it was built, and a pinned layer is one a
 # build cache can keep.

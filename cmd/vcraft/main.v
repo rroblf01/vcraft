@@ -23,6 +23,8 @@ usage:
   vcraft publish               upload the built distributions to PyPI
   vcraft info                  show what vcraft resolved for this project
   vcraft clean                 remove build output
+  vcraft toolchain             show which V compiler vcraft uses
+  vcraft toolchain install     build the V compiler vcraft is tested with
   vcraft version, --version     print the version
 
 build options:
@@ -119,6 +121,14 @@ fn takes_value(name string) bool {
 }
 
 fn main() {
+	// A binary V compiles sets VEXE to the compiler that built it, for itself and every
+	// process it starts. vcraft runs other V compilers -- the user's, the installed
+	// toolchain -- and V locates its own vlib and thirdparty through VEXE when it is set:
+	// a pip-installed vcraft would point them at the path of the compiler that built the
+	// release, which does not exist on the user's machine. V's Makefile also writes the
+	// compiler it builds to $VEXE, so `vcraft toolchain install` overwrote the user's own
+	// V with it. Cleared before anything runs.
+	os.unsetenv('VEXE')
 	// `--version` is what every packaging tool answers, and what a CI log or a bug
 	// report reaches for first; `vcraft version` stays for scripts that use it.
 	if os.args.len == 2 && os.args[1] in ['--version', '-V'] {
@@ -148,6 +158,7 @@ fn main() {
 		'generate-ci' { cmd_generate_ci(args) }
 		'publish' { cmd_publish(args) }
 		'clean' { cmd_clean(args) }
+		'toolchain' { cmd_toolchain(args) }
 		else {
 			eprintln('error: unknown command `${args.command}`')
 			eprint(usage)
@@ -195,6 +206,16 @@ fn cmd_new(args Args) {
 // cmd_build builds a wheel, or installs it when `develop` was asked for.
 fn cmd_build(args Args, develop bool) {
 	root := '.'
+	// No compiler is the first thing a new user hits, and V's own "command not found"
+	// says nothing about how to get one. A dry run plans without compiling.
+	v := vcraft_project.v_compiler()
+	if !args.flags['dry-run'] && os.execute('command -v ' + v).exit_code != 0 {
+		eprintln('error: no V compiler found')
+		eprintln('  install the one vcraft is tested with:')
+		eprintln('    vcraft toolchain install')
+		eprintln('  or point VCRAFT_V at a V built from commit ${vcraft_project.v_commit[..7]}')
+		exit(1)
+	}
 	mut p := vcraft_project.load(root) or {
 		eprintln('error: ${err.msg()}')
 		exit(1)
@@ -439,6 +460,40 @@ fn cmd_clean(args Args) {
 				exit(1)
 			}
 			println('removed ${dir}')
+		}
+	}
+}
+
+// cmd_toolchain reports or installs the V compiler.
+fn cmd_toolchain(args Args) {
+	action := if args.positional.len > 0 { args.positional[0] } else { '' }
+	match action {
+		'' {
+			v := vcraft_project.v_compiler()
+			found := os.execute('command -v ' + v).exit_code == 0
+			println('pinned commit    ${vcraft_project.v_commit}')
+			println('toolchain dir    ${vcraft_project.toolchain_dir()}')
+			if !found {
+				println('compiler         none found; run `vcraft toolchain install`')
+				exit(1)
+			}
+			println('compiler         ${v}')
+			if vcraft_project.v_matches_pin(v) {
+				println('status           the pinned commit')
+			} else {
+				println('status           not the pinned commit; builds may fail. `vcraft toolchain install` builds the pinned one')
+			}
+		}
+		'install' {
+			jobs := if args.options['jobs'] != '' { args.options['jobs'].int() } else { 2 }
+			vcraft_project.install_toolchain(if jobs > 0 { jobs } else { 2 }) or {
+				eprintln('error: ${err.msg()}')
+				exit(1)
+			}
+		}
+		else {
+			eprintln('error: unknown toolchain action `${action}`; try `vcraft toolchain install`')
+			exit(2)
 		}
 	}
 }

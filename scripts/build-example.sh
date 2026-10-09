@@ -24,15 +24,39 @@ mkdir -p "$project/python"
 # Extensions leave the `Py*` symbols for the interpreter to resolve at import.
 # Apple's linker refuses undefined symbols in a shared object unless told so;
 # ELF linkers allow them by default.
-macos_ldflags=()
+link_flags=()
 if [ "$(uname -s)" = Darwin ]; then
-	macos_ldflags=(-ldflags "-undefined dynamic_lookup")
+	link_flags=(-ldflags "-undefined dynamic_lookup")
+fi
+
+# On Linux, export only the init function: V hides most of its runtime, but on musl
+# its own backtrace() family reached the dynamic symbol table. A version script hides
+# everything else, whatever the libc. macOS takes `-undefined dynamic_lookup` above.
+if [ "$(uname -s)" = Linux ]; then
+	# In the repository's build/ rather than mktemp: the compiler runs in a
+	# `systemd-run` unit (scripts/vcraft-v.sh), which need not see this shell's /tmp.
+	mkdir -p "$here/build"
+	exports_file="$here/build/$(basename "$0" .sh).exports"
+	printf '{\n\tglobal: PyInit_%s;\n\tlocal: *;\n};\n' "$module" > "$exports_file"
+	link_flags=(-ldflags "-Wl,--version-script=$exports_file")
+fi
+
+# VCRAFT_SANITIZE=1 builds with AddressSanitizer and UndefinedBehaviorSanitizer, for
+# the CI job that runs the suites under them. gcc rather than V's default tcc, which
+# has no sanitizers; the interpreter then needs the ASan runtime preloaded.
+sanitize=()
+if [ -n "${VCRAFT_SANITIZE:-}" ]; then
+	sanitize=(-cc gcc -ldflags "-fsanitize=address,undefined")
+	sanitize_cflags="-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+else
+	sanitize_cflags=""
 fi
 
 "$here/scripts/vcraft-v.sh" -enable-globals -shared -o "$project/python/$module$suffix" \
-	${macos_ldflags[@]+"${macos_ldflags[@]}"} \
+	${sanitize[@]+"${sanitize[@]}"} \
+	${link_flags[@]+"${link_flags[@]}"} \
 	-path "$here/vlib|@vlib" \
-	-cflags "-I$include" \
+	-cflags "-I$include $sanitize_cflags" \
 	"$project"
 
 # For macOS V appends `.dylib` to an output name that does not already end in it,

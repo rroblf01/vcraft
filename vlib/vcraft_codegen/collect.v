@@ -144,6 +144,19 @@ fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 			flat.empty_node
 		}, is_method)
 	}
+	defaults := parse_defaults(block.args[attr_defaults] or { '' })
+	for name, value in defaults {
+		mut found := false
+		for mut param in f.params {
+			if param.name == name {
+				param.default = value
+				found = true
+			}
+		}
+		if !found {
+			f.unknown_defaults << name
+		}
+	}
 	f.v_ret, f.returns_result = split_result(decl.type_name)
 	f.trampoline = if is_method {
 		'vcraft_generated__method_${decl.receiver.to_lower()}_${decl.name}'
@@ -565,10 +578,10 @@ fn find_eq_owner(fname string, classes []Class) int {
 fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	decl astquery.Declaration, mut p Project) {
 	block := read_above(lines, decl.line)
-	// `@[vc_eq]` and `@[vc_hash]` stand in for `@[vc_methods]` on the two slots they
+	// `@[vc_eq]` and `@[vc_hash]` stand in for `@[vc_method]` on the two slots they
 	// fill. They are separate annotations rather than modifiers because the receiver
 	// signature is different -- two receivers for eq, an integer result for hash -- and
-	// a user who writes `@[vc_methods] @[vc_eq]` would get a method *and* an operator.
+	// a user who writes `@[vc_method] @[vc_eq]` would get a method *and* an operator.
 	if attr_methods !in block.attrs {
 		return
 	}
@@ -581,7 +594,7 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	}
 	if target < 0 {
 		report(mut p, path, decl,
-			'error: `${decl.name}` is annotated @[vc_methods] but `${decl.receiver}` is not annotated @[vc_class]')
+			'error: `${decl.name}` is annotated @[vc_method] but `${decl.receiver}` is not annotated @[vc_class]')
 		return
 	}
 	if find_fn_node(ast, decl.name) == none {
@@ -1036,12 +1049,105 @@ fn report(mut p Project, path string, decl astquery.Declaration, message string)
 	}
 }
 
+// parse_defaults splits `step=1, name="a, b"` into its pairs. Commas and `=` inside a
+// quoted value belong to the value.
+pub fn parse_defaults(text string) map[string]string {
+	mut out := map[string]string{}
+	mut parts := []string{}
+	mut current := []u8{}
+	mut quote := u8(0)
+	for ch in text.bytes() {
+		if quote != 0 {
+			current << ch
+			if ch == quote {
+				quote = 0
+			}
+		} else if ch == `"` || ch == `'` {
+			quote = ch
+			current << ch
+		} else if ch == `,` {
+			parts << current.bytestr()
+			current = []u8{}
+		} else {
+			current << ch
+		}
+	}
+	parts << current.bytestr()
+	for part in parts {
+		eq := part.index('=') or { continue }
+		name := part[..eq].trim_space()
+		if name.len > 0 {
+			out[name] = part[eq + 1..].trim_space()
+		}
+	}
+	return out
+}
+
+// default_fits reports whether a default written in `@[vc_defaults]` is a literal of
+// the parameter's kind: a quoted string for a str, true or false for a bool, a whole
+// number for an integer (not negative for an unsigned one), and a number for a float.
+pub fn default_fits(strategy Strategy, value string) bool {
+	v := value.trim_space()
+	if v.len == 0 {
+		return false
+	}
+	is_int := (v[0] == `-` && v.len > 1 && v[1..].bytes().all(it.is_digit())) || v.bytes().all(it.is_digit())
+	return match strategy {
+		.str { v.len >= 2 && (v[0] == `"` || v[0] == `'`) && v[v.len - 1] == v[0] }
+		.bool { v in ['true', 'false'] }
+		.int { is_int }
+		.uint { is_int && v[0] != `-` }
+		.float { is_int || v.f64() != 0.0 || v in ['0.0', '0.', '.0'] }
+		else { false }
+	}
+}
+
 // validate rejects a declaration the generator cannot honour, with a position.
 fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
+	for name in f.unknown_defaults {
+		report(mut p, path, decl,
+			'error: `@[vc_defaults]` on `${decl.name}` names `${name}`, which is not one of its parameters')
+		return
+	}
+	for param in f.params {
+		if param.default.len == 0 {
+			continue
+		}
+		strategy := lookup(param.v_type)
+		if strategy == .optional {
+			report(mut p, path, decl,
+				'error: `@[vc_defaults]` on `${decl.name}` gives `${param.name}` a default, but `${param.v_type}` already defaults to None')
+			return
+		}
+		if strategy !in [.bool, .int, .uint, .float, .str] {
+			report(mut p, path, decl,
+				'error: `@[vc_defaults]` on `${decl.name}`: `${param.name}` has type `${param.v_type}`; defaults are for bool, integer, float and string parameters')
+			return
+		}
+		if !default_fits(strategy, param.default) {
+			report(mut p, path, decl,
+				'error: `@[vc_defaults]` on `${decl.name}`: `${param.default}` is not a `${param.v_type}` default for `${param.name}`')
+			return
+		}
+	}
 	for param in f.params {
 		if lookup(param.v_type) == .unsupported {
 			report(mut p, path, decl,
 				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule')
+			return
+		}
+		// A multi-value type exists in V only as a result: a function cannot take one,
+		// and a Python tuple has no V parameter type to land in.
+		if lookup(param.v_type) == .tuple {
+			report(mut p, path, decl,
+				'error: cannot expose `${decl.name}`: parameter `${param.name}` has the multi-value type `${param.v_type}`, which V only allows as a result')
+			return
+		}
+		// A fixed-size array is read as the slice of its element, so the element needs
+		// a sequence reader, as for `[]T`.
+		if lookup(param.v_type) == .fixed && !element_is_readable(fixed_element(param.v_type)) {
+			report(mut p, path, decl,
+				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds `${fixed_element(param.v_type)}`, which has no sequence reader')
 			return
 		}
 		// A `[]T` parameter reads each element, so the element needs a reader of
@@ -1054,14 +1160,14 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 			return
 		}
 	}
-	// `@[vc_gil]` promises the call touches no Python, and `@[vc_raw]` promises the
+	// `@[vc_nogil]` promises the call touches no Python, and `@[vc_raw]` promises the
 	// opposite: the function handles `PyObject *` itself. Both together would release
 	// the GIL around code that reads the objects it was given, which corrupts the
 	// interpreter rather than failing loudly, so the combination is refused here where
 	// the message can name both annotations.
 	if f.nogil && f.raw {
 		report(mut p, path, decl,
-			'error: `@[vc_gil]` on `${decl.name}` contradicts `@[vc_raw]`: raw means the function handles `PyObject *` itself, and touching one without the GIL corrupts the interpreter')
+			'error: `@[vc_nogil]` on `${decl.name}` contradicts `@[vc_raw]`: raw means the function handles `PyObject *` itself, and touching one without the GIL corrupts the interpreter')
 		return
 	}
 	if f.raw {
@@ -1091,7 +1197,20 @@ pub fn report_unknown_attrs(lines []string, path string, mut p Project) {
 		}
 		indent := line.len - trimmed.len
 		for name in parse_attr_names(line) {
-			if name.starts_with('vc.') && name !in known_attrs {
+			// `vc_`, the prefix every annotation has. This compared against `vc.`, which
+			// none has, so a misspelt annotation was never reported and the declaration
+			// it was on was silently left out of the module.
+			if !name.starts_with('vc_') {
+				continue
+			}
+			if name in deprecated_attrs {
+				p.diagnostics << Diagnostic{
+					file:    path
+					line:    i + 1
+					column:  indent + 1
+					message: 'warning: `@[${name}]` is deprecated and goes in vcraft 2.0; write `@[${deprecated_attrs[name]}]`'
+				}
+			} else if name !in known_attrs {
 				p.diagnostics << Diagnostic{
 					file:    path
 					line:    i + 1

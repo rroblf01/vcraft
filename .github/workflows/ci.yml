@@ -28,8 +28,8 @@ concurrency:
 # newer than the flags vcraft passes, so a release binary fails every build.
 # Same pins as docker/*, the vcraft-action and release-vcraft.yml.
 env:
-  V_COMMIT: 0137eb5d8ebc5d183259309ed08ea06ba9bc27d6
-  VC_COMMIT: 8af812feb76c678abd86a8e682fd9ab2790e519c
+  V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
+  VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
 
 jobs:
   # The V compiler, once per runner OS, before anything else starts. Without
@@ -41,15 +41,15 @@ jobs:
     name: V compiler (${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-15]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-26]
     runs-on: ${{ matrix.os }}
     steps:
       - name: look for a cached compiler
         id: v-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/v-src
-          key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
           lookup-only: true
 
       - name: build the V compiler from source
@@ -71,10 +71,10 @@ jobs:
 
       - name: save the compiler
         if: steps.v-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/v-src
-          key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
 
   # The suites run in two jobs rather than one so the slowest (cli, with its
   # dozen extension builds) does not hold the other five behind it. The suites
@@ -90,34 +90,48 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-26]
         python: ["3.11", "3.12", "3.13", "3.14"]
         # macOS runs the oldest and newest supported CPython only. Hosted macOS
         # runners are scarce, and with every version the cells queued for minutes
         # before starting; what breaks on macOS so far has been the platform
         # (linking, deployment target, compiler choice), not one Python version.
         # Linux keeps every version.
+        # aarch64 Linux, like macOS, runs the oldest and newest supported CPython.
         exclude:
-          - os: macos-15
+          - os: macos-26
             python: "3.12"
-          - os: macos-15
+          - os: macos-26
             python: "3.13"
+          - os: ubuntu-24.04-arm
+            python: "3.12"
+          - os: ubuntu-24.04-arm
+            python: "3.13"
+        # The next CPython, while it is a prerelease: a heads-up that does not fail
+        # the run. It moves into the list above, and into `supported_pythons`, once
+        # it is released.
+        include:
+          - os: ubuntu-latest
+            python: "3.15"
+            experimental: true
+    continue-on-error: ${{ matrix.experimental == true }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
+          allow-prereleases: true
 
       # Built once per runner OS by the v-compiler job, which every job here
       # waits for, so this only ever restores it.
       - name: restore the V compiler
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/v-src
-          key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
           fail-on-cache-miss: true
 
       - name: put V on PATH
@@ -147,6 +161,18 @@ jobs:
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/codegen/test_codegen.py
 
+      - name: "suite: leaks"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/memory/test_leaks.py
+
+      - name: "suite: fuzzed conversions"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/fuzz/test_fuzz.py 4 20000
+
+      - name: "suite: README examples"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/docs/test_readme.py
+
   cli:
     needs: v-compiler
     # The slowest suite on its own job (see above for why it is separate).
@@ -155,34 +181,48 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-26]
         python: ["3.11", "3.12", "3.13", "3.14"]
         # macOS runs the oldest and newest supported CPython only. Hosted macOS
         # runners are scarce, and with every version the cells queued for minutes
         # before starting; what breaks on macOS so far has been the platform
         # (linking, deployment target, compiler choice), not one Python version.
         # Linux keeps every version.
+        # aarch64 Linux, like macOS, runs the oldest and newest supported CPython.
         exclude:
-          - os: macos-15
+          - os: macos-26
             python: "3.12"
-          - os: macos-15
+          - os: macos-26
             python: "3.13"
+          - os: ubuntu-24.04-arm
+            python: "3.12"
+          - os: ubuntu-24.04-arm
+            python: "3.13"
+        # The next CPython, while it is a prerelease: a heads-up that does not fail
+        # the run. It moves into the list above, and into `supported_pythons`, once
+        # it is released.
+        include:
+          - os: ubuntu-latest
+            python: "3.15"
+            experimental: true
+    continue-on-error: ${{ matrix.experimental == true }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
+          allow-prereleases: true
 
       # Built once per runner OS by the v-compiler job, which every job here
       # waits for, so this only ever restores it.
       - name: restore the V compiler
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/v-src
-          key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
           fail-on-cache-miss: true
 
       - name: put V on PATH
@@ -199,6 +239,87 @@ jobs:
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/cli/test_cli.py
 
+  musl:
+    # The suites on musl libc, inside the published musllinux image, which carries V
+    # at the pinned commit, gcc and CPython. Run with `docker run` from the runner
+    # rather than as a job container: GitHub's JavaScript actions (checkout, cache)
+    # cannot run inside Alpine. Bump MUSL_IMAGE when the images are re-released.
+    name: musl (alpine, x86_64)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      # Still the 0.2.0 image, built with the previous V pin; moves to the 1.0 image
+      # once the images are re-released.
+      MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:0.2.0
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: run the suites on musl
+        run: |
+          # As the runner's user, so nothing in the checkout ends up owned by root,
+          # with a writable HOME for V's module cache and pip.
+          docker run --rm --memory 6g --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/work" -w /work "$MUSL_IMAGE" sh -c '
+            set -e
+            python3 -VV
+            for suite in project/check_toml wheel/test_wheel runtime/test_runtime \
+                         codegen/test_codegen memory/test_leaks fuzz/test_fuzz cli/test_cli; do
+              echo "== $suite"
+              python3 tests/$suite.py
+            done
+          '
+
+  sanitizers:
+    # The runtime, the example's glue and the conversions under AddressSanitizer and
+    # UndefinedBehaviorSanitizer: an out-of-bounds read, a use-after-free or an
+    # overflow in C or in the generated V aborts the suite here instead of corrupting
+    # a user's process. Linux only, where gcc ships both runtimes.
+    name: sanitizers (ubuntu-latest, 3.14)
+    needs: v-compiler
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: restore the V compiler
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/v-src
+          key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          fail-on-cache-miss: true
+
+      - name: put V on PATH
+        id: v-ready
+        run: echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      - name: "sanitized: runtime"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: scripts/run-sanitized.sh python3 tests/runtime/test_runtime.py
+
+      - name: "sanitized: code generator"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: scripts/run-sanitized.sh python3 tests/codegen/test_codegen.py
+
+      - name: "sanitized: fuzzed conversions"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: scripts/run-sanitized.sh python3 tests/fuzz/test_fuzz.py 4 10000
+
   free-threaded:
     needs: v-compiler
     # The one configuration nothing else exercises: a free-threaded interpreter
@@ -209,29 +330,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15]
+        os: [ubuntu-latest, macos-26]
         python: ["3.13t", "3.14t"]
         # One free-threaded cell on macOS, for the same reason as above.
         exclude:
-          - os: macos-15
+          - os: macos-26
             python: "3.13t"
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: set up a free-threaded Python
         id: ft-python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
 
       # Built once per runner OS by the v-compiler job, which every job here
       # waits for, so this only ever restores it.
       - name: restore the V compiler
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/v-src
-          key: v-slim1-${{ runner.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
           fail-on-cache-miss: true
 
       - name: put V on PATH
@@ -263,13 +384,16 @@ jobs:
           import ftcheck_native as m
           assert not sys._is_gil_enabled(), 'importing the module re-enabled the GIL'
           assert m.add(2, 3) == 5
+          # Enough calls to trigger many collections while all eight threads
+          # run in parallel: a thread the collector does not know aborts the
+          # process here, and a dozen calls never reached a collection at all.
           seen = []
           def burn():
-              for _ in range(3):
+              for _ in range(20_000):
                   seen.append(m.greet('threads'))
-          threads = [threading.Thread(target=burn) for _ in range(4)]
+          threads = [threading.Thread(target=burn) for _ in range(8)]
           [t.start() for t in threads]
           [t.join() for t in threads]
-          assert len(seen) == 12, seen
+          assert len(seen) == 160_000, len(seen)
           print('free-threaded import and threads ok')
           "

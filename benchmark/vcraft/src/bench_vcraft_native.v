@@ -114,14 +114,14 @@ pub fn new_counter() &Counter {
 }
 
 // increment adds one and returns the new value.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c Counter) increment() i64 {
 	c.value++
 	return c.value
 }
 
 // add adds n and returns the new value.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c Counter) add(n i64) i64 {
 	c.value += n
 	return c.value

@@ -90,7 +90,7 @@ def checked(value: int, exc: Any) -> int: ...
 
 """spin burns time in pure V, so threads can prove the GIL is really released.
 
-	`@[vc_gil]` is a promise, not a hint: nothing in here touches Python, raises, or
+	`@[vc_nogil]` is a promise, not a hint: nothing in here touches Python, raises, or
 	allocates in a way the collector would need the interpreter for. The wrapper releases
 	the GIL around the call, so N threads each burn their own core instead of queuing
 	behind one lock.
@@ -101,7 +101,7 @@ def spin(iterations: int) -> int: ...
 	GIL is exercised too: the wrapper re-acquires before it raises.
 
 	A plain `error(...)`, not `raise_domain`: setting a Python exception is touching
-	Python, which a `@[vc_gil]` function must never do. The wrapper turns the value into
+	Python, which a `@[vc_nogil]` function must never do. The wrapper turns the value into
 	a RuntimeError after it holds the GIL again.
 """
 def spin_checked(iterations: int) -> int: ...

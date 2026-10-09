@@ -225,8 +225,11 @@ file and the loaded configuration disagree with nothing in between to explain it
 
     abi3 = "3.12"          # a key of `package`, not of the document
 
-So `render` writes the root-level keys *before* the first header, and the parser routes
-each key by which table is open rather than by which object is being filled.
+That trap is why the build settings moved into a `[build]` table for 1.0: with every key
+under a header, where a key is written no longer changes what it means. The old
+top-level keys are still read during 1.x, with a warning, and the same keys found under
+`[package]`, where the old layout's mistake put them, are reported as ignored. The parser
+routes each key by which table is open rather than by which object is being filled.
 
 That routing is the whole reason the parser has one table under construction. An
 earlier version kept `root`, `table` and a collected list of sections and wrote to all
@@ -256,7 +259,7 @@ A free-threaded build also declares the module GIL-free through
 `PyUnstable_Module_SetGIL`: single-phase initialisation refuses a definition carrying
 slots, so the `Py_mod_gil` slot is not an option and the call after creation is the
 documented mechanism instead. Without it the interpreter enables the GIL on import
-with a warning and every `@[vc_gil]` release is pointless.
+with a warning and every `@[vc_nogil]` release is pointless.
 
 ## CI: the matrix follows the ABI choice
 

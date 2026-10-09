@@ -34,7 +34,7 @@ add(a: int, b: int) -> int
 
 ## Highlights
 
-- **One annotation per declaration.** `@[vc_fn]`, `@[vc_class]`, `@[vc_methods]`,
+- **One annotation per declaration.** `@[vc_fn]`, `@[vc_class]`, `@[vc_method]`,
   `@[vc_field]` and friends become functions, classes, methods and properties, with
   docstrings and a generated `.pyi` stub for type checkers.
 - **Fast calls.** The generated glue calls your V functions with their real types
@@ -44,7 +44,7 @@ add(a: int, b: int) -> int
   included), panics are caught instead of killing the interpreter, classes support
   inheritance, equality, hashing, iteration and garbage-collected reference cycles.
 - **Zero-copy and GIL-free.** `[]u8` and `[]string` parameters alias Python's buffers,
-  `@[vc_gil]` releases the GIL around a call, and free-threaded CPython (3.13t,
+  `@[vc_nogil]` releases the GIL around a call, and free-threaded CPython (3.13t,
   3.14t) is supported.
 - **Wheels without the toolchain zoo.** `vcraft build` writes the wheel itself
   (DEFLATE, ZIP, RECORD, tags) for regular, abi3 and free-threaded builds,
@@ -63,18 +63,17 @@ $ pip install vcraft
 $ vcraft --version
 ```
 
-**2. Install a V compiler.** `pip` ships the tool, not the toolchain, the same way
-maturin needs Rust. vcraft needs a V newer than the 0.5.2 release, so build it from
-the commit vcraft is tested with (about five minutes, once):
+**2. Install the V compiler.** `pip` ships the tool, not the toolchain, the same way
+maturin needs Rust. vcraft needs a V newer than the 0.5.2 release, so it builds the
+commit it is tested with into its own cache (about five minutes, once; needs git,
+make and a C compiler):
 
 ```console
-$ git init -q ~/v-src && cd ~/v-src
-$ git remote add origin https://github.com/vlang/v.git
-$ git fetch -q --depth 1 origin 0137eb5d8ebc5d183259309ed08ea06ba9bc27d6 && git checkout -q FETCH_HEAD
-$ git clone -q https://github.com/vlang/vc.git vc && (cd vc && git checkout -q 8af812feb76c678abd86a8e682fd9ab2790e519c)
-$ make fresh_tcc && make local=1 -j4
-$ export PATH="$HOME/v-src:$PATH"
+$ vcraft toolchain install
+$ vcraft toolchain          # which compiler vcraft uses, and whether it is the pinned one
 ```
+
+vcraft finds it there by itself. `VCRAFT_V=/path/to/v` uses another V instead.
 
 You also need a C compiler (gcc or clang) and the CPython headers, which most Python
 installs already include.
@@ -101,6 +100,7 @@ to publish to PyPI. See [Continuous integration](#continuous-integration).
 - [How it works](#how-it-works)
 - [The annotation vocabulary](#the-annotation-vocabulary)
 - [Type marshalling](#type-marshalling)
+- [Keyword arguments and defaults](#keyword-arguments-and-defaults)
 - [Classes and properties](#classes-and-properties)
 - [Errors and panics](#errors-and-panics)
 - [The command line](#the-command-line)
@@ -110,6 +110,7 @@ to publish to PyPI. See [Continuous integration](#continuous-integration).
 - [Configuration](#configuration)
 - [Performance](#performance)
 - [Project status](#project-status)
+- [Stability](#stability)
 - [Development](#development)
 - [Design notes](#design-notes)
 - [License](#license)
@@ -128,7 +129,7 @@ V compiles to fast native code through a tiny C backend and has no runtime depen
 | Binding generation | `#[pyfunction]`    | `@[vc_fn]`                      |
 | Class bindings     | `#[pyclass]`       | `@[vc_class]`                   |
 | Error translation  | `Result<T, E>`     | `!T` / `error` / `recover()`    |
-| GIL handling       | `Python::detach`   | `@[vc_gil]`                     |
+| GIL handling       | `Python::detach`   | `@[vc_nogil]`                     |
 | Build tool         | maturin            | `vcraft build`                  |
 | Local install      | `maturin develop`  | `vcraft develop`                |
 | CI                 | `maturin-action`   | `vcraft-action@v1`              |
@@ -194,15 +195,16 @@ that immediately precedes each declaration. Any name works; these are the ones
 | --------------- | --------------- | ---------------------------------------------------------- |
 | `@[vc_fn]`      | `pub fn`        | Exports the function as a module-level Python callable      |
 | `@[vc_class]`   | `pub struct`    | Creates a Python type backed by the V struct                |
-| `@[vc_methods]` | methods         | Adds the method to the class of its receiver                |
+| `@[vc_method]` | methods         | Adds the method to the class of its receiver                |
 | `@[vc_field]`   | struct fields   | Exposes the field as an attribute of the instance           |
 | `@[vc_property]`| methods         | Registers the method as a Python `property`                 |
 | `@[vc_base]`    | `pub struct`    | Makes the class inherit the named one                       |
 | `@[vc_ref]`     | struct fields   | Exposes the field as a strong reference to another instance  |
 | `@[vc_error]`   | `pub struct`    | Makes the struct usable as the error of a `!T` function      |
 | `@[vc_static]`  | methods         | Registers the method as a `staticmethod`                    |
+| `@[vc_defaults]`| `pub fn`, methods | Default values: `@[vc_defaults: 'step=1, name="x"']`     |
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
-| `@[vc_gil]`     | `pub fn`        | Runs the call with the GIL released                         |
+| `@[vc_nogil]`     | `pub fn`        | Runs the call with the GIL released                         |
 | `@[vc_iter]`    | methods         | Makes the instance its own iterator (`__iter__`)            |
 | `@[vc_next]`    | methods         | Produces one item per call (`__next__`)                     |
 
@@ -222,30 +224,66 @@ Values are converted with direct CPython calls whenever a fast path exists — f
 example a V `int` becomes `PyLong_AsLongLong`, not a round trip through a
 generic value tree.
 
-| V                                | Python                       | Notes                                    |
-| -------------------------------- | ---------------------------- | ---------------------------------------- |
-| `bool`                           | `bool`                       |                                          |
-| `i8` … `i64`, `isize`            | `int`                        | Range-checked on the way out             |
-| `u8` … `u64`, `usize`            | `int`                        | Negative inputs raise                    |
-| `f32`, `f64`                     | `float`                      |                                          |
-| `rune`                           | `str` of length 1            |                                          |
-| `string`                         | `str`                        | Decoded as UTF-8                         |
-| `[]u8`                           | `bytes`                      | No copy                                  |
-| `[]T` (contiguous)               | `list`, or `memoryview`      | Buffer protocol, no copy                 |
-| `[N]T` (contiguous)              | `memoryview`                 | Buffer protocol, no copy                 |
-| `map[string]V`                   | `dict`                       |                                          |
-| `?T`                             | `T` or `None`                |                                          |
-| `[N]T` / struct                  | `list` / `dict`              | Of field values                          |
-| enum                             | `int`                        | As its `.name`, by default               |
-| `voidptr`                        | `PyObject *`                 | Borrowed; you own the reference          |
-| `vcraft.PyObj` (result)          | any object                   | Owned; the reference goes to the caller  |
-| `&T`                             | `PyObject *` wrapping a `T`  | Stable identity across the call          |
-| `void`, `!void`                  | `None`                       |                                          |
-| `!T` / `T!`                      | `T` or raises                | See [Errors and panics](#errors-and-panics) |
-| V function type `fn (Args) Ret`   | Python callable              | Arguments become a tuple                 |
+| V                                     | Python                       | Notes                                              |
+| ------------------------------------- | ---------------------------- | -------------------------------------------------- |
+| `bool`                                | `bool`                       | Any object in, by its truth value                  |
+| `i8`, `i16`, `i32`, `int`, `i64`, `isize` | `int`                    | Range-checked: out of range raises OverflowError    |
+| `u8`, `u16`, `u32`, `u64`, `usize`    | `int`                        | Negative or out of range raises OverflowError      |
+| `f32`, `f64`                          | `float`                      | An `int` is accepted too                           |
+| `rune`                                | `int`                        | The code point                                     |
+| `string`                              | `str`                        | UTF-8                                              |
+| `[]u8`                                | `bytes`                      | Any bytes-like object in, without copying it       |
+| `[]T` of the types above, or `string` | `list`                       | Any sequence in (a list, a tuple); a list out      |
+| `[N]T` of the types above             | `list`                       | Any sequence of exactly N items in; a list out     |
+| `?T` of the types above               | `T` or `None`                | `none` is `None`, both ways                        |
+| `map[string]T` of the types above     | `dict`                       | `str` keys; a new dict out                         |
+| `(A, B, ...)`, as a result            | `tuple`                      | A multi-value return                               |
+| `voidptr`                             | any object                   | Borrowed; you own the reference                    |
+| `vcraft.PyObj` (result)               | any object                   | Owned; the reference goes to the caller            |
+| `void`, `!void`                       | `None`                       |                                                    |
+| `!T`                                  | `T`, or raises               | See [Errors and panics](#errors-and-panics)        |
+
+Fields of a `@[vc_class]` struct and method parameters follow the same table.
+Enums, plain structs, V function types, maps with non-string keys, nested
+composites (`?[]int`, `map[string][]int`) and class instances (`&T`) as parameters or
+results of plain functions are not supported yet; they are on the
+[roadmap](ROADMAP.md). A `@[vc_class]` is constructed from Python
+with its class, through `new_<class>` when one is declared.
 
 Anything not in this table is a compile-time diagnostic pointing at the exact
 file, line and column, not a runtime surprise.
+
+---
+
+## Keyword arguments and defaults
+
+Every parameter can be passed by position or by name, as in a Python function. A `?T`
+parameter may be left out and arrives as `none`; any other parameter gets a default
+from `@[vc_defaults]`, since V has no default arguments of its own:
+
+```v
+// Formats a count, with an optional step and label.
+@[vc_fn]
+@[vc_defaults: 'step=1, label="item"']
+pub fn describe(count int, step int, label string, unit ?string) string {
+	suffix := unit or { '' }
+	return '${label}: ${count * step}${suffix}'
+}
+```
+
+```python
+>>> m.describe(3)
+'item: 3'
+>>> m.describe(3, label="box", unit="kg")
+'box: 3kg'
+>>> m.describe()
+TypeError: describe() missing required argument: 'count'
+```
+
+Defaults are literals of the parameter's type (a number, `true`/`false`, or a quoted
+string), for bool, integer, float and string parameters; anything else is a
+diagnostic. A call that passes every parameter by position costs what it did before
+keywords existed: one comparison.
 
 ---
 
@@ -273,20 +311,20 @@ pub fn new_counter() &Counter {
 }
 
 // increment adds step to value and returns the new total.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c Counter) increment() int {
 	c.value += c.step
 	return c.value
 }
 
 // set_step changes how much each increment adds.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c Counter) set_step(step int) {
 	c.step = step
 }
 
 // is_zero reports whether the value is still zero.
-@[vc_methods]
+@[vc_method]
 @[vc_property]
 pub fn (c &Counter) is_zero() bool {
 	return c.value == 0
@@ -317,6 +355,7 @@ An `@[vc_eq]` and an `@[vc_hash]` function fill the type's comparison and hash s
 They are free functions rather than methods, because V allows exactly one receiver per
 method and a comparison needs both operands:
 
+<!-- readme-test: continue -->
 ```v
 @[vc_eq]
 pub fn counter_eq(a voidptr, b voidptr) bool {
@@ -351,7 +390,7 @@ another type is `False` rather than a `TypeError`, which is what `NotImplemented
 An `@[vc_field]` becomes a read/write attribute. Assigning the wrong type raises
 `TypeError`, and deleting one raises `AttributeError`: both come for free from
 registering a setter, rather than from a hand-written check per field. An
-`@[vc_property]` method becomes a read-only property, and a plain `@[vc_methods]`
+`@[vc_property]` method becomes a read-only property, and a plain `@[vc_method]`
 method takes arguments like any other exposed function.
 
 The constructor runs in `tp_new` and takes no arguments, so `Counter(1)` is a
@@ -367,6 +406,7 @@ Docstrings reach `__doc__` on the type, its methods, its properties and its fiel
 matter: a subclass may be written before its base, or in a file that sorts
 earlier, and the generator orders the classes itself.
 
+<!-- readme-test: continue -->
 ```v
 @[vc_class]
 @[vc_base(Counter)]
@@ -381,7 +421,7 @@ mut:
 // inheritance, so `c.value` does not compile here. `vcraft.state_at(1)` is the
 // base's own struct inside the live state of the instance the method is running
 // on.
-@[vc_methods]
+@[vc_method]
 pub fn (mut c BoundedCounter) bump(by int) !int {
 	mut base := unsafe { &Counter(vcraft.state_at(1)) }
 	if base.value + by > c.limit {
@@ -447,7 +487,7 @@ mut:
 //
 // `retain`, not `steal`: a function parameter is borrowed, and the field has to keep the
 // object alive on its own.
-@[vc_methods]
+@[vc_method]
 pub fn (mut n Node) link(other voidptr) {
 	n.peer = vcraft.retain(other)
 }
@@ -527,10 +567,10 @@ including one the caller defined in Python:
 ```v
 @[vc_fn]
 pub fn parse(text string, missing voidptr) !int {
-	if !is_digits(text) {
+	if text.len == 0 || !text.bytes().all(it.is_digit()) {
 		return vcraft.raise_custom(missing, 'not a number')
 	}
-	// ...
+	return text.int()
 }
 ```
 
@@ -615,14 +655,14 @@ mut:
 }
 
 // rewind resets the countdown, so the same instance can be iterated twice.
-@[vc_methods]
+@[vc_method]
 @[vc_iter]
 pub fn (mut c Countdown) rewind() {
 	c.current = c.start
 }
 
 // next yields the current value and steps down, refusing past zero.
-@[vc_methods]
+@[vc_method]
 @[vc_next]
 pub fn (mut c Countdown) advance() !int {
 	if c.current <= 0 {
@@ -714,6 +754,7 @@ A V `panic` prints a message and calls `exit(1)`, which inside CPython would tak
 the whole interpreter down with it. V 0.5 has Go-style recovery, so every generated
 wrapper installs a frame:
 
+<!-- readme-test: skip -->
 ```v
 fn _vcraft_generated__wrap_first_char(text string) string {
 	defer {
@@ -742,7 +783,7 @@ The guard is inlined per trampoline rather than shared through a helper. V emits
 forward declaration for a generic function called across modules, so a shared
 wrapper fails to compile with an implicit-declaration error.
 
-`@[vc_gil]` marks a function as pure V with no Python interaction. The GIL is
+`@[vc_nogil]` marks a function as pure V with no Python interaction. The GIL is
 released around the call, so long-running V code runs in parallel the way
 `py.allow_threads` does in PyO3:
 
@@ -752,7 +793,7 @@ released around the call, so long-running V code runs in parallel the way
 // Nothing in here touches Python, raises, or allocates in a way the collector would
 // need the interpreter for.
 @[vc_fn]
-@[vc_gil]
+@[vc_nogil]
 pub fn spin(iterations int) int {
 	mut total := 0
 	for i in 0 .. iterations {
@@ -774,7 +815,7 @@ Python calls, no `raise_domain`, no touching a `PyObj` while released:
 `raise_domain` sets a Python exception, which without the GIL corrupts the
 interpreter state rather than reporting anything. A `!T` function fails with a plain
 `error(...)` instead, and the wrapper turns it into an exception after it holds the
-GIL again. `@[vc_gil]` on a `@[vc_raw]` function is refused outright: raw means the
+GIL again. `@[vc_nogil]` on a `@[vc_raw]` function is refused outright: raw means the
 function handles `PyObject *` itself, which is the opposite of pure.
 
 The pairing is exact on every path -- success, `!T` failure, and panic -- because an
@@ -981,13 +1022,6 @@ Packaging configuration lives in `vcraft.toml` at the project root. `vcraft new`
 writes one; `pyproject.toml` only names the build backend.
 
 ```toml
-minimum-version = "3.11"   # oldest CPython the CI matrix builds a wheel for
-abi3 = "3.11"              # optional: one stable-ABI wheel for 3.11 and newer
-free-threading = false     # true: build for a free-threaded CPython (3.13t+)
-strip = false
-embed-pyc = false
-gc-free-space-divisor = 2  # Boehm heap growth: 1 favours speed, 2 memory
-
 [package]
 name = "my-extension"
 version = "0.1.0"
@@ -997,18 +1031,26 @@ license = "MIT"
 requires-python = ">=3.11"
 readme = "README.md"         # the PyPI project page, rendered as Markdown
 keywords = ["fast", "parsing"]
+classifiers = ["Programming Language :: Other", "Programming Language :: Python :: 3"]
 dependencies = []
 
-[[classifier]]
-text = "Programming Language :: Other"
+[build]
+minimum-version = "3.11"     # oldest CPython the CI matrix builds a wheel for
+abi3 = "3.11"                # optional: one stable-ABI wheel for 3.11 and newer
+free-threading = false       # true: build for a free-threaded CPython (3.13t+)
+strip = false
+embed-pyc = false
+gc-free-space-divisor = 2    # Boehm heap growth: 1 favours speed, 2 memory
 
 [urls]
 Source = "https://github.com/me/my-extension"
 Issues = "https://github.com/me/my-extension/issues"
 ```
 
-The root keys must come before the first table: in TOML a key written after
-`[package]` belongs to `[package]`.
+Before 1.0 the build keys were top-level keys and classifiers were `[[classifier]]`
+tables; both are still read throughout 1.x, with a warning saying what to change.
+
+The keys of `[build]`:
 
 | Key               | Default   | Meaning                                                        |
 | ----------------- | --------- | -------------------------------------------------------------- |
@@ -1079,11 +1121,31 @@ Known limitations:
 - Extensions use single-phase initialisation, so a module is shared by all
   subinterpreters.
 
+## Stability
+
+vcraft follows [Semantic Versioning](https://semver.org/). From 1.0, the annotations,
+the `vcraft.toml` keys, the CLI commands and options, and the Python behaviour of the
+conversions in the type table are the public surface:
+
+- A **minor** release (1.1, 1.2...) only adds to it: new annotations, keys, options and
+  types.
+- A name that is replaced keeps working for the rest of 1.x, and every use of it draws
+  a warning naming its replacement. It is removed in **2.0**, never before.
+- Generated glue, the runtime's V API under `vlib/vcraft`, and the wheel's internals
+  are not part of the surface: they change whenever the generator needs them to.
+
+Upgrading a 0.x project: [MIGRATING.md](MIGRATING.md). Reporting a vulnerability:
+[SECURITY.md](SECURITY.md).
+
+Renamed in 1.0, still accepted with a warning: `@[vc_gil]` (now `@[vc_nogil]`),
+`@[vc_methods]` (now `@[vc_method]`), top-level build keys in `vcraft.toml` (now in
+`[build]`) and `[[classifier]]` tables (now `classifiers = [...]`).
+
 ## Requirements
 
 - Python 3.11 to 3.14, or 3.13t/3.14t for free-threaded builds
 - Linux (glibc or musl) or macOS
-- A V compiler built from the pinned commit (see [Quick start](#quick-start))
+- A V compiler at the pinned commit: `vcraft toolchain install` builds it
 - gcc or clang, and the CPython development headers
 - Docker, only to build manylinux or musllinux wheels locally
 
@@ -1105,6 +1167,10 @@ $ python3 tests/packaging/test_pack.py    # the PyPI wheel of vcraft itself
 $ python3 tests/wheel/test_wheel.py       # wheel writer, checked with zipfile and pip
 $ python3 tests/runtime/test_runtime.py   # the CPython runtime
 $ python3 tests/codegen/test_codegen.py   # code generator, end to end
+$ python3 tests/memory/test_leaks.py      # no leaked objects, references or memory
+$ python3 tests/fuzz/test_fuzz.py         # hostile arguments: no crash, the right exception
+$ python3 tests/docs/test_readme.py       # every V example in this README builds
+$ scripts/run-sanitized.sh python3 tests/fuzz/test_fuzz.py   # the same under ASan and UBSan (Linux)
 $ python3 tests/cli/test_cli.py           # the CLI against real projects and venvs
 ```
 
@@ -1134,8 +1200,10 @@ prototypes for `fn C.` declarations, so any module that binds to CPython must
 
 **`METH_FASTCALL` is the default calling convention.** It is the cheapest way
 CPython can pass positional arguments, and it lets the generated wrapper read the
-arguments as a borrowed pointer array. Keyword arguments fall back to
-`METH_FASTCALL | METH_KEYWORDS`.
+arguments as a borrowed pointer array. Functions with parameters are registered
+as `METH_FASTCALL | METH_KEYWORDS`: a call that passes every parameter by position uses
+the array as it is, and only a call with keywords or left-out parameters is bound into
+per-parameter slots first.
 
 **Annotations come from the source text.** V's parse tree does not keep
 declaration attributes; they live in the type checker. V's own `v.astquery`

@@ -13,7 +13,7 @@ module vcraft_codegen
 //		arg0 := vcraft.from_py_int_arg(args, 0, 'add', 'a') or { return unsafe { nil } }
 //		arg1 := vcraft.from_py_int_arg(args, 1, 'add', 'b') or { return unsafe { nil } }
 //		mut result := 0
-//		defer { if message := recover() { vcraft.raise_runtime_error('panic in V code: ${message}') } }
+//		defer { if message := recover() { vcraft.raise_panic(message) } }
 //		result = add(arg0, arg1)
 //		if vcraft.error_is_set() { return unsafe { nil } }
 //		return vcraft.to_py_int(result).ptr
@@ -142,7 +142,7 @@ pub fn glue_module_body(p Project) string {
 	// rejects a redefinition of an iteration variable in the same scope.
 	for f in p.funcs {
 		flags := if f.params.len == 0 { 'vcraft.meth_noargs' } else {
-			'vcraft.meth_fastcall'
+			'vcraft.meth_fastcall_keywords'
 		}
 		w.write_string('\tg_vc_module.add_function_owned(' + vstring_literal(f.name) +
 			', voidptr(' + f.trampoline + '), ' + flags + ',\n')
@@ -333,7 +333,7 @@ fn emit_error_raiser(e ErrorType) string {
 	return w.str()
 }
 
-// emit_nogil_open renders the GIL release and its guards for a `@[vc_gil]` call.
+// emit_nogil_open renders the GIL release and its guards for a `@[vc_nogil]` call.
 //
 // The release is paired in a `defer` rather than only on the fall-through path, because
 // a panic unwinds past the explicit release. The `saved != nil` guard is what keeps that
@@ -349,7 +349,7 @@ fn emit_nogil_open() string {
 	w.write_string('\tmut saved := vcraft.allow_threads()\n')
 	w.write_string('\tdefer {\n')
 	w.write_string("\t\tif message := recover() {\n")
-	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+	w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 	w.write_string('\t\t}\n')
 	w.write_string('\t}\n')
 	w.write_string('\tdefer {\n')
@@ -360,7 +360,7 @@ fn emit_nogil_open() string {
 	return w.str()
 }
 
-// emit_nogil_close renders the re-acquire after a `@[vc_gil]` call returns.
+// emit_nogil_close renders the re-acquire after a `@[vc_nogil]` call returns.
 //
 // Paired with the `nil` assignment: without it the deferred restore would fire on the
 // way out and restore twice, which leaves the GIL count wrong and crashes the next
@@ -369,7 +369,7 @@ fn emit_nogil_close() string {
 	return '\tvcraft.end_allow_threads(saved)\n' + '\tsaved = unsafe { nil }\n'
 }
 
-// emit_nogil_failure renders the failure path of a `@[vc_gil]` call that returns `!T`.
+// emit_nogil_failure renders the failure path of a `@[vc_nogil]` call that returns `!T`.
 //
 // The error is raised here rather than captured because the GIL is re-acquired first:
 // raising touches Python, and the whole point of the release is that nothing between
@@ -380,15 +380,77 @@ fn emit_nogil_failure(inner string) string {
 		'\t\t' + inner + '\n'
 }
 
-// emit_nargs_check renders the arity check at the top of a positional trampoline.
+// emit_bind renders the argument binding at the top of a trampoline with parameters.
 //
-// One comparison on the success path. The message, and the choice between too few
-// and too many, only run when it fails. Checking before any argument is read also
-// means a reader never sees an index past `nargs`.
-fn emit_nargs_check(f Func) string {
-	return '\tif nargs != ${f.params.len} {\n' +
-		"\t\tvcraft.wrong_nargs('${f.name}', ${f.params.len}, int(nargs))\n" +
-		'\t\treturn unsafe { nil }\n\t}\n'
+// Every parameter can be passed by position or by name, and an optional one can be left
+// out. A call that passes every parameter by position, the common case, takes the raw
+// array as it is: one comparison, as before keywords. Anything else is bound into one
+// slot per parameter, and `args` points at the slots from then on, so the readers below
+// take every parameter by index either way.
+fn emit_bind(f Func) string {
+	n := f.params.len
+	names := f.params.map(vstring_literal(it.name)).join(', ')
+	optional := f.params.map(if it.optional() { 'true' } else { 'false' }).join(', ')
+	// The slots exist only on the slow path. Declared up front, the array had its
+	// address taken, so V put it on the collector's heap: one allocation on every call,
+	// positional ones included, which cost a plain `add(1, 2)` about 7 ns. Here only a
+	// call with keywords or left-out parameters allocates. The buffer stays alive while
+	// `args` points into it: V's collector scans the stack, where `args` is.
+	return '\tmut args := raw_args\n' +
+		'\tif kwnames != unsafe { nil } || nargs != ${n} {\n' +
+		'\t\tbound := []voidptr{len: ${n}, init: unsafe { nil }}\n' +
+		'\t\tif !vcraft.bind_args(raw_args, nargs, kwnames, bound.data, [${names}], [${optional}], ${vstring_literal(f.name)}) {\n' +
+		'\t\t\treturn unsafe { nil }\n\t\t}\n' + '\t\targs = bound.data\n\t}\n'
+}
+
+// param_reader reads one parameter, applying its default when the caller left it out.
+//
+// A `?T` parameter's reader already turns a missing slot into `none`. A parameter with an
+// `@[vc_defaults]` value starts as that value and is only read when it was passed; its
+// reader runs inside the `if`, which is why defaults are refused for the readers that
+// pin a buffer until the end of the call.
+fn param_reader(param Param, local string, index int, func string) string {
+	strategy := lookup(param.v_type)
+	if param.default.len == 0 {
+		return reader_expr(strategy, local, index, func, param.name, param.v_type)
+	}
+	given := '${local}_given'
+	return 'mut ${local} := ${v_default(param)}\n' +
+		'\tif !vcraft.arg_at(args, ${index}).is_null() {\n' +
+		'\t\t${reader_expr(strategy, given, index, func, param.name, param.v_type)}\n' +
+		'\t\t${local} = ${given}\n\t}'
+}
+
+// v_default is a parameter's default as a V expression of its type.
+fn v_default(param Param) string {
+	t := param.v_type.trim_space()
+	value := param.default.trim_space()
+	if lookup(t) == .str {
+		return vstring_literal(value[1..value.len - 1])
+	}
+	if lookup(t) == .bool {
+		return value
+	}
+	return '${t}(${value})'
+}
+
+// python_default is a parameter's default as Python writes it, for signatures and stubs.
+fn python_default(param Param) string {
+	if param.default.len == 0 {
+		return if param.optional() { 'None' } else { '' }
+	}
+	value := param.default.trim_space()
+	return match value {
+		'true' { 'True' }
+		'false' { 'False' }
+		else {
+			if value[0] == `'` || value[0] == `"` {
+				'"' + value[1..value.len - 1].replace('"', '\\"') + '"'
+			} else {
+				value
+			}
+		}
+	}
 }
 
 // emit_method_trampoline renders a method of a class.
@@ -400,31 +462,31 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	signature := if f.params.len == 0 {
 		'self voidptr, args voidptr'
 	} else {
-		'self voidptr, args voidptr, nargs isize'
+		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 	if f.params.len > 0 {
-		w.write_string(emit_nargs_check(f))
+		w.write_string(emit_bind(f))
 	}
 	mut names := []string{}
 	for i, param in f.params {
 		name := local_name(i)
 		names << name
-		w.write_string('\t${reader_expr(lookup(param.v_type), name, i, f.name, param.name, param.v_type)}\n')
+		w.write_string('\t${param_reader(param, name, i, f.name)}\n')
 	}
 	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
 	has_value := ret != .void
 	if has_value {
-		w.write_string('\tmut result := ${zero_value(ret, f.v_ret)}\n')
+		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
 	}
 	if f.nogil {
 		w.write_string(emit_nogil_open())
 	} else {
 		w.write_string('\tdefer {\n')
 		w.write_string('\t\tif message := recover() {\n')
-		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
@@ -435,10 +497,10 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 			// Assigned, not declared: `mut result` was emitted above when the method
 			// returns a value, and `:=` here redefines it, which V rejects outright.
 			if f.nogil {
-				w.write_string('\tresult = ${call} or {\n' + emit_nogil_failure(inner) +
+				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n' + emit_nogil_failure(inner) +
 					'\t}\n')
 			} else {
-				w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
+				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n\t\t${inner}\n\t}\n')
 			}
 		} else {
 			if f.nogil {
@@ -453,7 +515,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 			w.write_string(emit_nogil_close())
 		}
 	} else if has_value {
-		w.write_string('\tresult = ${call}\n')
+		w.write_string('\t${result_target(ret, f.v_ret)} = ${call}\n')
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}
@@ -490,7 +552,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 	} else {
 		w.write_string('\tdefer {\n')
 		w.write_string('\t\tif message := recover() {\n')
-		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
@@ -498,7 +560,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		// A property getter declares its own `result`. It has no argument tuple, so it
 		// does not go through the path that declares one for a method, and without this
 		// the return statement at the end refers to a variable that was never declared.
-		w.write_string('\tmut result := ${zero_value(ret, f.v_ret)}\n')
+		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
 	}
 	if f.returns_result {
 		inner := 'vcraft.raise_from_error(err)\n\treturn unsafe { nil }'
@@ -506,10 +568,10 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		// a value, and `:=` here would shadow it -- or rather, redefine it, which V
 		// rejects outright.
 		if f.nogil {
-			w.write_string('\tresult = state.' + c.self_access() +
+			w.write_string('\t${result_target(ret, f.v_ret)} = state.' + c.self_access() +
 				'${f.name}() or {\n' + emit_nogil_failure(inner) + '\t}\n')
 		} else {
-			w.write_string('\tresult = state.' + c.self_access() + '${f.name}() or {\n\t${inner}\n\t}\n')
+			w.write_string('\t${result_target(ret, f.v_ret)} = state.' + c.self_access() + '${f.name}() or {\n\t${inner}\n\t}\n')
 		}
 		if f.nogil {
 			w.write_string(emit_nogil_close())
@@ -520,7 +582,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		// A plain getter: the call is assigned to the `result` declared above. Without
 		// this the value is computed and dropped on the floor, and the getter returns the
 		// zero value it was initialised with.
-		w.write_string('\tresult = state.' + c.self_access() + '${f.name}()\n')
+		w.write_string('\t${result_target(ret, f.v_ret)} = state.' + c.self_access() + '${f.name}()\n')
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}
@@ -562,12 +624,12 @@ pub fn emit_trampoline(f Func) string {
 	signature := if f.params.len == 0 {
 		'self voidptr, args voidptr'
 	} else {
-		'self voidptr, args voidptr, nargs isize'
+		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 
 	if f.params.len > 0 {
-		w.write_string(emit_nargs_check(f))
+		w.write_string(emit_bind(f))
 	}
 
 	// `@[vc_raw]` keeps the declared signature but skips every conversion: each
@@ -584,10 +646,9 @@ pub fn emit_trampoline(f Func) string {
 			w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 			continue
 		}
-		strategy := lookup(param.v_type)
 		name := local_name(i)
 		names << name
-		w.write_string('\t${reader_expr(strategy, name, i, f.name, param.name, param.v_type)}\n')
+		w.write_string('\t${param_reader(param, name, i, f.name)}\n')
 	}
 
 
@@ -599,12 +660,12 @@ pub fn emit_trampoline(f Func) string {
 	// below assigns to it rather than introducing it with `:=`, because `:=` on an
 	// existing name is a redefinition and V rejects that outright.
 	if has_value {
-		w.write_string('\tmut result := ${zero_value(ret, f.v_ret)}\n')
+		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
 	}
 	// A raw function's result is a pointer the V side already owns, so it is
 	// handed back without touching the reference count.
 	//
-	// `@[vc_gil]` replaces the guard with the release and its own pair of guards: the
+	// `@[vc_nogil]` replaces the guard with the release and its own pair of guards: the
 	// recover defer first so it runs last, already holding the GIL, and the restore
 	// defer second so it runs first. Everything between them runs without the GIL and
 	// must not touch Python.
@@ -613,7 +674,7 @@ pub fn emit_trampoline(f Func) string {
 	} else {
 		w.write_string('\tdefer {\n')
 		w.write_string('\t\tif message := recover() {\n')
-		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
@@ -629,10 +690,10 @@ pub fn emit_trampoline(f Func) string {
 			// Assigned, not declared: `mut result` was emitted above when the method
 			// returns a value, and `:=` here redefines it, which V rejects outright.
 			if f.nogil {
-				w.write_string('\tresult = ${call} or {\n' + emit_nogil_failure(inner) +
+				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n' + emit_nogil_failure(inner) +
 					'\t}\n')
 			} else {
-				w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
+				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n\t\t${inner}\n\t}\n')
 			}
 		} else {
 			if f.nogil {
@@ -651,7 +712,7 @@ pub fn emit_trampoline(f Func) string {
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	} else {
 		if has_value {
-			w.write_string('\tresult = ${call}\n')
+			w.write_string('\t${result_target(ret, f.v_ret)} = ${call}\n')
 		} else {
 			w.write_string('\t${call}\n')
 		}
@@ -694,8 +755,59 @@ pub fn return_expr(strategy Strategy, value string, raw bool, v_type string) str
 		// already a pointer: boxing it and taking `.ptr` does not compile.
 		.pyobj { 'vcraft.borrow(${value}).new_ref().ptr' }
 		.seq { '${seq_boxed_expr(element_type(v_type), value)}.ptr' }
+		// A multi-value result lives in `result0`, `result1`...: see `result_decl`.
+		.tuple {
+			parts := tuple_parts(v_type)
+			items := []string{len: parts.len, init: boxed_expr(lookup(parts[index]), 'result${index}')}
+			'vcraft.tuple_of([${items.join(', ')}]).ptr'
+		}
+		.optional, .dict, .fixed { '${composite_boxed_expr(strategy, value, v_type)}.ptr' }
 		else { '${boxed_expr(strategy, value)}.ptr' }
 	}
+}
+
+// composite_boxed_expr boxes an optional, a map or a fixed-size array as an expression.
+//
+// The map is boxed by an immediately called function literal, because building a
+// `dict` takes a loop and every caller of this needs a single expression.
+fn composite_boxed_expr(strategy Strategy, value string, v_type string) string {
+	t := v_type.trim_space()
+	return match strategy {
+		.optional {
+			inner := t[1..]
+			'(if opt_value := ${value} { ${boxed_expr(lookup(inner), 'opt_value')} } else { vcraft.to_py_none() })'
+		}
+		.dict {
+			element := t['map[string]'.len..]
+			'fn (m ${t}) vcraft.PyObj {\n\t\td := vcraft.new_dict()\n' +
+				'\t\tfor k, v in m {\n\t\t\tvcraft.dict_set_owned(d, vcraft.to_py_string(k), ${boxed_expr(lookup(element), 'v')})\n\t\t}\n' +
+				'\t\treturn d\n\t}(${value})'
+		}
+		.fixed { seq_boxed_expr(fixed_element(t), '${value}[..]') }
+		else { boxed_expr(strategy, value) }
+	}
+}
+
+// result_decl declares the local a trampoline assigns the call's result to: `result`,
+// or `result0`, `result1`... for a multi-value return, which V can only destructure.
+pub fn result_decl(strategy Strategy, v_type string) string {
+	if strategy == .tuple {
+		parts := tuple_parts(v_type)
+		mut lines := []string{}
+		for i, part in parts {
+			lines << 'mut result${i} := ${zero_value(lookup(part), part)}'
+		}
+		return lines.join('\n\t')
+	}
+	return 'mut result := ${zero_value(strategy, v_type)}'
+}
+
+// result_target is the left-hand side the call is assigned to.
+pub fn result_target(strategy Strategy, v_type string) string {
+	if strategy == .tuple {
+		return []string{len: tuple_parts(v_type).len, init: 'result${index}'}.join(', ')
+	}
+	return 'result'
 }
 
 // seq_boxed_expr boxes a returned `[]T` as a list. Slices of the plain number types
@@ -761,7 +873,27 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 		.bytes { '[]u8{}' }
 		.pyref { 'vcraft.null' }
 		.seq { '${v_type}{}' }
+		.optional { '${v_type.trim_space()}(none)' }
+		.dict, .fixed { '${v_type.trim_space()}{}' }
+		// Never declared as one local: `result_decl` declares one per element.
+		.tuple { 'unsafe { nil }' }
 		.pyobj, .unsupported { 'unsafe { nil }' }
+	}
+}
+
+// scalar_narrower names the runtime converter for a scalar narrower than the width its
+// strategy reads (`int`, `u64`, `f64`), or returns '' when the plain reader fits.
+fn scalar_narrower(v_type string) string {
+	return match v_type {
+		'i8' { 'i8_from_py_int' }
+		'i16' { 'i16_from_py_int' }
+		'i32' { 'i32_from_py_int' }
+		'rune' { 'rune_from_py_int' }
+		'u8' { 'u8_from_py_uint' }
+		'u16' { 'u16_from_py_uint' }
+		'u32' { 'u32_from_py_uint' }
+		'f32' { 'f32_from_py_f64' }
+		else { '' }
 	}
 }
 
@@ -773,11 +905,27 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 // something is pending.
 pub fn reader_expr(strategy Strategy, local string, index int, func string, param string,
 	param_type string) string {
+	// A width narrower than the reader's result does not convert implicitly in V:
+	// `i8`, `i16`, `i32`, `u8`, `u16`, `u32` and `f32` parameters generated glue that
+	// did not compile. They read the object and go through the same range-checked
+	// narrower their sequences use, so an out-of-range value raises OverflowError.
+	if strategy in [.optional, .dict, .fixed, .tuple] {
+		return composite_reader(strategy, local, index, func, param, param_type)
+	}
+	narrower := scalar_narrower(param_type.trim_space())
 	call := match strategy {
 		.bool { "vcraft.from_py_bool_arg(args, ${index}, '${func}', '${param}')" }
-		.int { "vcraft.from_py_int_arg(args, ${index}, '${func}', '${param}')" }
-		.uint { "vcraft.from_py_uint_arg(args, ${index}, '${func}', '${param}')" }
-		.float { "vcraft.from_py_f64_arg(args, ${index}, '${func}', '${param}')" }
+		.int, .uint, .float {
+			if narrower.len > 0 {
+				"vcraft.${narrower}(vcraft.required_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }, '${param}')"
+			} else if strategy == .int {
+				"vcraft.from_py_int_arg(args, ${index}, '${func}', '${param}')"
+			} else if strategy == .uint {
+				"vcraft.from_py_uint_arg(args, ${index}, '${func}', '${param}')"
+			} else {
+				"vcraft.from_py_f64_arg(args, ${index}, '${func}', '${param}')"
+			}
+		}
 		.str { "vcraft.from_py_string_arg(args, ${index}, '${func}', '${param}')" }
 		// A `[]u8` parameter takes any bytes-like object without copying it. Exact
 		// `bytes` aliases the object with no view at all; anything else goes
@@ -853,7 +1001,8 @@ pub fn python_signature(f Func) string {
 fn param_list(f Func) string {
 	mut parts := []string{}
 	for param in f.params {
-		parts << '${param.name}: ${describe(param.v_type)}'
+		default := python_default(param)
+		parts << '${param.name}: ${describe(param.v_type)}' + if default.len > 0 { ' = ${default}' } else { '' }
 	}
 	return parts.join(', ')
 }
@@ -871,6 +1020,9 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 		// alias a V slice into. Reads cost nothing; writes pay for the type.
 		.bytes { 'vcraft.to_py_bytes_slice(' + value + ')' }
 		.seq { 'vcraft.to_py_list(' + value + ')' }
+		// Boxed through `composite_boxed_expr`, which needs the declared type; fields of
+		// these types are refused before glue is written.
+		.optional, .dict, .tuple, .fixed { 'vcraft.to_py_none()' }
 		.pyobj { value }
 		// The V value owns a reference and CPython steals the one a getter returns, so
 		// the ownership moves rather than being copied. `steal` is the spelling of that.
@@ -882,7 +1034,15 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 // unbox_expr renders the call that converts an incoming `PyObject *` into the V type
 // a field holds. A setter cannot copy the bytes: the object behind an int is a
 // `PyLong` with CPython's own layout.
-pub fn unbox_expr(strategy Strategy, value string) string {
+pub fn unbox_expr(strategy Strategy, value string, v_type string) string {
+	// A narrow field is converted to its own width, range-checked. Unboxing it at the
+	// strategy's width and then copying `sizeof(field)` bytes of that wider local wrote
+	// the low bytes of an `f64` into an `f32` field (garbage) and truncated an
+	// out-of-range `i8` without a word.
+	narrower := scalar_narrower(v_type.trim_space())
+	if narrower.len > 0 && strategy in [.int, .uint, .float] {
+		return 'vcraft.${narrower}(vcraft.borrow(' + value + '), ' + vstring_literal('value') + ')'
+	}
 	return match strategy {
 		.bool { 'vcraft.unbox_bool(' + value + ')' }
 		.int { 'vcraft.unbox_int(' + value + ', ' + vstring_literal('value') + ')' }
@@ -1017,4 +1177,61 @@ fn indent_doc(doc string) string {
 pub fn element_type(v_type string) string {
 	base := v_type.trim_space()
 	return if base.starts_with('[]') { base[2..] } else { base }
+}
+
+// value_from_obj converts one borrowed object to a plain V value of `v_type`, as an
+// expression that returns from the trampoline when the conversion raises.
+fn value_from_obj(v_type string, obj string, param string) string {
+	t := v_type.trim_space()
+	name := vstring_literal(param)
+	fail := ' or { return unsafe { nil } }'
+	narrower := scalar_narrower(t)
+	if narrower.len > 0 {
+		return 'vcraft.${narrower}(${obj}, ${name})${fail}'
+	}
+	return match lookup(t) {
+		.bool { 'vcraft.from_py_bool(${obj})' }
+		.int { '${t}(vcraft.from_py_int(${obj}, ${name})${fail})' }
+		.uint { '${t}(vcraft.from_py_uint(${obj}, ${name})${fail})' }
+		.float { '${t}(vcraft.from_py_f64(${obj}, ${name})${fail})' }
+		.str { 'vcraft.from_py_string(${obj}, ${name})${fail}' }
+		else { 'unsafe { nil }' }
+	}
+}
+
+// composite_reader reads an optional, a map or a fixed-size array parameter.
+fn composite_reader(strategy Strategy, local string, index int, func string, param string,
+	param_type string) string {
+	t := param_type.trim_space()
+	obj := '${local}_obj'
+	fetch := "${obj} := vcraft.required_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }"
+	return match strategy {
+		// Left out or None is `none`; anything else must convert like the plain
+		// parameter would.
+		.optional {
+			'${obj} := vcraft.arg_at(args, ${index})\n\tmut ${local} := ${t}(none)\n' +
+				'\tif !${obj}.is_null() && !vcraft.is_none_ptr(${obj}.ptr) {\n\t\t${local} = ${value_from_obj(t[1..], obj, param)}\n\t}'
+		}
+		.dict {
+			element := t['map[string]'.len..]
+			items := '${local}_items'
+			'${fetch}\n\t${items} := vcraft.dict_items(${obj}, ${vstring_literal(param)}) or { return unsafe { nil } }\n' +
+				'\tmut ${local} := ${t}{}\n' +
+				'\tfor ${local}_k := 0; ${local}_k < ${items}.len; ${local}_k += 2 {\n' +
+				'\t\t${local}[${value_from_obj('string', '${items}[${local}_k]', param)}] = ' +
+				'${value_from_obj(element, '${items}[${local}_k + 1]', param)}\n\t}'
+		}
+		// Read as the slice of the same element, then held to exactly N items.
+		.fixed {
+			n, element := fixed_parts(t)
+			seq := '${local}_seq'
+			'${reader_expr(.seq, seq, index, func, param, '[]' + element)}\n' +
+				'\tif ${seq}.len != ${n} {\n' +
+				"\t\tvcraft.raise_value_error('${func}() argument ${param}: expected ${n} items, got \${${seq}.len}')\n" +
+				'\t\treturn unsafe { nil }\n\t}\n' +
+				'\tmut ${local} := ${t}{}\n' +
+				'\tfor ${local}_k in 0 .. ${n} {\n\t\t${local}[${local}_k] = ${seq}[${local}_k]\n\t}'
+		}
+		else { "vcraft.raise_type_error('${func}() argument ${param}: a multi-value type cannot be passed in')\n\treturn unsafe { nil }" }
+	}
 }

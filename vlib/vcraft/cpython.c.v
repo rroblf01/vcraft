@@ -32,6 +32,16 @@ $if linux {
 
 // ---------------------------------------------------------------- lifecycle
 
+fn C.vpy_gc_enter()
+
+// gc_enter makes the calling thread known to V's collector; see `vpy_gc_enter` in
+// `c/gc_preinit.h`. The generated glue calls it first thing in every function, so an
+// extension can be called from any Python thread.
+@[inline]
+pub fn gc_enter() {
+	C.vpy_gc_enter()
+}
+
 fn C.vpy_python_api_version() int
 
 fn C.vpy_version_hex() u64
@@ -195,6 +205,10 @@ fn C.PyDict_New() voidptr
 fn C.PyDict_SetItemString(d voidptr, key voidptr, value voidptr) int
 
 fn C.PyDict_GetItemString(d voidptr, key voidptr) voidptr
+
+fn C.PyDict_SetItem(d voidptr, key voidptr, value voidptr) int
+
+fn C.PyDict_Next(d voidptr, pos &isize, key &voidptr, value &voidptr) int
 
 fn C.PyObject_GetAttrString(o voidptr, name voidptr) voidptr
 

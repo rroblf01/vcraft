@@ -12,11 +12,16 @@ pub const attr_fn = 'vc_fn'
 
 pub const attr_raw = 'vc_raw'
 
-pub const attr_nogil = 'vc_gil'
+// attr_nogil releases the GIL around a call. It was spelled `vc_gil` before 1.0, which
+// read as the opposite; that name is still accepted, with a warning.
+pub const attr_nogil = 'vc_nogil'
 
 pub const attr_class = 'vc_class'
 
-pub const attr_methods = 'vc_methods'
+// attr_methods exposes one method. It was spelled `vc_methods` before 1.0, after
+// PyO3's `#[pymethods]`, which annotates a whole impl block that V does not have; that
+// name is still accepted, with a warning.
+pub const attr_methods = 'vc_method'
 
 pub const attr_field = 'vc_field'
 
@@ -37,6 +42,10 @@ pub const attr_error = 'vc_error'
 // where `@[vc_field]` is a boolean.
 pub const attr_ref = 'vc_ref'
 
+// attr_defaults gives parameters default values: `@[vc_defaults: 'step=1, name="x"']`.
+// V has no default arguments of its own, so they are declared on the function.
+pub const attr_defaults = 'vc_defaults'
+
 pub const attr_eq = 'vc_eq'
 
 // attr_iter marks a method as the class's `__iter__`: the instance is its own iterator,
@@ -52,8 +61,21 @@ pub const attr_hash = 'vc_hash'
 // known_attrs is every annotation the generator reacts to. Anything else in a
 // `vc.` namespace is a typo and is reported rather than ignored, because a
 // silently ignored annotation means a function quietly missing from the module.
+// deprecated_attrs maps a name from before 1.0 to the one that replaced it. Both
+// work throughout 1.x; the old one draws a warning and goes in 2.0.
+pub const deprecated_attrs = {
+	'vc_gil':     'vc_nogil'
+	'vc_methods': 'vc_method'
+}
+
+// canonical_attr is the current name of an annotation, given either spelling.
+pub fn canonical_attr(name string) string {
+	return deprecated_attrs[name] or { name }
+}
+
 pub const known_attrs = [
 	attr_fn,
+	attr_defaults,
 	attr_raw,
 	attr_eq,
 	attr_hash,
@@ -77,6 +99,16 @@ pub mut:
 	// v_type is the type as written, which for a parameter is never a result
 	// type and so needs no splitting.
 	v_type string
+	// default is the value from `@[vc_defaults]` as written there, e.g. `1` or `"x"`,
+	// or empty when the parameter has none. Validated against the type before any
+	// glue is written.
+	default string
+}
+
+// optional reports whether a caller may leave the parameter out: it has a default, or
+// it is `?T`, which defaults to None.
+pub fn (p Param) optional() bool {
+	return p.default.len > 0 || p.v_type.trim_space().starts_with('?')
 }
 
 // Func is one function the generator will export. It is filled in piecewise as the
@@ -100,6 +132,9 @@ pub mut:
 	raw bool
 	// nogil marks a pure V function the wrapper may call with the GIL released.
 	nogil bool
+	// unknown_defaults are names in `@[vc_defaults]` that are not parameters, kept for
+	// a diagnostic once the declaration's position is known.
+	unknown_defaults []string
 	// property marks a method exposed as a Python property rather than a call.
 	property bool
 	// static marks a method that takes no receiver.

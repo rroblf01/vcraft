@@ -196,6 +196,11 @@ pub fn macos_retarget(tag string, deployment string) string {
 	return 'macosx_${nums[0]}_${minor}_' + parts[3..].join('_')
 }
 
+// export_script is a GNU ld version script exporting only the module's init function.
+pub fn export_script(module string) string {
+	return '{\n\tglobal: PyInit_${module};\n\tlocal: *;\n};\n'
+}
+
 // extension_ldflags returns the linker flags for an extension on `target_os`.
 //
 // An extension leaves every `Py*` symbol undefined for the interpreter that loads it to
@@ -348,6 +353,12 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		// satisfy it, e.g. a musl policy on a glibc machine.
 		target = target.with_policy(opt.manylinux, opt.musllinux)!
 	}
+	// Windows is out of scope for 1.x (ROADMAP.md, "After 1.0"): the build quotes for a
+	// POSIX shell and no Windows wheel has ever been built or tested. Refused here, by
+	// name, rather than producing a `.pyd` nobody has loaded.
+	if target.os == 'windows' {
+		return error('Windows is not supported by vcraft 1.x; build on Linux or macOS (see ROADMAP.md)')
+	}
 	// The free-threaded build is whatever interpreter the caller named, and this is
 	// the check: a GIL interpreter produces a `cp314t`-tagged wheel full of GIL code,
 	// which the installer accepts and the free-threaded runtime then refuses to load.
@@ -489,7 +500,23 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		'-cflags',
 		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + gc_define + ' ' + gnu_define + ' ' + opt.cflags),
 	]
-	ldflags := extension_ldflags(target.os, opt.ldflags)
+	mut link_extra := opt.ldflags
+	if target.os == 'linux' {
+		// Export only the init function. V's `-fvisibility=hidden` already hides most of
+		// the runtime, but not everything: on musl V defines its own `backtrace`,
+		// `backtrace_symbols` and `backtrace_symbols_fd`, and they ended up in the
+		// dynamic symbol table, where another library in the process could bind to
+		// them. A version script hides every symbol but `PyInit_<module>` whatever
+		// the libc or the V version does.
+		// Absolute: V runs the linker from its own working directory, where a path
+		// relative to the project does not resolve.
+		script := absolute(compiled + '/' + p.module + '.exports')
+		os.write_file(script, export_script(p.module)) or {
+			return error('cannot write ${script}')
+		}
+		link_extra = ('-Wl,--version-script=' + script + ' ' + link_extra).trim_space()
+	}
+	ldflags := extension_ldflags(target.os, link_extra)
 	if ldflags.len > 0 {
 		args << '-ldflags'
 		args << shell_quote(ldflags)

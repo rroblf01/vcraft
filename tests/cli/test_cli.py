@@ -67,7 +67,20 @@ def host_target() -> str:
     if sys.platform == "darwin":
         return "macos-arm64" if machine == "arm64" else "macos-x86_64"
     arch = "aarch64" if machine in ("aarch64", "arm64") else "x86_64"
-    return f"linux-{arch}-gnu"
+    # musl on Alpine, glibc elsewhere: the libc is part of the target.
+    libc = "musl" if "musl" in (sysconfig.get_config_var("HOST_GNU_TYPE") or "") else "gnu"
+    return f"linux-{arch}-{libc}"
+
+
+def foreign_target() -> tuple[str, str, str]:
+    """A Linux target that is not this machine: (name, its compiler, its arch tag).
+
+    The cross-compilation checks need a target the host cannot build natively, which
+    is aarch64 on an x86_64 host and x86_64 on an aarch64 one.
+    """
+    if platform.machine().lower() in ("aarch64", "arm64"):
+        return "linux-x86_64-gnu", "x86_64-linux-gnu-gcc", "x86_64"
+    return "linux-aarch64-gnu", "aarch64-linux-gnu-gcc", "aarch64"
 
 
 def make_venv(path: Path, with_pip: bool = False) -> Path:
@@ -117,8 +130,10 @@ def main() -> int:
         toml = (project / "vcraft.toml").read_text()
         t.check("the manifest names the package", 'name = "mypkg"' in toml, toml)
         t.check("the manifest names the module", 'module = "mypkg_native"' in toml)
-        t.check("the manifest has classifiers", "[[classifier]]" in toml)
-        t.check("the manifest has a minimum version", "minimum-version" in toml)
+        t.check("the manifest has classifiers, as a list",
+                "classifiers = [" in toml and "[[classifier]]" not in toml, toml)
+        t.check("the manifest has a minimum version, under [build]",
+                "[build]\nminimum-version" in toml, toml)
 
         vmod = (project / "v.mod").read_text()
         t.check("v.mod declares base_url", 'base_url: "src"' in vmod, vmod)
@@ -163,11 +178,11 @@ def main() -> int:
                 "@[vc_fn]\npub fn new_mid() &Mid {\n\treturn &Mid{ mid: 2 }\n}\n\n"
                 "@[vc_fn]\npub fn new_grandchild() &Grandchild {\n"
                 "\treturn &Grandchild{ depth: 3 }\n}\n\n"
-                "@[vc_methods]\npub fn (mut g Grandchild) total() int {\n"
+                "@[vc_method]\npub fn (mut g Grandchild) total() int {\n"
                 "\tmut mid := unsafe { &Mid(vcraft.state_at(1)) }\n"
                 "\tmut root := unsafe { &Root(vcraft.state_at(2)) }\n"
                 "\treturn mid.mid + root.root\n}\n\n"
-                "@[vc_methods]\npub fn (mut g Grandchild) bump_root() {\n"
+                "@[vc_method]\npub fn (mut g Grandchild) bump_root() {\n"
                 "\tmut root := unsafe { &Root(vcraft.state_at(2)) }\n"
                 "\troot.root += 10\n}\n" + extra)
 
@@ -273,27 +288,29 @@ def main() -> int:
         t.check("manylinux on musl fails", proc.returncode != 0)
         t.check("and says why", "needs a gnu target" in proc.stderr,
                 proc.stderr.strip())
-        proc = vcraft("build", "--target", "linux-aarch64-gnu", "--dry-run",
-                      cwd=project)
+        cross, cross_cc, cross_arch = foreign_target()
+        proc = vcraft("build", "--target", cross, "--dry-run", cwd=project)
         t.check("a dry run plans without a toolchain", proc.returncode == 0
-                and "platform-tag     linux_aarch64" in proc.stdout
-                and "aarch64-linux-gnu-gcc" in proc.stdout, proc.stdout)
+                and f"platform-tag     linux_{cross_arch}" in proc.stdout
+                and cross_cc in proc.stdout, proc.stdout)
         t.check("a linux dry run defines _GNU_SOURCE for the GC root walk",
                 "-D_GNU_SOURCE" in proc.stdout, proc.stdout)
         t.check("the runtime carries the define for every other driver",
                 "#flag -D_GNU_SOURCE" in (ROOT / "vlib" / "vcraft" / "cpython.c.v").read_text()
                 and "$if linux" in (ROOT / "vlib" / "vcraft" / "cpython.c.v").read_text())
         t.check("a dry run writes nothing",
-                not list((project / "dist").glob("*aarch64*")))
-        proc = vcraft("build", "--target", "linux-aarch64-gnu", "--release",
+                not list((project / "dist").glob(f"*{cross_arch}*")))
+        proc = vcraft("build", "--target", cross, "--release",
                       "--dry-run", cwd=project)
         t.check("a release dry run shows the command as it would run",
                 proc.returncode == 0 and "-prod" in proc.stdout
                 and "command " in proc.stdout, proc.stdout)
-        proc = vcraft("build", "--target", "linux-aarch64-gnu", cwd=project)
-        t.check("a real aarch64 build needs its compiler", proc.returncode != 0)
-        t.check("and names it", "aarch64-linux-gnu-gcc" in proc.stderr,
-                proc.stderr.strip()[-300:])
+        # Only when that cross compiler is absent, which it is on CI runners; a
+        # machine that has one would build for real.
+        if not shutil.which(cross_cc):
+            proc = vcraft("build", "--target", cross, cwd=project)
+            t.check("a real cross build needs its compiler", proc.returncode != 0)
+            t.check("and names it", cross_cc in proc.stderr, proc.stderr.strip()[-300:])
         proc = vcraft("build", "--target", "linux-aarch64-gnu",
                       "--platform", "manylinux_2_17_x86_64", cwd=project)
         t.check("a platform that disagrees with the target fails",
@@ -336,7 +353,7 @@ def main() -> int:
                 "-0.1.0-" in name, name)
         t.check("the tag names the interpreter", "cp3" in name, name)
         t.check("the tag names the platform", "_x86_64" in name or "_arm64" in name
-                or "_amd64" in name or "universal2" in name, name)
+                or "_aarch64" in name or "_amd64" in name or "universal2" in name, name)
 
         with zipfile.ZipFile(wheel) as z:
             t.check("the wheel is a valid archive", z.testzip() is None)
@@ -351,6 +368,19 @@ def main() -> int:
                 next(n for n in entries if n.endswith("dist-info/WHEEL"))).decode()
             t.check("the wheel is not pure Python",
                     "Root-Is-Purelib: false" in wheel_meta, wheel_meta)
+            # Only the init function is exported: anything else in the dynamic symbol
+            # table can be bound by another library in the process. On musl V's own
+            # backtrace() family used to leak out.
+            if sys.platform.startswith("linux") and shutil.which("nm"):
+                so = next(n for n in entries if n.endswith(".so") and "/" not in n)
+                unpacked_so = tmp / "exports-check.so"
+                unpacked_so.write_bytes(z.read(so))
+                listing = subprocess.run(["nm", "-D", "--defined-only", str(unpacked_so)],
+                                         capture_output=True, text=True).stdout
+                exported = {line.split()[-1] for line in listing.splitlines()
+                            if len(line.split()) == 3 and line.split()[1] in "TDBRW"}
+                t.check("only PyInit is exported", exported == {"PyInit_mypkg_native"},
+                        str(sorted(exported)))
             # The project page on PyPI is the README the scaffold wrote, rendered
             # as Markdown, and every classifier has to be one PyPI accepts: an
             # unknown one rejects the whole upload.
@@ -786,7 +816,7 @@ mut:
 \t@[vc_field] current int
 }
 
-@[vc_methods]
+@[vc_method]
 @[vc_next]
 pub fn (mut c Lonely) advance() int {
 \treturn c.current
@@ -800,7 +830,7 @@ mut:
 \t@[vc_field] current int
 }
 
-@[vc_methods]
+@[vc_method]
 @[vc_iter]
 pub fn (mut c Stuck) rewind() {
 }
@@ -813,7 +843,7 @@ mut:
 \t@[vc_field] current int
 }
 
-@[vc_methods]
+@[vc_method]
 @[vc_iter]
 pub fn (mut c Nosy) rewind(from int) {
 }
@@ -826,7 +856,7 @@ mut:
 \t@[vc_field] current int
 }
 
-@[vc_methods]
+@[vc_method]
 @[vc_iter]
 pub fn (mut c Greedy) rewind() int {
 \treturn c.current
@@ -836,7 +866,7 @@ pub fn (mut c Greedy) rewind() int {
         it_diagnostic("nogil on a raw function", """
 @[vc_fn]
 @[vc_raw]
-@[vc_gil]
+@[vc_nogil]
 pub fn touch(ptr voidptr) voidptr {
 \treturn ptr
 }
@@ -857,7 +887,7 @@ mut:
 	@[vc_ref(Node)] peer vcraft.PyObj
 }
 
-@[vc_methods]
+@[vc_method]
 pub fn (mut n Node) link(other voidptr) {
 	n.peer = vcraft.retain(other)
 }
@@ -907,6 +937,348 @@ pub fn (mut n Node) link(other voidptr) {
         finally:
             native.write_text(saved)
             vcraft("build", cwd=project)
+
+        print("threads")
+        # The collector only knew the thread that imported the module, so any other
+        # thread that allocated aborted the process with "Collecting from unknown
+        # thread" as soon as it triggered a collection: one worker thread was enough.
+        # Each check runs in its own process, so a crash is a failed check rather than
+        # the end of the suite, and allocates well past the first collection.
+        native.write_text(saved + """
+// build_csv allocates from the collector with the GIL released, so threads run it,
+// and collect, in parallel.
+@[vc_fn]
+@[vc_nogil]
+pub fn build_csv(rows int) int {
+	mut parts := []string{}
+	for i in 0 .. rows {
+		parts << 'row-${i}'
+	}
+	return parts.join(',').len
+}
+""")
+        try:
+            proc = vcraft("build", cwd=project)
+            t.check("a project with a GIL-free allocating function builds",
+                    proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-400:])
+            # The wheel this build wrote: dist/ also holds the abi3 one from earlier.
+            threaded = sorted((w for w in (project / "dist").glob("*.whl")
+                               if "abi3" not in w.name),
+                              key=lambda w: w.stat().st_mtime, reverse=True)
+            if proc.returncode == 0 and threaded:
+                target3 = tmp / "venv-threads"
+                make_venv(target3, with_pip=True)
+                subprocess.run([str(target3 / "bin" / "python"), "-m", "pip", "install",
+                                "--no-index", "--no-deps", "--force-reinstall",
+                                str(threaded[0])], capture_output=True, text=True)
+                expect = len(",".join(f"row-{i}" for i in range(5000)))
+                probes = {
+                    "a worker thread can call the extension":
+                        "import threading, mypkg_native as m\n"
+                        "def w():\n"
+                        "    for i in range(200_000):\n"
+                        "        assert m.greet('w') == 'Hello, w!'\n"
+                        "t = threading.Thread(target=w); t.start(); t.join()\n"
+                        "print('ok')\n",
+                    "a ThreadPoolExecutor can call the extension":
+                        "from concurrent.futures import ThreadPoolExecutor\n"
+                        "import mypkg_native as m\n"
+                        "with ThreadPoolExecutor(4) as ex:\n"
+                        "    got = list(ex.map(lambda i: m.greet(str(i)), range(200_000)))\n"
+                        "assert got[-1] == 'Hello, 199999!'\n"
+                        "print('ok')\n",
+                    "GIL-free functions allocate in parallel":
+                        "import threading, mypkg_native as m\n"
+                        "bad = []\n"
+                        "def w():\n"
+                        "    for i in range(200):\n"
+                        f"        if m.build_csv(5000) != {expect}: bad.append(i)\n"
+                        "ts = [threading.Thread(target=w) for _ in range(8)]\n"
+                        "[t.start() for t in ts]; [t.join() for t in ts]\n"
+                        "assert not bad, bad\n"
+                        "print('ok')\n",
+                    "short-lived threads come and go":
+                        "import threading, mypkg_native as m\n"
+                        "for _ in range(50):\n"
+                        "    ts = [threading.Thread(target=lambda: m.build_csv(2000)) for _ in range(20)]\n"
+                        "    [t.start() for t in ts]; [t.join() for t in ts]\n"
+                        "print('ok')\n",
+                }
+                for label, code in probes.items():
+                    proc = subprocess.run([str(target3 / "bin" / "python"), "-c", code],
+                                          capture_output=True, text=True, cwd=tmp, timeout=600)
+                    t.check(label, proc.returncode == 0 and proc.stdout.strip() == "ok",
+                            f"exit {proc.returncode}: {(proc.stderr or proc.stdout).strip()[-300:]}")
+        finally:
+            native.write_text(saved)
+            vcraft("build", cwd=project)
+
+        print("every documented conversion")
+        # One function per row of the README's type table, each called with a value in
+        # range and one out of it. The table once promised conversions the generator
+        # rejected, and accepted narrow widths whose glue did not compile or whose field
+        # setters wrote garbage; this keeps the two in step.
+        native.write_text(saved + """
+@[vc_fn]
+pub fn t_bool(x bool) bool { return x }
+@[vc_fn]
+pub fn t_i8(x i8) i8 { return x }
+@[vc_fn]
+pub fn t_i16(x i16) i16 { return x }
+@[vc_fn]
+pub fn t_i32(x i32) i32 { return x }
+@[vc_fn]
+pub fn t_i64(x i64) i64 { return x }
+@[vc_fn]
+pub fn t_isize(x isize) isize { return x }
+@[vc_fn]
+pub fn t_u8(x u8) u8 { return x }
+@[vc_fn]
+pub fn t_u16(x u16) u16 { return x }
+@[vc_fn]
+pub fn t_u32(x u32) u32 { return x }
+@[vc_fn]
+pub fn t_u64(x u64) u64 { return x }
+@[vc_fn]
+pub fn t_usize(x usize) usize { return x }
+@[vc_fn]
+pub fn t_f32(x f32) f32 { return x }
+@[vc_fn]
+pub fn t_f64(x f64) f64 { return x }
+@[vc_fn]
+pub fn t_rune(x rune) rune { return x }
+@[vc_fn]
+pub fn t_string(x string) string { return x }
+@[vc_fn]
+pub fn t_bytes(x []u8) []u8 { return x }
+@[vc_fn]
+pub fn t_list(x []int) []int { return x }
+@[vc_fn]
+pub fn t_void() {}
+@[vc_fn]
+pub fn t_oom() int {
+	// An allocation V refuses, which it reports by panicking.
+	_ = unsafe { malloc_noscan(-1) }
+	return 0
+}
+@[vc_fn]
+pub fn t_result(x int) !int {
+	if x < 0 {
+		return error('negative')
+	}
+	return x
+}
+
+@[vc_fn]
+pub fn t_opt(x ?int) int {
+	return x or { -1 }
+}
+@[vc_fn]
+pub fn t_opt_out(x int) ?string {
+	if x < 0 {
+		return none
+	}
+	return 'n${x}'
+}
+@[vc_fn]
+pub fn t_dict(m map[string]int) map[string]int {
+	mut out := map[string]int{}
+	for k, v in m {
+		out[k] = v * 2
+	}
+	return out
+}
+@[vc_fn]
+pub fn t_pair(x int) (int, string) {
+	return x + 1, 'n=${x}'
+}
+@[vc_fn]
+pub fn t_fixed(a [3]f64) [3]f64 {
+	return [a[2], a[1], a[0]]!
+}
+
+@[vc_fn]
+@[vc_defaults: 'step=1, label="item", loud=false']
+pub fn t_kw(count int, step int, label string, loud bool) string {
+	text := '${label}:${count}:${step}'
+	return if loud { text.to_upper() } else { text }
+}
+@[vc_fn]
+pub fn t_kw_opt(a int, b ?int) int {
+	return a + (b or { 100 })
+}
+
+@[vc_class]
+pub struct Narrow {
+mut:
+	@[vc_field] level i8
+	@[vc_field] ratio f32
+	@[vc_field] count u16
+}
+
+@[vc_method]
+pub fn (mut n Narrow) scale(by f32) f32 {
+	n.ratio = n.ratio * by
+	return n.ratio
+}
+""")
+        try:
+            proc = vcraft("build", cwd=project)
+            t.check("every documented type compiles",
+                    proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-600:])
+            built = sorted((w for w in (project / "dist").glob("*.whl")
+                            if "abi3" not in w.name),
+                           key=lambda w: w.stat().st_mtime, reverse=True)
+            if proc.returncode == 0 and built:
+                target4 = tmp / "venv-types"
+                make_venv(target4, with_pip=True)
+                subprocess.run([str(target4 / "bin" / "python"), "-m", "pip", "install",
+                                "--no-index", "--no-deps", "--force-reinstall", str(built[0])],
+                               capture_output=True, text=True)
+                probe = """
+import mypkg_native as m
+def outcome(f):
+    try:
+        return repr(f())
+    except Exception as exc:
+        return type(exc).__name__
+cases = [
+    ("bool", lambda: m.t_bool(1), "True"),
+    ("i8", lambda: m.t_i8(-128), "-128"), ("i8 over", lambda: m.t_i8(128), "OverflowError"),
+    ("i16", lambda: m.t_i16(32767), "32767"), ("i16 over", lambda: m.t_i16(32768), "OverflowError"),
+    ("i32", lambda: m.t_i32(-2**31), repr(-2**31)), ("i32 over", lambda: m.t_i32(2**31), "OverflowError"),
+    ("i64", lambda: m.t_i64(2**62), repr(2**62)), ("i64 over", lambda: m.t_i64(2**63), "OverflowError"),
+    ("isize", lambda: m.t_isize(-7), "-7"),
+    ("u8", lambda: m.t_u8(255), "255"), ("u8 over", lambda: m.t_u8(256), "OverflowError"),
+    ("u16", lambda: m.t_u16(65535), "65535"), ("u16 negative", lambda: m.t_u16(-1), "OverflowError"),
+    ("u32", lambda: m.t_u32(2**32 - 1), repr(2**32 - 1)), ("u32 over", lambda: m.t_u32(2**32), "OverflowError"),
+    ("u64", lambda: m.t_u64(2**64 - 1), repr(2**64 - 1)), ("u64 negative", lambda: m.t_u64(-1), "OverflowError"),
+    ("usize", lambda: m.t_usize(9), "9"),
+    ("f32", lambda: m.t_f32(1.5), "1.5"), ("f32 type", lambda: m.t_f32("x"), "TypeError"),
+    ("f64", lambda: m.t_f64(0.1), "0.1"),
+    ("rune", lambda: m.t_rune(0x1F600), repr(0x1F600)),
+    ("string", lambda: m.t_string("España"), repr("España")),
+    ("bytes", lambda: m.t_bytes(b"ab"), repr(b"ab")),
+    ("bytearray", lambda: m.t_bytes(bytearray(b"ab")), repr(b"ab")),
+    ("list", lambda: m.t_list([1, 2]), "[1, 2]"), ("tuple", lambda: m.t_list((1, 2)), "[1, 2]"),
+    ("void", lambda: m.t_void(), "None"),
+    ("result ok", lambda: m.t_result(3), "3"), ("result error", lambda: m.t_result(-1), "RuntimeError"),
+    ("optional int", lambda: m.t_opt(4), "4"), ("optional None", lambda: m.t_opt(None), "-1"),
+    ("optional wrong type", lambda: m.t_opt("x"), "TypeError"),
+    ("optional result", lambda: m.t_opt_out(2), repr("n2")), ("optional result None", lambda: m.t_opt_out(-1), "None"),
+    ("dict", lambda: m.t_dict({"a": 1, "b": 2}), repr({"a": 2, "b": 4})),
+    ("dict not a dict", lambda: m.t_dict([1]), "TypeError"), ("dict int key", lambda: m.t_dict({1: 1}), "TypeError"),
+    ("tuple result", lambda: m.t_pair(1), repr((2, "n=1"))),
+    ("fixed array", lambda: m.t_fixed((1.0, 2.0, 3.0)), repr([3.0, 2.0, 1.0])),
+    ("fixed array length", lambda: m.t_fixed([1.0]), "ValueError"),
+    ("defaults", lambda: m.t_kw(3), repr("item:3:1")),
+    ("keywords in any order", lambda: m.t_kw(loud=True, count=2), repr("ITEM:2:1")),
+    ("positional and keyword", lambda: m.t_kw(3, label="z"), repr("z:3:1")),
+    ("missing required", lambda: m.t_kw(), "TypeError"),
+    ("repeated argument", lambda: m.t_kw(3, count=4), "TypeError"),
+    ("unknown keyword", lambda: m.t_kw(3, colour=1), "TypeError"),
+    ("too many positional", lambda: m.t_kw(1, 2, "a", True, 5), "TypeError"),
+    ("optional left out", lambda: m.t_kw_opt(1), "101"),
+    ("optional by keyword", lambda: m.t_kw_opt(b=5, a=1), "6"),
+    ("plain function by keyword", lambda: m.add(a=2, b=3), "5"),
+    ("allocation failure", lambda: m.t_oom(), "MemoryError"),
+    ("alive after it", lambda: m.t_i8(1), "1"),
+]
+n = m.Narrow()
+def assign(attr, value):
+    setattr(n, attr, value)
+    return getattr(n, attr)
+cases += [
+    ("i8 field", lambda: assign("level", -5), "-5"),
+    ("i8 field over", lambda: assign("level", 200), "OverflowError"),
+    ("i8 field kept", lambda: n.level, "-5"),
+    ("f32 field", lambda: assign("ratio", 2.0), "2.0"),
+    ("u16 field", lambda: assign("count", 65535), "65535"),
+    ("f32 method", lambda: n.scale(1.5), "3.0"),
+]
+bad = [(label, got, want) for label, f, want in cases if (got := outcome(f)) != want]
+# The dict and tuple paths handle references by hand: run them twice and keep
+# nothing the second time.
+import gc, tracemalloc
+def churn():
+    for _ in range(20_000):
+        m.t_dict({"a": 1, "b": 2}); m.t_pair(3); m.t_opt_out(1); m.t_fixed([1.0, 2.0, 3.0])
+    gc.collect()
+churn(); tracemalloc.start(); churn()
+first = tracemalloc.get_traced_memory()[0]; churn()
+grew = tracemalloc.get_traced_memory()[0] - first
+if grew > 64 * 1024:
+    bad.append(("composite types leak", grew, 0))
+print("ok" if not bad else bad)
+"""
+                proc = subprocess.run([str(target4 / "bin" / "python"), "-c", probe],
+                                      capture_output=True, text=True, cwd=tmp, timeout=300)
+                t.check("every documented conversion round-trips, with range checks",
+                        proc.stdout.strip() == "ok",
+                        (proc.stdout + proc.stderr).strip()[-600:])
+        finally:
+            native.write_text(saved)
+            vcraft("build", cwd=project)
+
+        print("names from before 1.0 keep working, with a warning")
+        manifest_path = project / "vcraft.toml"
+        manifest_saved = manifest_path.read_text()
+        native.write_text(saved.replace("@[vc_method]", "@[vc_methods]", 1))
+        proc = vcraft("build", cwd=project)
+        t.check("@[vc_methods] still builds, with a deprecation warning",
+                proc.returncode == 0 and "`@[vc_methods]` is deprecated" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved + "\n@[vc_fnn]\npub fn typo() int { return 1 }\n")
+        proc = vcraft("build", cwd=project)
+        t.check("a misspelt annotation is an error, not a silently missing function",
+                proc.returncode != 0 and "unknown vcraft annotation `vc_fnn`" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved)
+        manifest_path.write_text(
+            'minimum-version = "3.12"\nabi3 = "3.12"\n\n'
+            + manifest_saved.replace("[build]\n", "[old-build]\n")
+            .replace('classifiers = ["Programming Language :: Other"',
+                     'strip = true\nclassifiers = ["Programming Language :: Other"')
+            + '\n[[classifier]]\ntext = "Topic :: Utilities"\n')
+        proc = vcraft("info", cwd=project)
+        t.check("top-level build keys are read, with a warning to move them",
+                "abi3             3.12" in proc.stdout and "move `abi3` into a [build] table" in proc.stderr,
+                (proc.stdout + proc.stderr)[-500:])
+        t.check("a build key under [package] is reported as ignored",
+                "`strip` under [package] is ignored" in proc.stderr, proc.stderr[-400:])
+        t.check("[[classifier]] tables are read, with a warning",
+                "Topic :: Utilities" in proc.stdout and "`[[classifier]]` goes in vcraft 2.0" in proc.stderr,
+                (proc.stdout + proc.stderr)[-500:])
+        manifest_path.write_text(manifest_saved)
+        proc = vcraft("info", cwd=project)
+        t.check("a project vcraft new writes draws no warning", "warning" not in proc.stderr,
+                proc.stderr[-300:])
+
+        print("defaults the generator refuses")
+        for label, attr, decl, needle in [
+            ("an unknown parameter", "@[vc_defaults: 'nope=1']", "pub fn d1(a int) int { return a }", "not one of its parameters"),
+            ("a default of the wrong kind", "@[vc_defaults: 'a=\"x\"']", "pub fn d2(a int) int { return a }", "is not a `int` default"),
+            ("a default on ?T", "@[vc_defaults: 'a=5']", "pub fn d3(a ?int) int { return a or { 0 } }", "already defaults to None"),
+            ("a default on bytes", "@[vc_defaults: 'a=1']", "pub fn d4(a []u8) int { return a.len }", "defaults are for bool"),
+            ("a negative unsigned default", "@[vc_defaults: 'a=-1']", "pub fn d5(a u32) u32 { return a }", "is not a `u32` default"),
+        ]:
+            native.write_text(saved + "\n@[vc_fn]\n" + attr + "\n" + decl + "\n")
+            proc = vcraft("build", cwd=project)
+            t.check(f"{label} is a diagnostic", proc.returncode != 0 and needle in proc.stderr,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved)
+
+        print("composite types the generator refuses")
+        for label, decl, needle in [
+            ("a tuple parameter", "pub fn t_tp(p (int, int)) int { return 0 }", "only allows as a result"),
+            ("a map with non-string keys", "pub fn t_mk(m map[int]int) int { return 0 }", "no marshalling rule"),
+            ("an optional slice", "pub fn t_os(x ?[]int) int { return 0 }", "no marshalling rule"),
+        ]:
+            native.write_text(saved + "\n@[vc_fn]\n" + decl + "\n")
+            proc = vcraft("build", cwd=project)
+            t.check(f"{label} is a diagnostic", proc.returncode != 0 and needle in proc.stderr,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved)
 
         print("sdist")
         # Keywords and `[urls]` reach PKG-INFO, which is what PyPI reads for the
@@ -1078,6 +1450,19 @@ pub fn (mut n Node) link(other voidptr) {
                     "uses: rroblf01/vcraft/actions/vcraft-action@v1" in text,
                     "an action reference needs owner/repo/path@ref")
             t.check("it uploads a wheel", "upload-artifact" in text)
+            # GitHub is retiring Node 20 for actions; these majors still run on it.
+            node20 = re.compile(r"actions/checkout@v[1-4]\b|actions/setup-python@v[1-5]\b|"
+                                r"actions/cache(/restore|/save)?@v[1-4]\b|"
+                                r"actions/upload-artifact@v[1-5]\b|actions/download-artifact@v[1-6]\b|"
+                                r"docker/build-push-action@v[1-6]\b|docker/setup-buildx-action@v[1-3]\b|"
+                                r"docker/login-action@v[1-3]\b|softprops/action-gh-release@v[12]\b")
+            sources = {"the generated workflow": text,
+                       "the action": (ROOT / "actions" / "vcraft-action" / "action.yml").read_text()}
+            for wf in (ROOT / ".github" / "workflows").glob("*.yml"):
+                sources[wf.name] = wf.read_text()
+            stale = {name: node20.findall(body) and node20.search(body).group(0)
+                     for name, body in sources.items() if node20.search(body)}
+            t.check("no action runs on the retiring Node 20", not stale, str(stale))
             t.check("it is marked generated", "Generated by vcraft" in text)
             # A YAML value like `3.10` unquoted is a float, and comes back as `3.1`,
             # which is a version nobody publishes.
@@ -1141,6 +1526,9 @@ pub fn (mut n Node) link(other voidptr) {
                                      "tests/wheel/test_wheel.py",
                                      "tests/runtime/test_runtime.py",
                                      "tests/codegen/test_codegen.py",
+                                     "tests/memory/test_leaks.py",
+                                     "tests/fuzz/test_fuzz.py",
+                                     "tests/docs/test_readme.py",
                                      "tests/cli/test_cli.py"]),
                     "a suite CI never runs is a suite that rots")
             ci_text = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
@@ -1307,6 +1695,66 @@ pub fn (mut n Node) link(other voidptr) {
             t.check(f"{flag} prints the version",
                     proc.returncode == 0 and re.fullmatch(r"\d+\.\d+\.\d+\S*", proc.stdout.strip()),
                     proc.stdout + proc.stderr)
+
+        print("toolchain")
+        # vcraft pins the V commit it is tested with, in its own source and in every
+        # place that builds V; a pin moved in one place and not the others is a CI
+        # that tests one compiler and a user who gets another.
+        toolchain_v = (ROOT / "vlib" / "vcraft_project" / "toolchain.v").read_text()
+        pin_v = re.search(r"pub const v_commit = '([0-9a-f]{40})'", toolchain_v).group(1)
+        pin_vc = re.search(r"pub const vc_commit = '([0-9a-f]{40})'", toolchain_v).group(1)
+        for place in [".github/workflows/ci.yml", ".github/workflows/release-vcraft.yml",
+                      "actions/vcraft-action/action.yml", "docker/manylinux.Dockerfile",
+                      "docker/musllinux.Dockerfile"]:
+            text = (ROOT / place).read_text()
+            t.check(f"{place} pins the same V", pin_v in text and pin_vc in text,
+                    f"expected {pin_v[:7]} and {pin_vc[:7]}")
+        no_v = {k: v for k, v in os.environ.items() if k not in ("VCRAFT_V",)}
+        no_v["VCRAFT_HOME"] = str(tmp / "no-toolchain")
+        no_v["PATH"] = "/usr/bin:/bin"
+        proc = subprocess.run([str(VCRAFT), "toolchain"], cwd=project, env=no_v,
+                              capture_output=True, text=True)
+        t.check("toolchain reports a missing compiler",
+                proc.returncode != 0 and "vcraft toolchain install" in proc.stdout,
+                proc.stdout + proc.stderr)
+        proc = subprocess.run([str(VCRAFT), "build"], cwd=project, env=no_v,
+                              capture_output=True, text=True)
+        t.check("build without a compiler says how to get one",
+                proc.returncode != 0 and "vcraft toolchain install" in proc.stderr,
+                proc.stderr.strip()[-300:])
+        # An installed toolchain is found without PATH or VCRAFT_V. A stand-in that
+        # answers `version` like the pinned V keeps this check off the network.
+        fake_home = tmp / "toolchain-home"
+        fake_dir = fake_home / f"v-{pin_v[:12]}"
+        fake_dir.mkdir(parents=True)
+        fake_v = fake_dir / "v"
+        fake_v.write_text(f"#!/bin/sh\necho 'V 0.5.2 {pin_v[:7]}'\n")
+        fake_v.chmod(0o755)
+        found = dict(no_v, VCRAFT_HOME=str(fake_home))
+        proc = subprocess.run([str(VCRAFT), "toolchain"], cwd=project, env=found,
+                              capture_output=True, text=True)
+        # A binary V compiles sets VEXE to the compiler that built it, and V trusts VEXE
+        # to find its own vlib: vcraft must not hand that to the compilers it runs, or a
+        # pip-installed vcraft points the user's V at a path that does not exist.
+        seen = tmp / "vexe-seen.txt"
+        probe_v = tmp / "probe-v"
+        probe_v.write_text(f"#!/bin/sh\necho 'V 0.5.2 {pin_v[:7]}'\necho \"[$VEXE]\" > {seen}\n")
+        probe_v.chmod(0o755)
+        subprocess.run([str(VCRAFT), "toolchain"], cwd=project,
+                       env=dict(found, VCRAFT_V=str(probe_v), VEXE="/nonexistent/v"),
+                       capture_output=True, text=True)
+        t.check("the compilers vcraft runs do not inherit VEXE",
+                seen.exists() and seen.read_text().strip() == "[]",
+                seen.read_text() if seen.exists() else "probe never ran")
+        t.check("an installed toolchain is found and recognised as the pin",
+                proc.returncode == 0 and str(fake_v) in proc.stdout
+                and "the pinned commit" in proc.stdout, proc.stdout + proc.stderr)
+
+        print("windows is refused by name")
+        proc = vcraft("build", "--target", "windows-amd64", "--dry-run", cwd=project)
+        t.check("a Windows target is refused with a reason",
+                proc.returncode != 0 and "Windows is not supported" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
 
         print("errors")
         proc = vcraft("build", "--out-dir", cwd=project)

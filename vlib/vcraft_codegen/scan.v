@@ -47,7 +47,7 @@ pub fn read_inline(lines []string, line int) AttrBlock {
 	if line < 1 || line > lines.len {
 		return block
 	}
-	block.attrs = parse_attr_names(lines[line - 1])
+	block.attrs = parse_attr_names(lines[line - 1]).map(canonical_attr(it))
 	block.args = parse_attr_args(lines[line - 1])
 	block.doc = doc_above(lines, line)
 	return block
@@ -129,7 +129,7 @@ pub fn read_above(lines []string, line int) AttrBlock {
 		}
 		i = start - 1
 	}
-	block.attrs = attrs_acc
+	block.attrs = attrs_acc.map(canonical_attr(it))
 
 	// Then the doc comment, which must be contiguous lines directly above the
 	// attributes, ignoring blank lines.
@@ -178,7 +178,7 @@ fn join_lines(lines []string) string {
 // parse_attrs reads the names and the single argument of an annotation block.
 pub fn parse_attrs(text string) AttrBlock {
 	mut out := AttrBlock{}
-	out.attrs = parse_attr_names(text)
+	out.attrs = parse_attr_names(text).map(canonical_attr(it))
 	out.args = parse_attr_args(text)
 	return out
 }
@@ -212,13 +212,15 @@ fn parse_attr_args(text string) map[string]string {
 		}
 		body := text[start..i].trim_space()
 		i++
-		// Both spellings of an argument: `@[name(value)]` and `@[name = value]`.
+		// Three spellings of an argument: `@[name(value)]`, `@[name = value]`, and V's own
+		// `@[name: 'value']`, whose quotes `unquote_attr` removes. Whichever separator comes first
+		// wins, so an `=` inside a quoted value does not split the name.
 		mut sep := -1
 		mut sep_len := 0
 		for k in 0 .. body.len {
-			if body[k] == `=` || body[k] == `(` {
+			if body[k] == `=` || body[k] == `(` || body[k] == `:` {
 				sep = k
-				if body[k] == `(` {
+				if body[k] == `(` || body[k] == `:` {
 					sep_len = 1
 				}
 				break
@@ -227,7 +229,7 @@ fn parse_attr_args(text string) map[string]string {
 		if sep >= 0 {
 			name := body[..sep].trim_space()
 			mut value := body[sep + sep_len..].trim_space()
-			if value.ends_with(')') {
+			if value.ends_with(')') && body[sep] == `(` {
 				value = value[..value.len - 1].trim_space()
 			}
 			out[name] = unquote_attr(value)

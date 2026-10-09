@@ -15,7 +15,7 @@ module vcraft_codegen
 //		mut state := unsafe { &Counter(vcraft.instance_storage(self)) }
 //		if isnil(state) { vcraft.raise_runtime_error('Counter instance has no state') return unsafe { nil } }
 //		defer {
-//			if message := recover() { vcraft.raise_runtime_error('panic in V code: ${message}') }
+//			if message := recover() { vcraft.raise_panic(message) }
 //		}
 //		state.increment(arg0)
 //		if vcraft.error_is_set() { return unsafe { nil } }
@@ -153,7 +153,7 @@ fn emit_field_accessors(p Project, c Class) string {
 		// The converted value is written through the field's address rather than
 		// assigned, because assigning would need the field itself to be `mut`, and a
 		// plain `@[vc_field]` does not have to be.
-		conv := unbox_expr(lookup(f.v_type), 'value')
+		conv := unbox_expr(lookup(f.v_type), 'value', f.v_type)
 		// No `mut` on the parameters: V wraps a C callback whose parameters are `mut`,
 		// and the wrapper shifts the incoming arguments.
 		//
@@ -244,7 +244,7 @@ fn emit_class_methods(c Class) string {
 }
 
 fn method_flags(m Func) string {
-	return if m.params.len == 0 { 'vcraft.meth_noargs' } else { 'vcraft.meth_fastcall' }
+	return if m.params.len == 0 { 'vcraft.meth_noargs' } else { 'vcraft.meth_fastcall_keywords' }
 }
 
 // emit_class_new renders `tp_new`.
@@ -272,7 +272,7 @@ fn emit_iter_trampoline(p Project, c Class, f Func) string {
 	} else {
 		w.write_string('\tdefer {\n')
 		w.write_string('\t\tif message := recover() {\n')
-		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
@@ -300,14 +300,14 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 	ret := lookup(f.v_ret)
 	has_value := ret != .void
 	if has_value {
-		w.write_string('\tmut result := ${zero_value(ret, f.v_ret)}\n')
+		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
 	}
 	if f.nogil {
 		w.write_string(emit_nogil_open())
 	} else {
 		w.write_string('\tdefer {\n')
 		w.write_string('\t\tif message := recover() {\n')
-		w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
@@ -316,10 +316,10 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
 		if has_value {
 			if f.nogil {
-				w.write_string('\tresult = ${call} or {\n' + emit_nogil_failure(inner) +
+				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n' + emit_nogil_failure(inner) +
 					'\t}\n')
 			} else {
-				w.write_string('\tresult = ${call} or {\n\t\t${inner}\n\t}\n')
+				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n\t\t${inner}\n\t}\n')
 			}
 		} else {
 			if f.nogil {
@@ -333,7 +333,7 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	} else if has_value {
-		w.write_string('\tresult = ${call}\n')
+		w.write_string('\t${result_target(ret, f.v_ret)} = ${call}\n')
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}
@@ -397,7 +397,7 @@ fn emit_class_new(c Class) string {
 	}
 	w.write_string('\tdefer {\n')
 	w.write_string('\t\tif message := recover() {\n')
-	w.write_string("\t\t\tvcraft.raise_runtime_error('panic in V code: \${message}')\n")
+	w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 	w.write_string('\t\t}\n')
 	w.write_string('\t}\n')
 	w.write_string('\tinitial := ${c.newstate_fn}()\n')

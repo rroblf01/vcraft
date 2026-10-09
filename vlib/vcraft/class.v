@@ -162,7 +162,7 @@ pub fn noop() voidptr {
 //
 // One chain per thread rather than one for the process. Every trampoline used to publish
 // into a single global, which is correct exactly as long as the GIL serialises the
-// trampolines -- and a `@[vc_gil]` call runs without it, so two threads in two
+// trampolines -- and a `@[vc_nogil]` call runs without it, so two threads in two
 // trampolines would publish into the same slots and each would read the other's
 // instance. The chain lives in thread-local storage instead, keyed once at import.
 pub const state_chain_max = 8
@@ -221,7 +221,7 @@ pub fn leave_state(previous voidptr) {
 
 // A method of a subclass reaches an inherited field with a cast on `state_at`:
 //
-//	@[vc_methods]
+//	@[vc_method]
 //	pub fn (mut c BoundedCounter) bump(by int) !int {
 //		mut base := unsafe { &Counter(vcraft.state_at(1)) }
 //		if base.value + by > c.limit {

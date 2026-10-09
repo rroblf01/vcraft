@@ -89,8 +89,8 @@ def main() -> int:
             "vcraft.raise_from_error(err)" in glue)
     t.check("void result returns None", "vcraft.to_py_none().ptr" in glue)
     t.check("panic guard is inlined", "if message := recover()" in glue)
-    t.check("guard message is escaped", "panic in V code: \\${message}" in glue
-            or "panic in V code: ${message}" in glue)
+    t.check("the guard hands the panic to the runtime",
+            "vcraft.raise_panic(message)" in glue)
 
     print("docstrings and signatures")
     t.check("module docstring is a literal",
@@ -219,7 +219,7 @@ def main() -> int:
     # RuntimeError, so `except ZeroDivisionError` around a call into V keeps working.
     t.raises("V error from a float function", ZeroDivisionError, "division by zero",
              lambda: h.divide(1.0, 0.0))
-    t.raises("too few arguments", TypeError, "takes 2 positional",
+    t.raises("too few arguments", TypeError, "missing required argument: 'b'",
              lambda: h.add(1))
     t.raises("too many arguments", TypeError, "takes at most", lambda: h.add(1, 2, 3))
     t.raises("wrong argument type", TypeError, "expected int", lambda: h.add("x", 1))
@@ -247,7 +247,7 @@ def main() -> int:
              "name must not be empty", lambda: h.greet(""))
     t.raises("argument type error", TypeError, "expected str",
              lambda: h.greet(123))
-    t.raises("arity error", TypeError, "positional argument",
+    t.raises("arity error names the missing parameter", TypeError, "add() missing",
              lambda: h.add(1))
 
     print("panics")
@@ -587,7 +587,7 @@ def main() -> int:
     t.check("a return copies out", "vcraft.to_py_bytes_slice(result)" in glue)
 
     print("the GIL is released")
-    # `@[vc_gil]` marks a function as pure V, and the wrapper releases the GIL around
+    # `@[vc_nogil]` marks a function as pure V, and the wrapper releases the GIL around
     # the call. Four threads burning CPU each get their own core instead of queuing
     # behind one lock; on a GIL build without the release this would take four times
     # as long, and with an unbalanced release it would crash the interpreter.
@@ -764,7 +764,10 @@ def main() -> int:
     import subprocess as sp
 
     suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
-    extension = next(iter(PYTHON_DIR.glob(f"{PACKAGE}*.so")), None)
+    # This interpreter's extension exactly: the directory can also hold one built by
+    # another interpreter or inside a container, which a glob would pick up.
+    exact = PYTHON_DIR / f"{PACKAGE}{sysconfig.get_config_var('EXT_SUFFIX')}"
+    extension = exact if exact.exists() else None
     if extension is not None:
         out = sp.run(["nm", "-D", "--defined-only", str(extension)],
                      capture_output=True, text=True).stdout

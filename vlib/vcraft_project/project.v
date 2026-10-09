@@ -17,11 +17,10 @@ import os
 //	description = "Greets people from V."
 //	license = "MIT"
 //	requires-python = ">=3.11"
+//	classifiers = ["Programming Language :: Other"]
 //
+//	[build]
 //	minimum-version = "3.11"
-//
-//	[[classifiers]]
-//	text = "Programming Language :: Other"
 
 // Project is a parsed `vcraft.toml`.
 pub struct Project {
@@ -116,9 +115,13 @@ pub fn load(root string) !Project {
 	p.license = pkg.string_of('license', p.license)
 	p.requires_python = pkg.string_of('requires-python', p.requires_python)
 	mut classifiers := pkg.string_list_of('classifiers')
-	// `[[classifier]]` entries are the same thing written the long way, and a project
-	// that uses the long form should not have to also use the short one.
-	for t in table.table_list_of('classifier') {
+	// `[[classifier]]` entries are the same thing written the long way. They were what
+	// `vcraft new` wrote before 1.0, so they are still read, with a warning.
+	legacy := table.table_list_of('classifier')
+	if legacy.len > 0 {
+		eprintln('warning: vcraft.toml: write classifiers as `classifiers = [...]` in [package]; `[[classifier]]` goes in vcraft 2.0')
+	}
+	for t in legacy {
 		label := t.string_of('text', '')
 		if label != '' {
 			classifiers << label
@@ -135,15 +138,36 @@ pub fn load(root string) !Project {
 			p.urls << '${e.name}, ${e.value.text}'
 		}
 	}
-	// The root-level keys, before any table. A key written after `[package]` belongs to
-	// that table in TOML, and a lookup that ignores the table it is in returns nothing
-	// rather than an error.
-	p.minimum_version = table.string_of('minimum-version', p.minimum_version)
-	p.abi3 = table.string_of('abi3', '')
-	p.free_threading = table.bool_of('free-threading', false)
-	p.strip = table.bool_of('strip', false)
-	p.embed_pyc = table.bool_of('embed-pyc', false)
-	p.gc_free_space_divisor = table.int_of('gc-free-space-divisor', 2)
+	// Build settings live in `[build]`. Before 1.0 they were root-level keys, which had
+	// to precede every table: written after `[package]`, TOML makes them keys of that
+	// table, and they were silently ignored. Root-level keys are still read throughout
+	// 1.x, with a warning; the same keys under `[package]` get one too, since that is
+	// where the old layout's mistake put them.
+	build := table.subtable('build')
+	mut settings := Table{}
+	for key in build_keys {
+		if v := build.get(key) {
+			settings.entries << Entry{
+				name:  key
+				value: v
+			}
+		} else if v := table.get(key) {
+			settings.entries << Entry{
+				name:  key
+				value: v
+			}
+			eprintln('warning: vcraft.toml: move `${key}` into a [build] table; top-level build keys go in vcraft 2.0')
+		}
+		if _ := pkg.get(key) {
+			eprintln('warning: vcraft.toml: `${key}` under [package] is ignored; it belongs in [build]')
+		}
+	}
+	p.minimum_version = settings.string_of('minimum-version', p.minimum_version)
+	p.abi3 = settings.string_of('abi3', '')
+	p.free_threading = settings.bool_of('free-threading', false)
+	p.strip = settings.bool_of('strip', false)
+	p.embed_pyc = settings.bool_of('embed-pyc', false)
+	p.gc_free_space_divisor = settings.int_of('gc-free-space-divisor', 2)
 	if p.gc_free_space_divisor < 1 {
 		return error('gc-free-space-divisor is ${p.gc_free_space_divisor}; it must be 1 or more (2 is the default, 1 favours speed over memory)')
 	}
@@ -155,12 +179,31 @@ pub fn load(root string) !Project {
 // Round-trips through the same parser `load` uses, so a file this writes is one `load`
 // can read. Quoted throughout rather than relying on bare words, because a description
 // with a comma in it is not a bare word and a classifier with a `::` looks like one.
+// build_keys are the settings read from `[build]`.
+pub const build_keys = ['minimum-version', 'abi3', 'free-threading', 'strip', 'embed-pyc',
+	'gc-free-space-divisor']
+
 pub fn (p Project) render() string {
-	// The root-level keys come first, before any table header. In TOML a key belongs to
-	// whichever table precedes it, so `minimum-version` written after `[package]` is a
-	// key of that table: it parses without complaint and reads back as the default, and
-	// the generated file and the loaded configuration disagree with no error anywhere.
-	mut out := ''
+	mut out := '[package]\n'
+	out += 'name = ${quote(p.name)}\n'
+	out += 'version = ${quote(p.version)}\n'
+	out += 'module = ${quote(p.module)}\n'
+	out += 'description = ${quote(p.description)}\n'
+	out += 'license = ${quote(p.license)}\n'
+	out += 'requires-python = ${quote(p.requires_python)}\n'
+	if p.readme.len > 0 {
+		out += 'readme = ${quote(p.readme)}\n'
+	}
+	if p.keywords.len > 0 {
+		out += 'keywords = [' + p.keywords.map(quote(it)).join(', ') + ']\n'
+	}
+	if p.classifiers.len > 0 {
+		out += 'classifiers = [' + p.classifiers.map(quote(it)).join(', ') + ']\n'
+	}
+	if p.dependencies.len > 0 {
+		out += 'dependencies = [' + p.dependencies.map(quote(it)).join(', ') + ']\n'
+	}
+	out += '\n[build]\n'
 	out += 'minimum-version = ${quote(p.minimum_version)}\n'
 	if p.abi3.len > 0 {
 		out += 'abi3 = ${quote(p.abi3)}\n'
@@ -177,36 +220,8 @@ pub fn (p Project) render() string {
 	if p.gc_free_space_divisor != 2 {
 		out += 'gc-free-space-divisor = ${p.gc_free_space_divisor}\n'
 	}
-	out += '\n[package]\n'
-	out += 'name = ${quote(p.name)}\n'
-	out += 'version = ${quote(p.version)}\n'
-	out += 'module = ${quote(p.module)}\n'
-	out += 'description = ${quote(p.description)}\n'
-	out += 'license = ${quote(p.license)}\n'
-	out += 'requires-python = ${quote(p.requires_python)}\n'
-	if p.readme.len > 0 {
-		out += 'readme = ${quote(p.readme)}\n'
-	}
-	if p.keywords.len > 0 {
-		out += 'keywords = [' + p.keywords.map(quote(it)).join(', ') + ']\n'
-	}
-	if p.dependencies.len > 0 {
-		out += 'dependencies = ['
-		for i, d in p.dependencies {
-			if i > 0 {
-				out += ', '
-			}
-			out += quote(d)
-		}
-		out += ']\n'
-	}
-	out += '\n'
-	for c in p.classifiers {
-		out += '[[classifier]]\n'
-		out += 'text = ${quote(c)}\n\n'
-	}
 	if p.urls.len > 0 {
-		out += '[urls]\n'
+		out += '\n[urls]\n'
 		for u in p.urls {
 			label := u.all_before(', ')
 			out += '${label} = ${quote(u.all_after(', '))}\n'

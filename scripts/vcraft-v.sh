@@ -40,8 +40,12 @@ command -v v >/dev/null || { echo "the V compiler is not on PATH" >&2; exit 1; }
 # text detects that, because the version number alone does not say which options a
 # distribution built in.
 if command -v systemd-run >/dev/null && systemd-run --help 2>&1 | grep -q -- '--working-directory' && [ -z "${VCRAFT_NO_MEMORY_LIMIT:-}" ]; then
+	# A transient unit starts from the user manager's environment, not this script's:
+	# without -E the exports above never reached V.
 	exec systemd-run --user --wait --collect --pipe --quiet \
 		--working-directory="$PWD" \
+		-E VJOBS -E V_MACOS_V3_NO_FALLBACK -E V_C_ERROR_BUG_REPORT_DISABLED \
+		${VTMP:+-E VTMP} ${VCRAFT_SANITIZE:+-E VCRAFT_SANITIZE} -E PATH -E HOME \
 		-p "MemoryMax=$memory_max" \
 		-p MemorySwapMax=0 \
 		v -new-compiler -no-parallel "$@"
