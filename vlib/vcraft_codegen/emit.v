@@ -391,13 +391,16 @@ fn emit_bind(f Func) string {
 	n := f.params.len
 	names := f.params.map(vstring_literal(it.name)).join(', ')
 	optional := f.params.map(if it.optional() { 'true' } else { 'false' }).join(', ')
-	// `bound` is on the stack and outlives every use of `args`, which never leaves this
-	// call; V asks for `unsafe` to take its address, and in `-prod` to zero it.
-	return '\tmut args := raw_args\n' + '\tmut bound := unsafe { [${n}]voidptr{} }\n' +
+	// The slots exist only on the slow path. Declared up front, the array had its
+	// address taken, so V put it on the collector's heap: one allocation on every call,
+	// positional ones included, which cost a plain `add(1, 2)` about 7 ns. Here only a
+	// call with keywords or left-out parameters allocates. The buffer stays alive while
+	// `args` points into it: V's collector scans the stack, where `args` is.
+	return '\tmut args := raw_args\n' +
 		'\tif kwnames != unsafe { nil } || nargs != ${n} {\n' +
-		'\t\tslots := unsafe { voidptr(&bound[0]) }\n' +
-		'\t\tif !vcraft.bind_args(raw_args, nargs, kwnames, slots, [${names}], [${optional}], ${vstring_literal(f.name)}) {\n' +
-		'\t\t\treturn unsafe { nil }\n\t\t}\n' + '\t\targs = slots\n\t}\n'
+		'\t\tbound := []voidptr{len: ${n}, init: unsafe { nil }}\n' +
+		'\t\tif !vcraft.bind_args(raw_args, nargs, kwnames, bound.data, [${names}], [${optional}], ${vstring_literal(f.name)}) {\n' +
+		'\t\t\treturn unsafe { nil }\n\t\t}\n' + '\t\targs = bound.data\n\t}\n'
 }
 
 // param_reader reads one parameter, applying its default when the caller left it out.
