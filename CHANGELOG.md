@@ -46,6 +46,11 @@ the README.
 
 ### Fixed
 
+- **Cross-compiling to x86_64 from an aarch64 machine produced a mislabelled wheel.**
+  vcraft named a cross compiler for aarch64 targets but none for `linux-x86_64-gnu`, so
+  from an aarch64 host the build used the host's own `cc`, compiled an aarch64
+  extension and tagged it x86_64. It now uses `x86_64-linux-gnu-gcc`, and refuses to
+  build when that is missing.
 - **A misspelt annotation was silently ignored.** The check for unknown annotations
   looked for a `vc.` prefix, which none has, so `@[vc_fnn]` left its function out of
   the module without a word. It is now an error naming the annotation.

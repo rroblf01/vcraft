@@ -72,6 +72,17 @@ def host_target() -> str:
     return f"linux-{arch}-{libc}"
 
 
+def foreign_target() -> tuple[str, str, str]:
+    """A Linux target that is not this machine: (name, its compiler, its arch tag).
+
+    The cross-compilation checks need a target the host cannot build natively, which
+    is aarch64 on an x86_64 host and x86_64 on an aarch64 one.
+    """
+    if platform.machine().lower() in ("aarch64", "arm64"):
+        return "linux-x86_64-gnu", "x86_64-linux-gnu-gcc", "x86_64"
+    return "linux-aarch64-gnu", "aarch64-linux-gnu-gcc", "aarch64"
+
+
 def make_venv(path: Path, with_pip: bool = False) -> Path:
     # `with_pip` is off by default because a venv with pip takes several seconds and
     # `develop` only needs an interpreter. The one check that installs a wheel turns it
@@ -277,27 +288,29 @@ def main() -> int:
         t.check("manylinux on musl fails", proc.returncode != 0)
         t.check("and says why", "needs a gnu target" in proc.stderr,
                 proc.stderr.strip())
-        proc = vcraft("build", "--target", "linux-aarch64-gnu", "--dry-run",
-                      cwd=project)
+        cross, cross_cc, cross_arch = foreign_target()
+        proc = vcraft("build", "--target", cross, "--dry-run", cwd=project)
         t.check("a dry run plans without a toolchain", proc.returncode == 0
-                and "platform-tag     linux_aarch64" in proc.stdout
-                and "aarch64-linux-gnu-gcc" in proc.stdout, proc.stdout)
+                and f"platform-tag     linux_{cross_arch}" in proc.stdout
+                and cross_cc in proc.stdout, proc.stdout)
         t.check("a linux dry run defines _GNU_SOURCE for the GC root walk",
                 "-D_GNU_SOURCE" in proc.stdout, proc.stdout)
         t.check("the runtime carries the define for every other driver",
                 "#flag -D_GNU_SOURCE" in (ROOT / "vlib" / "vcraft" / "cpython.c.v").read_text()
                 and "$if linux" in (ROOT / "vlib" / "vcraft" / "cpython.c.v").read_text())
         t.check("a dry run writes nothing",
-                not list((project / "dist").glob("*aarch64*")))
-        proc = vcraft("build", "--target", "linux-aarch64-gnu", "--release",
+                not list((project / "dist").glob(f"*{cross_arch}*")))
+        proc = vcraft("build", "--target", cross, "--release",
                       "--dry-run", cwd=project)
         t.check("a release dry run shows the command as it would run",
                 proc.returncode == 0 and "-prod" in proc.stdout
                 and "command " in proc.stdout, proc.stdout)
-        proc = vcraft("build", "--target", "linux-aarch64-gnu", cwd=project)
-        t.check("a real aarch64 build needs its compiler", proc.returncode != 0)
-        t.check("and names it", "aarch64-linux-gnu-gcc" in proc.stderr,
-                proc.stderr.strip()[-300:])
+        # Only when that cross compiler is absent, which it is on CI runners; a
+        # machine that has one would build for real.
+        if not shutil.which(cross_cc):
+            proc = vcraft("build", "--target", cross, cwd=project)
+            t.check("a real cross build needs its compiler", proc.returncode != 0)
+            t.check("and names it", cross_cc in proc.stderr, proc.stderr.strip()[-300:])
         proc = vcraft("build", "--target", "linux-aarch64-gnu",
                       "--platform", "manylinux_2_17_x86_64", cwd=project)
         t.check("a platform that disagrees with the target fails",
@@ -340,7 +353,7 @@ def main() -> int:
                 "-0.1.0-" in name, name)
         t.check("the tag names the interpreter", "cp3" in name, name)
         t.check("the tag names the platform", "_x86_64" in name or "_arm64" in name
-                or "_amd64" in name or "universal2" in name, name)
+                or "_aarch64" in name or "_amd64" in name or "universal2" in name, name)
 
         with zipfile.ZipFile(wheel) as z:
             t.check("the wheel is a valid archive", z.testzip() is None)
