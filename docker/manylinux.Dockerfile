@@ -61,7 +61,11 @@ RUN git init -q /opt/v-src \
 # itself passes when it compiles the amalgamation: thread-local allocation needs
 # GC_THREADS, and the prebuilt archives this replaces were built with thread-local
 # allocation.
-RUN git clone -q https://repo.or.cz/tinycc.git /opt/tinycc \
+#
+# Cloned from the official GitHub mirror rather than tinycc's own `repo.or.cz`,
+# which times out often enough to fail a release run; both serve the same history,
+# so the pinned `TCC_COMMIT` (an `mob` commit) is present in either.
+RUN git clone -q https://github.com/TinyCC/tinycc.git /opt/tinycc \
     && cd /opt/tinycc && git checkout -q "${TCC_COMMIT}" \
     && ./configure \
         --prefix=/opt/v-src/thirdparty/tcc \
