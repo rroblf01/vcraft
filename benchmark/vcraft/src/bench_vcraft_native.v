@@ -179,3 +179,81 @@ pub fn (mut c Counter) add(n i64) i64 {
 	c.value += n
 	return c.value
 }
+
+// is_zero reports whether the value is still zero: a read-only property.
+@[vc_method]
+@[vc_property]
+pub fn (c &Counter) is_zero() bool {
+	return c.value == 0
+}
+
+// counter_eq gives the class value equality.
+@[vc_eq]
+pub fn counter_eq(a voidptr, b voidptr) bool {
+	mut x := Counter{}
+	mut y := Counter{}
+	vcraft.load_state(a, voidptr(&x), sizeof(Counter))
+	vcraft.load_state(b, voidptr(&y), sizeof(Counter))
+	return x.value == y.value
+}
+
+// counter_hash hashes the value, so equal counters collapse in a set or dict key.
+@[vc_hash]
+pub fn counter_hash(self voidptr) int {
+	mut c := Counter{}
+	vcraft.load_state(self, voidptr(&c), sizeof(Counter))
+	return int(c.value)
+}
+
+// Countdown is its own iterator: it yields start, start-1, ... 1.
+@[vc_class]
+pub struct Countdown {
+mut:
+	@[vc_field] current i64
+	@[vc_field] start i64
+}
+
+// new_countdown is the constructor; the instance is already positioned.
+@[vc_fn]
+pub fn new_countdown() &Countdown {
+	return &Countdown{ start: 3, current: 3 }
+}
+
+// iter is the iterator entry point. It exists to pair with `advance`; the instance is
+// already positioned, and the slot returns the instance itself.
+@[vc_method]
+@[vc_iter]
+pub fn (mut c Countdown) iter() {}
+
+// advance yields the current value and steps down, ending at zero.
+@[vc_method]
+@[vc_next]
+pub fn (mut c Countdown) advance() !i64 {
+	if c.current <= 0 {
+		return vcraft.raise_domain(.stop_iteration, 'no more values')
+	}
+	c.current--
+	return c.current + 1
+}
+
+// BoundedCounter inherits Counter and refuses to pass a limit.
+//
+// It declares no `new_*` of its own: a subclass reuses the base's constructor, so
+// `BoundedCounter()` runs `new_counter` and zeroes `limit`.
+@[vc_class]
+@[vc_base(Counter)]
+pub struct BoundedCounter {
+mut:
+	@[vc_field] limit i64
+}
+
+// bump adds `by`, refusing to pass the limit.
+@[vc_method]
+pub fn (mut c BoundedCounter) bump(by i64) !i64 {
+	mut base := unsafe { &Counter(vcraft.state_at(1)) }
+	if base.value + by > c.limit {
+		return vcraft.raise_domain(.value_error, 'the counter would pass its limit')
+	}
+	base.value += by
+	return base.value
+}

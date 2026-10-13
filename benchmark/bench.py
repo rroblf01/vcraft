@@ -76,6 +76,9 @@ SPEED = {
     "c.increment()": ("c.increment()", "method call"),
     "c.add(1)": ("c.add(1)", "method call with an argument"),
     "c.value": ("c.value", "attribute read"),
+    "c.is_zero": ("c.is_zero", "property read"),
+    "c == c": ("c == c", "rich comparison"),
+    "list(Countdown())": ("list(m.Countdown())", "construct and iterate"),
 }
 
 # label -> (statement run `loops` times, loops). Each runs in its own process.
@@ -231,6 +234,24 @@ CORRECTNESS = {
     "counter increment twice": ("(lambda c: [c.increment(), c.increment()])(m.Counter())", [1, 2]),
     "counter add and value": ("(lambda c: [c.add(2), c.add(3), c.value])(m.Counter())", [2, 5, 5]),
     "counter add negative": ("(lambda c: c.add(-2))(m.Counter())", -2),
+    "counter is_zero": ("(lambda c: c.is_zero)(m.Counter())", True),
+    "counter not is_zero": ("(lambda c: (c.add(1), c.is_zero)[1])(m.Counter())", False),
+    "counter equality": ("m.Counter() == m.Counter()", True),
+    "counter inequality": ("(lambda a, b: (a.add(1), a == b)[1])(m.Counter(), m.Counter())", False),
+    "counter not equal to int": ("m.Counter() == 1", False),
+    "counter ne": ("m.Counter() != m.Counter()", False),
+    "counter hash collapses a set": ("len({m.Counter(), m.Counter()})", 1),
+    "countdown yields": ("list(m.Countdown())", [3, 2, 1]),
+    "countdown two steps": ("(lambda it: [next(it), next(it)])(m.Countdown())", [3, 2]),
+    "countdown raises StopIteration": (
+        "(lambda it: [next(it), next(it), next(it), next(it)])(m.Countdown())", "StopIteration"),
+    "bounded inherits value": ("(lambda b: b.value)(m.BoundedCounter())", 0),
+    "bounded bump": ("(lambda b: (setattr(b, 'limit', 10), b.bump(4))[1])(m.BoundedCounter())", 4),
+    "bounded over limit": (
+        "(lambda b: (setattr(b, 'limit', 10), b.bump(11))[1])(m.BoundedCounter())", "ValueError"),
+    "bounded base method": ("(lambda b: b.increment())(m.BoundedCounter())", 1),
+    "bounded is a Counter": ("isinstance(m.BoundedCounter(), m.Counter)", True),
+    "counter is not bounded": ("isinstance(m.Counter(), m.BoundedCounter)", False),
     "expect_positive zero": ("m.expect_positive(0)", 0),
     "expect_positive ok": ("m.expect_positive(41)", 41),
     "expect_positive raises": ("m.expect_positive(-1)", "ValueError"),

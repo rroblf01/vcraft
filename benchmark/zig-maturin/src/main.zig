@@ -144,12 +144,21 @@ fn expect_positive(n: i64) !i64 {
     return n;
 }
 
-// Method-call overhead on a native object.
+// Method-call overhead on a native object, with a property, value equality and a
+// hash, and a subclass below.
 const Counter = extern struct {
     value: i64,
 
     pub fn init() Counter {
         return .{ .value = 0 };
+    }
+
+    pub fn __eq__(a: *const Counter, b: *const Counter) bool {
+        return a.value == b.value;
+    }
+
+    pub fn __hash__(self: *const Counter) isize {
+        return @intCast(self.value);
     }
 };
 
@@ -163,12 +172,65 @@ fn counter_add(self: *Counter, n: i64) i64 {
     return self.value;
 }
 
+fn counter_is_zero(self: *const Counter) bool {
+    return self.value == 0;
+}
+
 const CounterClass = pz.PyClass(Counter, .{
     .methods = &[_]pz.PyMethodDef{
         pz.wrapMethodNamed(Counter, "increment", counter_increment),
         pz.wrapMethodNamed(Counter, "add", counter_add),
     },
+    .properties = &.{
+        .{ .name = "is_zero", .get = counter_is_zero },
+    },
     .readonly = &.{"value"},
+});
+
+// Its own iterator: yields start, start-1, ... 1. A null return ends the iteration
+// (CPython's StopIteration contract for the slot).
+const Countdown = extern struct {
+    current: i64,
+    start: i64,
+
+    pub fn init() Countdown {
+        return .{ .current = 3, .start = 3 };
+    }
+
+    pub fn __next__(self: *Countdown) !?i64 {
+        if (self.current <= 0) return null;
+        self.current -= 1;
+        return self.current + 1;
+    }
+};
+
+const CountdownClass = pz.PyClass(Countdown, .{});
+
+// A Counter that refuses to pass a limit. The derived struct's first field is the
+// base's struct, which is how `PyClass` inheritance is declared.
+const BoundedCounter = extern struct {
+    base: Counter,
+    limit: i64,
+
+    pub fn init() BoundedCounter {
+        return .{ .base = Counter.init(), .limit = 0 };
+    }
+};
+
+fn bounded_bump(self: *BoundedCounter, by: i64) !i64 {
+    if (self.base.value + by > self.limit) {
+        zm.PyErr_SetString(zm.PyExc_ValueError(), "the counter would pass its limit");
+        return error.WouldPassLimit;
+    }
+    self.base.value += by;
+    return self.base.value;
+}
+
+const BoundedCounterClass = pz.PyClass(BoundedCounter, .{
+    .base = CounterClass,
+    .methods = &[_]pz.PyMethodDef{
+        pz.wrapMethodNamed(BoundedCounter, "bump", bounded_bump),
+    },
 });
 
 const Mod = pz.pyModule("bench_zig", .{
@@ -193,7 +255,7 @@ const Mod = pz.pyModule("bench_zig", .{
         pz.pyFnNamed("join_strings", join_strings),
         pz.pyFnNamed("echo_bytes", echo_bytes),
     },
-    .classes = &[_]type{CounterClass},
+    .classes = &[_]type{ CounterClass, CountdownClass, BoundedCounterClass },
 });
 
 comptime {

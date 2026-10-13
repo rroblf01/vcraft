@@ -55,6 +55,11 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   out (`reverse3`), with the empty, wrong-type and wrong-length cases alongside. A
   plain dict expected value and a per-backend expectation table are now distinct
   (`PerBackend`), so `histogram` can be checked against a dict.
+- **The benchmark covers the class surface.** Counter grows a read-only property, value
+  equality and a hash; a `Countdown` class is its own iterator, with the exhaustion path
+  checked against `StopIteration`; and a `BoundedCounter` exercises single inheritance,
+  including an inherited field, an inherited method, `isinstance` both ways and the
+  refusal path. All four backends pass.
 
 ## [1.0.0] - 2026-10-09
 

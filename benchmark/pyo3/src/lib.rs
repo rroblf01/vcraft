@@ -137,10 +137,11 @@ mod bench_pyo3 {
         data.to_vec()
     }
 
-    /// Method-call overhead on a native object.
-    #[pyclass]
+    /// Method-call overhead on a native object, with a property, value equality and a
+    /// hash, and a subclass below.
+    #[pyclass(subclass)]
     struct Counter {
-        #[pyo3(get)]
+        #[pyo3(get, set)]
         value: i64,
     }
 
@@ -159,6 +160,78 @@ mod bench_pyo3 {
         fn add(&mut self, n: i64) -> i64 {
             self.value += n;
             self.value
+        }
+
+        #[getter]
+        fn is_zero(&self) -> bool {
+            self.value == 0
+        }
+
+        fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
+            other
+                .extract::<PyRef<Counter>>()
+                .map(|o| self.value == o.value)
+                .unwrap_or(false)
+        }
+
+        fn __hash__(&self) -> u64 {
+            self.value as u64
+        }
+    }
+
+    /// Its own iterator: yields start, start-1, ... 1.
+    #[pyclass]
+    struct Countdown {
+        #[pyo3(get, set)]
+        current: i64,
+        #[pyo3(get, set)]
+        start: i64,
+    }
+
+    #[pymethods]
+    impl Countdown {
+        #[new]
+        fn new() -> Self {
+            Countdown { current: 3, start: 3 }
+        }
+
+        fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+            slf
+        }
+
+        fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<i64> {
+            if slf.current <= 0 {
+                return Err(pyo3::exceptions::PyStopIteration::new_err(()));
+            }
+            slf.current -= 1;
+            Ok(slf.current + 1)
+        }
+    }
+
+    /// A Counter that refuses to pass a limit.
+    #[pyclass(extends=Counter)]
+    struct BoundedCounter {
+        #[pyo3(get, set)]
+        limit: i64,
+    }
+
+    #[pymethods]
+    impl BoundedCounter {
+        #[new]
+        fn new() -> (Self, Counter) {
+            (BoundedCounter { limit: 0 }, Counter { value: 0 })
+        }
+
+        fn bump(mut slf: PyRefMut<'_, Self>, by: i64) -> PyResult<i64> {
+            let limit = slf.limit;
+            let base = slf.as_super();
+            if base.value + by > limit {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "the counter would pass its limit",
+                ));
+            }
+            base.value += by;
+            Ok(base.value)
         }
     }
 }

@@ -100,3 +100,42 @@ class Counter:
     def add(self, n):
         self.value += n
         return self.value
+
+    @property
+    def is_zero(self):
+        return self.value == 0
+
+    def __eq__(self, other):
+        if isinstance(other, Counter):
+            return self.value == other.value
+        return NotImplemented
+
+    def __hash__(self):
+        return hash(self.value)
+
+
+class Countdown:
+    def __init__(self):
+        self.current = 3
+        self.start = 3
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.current <= 0:
+            raise StopIteration
+        self.current -= 1
+        return self.current + 1
+
+
+class BoundedCounter(Counter):
+    def __init__(self):
+        super().__init__()
+        self.limit = 0
+
+    def bump(self, by):
+        if self.value + by > self.limit:
+            raise ValueError("the counter would pass its limit")
+        self.value += by
+        return self.value
