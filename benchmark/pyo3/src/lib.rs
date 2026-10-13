@@ -67,6 +67,13 @@ mod bench_pyo3 {
         format!("Hello, {name}!")
     }
 
+    /// A count formatted with a defaulted step and label: keywords and defaults.
+    #[pyfunction]
+    #[pyo3(signature = (count, step = 1, label = "item", unit = None))]
+    fn describe(count: i64, step: i64, label: &str, unit: Option<&str>) -> String {
+        format!("{label}: {}{}", count * step, unit.unwrap_or(""))
+    }
+
     /// Bytes in without copying, one int out.
     #[pyfunction]
     fn checksum(data: &[u8]) -> u64 {

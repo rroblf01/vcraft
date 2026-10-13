@@ -45,6 +45,10 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   probes found a leak in vcraft's list-conversion error path (~48 bytes per call) and
   three zig-maturin deviations (embedded-NUL truncation, a `str` read as bytes, and
   `OverflowError` reported as `TypeError`).
+- **The benchmark covers keyword arguments and defaults.** A `describe` workload with
+  two defaults and an optional parameter is exercised positionally, by keyword, mixed,
+  and with missing, unknown and surplus arguments. It surfaced a zig-maturin bug: an
+  unknown keyword is silently ignored instead of raising `TypeError`.
 
 ## [1.0.0] - 2026-10-09
 

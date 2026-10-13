@@ -64,6 +64,14 @@ fn greet(name: []const u8) !pz.PyString {
     return pz.PyString.init(text);
 }
 
+// A count formatted with a defaulted step and label: keywords and defaults.
+fn describe(count: i64, step: i64, label: []const u8, unit: ?[]const u8) !pz.PyString {
+    const suffix = unit orelse "";
+    const text = try std.fmt.allocPrint(std.heap.c_allocator, "{s}: {d}{s}", .{ label, count * step, suffix });
+    defer std.heap.c_allocator.free(text);
+    return pz.PyString.init(text);
+}
+
 // A list of str in, one new str out.
 fn join_strings(parts: []const []const u8) !pz.PyString {
     const text = try std.mem.join(std.heap.c_allocator, ",", parts);
@@ -130,6 +138,10 @@ const Mod = pz.pyModule("bench_zig", .{
         pz.pyFnNamed("sum_floats", sum_floats),
         pz.pyFnNamed("make_range", make_range),
         pz.pyFnNamed("greet", greet),
+        pz.pyFnKw("describe", describe, .{
+            .args = &.{ "count", "step", "label", "unit" },
+            .defaults = .{ .step = 1, .label = "item", .unit = null },
+        }),
         pz.pyFnNamed("checksum", checksum),
         pz.pyFnNamed("expect_positive", expect_positive),
         pz.pyFnNamed("join_strings", join_strings),

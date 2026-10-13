@@ -39,6 +39,10 @@ def greet(name):
     return f"Hello, {name}!"
 
 
+def describe(count, step=1, label="item", unit=None):
+    return f"{label}: {count * step}{unit or ''}"
+
+
 def checksum(data):
     total = 0
     for b in data:

@@ -68,6 +68,15 @@ pub fn greet(name string) string {
 	return 'Hello, ${name}!'
 }
 
+// describe formats a count with a step and a label, both defaulted and all four
+// addressable by name: keyword arguments and defaults in one call.
+@[vc_fn]
+@[vc_defaults: 'step=1, label="item"']
+pub fn describe(count int, step int, label string, unit ?string) string {
+	suffix := unit or { '' }
+	return '${label}: ${count * step}${suffix}'
+}
+
 // checksum sums bytes without copying them: the `[]u8` parameter aliases any
 // bytes-like object through the buffer protocol.
 @[vc_fn]
