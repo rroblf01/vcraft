@@ -7,6 +7,25 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-13
+
+### Fixed
+
+- **`vcraft new` normalises the name into a valid module.** A hyphen or an uppercase
+  letter — both ordinary in a PyPI name — produced `module my-extension_native` or
+  `module MyExt_native`, which V rejects, so the project did not compile. The derived
+  module is now lowercased with `-` and `.` turned into `_`, the test file follows it,
+  and a name that is not an identifier (a leading digit, a bad `--module`) is refused
+  before anything is written.
+- **`vcraft new` points type checkers at `python/`.** The generated `pyproject.toml`
+  carries `[tool.pyright] extraPaths = ["python"]` and `[tool.mypy] mypy_path =
+  "python"`, so `import <name>` is not reported missing by Pylance before the package
+  is installed; after `vcraft develop`, the extension's `.pyi` stub sits beside the
+  package and the re-export resolves too.
+- **`vcraft develop` without an active virtualenv fails before the build**, with the
+  command to create and activate one, instead of building first and then reporting "no
+  interpreter at python3".
+
 ## [1.1.0] - 2026-10-13
 
 ### Added
@@ -22,12 +41,6 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   module `<name>_native` stays importable as an implementation detail. Hand-written
   Python under a project's `python/` directory was already packaged; the `py.typed`
   marker now travels with it.
-- **A new project resolves in an editor before it is built.** The generated
-  `pyproject.toml` now carries `[tool.pyright] extraPaths = ["python"]` and
-  `[tool.mypy] mypy_path = "python"`, so `import <name>` is not reported missing by
-  Pylance: a project keeps its Python package under `python/`, which is not on a type
-  checker's search path by default. After `vcraft develop`, the extension's `.pyi`
-  stub sits beside the package and the re-export resolves too.
 
 ### Fixed
 

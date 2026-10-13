@@ -8,7 +8,7 @@ ground at greater length; the executable sources of truth are `scripts/` and
 
 vcraft is to the V language what PyO3 + maturin is to Rust: CPython bindings written in
 V, a code generator that turns `@[vc_*]` annotations into extension glue, and a CLI that
-compiles the project with `v -shared` and writes the wheel itself. Currently at 1.1.0
+compiles the project with `v -shared` and writes the wheel itself. Currently at 1.1.1
 (see `CHANGELOG.md`). No Rust, C++ or zlib in the pipeline.
 
 ## Invoking the V compiler
