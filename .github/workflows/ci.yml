@@ -242,7 +242,7 @@ jobs:
       contents: read
       packages: read
     env:
-      MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:1.1.0
+      MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:1.1.1
     steps:
       - uses: actions/checkout@v5
 
