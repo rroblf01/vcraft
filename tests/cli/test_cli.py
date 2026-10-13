@@ -114,8 +114,8 @@ def main() -> int:
         print("new")
         proc = vcraft("new", "mypkg", cwd=tmp)
         t.check("new succeeds", proc.returncode == 0, proc.stderr.strip())
-        t.check("new names the importable module",
-                "The importable module is `mypkg_native`." in proc.stdout, proc.stdout)
+        t.check("new names the importable name",
+                "The importable name is `mypkg`." in proc.stdout, proc.stdout)
         t.check("new shows how to run the demo", "python main.py" in proc.stdout,
                 proc.stdout)
         t.check("new shows how to run the tests", "python -m unittest" in proc.stdout,
@@ -124,6 +124,10 @@ def main() -> int:
         t.check("vcraft.toml", (project / "vcraft.toml").exists())
         t.check("v.mod", (project / "v.mod").exists())
         t.check("the V source", (project / "src" / "mypkg_native.v").exists())
+        t.check("the re-export package",
+                (project / "python" / "mypkg" / "__init__.py").exists())
+        t.check("a py.typed marker",
+                (project / "python" / "mypkg" / "py.typed").exists())
         t.check("the demo", (project / "main.py").exists())
         t.check("the test", (project / "tests" / "test_mypkg.py").exists())
         t.check("tests is a package", (project / "tests" / "__init__.py").exists())
@@ -153,10 +157,13 @@ def main() -> int:
         t.check("v.mod names the V module", '"mypkg_native"' in vmod, vmod)
 
         demo = (project / "main.py").read_text()
-        t.check("the demo imports the module", "import mypkg_native as m" in demo, demo)
+        t.check("the demo imports the package", "import mypkg as m" in demo, demo)
         test = (project / "tests" / "test_mypkg.py").read_text()
-        t.check("the test imports the module", "import mypkg_native as m" in test, test)
+        t.check("the test imports the package", "import mypkg as m" in test, test)
         t.check("the test declares a case", "unittest.TestCase" in test, test)
+        init = (project / "python" / "mypkg" / "__init__.py").read_text()
+        t.check("the package re-exports the extension",
+                "from mypkg_native import *" in init, init)
 
         proc = vcraft("new", "mypkg", cwd=tmp)
         t.check("new refuses to overwrite", proc.returncode != 0, proc.stdout)
@@ -379,6 +386,12 @@ def main() -> int:
             t.check("the extension is at the root",
                     any(n.endswith(".so") and "/" not in n for n in entries),
                     str(entries))
+            t.check("the re-export package is packaged",
+                    "mypkg/__init__.py" in entries, str(entries))
+            t.check("py.typed is packaged", "mypkg/py.typed" in entries,
+                    str(entries))
+            t.check("the type stub is packaged", "mypkg_native.pyi" in entries,
+                    str(entries))
             t.check("METADATA", any(n.endswith("METADATA") for n in entries))
             t.check("WHEEL", any(n.endswith("dist-info/WHEEL") for n in entries))
             t.check("RECORD", any(n.endswith("dist-info/RECORD") for n in entries))
@@ -547,6 +560,14 @@ def main() -> int:
                     in proc.stdout, proc.stdout)
             t.check("parse_int", "1234" in lines, proc.stdout)
 
+        proc = subprocess.run(
+            [str(target / "bin" / "python"), "-c",
+             "import mypkg as pkg; print(pkg.greet('pkg'), pkg.add(1, 2))"],
+            capture_output=True, text=True, cwd=tmp)
+        t.check("the installed package re-exports the extension",
+                proc.returncode == 0 and "Hello, pkg! 3" in proc.stdout,
+                (proc.stderr or proc.stdout).strip()[-300:])
+
         print("develop")
         target = tmp / "venv-develop"
         make_venv(target)
@@ -595,6 +616,14 @@ def main() -> int:
             capture_output=True, text=True, cwd=tmp)
         t.check("the constructor runs", proc.stdout.strip() == "True 1",
                 proc.stdout.strip() or proc.stderr.strip()[-200:])
+
+        proc = subprocess.run(
+            [str(target / "bin" / "python"), "-c",
+             "import mypkg as pkg; print(pkg.greet('pkg'))"],
+            capture_output=True, text=True, cwd=tmp)
+        t.check("the developed package re-exports the extension",
+                proc.returncode == 0 and "Hello, pkg!" in proc.stdout,
+                (proc.stderr or proc.stdout).strip()[-300:])
 
         # The scaffold advertises a demo and a test, so running them in the develop
         # environment is the last check that they actually work there.
@@ -1352,6 +1381,10 @@ print("ok" if not bad else bad)
                         top + "/tests/test_mypkg.py" in members, str(members))
                 t.check("it carries Python sources",
                         top + "/python/mypkg_native.pyi" in members,
+                        str(members))
+                t.check("it carries the re-export package",
+                        top + "/python/mypkg/__init__.py" in members
+                        and top + "/python/mypkg/py.typed" in members,
                         str(members))
                 # Without these the sdist is a source tree with no way to build it: pip
                 # untars, reads pyproject.toml, and finds nothing.

@@ -198,7 +198,7 @@ fn cmd_new(args Args) {
 		println('created ${w}')
 	}
 	println('')
-	println('The importable module is `${p.module}`.')
+	println('The importable name is `${vcraft_project.import_name(p)}`.')
 	println('')
 	println('Next:')
 	println('  cd ${root}')

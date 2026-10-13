@@ -94,9 +94,9 @@ $ python -m unittest                  # the test under tests/
 $ vcraft build --release              # dist/my_extension-0.1.0-cp314-cp314-<platform>.whl
 ```
 
-The distribution is `my_extension`, but the extension module it builds is
-`my_extension_native`; that is the name Python imports. Pass `--module my_extension`
-to `vcraft new` if you want the two to match.
+`vcraft new` writes a Python package `my_extension` that re-exports the native module
+`my_extension_native`, so `import my_extension` is the public name. Pass
+`--module my_extension` if you would rather have no separate native module at all.
 
 **4. Ship it.** `vcraft generate-ci` writes a GitHub Actions workflow that builds a
 wheel per supported Python and platform, installs and imports each one, and is ready
@@ -976,9 +976,19 @@ my_extension/
 │   ├── __init__.py
 │   └── test_my_extension.py    unittest cases for the example
 ├── README.md  .gitignore
+├── python/
+│   └── my_extension/
+│       ├── __init__.py         re-exports the native module
+│       └── py.typed
 └── src/
     └── my_extension_native.v   your code
 ```
+
+`vcraft new` writes a Python package named after the distribution that re-exports the
+native module, so `import my_extension` is the public name and `my_extension_native`
+stays an implementation detail. There is no configuration for it: hand-written Python
+under a project's `python/` directory is packaged under the same relative names, so a
+project can mix V and Python freely.
 
 `vcraft develop` (and any other build) adds `src/_vcraft_generated.v` and
 `python/<module>.pyi`, both generated and git-ignored, installs the extension, and
@@ -987,10 +997,7 @@ so a type checker sees the signatures `help()` shows. `vcraft generate-ci` adds
 `.github/workflows/build.yml`.
 
 `main.py` and `tests/` are for the development loop and are not part of the
-distribution, though both travel in the sdist. Hand-written Python under a project's
-`python/` directory is packaged under the same relative names, so a project can mix
-V and Python in one module: the extension lands at the archive root and the Python
-helpers sit beside it under `python/`'s relative paths.
+distribution, though both travel in the sdist.
 
 ---
 

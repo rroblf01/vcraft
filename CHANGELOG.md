@@ -14,6 +14,12 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `unittest` cases, so `python main.py` and `python -m unittest` work right after
   `vcraft develop`. Both travel in the sdist; neither is packaged into the wheel, so the
   demo is for the development loop rather than part of the distribution.
+- **A new project is importable under its own name.** `vcraft new` writes a Python
+  package `python/<name>/` that re-exports the native module, with a `py.typed` marker,
+  so `import <name>` is the public name and a type checker sees the API. The native
+  module `<name>_native` stays importable as an implementation detail. Hand-written
+  Python under a project's `python/` directory was already packaged; the `py.typed`
+  marker now travels with it.
 
 ### Fixed
 

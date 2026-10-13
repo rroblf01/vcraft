@@ -626,7 +626,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 			source := os.read_file(source_path) or {
 				return error('cannot read ${source_path}')
 			}
-			if name.ends_with('.pyi') || !p.embed_pyc {
+			if shipped_as_source(name) || !p.embed_pyc {
 				extras << vcraft_wheel.ExtraFile{
 					name: name
 					data: source.bytes()
@@ -743,18 +743,25 @@ fn direct_url_json(root string) string {
 	return '{"dir_info":{"editable":true},"url":"file://' + url + '"}\n'
 }
 
-// python_files lists the `.py` and `.pyi` files under a project's Python directory,
-// relative to it.
+// python_files lists the Python files under a project's Python directory, relative to
+// it: `.py` modules, `.pyi` stubs and the `py.typed` marker.
 //
-// The `.pyi` stub ships as it is: a type checker reads it, an interpreter ignores it,
-// and there is nothing to compile. A `.py` under `embed-pyc` becomes a `.pyc` instead.
-// Sorted, because a wheel whose contents move between builds is a wheel nobody can
-// reproduce.
+// `.pyi` and `py.typed` ship as they are: a type checker reads them, an interpreter
+// ignores them, and there is nothing to compile. A `.py` under `embed-pyc` becomes a
+// `.pyc` instead. Sorted, because a wheel whose contents move between builds is a wheel
+// nobody can reproduce.
 fn python_files(dir string) []string {
 	mut out := []string{}
-	collect_files_with_suffixes(dir, '', mut out, ['.py', '.pyi'])
+	collect_files_with_suffixes(dir, '', mut out, ['.py', '.pyi', 'py.typed'])
 	out.sort()
 	return out
+}
+
+// shipped_as_source reports whether a Python-tree file is copied verbatim rather than
+// compiled when `embed-pyc` is set. Stubs and the `py.typed` marker are metadata, not
+// modules.
+fn shipped_as_source(name string) bool {
+	return name.ends_with('.pyi') || name.ends_with('py.typed')
 }
 
 fn collect_files_with_suffixes(dir string, prefix string, mut out []string, suffixes []string) {

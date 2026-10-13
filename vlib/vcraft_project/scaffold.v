@@ -36,6 +36,21 @@ pub fn scaffold(p Project) []ScaffoldFile {
 		path:    'src/${p.module}.v'
 		content: example_source(p)
 	}
+	// The Python package that re-exports the native module, so `import <name>` is the
+	// public name and the native module stays an implementation detail. The build
+	// already packages anything under `python/`, so the scaffold only has to write the
+	// two files. Skipped when the distribution and the module share a name, where the
+	// package would shadow the extension it imports.
+	if python_package(p) != p.module {
+		files << ScaffoldFile{
+			path:    'python/${python_package(p)}/__init__.py'
+			content: python_init(p)
+		}
+		files << ScaffoldFile{
+			path:    'python/${python_package(p)}/py.typed'
+			content: ''
+		}
+	}
 	files << ScaffoldFile{
 		path:    'main.py'
 		content: demo_main(p)
@@ -54,7 +69,7 @@ pub fn scaffold(p Project) []ScaffoldFile {
 	}
 	files << ScaffoldFile{
 		path:    '.gitignore'
-		content: '/build/\n/dist/\n/.vcraft/\n/src/_vcraft_generated.v\n*.so\n__pycache__/\n*.pyc\n.pytest_cache/\n'
+		content: '/build/\n/dist/\n/.vcraft/\n/src/_vcraft_generated.v\npython/*.pyi\n*.so\n__pycache__/\n*.pyc\n.pytest_cache/\n'
 	}
 	// The PEP 517 backend, so that `pip install .` works from a fresh checkout without
 	// the project having to know anything about it.
@@ -150,6 +165,38 @@ fn example_source(p Project) string {
 	return out
 }
 
+// python_package is the importable package name for a project.
+//
+// A distribution name is not a Python identifier when it carries a hyphen or a dot
+// (`my-ext` is a valid PyPI name and not a valid module), so those become underscores.
+fn python_package(p Project) string {
+	return p.name.replace('-', '_').replace('.', '_')
+}
+
+// import_name is the name a user imports: the re-export package when the scaffold
+// writes one, the native module otherwise. `vcraft new` prints it.
+pub fn import_name(p Project) string {
+	pkg := python_package(p)
+	if pkg != p.module {
+		return pkg
+	}
+	return p.module
+}
+
+// python_init is the package `__init__.py`, which re-exports the native module.
+//
+// `import *` brings the exported functions and classes into the package namespace, so
+// `import <name>` exposes the same API as the extension without a second list to keep
+// in step with the V sources.
+fn python_init(p Project) string {
+	mut out := '"""${p.name}: ${p.description}\n\n'
+	out += 'The native code lives in the extension module `${p.module}`; this package\n'
+	out += 're-exports it so that `import ${python_package(p)}` is the only name to remember.\n'
+	out += '"""\n\n'
+	out += 'from ${p.module} import *  # noqa: F401,F403\n'
+	return out
+}
+
 // demo_main is the runnable example a new project starts with.
 //
 // It lives at the project root rather than under `python/`, so it is not packaged into
@@ -158,7 +205,7 @@ fn example_source(p Project) string {
 fn demo_main(p Project) string {
 	mut out := '"""Run this after `vcraft develop` to see the extension in action."""\n\n'
 	out += 'from __future__ import annotations\n\n'
-	out += 'import ${p.module} as m\n\n\n'
+	out += 'import ${import_name(p)} as m\n\n\n'
 	out += 'def main() -> None:\n'
 	out += '\tprint(m.greet("world"))\n'
 	out += '\tprint(m.add(2, 3))\n'
@@ -180,7 +227,7 @@ fn demo_main(p Project) string {
 fn example_test(p Project) string {
 	mut out := '"""Tests for the scaffolded extension."""\n\n'
 	out += 'import unittest\n\n'
-	out += 'import ${p.module} as m\n\n\n'
+	out += 'import ${import_name(p)} as m\n\n\n'
 	out += 'class TestScaffold(unittest.TestCase):\n'
 	out += '\tdef test_greet(self) -> None:\n'
 	out += '\t\tself.assertEqual(m.greet("world"), "Hello, world!")\n\n'
@@ -210,7 +257,7 @@ fn readme(p Project) string {
 	out += '```\n\n'
 	out += '## Usage\n\n'
 	out += '```python\n'
-	out += '>>> import ${p.module} as m\n'
+	out += '>>> import ${import_name(p)} as m\n'
 	out += ">>> m.greet('world')\n"
 	out += "'Hello, world!'\n"
 	out += '>>> m.add(2, 3)\n'
