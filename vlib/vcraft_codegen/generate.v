@@ -54,7 +54,7 @@ pub fn generate(opt Options) Generated {
 	return Generated{
 		glue_path:    os.join_path(src, '_vcraft_generated.v')
 		glue:         enter_collector(emit_glue(p))
-		stub_path:    os.join_path(opt.project_root, opt.stubs_dir, opt.package, '_stubs.pyi')
+		stub_path:    os.join_path(opt.project_root, opt.stubs_dir, opt.package + '.pyi')
 		stub:         emit_stubs(p)
 		diagnostics: p.diagnostics
 	}
@@ -70,9 +70,10 @@ pub fn generate(opt Options) Generated {
 // compiler hashes its inputs itself, so an unchanged file costs nothing and a
 // changed one can never be missed.
 pub fn (g Generated) write() ! {
-	// The stub goes in a directory named after the package, which a fresh project does
-	// not have. Without this the first `vcraft build` of a scaffolded project fails on
-	// a missing directory rather than on anything about the project.
+	// The stub is written as `<package>.pyi` next to where the extension is packaged,
+	// which is how a type checker finds it for a top-level extension module. The
+	// `python/` directory a fresh project does not have is created here, so the first
+	// `vcraft build` fails on the project rather than on a missing directory.
 	ensure_dir_of(g.stub_path)
 	os.write_file(g.glue_path, g.glue)!
 	os.write_file(g.stub_path, g.stub)!

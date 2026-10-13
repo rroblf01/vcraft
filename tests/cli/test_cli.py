@@ -353,9 +353,9 @@ def main() -> int:
         t.check("an unread state chain is not published",
                 "vcraft.enter_state(" not in glue_text)
         t.check("a stub is generated",
-                (project / "python" / "mypkg_native" / "_stubs.pyi").exists(),
+                (project / "python" / "mypkg_native.pyi").exists(),
                 str(list((project / "python").rglob("*.pyi"))))
-        stub = (project / "python" / "mypkg_native" / "_stubs.pyi").read_text()
+        stub = (project / "python" / "mypkg_native.pyi").read_text()
         t.check("the stub declares the functions", "def greet(" in stub, stub)
         t.check("the stub declares the class", "class Counter:" in stub, stub)
         t.check("the stub declares the fields", "    value: int" in stub, stub)
@@ -427,9 +427,8 @@ def main() -> int:
                     entries = z.namelist()
                     t.check("source Python is packaged",
                             "mypkg_helper.py" in entries, str(entries))
-                    t.check("type stubs are not packaged",
-                            not any(n.endswith(".pyi") for n in entries),
-                            str(entries))
+                    t.check("the type stub is packaged",
+                            "mypkg_native.pyi" in entries, str(entries))
                 source_target = tmp / "venv-source"
                 make_venv(source_target, with_pip=True)
                 proc = subprocess.run(
@@ -1346,7 +1345,7 @@ print("ok" if not bad else bad)
                 t.check("it carries the tests",
                         top + "/tests/test_mypkg.py" in members, str(members))
                 t.check("it carries Python sources",
-                        top + "/python/mypkg_native/_stubs.pyi" in members,
+                        top + "/python/mypkg_native.pyi" in members,
                         str(members))
                 # Without these the sdist is a source tree with no way to build it: pip
                 # untars, reads pyproject.toml, and finds nothing.

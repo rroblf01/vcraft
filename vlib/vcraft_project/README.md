@@ -177,12 +177,13 @@ Three things in it are not obvious:
 ## Python helpers live in `python/`
 
 Hand-written `.py` files under a project's `python/` directory travel in a regular
-wheel under the same relative names. Type stubs do not: a `.pyi` is for a checker,
-not for import. With `embed-pyc = true`, each `.py` is compiled with the interpreter
-being built against and shipped as sourceless `foo.pyc` instead, using unchecked-hash
-invalidation because there is no source to check. An invalid helper fails the build
-when compilation is requested; silently omitting it would make the import fail later,
-far from the file that caused it.
+wheel under the same relative names. The generated `.pyi` stub travels too, as
+`python/<module>.pyi`, which is where a type checker looks for the stub of a
+top-level extension module. With `embed-pyc = true`, each `.py` is compiled with the
+interpreter being built against and shipped as sourceless `foo.pyc` instead, using
+unchecked-hash invalidation because there is no source to check. An invalid helper
+fails the build when compilation is requested; silently omitting it would make the
+import fail later, far from the file that caused it.
 
 Editable installs do not copy or compile those helpers. The generated `.pth` names
 both the compiled-extension directory and the `python/` source directory, so edits to

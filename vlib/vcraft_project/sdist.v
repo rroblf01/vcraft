@@ -41,7 +41,7 @@ pub fn sdist(p Project, root string) ![]u8 {
 	// `main.py` that refers to tests nobody received.
 	tests_root := root.trim_right('/') + '/tests'
 	if os.exists(tests_root) {
-		for name in python_sources(tests_root) {
+		for name in python_files(tests_root) {
 			path := tests_root + '/' + name
 			data := os.read_file(path) or { return error('cannot read ${path}') }
 			tar.add_file('${base_name(p)}/tests/' + name, data.bytes()) or { return err }
@@ -53,7 +53,7 @@ pub fn sdist(p Project, root string) ![]u8 {
 	// travel as well, because they are the interface a type checker reads.
 	python_root := root.trim_right('/') + '/python'
 	if os.exists(python_root) {
-		for name in python_sources(python_root) {
+		for name in python_files(python_root) {
 			path := python_root + '/' + name
 			data := os.read_file(path) or { return error('cannot read ${path}') }
 			tar.add_file('${base_name(p)}/python/' + name, data.bytes()) or { return err }

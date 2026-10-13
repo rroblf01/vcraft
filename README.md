@@ -965,7 +965,7 @@ my_extension/
     └── my_extension_native.v   your code
 ```
 
-A build adds `src/_vcraft_generated.v` and `python/<module>/_stubs.pyi`, both
+A build adds `src/_vcraft_generated.v` and `python/<module>.pyi`, both
 generated and git-ignored, and writes wheels to `dist/`. `vcraft generate-ci` adds
 `.github/workflows/build.yml`.
 

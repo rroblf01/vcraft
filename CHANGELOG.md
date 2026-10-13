@@ -15,6 +15,14 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `vcraft develop`. Both travel in the sdist; neither is packaged into the wheel, so the
   demo is for the development loop rather than part of the distribution.
 
+### Fixed
+
+- **The generated type stub ships in the wheel.** It was written to
+  `python/<module>/_stubs.pyi`, which is not where a type checker looks for a
+  top-level extension module, and the wheel packer dropped every `.pyi`, so an
+  installed wheel offered no type information. The stub is now `python/<module>.pyi`
+  and travels in the wheel next to the extension.
+
 ## [1.0.0] - 2026-10-09
 
 The first stable release: from here on the annotation vocabulary, the `vcraft.toml`

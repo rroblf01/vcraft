@@ -20,7 +20,7 @@ ROOT = HERE.parents[1]
 PROJECT = ROOT / "examples" / "hello"
 PYTHON_DIR = PROJECT / "python"
 GLUE = PROJECT / "src" / "_vcraft_generated.v"
-STUBS = PYTHON_DIR / "hello_native" / "_stubs.pyi"
+STUBS = PYTHON_DIR / "hello_native.pyi"
 PACKAGE = "hello_native"
 
 
