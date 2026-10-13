@@ -7,6 +7,14 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+### Added
+
+- **A new project ships a runnable demo and a test.** `vcraft new` now writes `main.py`,
+  which imports the extension and calls into it, and `tests/test_<name>.py` with
+  `unittest` cases, so `python main.py` and `python -m unittest` work right after
+  `vcraft develop`. Both travel in the sdist; neither is packaged into the wheel, so the
+  demo is for the development loop rather than part of the distribution.
+
 ## [1.0.0] - 2026-10-09
 
 The first stable release: from here on the annotation vocabulary, the `vcraft.toml`

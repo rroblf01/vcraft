@@ -28,13 +28,24 @@ pub fn sdist(p Project, root string) ![]u8 {
 	// reads `pyproject.toml`, and finds nothing, so the install fails before any of the
 	// V sources are looked at.
 	for name in ['v.mod', 'vcraft.toml', 'pyproject.toml', backend_py(), 'README.md',
-		'src/' + p.module + '.v'] {
+		'main.py', 'src/' + p.module + '.v'] {
 		path := root.trim_right('/') + '/' + name
 		if !os.exists(path) {
 			continue
 		}
 		data := os.read_file(path) or { return error('cannot read ${path}') }
 		tar.add_file('${base_name(p)}/' + name, data.bytes()) or { return err }
+	}
+	// The demo's tests travel too: a checkout has them, so an sdist built from the
+	// same tree should give the recipient the same project rather than one with a
+	// `main.py` that refers to tests nobody received.
+	tests_root := root.trim_right('/') + '/tests'
+	if os.exists(tests_root) {
+		for name in python_sources(tests_root) {
+			path := tests_root + '/' + name
+			data := os.read_file(path) or { return error('cannot read ${path}') }
+			tar.add_file('${base_name(p)}/tests/' + name, data.bytes()) or { return err }
+		}
 	}
 	tar.add_file('${base_name(p)}/PKG-INFO', pkg_info(p, root).bytes()) or { return err }
 	// Project Python travels as source: the wheel builder compiles it when `embed-pyc`

@@ -118,10 +118,16 @@ def main() -> int:
         t.check("vcraft.toml", (project / "vcraft.toml").exists())
         t.check("v.mod", (project / "v.mod").exists())
         t.check("the V source", (project / "src" / "mypkg_native.v").exists())
+        t.check("the demo", (project / "main.py").exists())
+        t.check("the test", (project / "tests" / "test_mypkg.py").exists())
+        t.check("tests is a package", (project / "tests" / "__init__.py").exists())
         t.check("the README", (project / "README.md").exists())
         t.check(".gitignore", (project / ".gitignore").exists())
         t.check("editable build output is ignored",
                 "/.vcraft/" in (project / ".gitignore").read_text(),
+                (project / ".gitignore").read_text())
+        t.check("Python caches are ignored",
+                "__pycache__/" in (project / ".gitignore").read_text(),
                 (project / ".gitignore").read_text())
         t.check("no glue is scaffolded",
                 not (project / "src" / "_vcraft_generated.v").exists(),
@@ -139,6 +145,12 @@ def main() -> int:
         t.check("v.mod declares base_url", 'base_url: "src"' in vmod, vmod)
         t.check("v.mod requires vcraft", 'requires: ["vcraft"]' in vmod, vmod)
         t.check("v.mod names the V module", '"mypkg_native"' in vmod, vmod)
+
+        demo = (project / "main.py").read_text()
+        t.check("the demo imports the module", "import mypkg_native as m" in demo, demo)
+        test = (project / "tests" / "test_mypkg.py").read_text()
+        t.check("the test imports the module", "import mypkg_native as m" in test, test)
+        t.check("the test declares a case", "unittest.TestCase" in test, test)
 
         proc = vcraft("new", "mypkg", cwd=tmp)
         t.check("new refuses to overwrite", proc.returncode != 0, proc.stdout)
@@ -578,6 +590,19 @@ def main() -> int:
             capture_output=True, text=True, cwd=tmp)
         t.check("the constructor runs", proc.stdout.strip() == "True 1",
                 proc.stdout.strip() or proc.stderr.strip()[-200:])
+
+        # The scaffold advertises a demo and a test, so running them in the develop
+        # environment is the last check that they actually work there.
+        proc = subprocess.run([str(target / "bin" / "python"), "main.py"],
+                              capture_output=True, text=True, cwd=project)
+        t.check("the scaffolded demo runs", proc.returncode == 0,
+                (proc.stderr or "").strip()[-300:])
+        t.check("the demo prints the greeting", "Hello, world!" in proc.stdout,
+                proc.stdout)
+        proc = subprocess.run([str(target / "bin" / "python"), "-m", "unittest"],
+                              capture_output=True, text=True, cwd=project)
+        t.check("the scaffolded tests pass", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
 
         print("develop --copy")
         copy_target = tmp / "venv-develop-copy"
@@ -1317,6 +1342,9 @@ print("ok" if not bad else bad)
                         top + "/vcraft.toml" in members)
                 t.check("it carries the V sources",
                         top + "/src/mypkg_native.v" in members)
+                t.check("it carries the demo", top + "/main.py" in members)
+                t.check("it carries the tests",
+                        top + "/tests/test_mypkg.py" in members, str(members))
                 t.check("it carries Python sources",
                         top + "/python/mypkg_native/_stubs.pyi" in members,
                         str(members))

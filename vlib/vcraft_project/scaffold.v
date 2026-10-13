@@ -37,12 +37,24 @@ pub fn scaffold(p Project) []ScaffoldFile {
 		content: example_source(p)
 	}
 	files << ScaffoldFile{
+		path:    'main.py'
+		content: demo_main(p)
+	}
+	files << ScaffoldFile{
+		path:    'tests/test_${p.name}.py'
+		content: example_test(p)
+	}
+	files << ScaffoldFile{
+		path:    'tests/__init__.py'
+		content: ''
+	}
+	files << ScaffoldFile{
 		path:    'README.md'
 		content: readme(p)
 	}
 	files << ScaffoldFile{
 		path:    '.gitignore'
-		content: '/build/\n/dist/\n/.vcraft/\n/src/_vcraft_generated.v\n*.so\n'
+		content: '/build/\n/dist/\n/.vcraft/\n/src/_vcraft_generated.v\n*.so\n__pycache__/\n*.pyc\n.pytest_cache/\n'
 	}
 	// The PEP 517 backend, so that `pip install .` works from a fresh checkout without
 	// the project having to know anything about it.
@@ -138,6 +150,53 @@ fn example_source(p Project) string {
 	return out
 }
 
+// demo_main is the runnable example a new project starts with.
+//
+// It lives at the project root rather than under `python/`, so it is not packaged into
+// the wheel: it is the first thing to run after `vcraft develop`, a way to see the
+// extension work without writing any Python first.
+fn demo_main(p Project) string {
+	mut out := '"""Run this after `vcraft develop` to see the extension in action."""\n\n'
+	out += 'from __future__ import annotations\n\n'
+	out += 'import ${p.module} as m\n\n\n'
+	out += 'def main() -> None:\n'
+	out += '\tprint(m.greet("world"))\n'
+	out += '\tprint(m.add(2, 3))\n'
+	out += '\tcounter = m.Counter()\n'
+	out += '\tprint(counter.increment())\n'
+	out += '\ttry:\n'
+	out += '\t\tm.parse_int("not a number")\n'
+	out += '\texcept ValueError as exc:\n'
+	out += '\t\tprint(f"parse_int: {exc}")\n\n\n'
+	out += 'if __name__ == "__main__":\n'
+	out += '\tmain()\n'
+	return out
+}
+
+// example_test is the test a new project starts with.
+//
+// `unittest` from the standard library rather than pytest, so `python -m unittest` runs
+// it with no dependency to install; pytest discovers and runs it unchanged.
+fn example_test(p Project) string {
+	mut out := '"""Tests for the scaffolded extension."""\n\n'
+	out += 'import unittest\n\n'
+	out += 'import ${p.module} as m\n\n\n'
+	out += 'class TestScaffold(unittest.TestCase):\n'
+	out += '\tdef test_greet(self) -> None:\n'
+	out += '\t\tself.assertEqual(m.greet("world"), "Hello, world!")\n\n'
+	out += '\tdef test_add(self) -> None:\n'
+	out += '\t\tself.assertEqual(m.add(2, 3), 5)\n\n'
+	out += '\tdef test_counter(self) -> None:\n'
+	out += '\t\tcounter = m.Counter()\n'
+	out += '\t\tself.assertEqual(counter.increment(), 1)\n\n'
+	out += '\tdef test_parse_int_rejects(self) -> None:\n'
+	out += '\t\twith self.assertRaises(ValueError):\n'
+	out += '\t\t\tm.parse_int("not a number")\n\n\n'
+	out += 'if __name__ == "__main__":\n'
+	out += '\tunittest.main()\n'
+	return out
+}
+
 // readme is the README a new project starts with.
 fn readme(p Project) string {
 	// This file is the project's PyPI page as well as its repository front page, so it
@@ -163,7 +222,10 @@ fn readme(p Project) string {
 	out += '## Development\n\n'
 	out += 'Written in [V](https://vlang.io) and built with [vcraft](https://github.com/rroblf01/vcraft).\n\n'
 	out += '```console\n'
+	out += '$ python -m venv .venv && source .venv/bin/activate\n'
 	out += '$ vcraft develop          # build and install into the active virtualenv\n'
+	out += '$ python main.py          # run the example, which imports the extension\n'
+	out += '$ python -m unittest      # run the tests under tests/\n'
 	out += '$ vcraft build --release  # write a wheel into dist/\n'
 	out += '```\n'
 	return out
