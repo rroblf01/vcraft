@@ -24,9 +24,10 @@ It needs `uv`, `cargo`, `zig` 0.16 and a `v` built at the commit pinned in `dock
 the Linux run is kept beside them as [`results-linux.md`](results-linux.md) and
 [`results-linux.json`](results-linux.json).
 
-The edge-case correctness matrix, the reference-retention probes and the error-path
-memory scenarios were added after those two runs; re-run `./run.sh` to regenerate the
-tables with the new sections.
+The edge-case correctness matrix, the reference-retention probes, the error-path
+memory scenarios, the keyword/optional/map/tuple/fixed-array workloads, the class
+surface and the thread-scaling table were added after those two runs; re-run
+`./run.sh` to regenerate the tables with the new sections.
 
 ## What is measured
 
@@ -45,6 +46,14 @@ tables with the new sections.
 | `Counter()` / `c.increment()` | object construction and method call |
 | `c.add(1)` | method call with an argument |
 | `c.value` | attribute read |
+| `describe(3)` | keyword arguments and defaults |
+| `maybe_double(21)` | `?T` in and out |
+| `histogram(10k words)` | `list[str]` → `dict` |
+| `minmax(100k ints)` | `list[int]` → tuple |
+| `reverse3([1, 2, 3])` | fixed-size `[N]T` in and out |
+| `c.is_zero` | property read |
+| `c == c` | rich comparison (value equality) |
+| `list(Countdown())` | construct and iterate |
 
 - **Speed:** `timeit`, best of 7 repeats, in a dedicated process.
 - **Memory:** each scenario runs in a fresh process, **twice in a row**.
@@ -69,6 +78,10 @@ tables with the new sections.
 - **Error paths:** the memory scenarios include calls that raise on every iteration, so
   a leaked exception, error string or argument on the failure path is measured instead
   of being averaged away by the success paths.
+- **Threads:** an `lcg` loop (a serial integer dependency, no allocation, the same work
+  in every backend) runs from 1 to 8 threads with the GIL released — `detach`,
+  `allowThreads`, `@[vc_nogil]` — and the table reports wall time and parallel speedup.
+  The pure-Python reference cannot release the GIL and is not measured.
 
 Each tool compiles in its release mode: `cargo --release` (opt-level 3),
 `vcraft build --release` (`v -prod`) and `zig-maturin build --release` (`ReleaseSafe`). All
@@ -251,6 +264,9 @@ By priority. Each point is reproduced in this benchmark.
    raising `TypeError`. Both are found by the edge-case correctness matrix.
 8. **Only exact `bytes` reaches a `[]const u8` parameter.** A `bytearray`, `memoryview`
    or `array.array` is rejected, while vcraft and the reference accept every buffer.
+9. **An unknown keyword argument is ignored.** `describe(3, nope=1)` returns
+   `'item: 3'` instead of raising `TypeError`; `bindArgs` reads the names it knows and
+   never rejects the rest.
 
 ### PyO3
 
@@ -450,6 +466,23 @@ every call. Full figures in [`results.md`](results.md).
   vcraft accept all of them through the buffer protocol.
 - **No reference leaks anywhere.** Every borrowed argument's count is unchanged after
   2,000 calls in all four backends.
+
+### Keywords, rich types, classes and threads
+
+The keyword/default, optional, map, tuple and fixed-array workloads, the class surface
+(property, equality, hash, iteration, inheritance) and the thread-scaling table went in
+on all four backends.
+
+- **zig-maturin ignores an unknown keyword argument.** `describe(3, nope=1)` returns
+  `'item: 3'`; the other three raise `TypeError`.
+- **vcraft, PyO3 and the reference agree on every keyword, optional, map, tuple,
+  fixed-array and class case**, including the empty, wrong-type and wrong-length
+  branches: `Counter() == Counter()` and `len({Counter(), Counter()}) == 1`, a
+  `Countdown` that ends in `StopIteration`, and a `BoundedCounter` whose inherited
+  field, inherited method and `isinstance` in both directions all behave. The
+  `make_range(-1)` panic below stays vcraft's only divergence in the matrix.
+- **All three release the GIL and scale.** On a 12-core machine with eight threads:
+  vcraft 6.5×, zig-maturin 7.6×, PyO3 5.4×. Thread registration and `@[vc_nogil]` hold.
 
 ## Linux run
 
