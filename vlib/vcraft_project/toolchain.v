@@ -50,9 +50,9 @@ pub fn v_matches_pin(v string) bool {
 
 // v_reported_commit is the short hash `v version` prints, or ''. The version line is
 // looked for among all output lines: a freshly built V can print notes or warnings
-// (on stderr, which `os.execute` merges) before it.
+// (on stderr, which `os.exec` merges) before it.
 pub fn v_reported_commit(v string) string {
-	out := os.execute(shell_quote(v) + ' version')
+	out := os.exec([v, 'version'])
 	if out.exit_code != 0 {
 		return ''
 	}
@@ -87,7 +87,7 @@ fn install_into(dir string, jobs int) ! {
 		return
 	}
 	for tool in ['git', 'make'] {
-		if os.execute('command -v ${tool}').exit_code != 0 {
+		if os.find_abs_path_of_executable(tool) or { '' } == '' {
 			return error('`${tool}` is needed to build V; install it and run this again')
 		}
 	}
@@ -95,45 +95,45 @@ fn install_into(dir string, jobs int) ! {
 		os.rmdir_all(dir) or { return error('cannot clear ${dir}: ${err.msg()}') }
 	}
 	os.mkdir_all(dir) or { return error('cannot create ${dir}') }
-	q := shell_quote(dir)
 	fetch := [
-		'git -C ${q} init -q',
-		'git -C ${q} remote add origin https://github.com/vlang/v.git',
-		'git -C ${q} fetch -q --depth 1 origin ${v_commit}',
-		'git -C ${q} checkout -q FETCH_HEAD',
-		'git clone -q https://github.com/vlang/vc.git ${shell_quote(dir + '/vc')}',
-		'git -C ${shell_quote(dir + '/vc')} checkout -q ${vc_commit}',
+		['git', '-C', dir, 'init', '-q'],
+		['git', '-C', dir, 'remote', 'add', 'origin', 'https://github.com/vlang/v.git'],
+		['git', '-C', dir, 'fetch', '-q', '--depth', '1', 'origin', v_commit],
+		['git', '-C', dir, 'checkout', '-q', 'FETCH_HEAD'],
+		['git', 'clone', '-q', 'https://github.com/vlang/vc.git', dir + '/vc'],
+		['git', '-C', dir + '/vc', 'checkout', '-q', vc_commit],
 	]
 	for step in fetch {
-		println('+ ${step}')
-		if os.system(step) != 0 {
-			return error('`${step}` failed; nothing was installed')
+		println('+ ${step.join(' ')}')
+		if os.system_args(step) != 0 {
+			return error('`${step.join(' ')}` failed; nothing was installed')
 		}
 	}
 	// V's own fast compiler for non-release builds, fetched before V is built as CI
 	// does. Optional: without it V compiles with the system's cc, more slowly.
-	println('+ make -C ${q} fresh_tcc')
-	if os.system('make -C ${q} fresh_tcc') != 0 {
+	tcc := ['make', '-C', dir, 'fresh_tcc']
+	println('+ ${tcc.join(' ')}')
+	if os.system_args(tcc) != 0 {
 		eprintln('warning: tcc could not be fetched; V will use the system C compiler')
 	}
 	// VEXE pinned to the checkout's own `./v`: V's Makefile writes the compiler it builds
 	// to $VEXE, and an inherited one is somebody else's compiler.
 	os.unsetenv('VEXE')
-	build := 'make -C ${q} local=1 -j${jobs} VEXE=./v'
-	println('+ ${build}')
-	if os.system(build) != 0 {
+	build := ['make', '-C', dir, 'local=1', '-j${jobs}', 'VEXE=./v']
+	println('+ ${build.join(' ')}')
+	if os.system_args(build) != 0 {
 		// The Makefile's last step compiles and runs a script for V's own CI after the
 		// compiler is built, and on musl that step fails to link at the pinned commit
 		// (the cached `builtin` object exports `backtrace`, which calls a function that
 		// is static in another object). A compiler that reports the pin is complete.
 		if !v_matches_pin(dir + '/v') {
-			return error('`${build}` failed; nothing was installed')
+			return error('`${build.join(' ')}` failed; nothing was installed')
 		}
-		eprintln('warning: `${build}` failed after building V; the compiler itself works')
+		eprintln('warning: `${build.join(' ')}` failed after building V; the compiler itself works')
 	}
 	os.rmdir_all(dir + '/vc') or {}
 	if !v_matches_pin(dir + '/v') {
-		reported := os.execute(shell_quote(dir + '/v') + ' version').output.trim_space()
+		reported := os.exec([dir + '/v', 'version']).output.trim_space()
 		return error('the compiler built in ${dir} does not report commit ${v_commit[..7]}; `v version` said: ${reported}')
 	}
 	println('installed V ${v_commit[..7]} in ${dir}')

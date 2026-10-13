@@ -76,7 +76,7 @@ pub fn interpreter_version(python string) string {
 	// interpreter sees a truncated program, which it reports as an error rather than as
 	// the quoting mistake it is.
 	script := "import sys;print(str(sys.version_info[0])+'.'+str(sys.version_info[1]))"
-	out := os.execute(python + ' -c "' + script + '"')
+	out := os.exec([python, '-c', script])
 	if out.exit_code != 0 {
 		return ''
 	}
@@ -92,7 +92,7 @@ pub fn interpreter_version(python string) string {
 // compile time and does not change while the process runs.
 pub fn interpreter_is_free_threaded(python string) bool {
 	script := "import sysconfig;print(sysconfig.get_config_var('Py_GIL_DISABLED') or 0)"
-	out := os.execute(python + ' -c "' + script + '"')
+	out := os.exec([python, '-c', script])
 	if out.exit_code != 0 {
 		return false
 	}
@@ -105,7 +105,7 @@ pub fn interpreter_is_free_threaded(python string) bool {
 // installs and one that is ignored.
 pub fn extension_suffix(python string) string {
 	script := "import sysconfig;print(sysconfig.get_config_var('EXT_SUFFIX') or '.so')"
-	out := os.execute(python + ' -c "' + script + '"')
+	out := os.exec([python, '-c', script])
 	if out.exit_code != 0 {
 		return '.so'
 	}
@@ -115,7 +115,7 @@ pub fn extension_suffix(python string) string {
 // include_dir returns the directory holding Python.h.
 pub fn include_dir(python string) string {
 	script := "import sysconfig;print(sysconfig.get_paths()['include'])"
-	out := os.execute(python + ' -c "' + script + '"')
+	out := os.exec([python, '-c', script])
 	if out.exit_code != 0 {
 		return ''
 	}
@@ -130,7 +130,7 @@ pub fn include_dir(python string) string {
 // then refuses it with "not a supported wheel on this platform".
 pub fn platform_tag(python string) string {
 	script := "import sysconfig;print(sysconfig.get_platform().replace('-', '_').replace('.', '_'))"
-	out := os.execute(python + ' -c "' + script + '"')
+	out := os.exec([python, '-c', script])
 	if out.exit_code != 0 {
 		return 'linux_x86_64'
 	}
@@ -489,16 +489,16 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		''
 	}
 	mut args := [
-		shell_quote(opt.v),
+		opt.v,
 		'-new-compiler',
 		'-enable-globals',
 		'-shared',
 		'-o',
-		shell_quote(output),
+		output,
 		'-path',
-		shell_quote('${opt.v_path}|@vlib'),
+		'${opt.v_path}|@vlib',
 		'-cflags',
-		shell_quote('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + gc_define + ' ' + gnu_define + ' ' + opt.cflags),
+		'-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + gc_define + ' ' + gnu_define + ' ' + opt.cflags,
 	]
 	mut link_extra := opt.ldflags
 	if target.os == 'linux' {
@@ -519,7 +519,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	ldflags := extension_ldflags(target.os, link_extra)
 	if ldflags.len > 0 {
 		args << '-ldflags'
-		args << shell_quote(ldflags)
+		args << ldflags
 	}
 	if explicit {
 		// An explicit target is spelled out even when it matches the host, so `--dry-run`
@@ -537,7 +537,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	cc := if opt.cc.len > 0 { opt.cc } else { target.default_cc() }
 	if cc.len > 0 {
 		args << '-cc'
-		args << shell_quote(cc)
+		args << cc
 	}
 	// The rest of the command is toolchain-independent, so it is assembled before
 	// the dry-run return: `--dry-run` must show the command as it would run,
@@ -563,7 +563,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	if opt.release {
 		args << '-prod'
 	}
-	args << shell_quote(opt.root.trim_right('/'))
+	args << opt.root.trim_right('/')
 	if opt.dry_run {
 		// Before the toolchain check: planning is pure and has to work where the
 		// compiler does not exist, which is the whole point of verifying a target
@@ -599,7 +599,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 			os.rm(stale) or { return error('cannot remove ${stale}') }
 		}
 	}
-	result := os.execute(args.join(' '))
+	result := os.exec(args)
 	if result.exit_code != 0 {
 		return error('the V compiler failed:\n${result.output}')
 	}
@@ -692,7 +692,7 @@ fn cc_exists(cc string) bool {
 	if fields[0].contains('/') {
 		return os.exists(fields[0])
 	}
-	return os.execute('command -v ' + shell_quote(fields[0])).exit_code == 0
+	return os.find_abs_path_of_executable(fields[0]) or { '' } != ''
 }
 
 // describe_plan renders what a build would do, for `--dry-run`.
@@ -709,7 +709,9 @@ fn describe_plan(p Project, opt BuildOptions, target CrossTarget, tag string, su
 	}
 	out += 'extension        ${p.module + suffix}\n'
 	out += 'output           ${output}\n'
-	out += 'command          ${args.join(' ')}\n'
+	// The command is shown shell-quoted so it can be pasted into a shell, even though it
+	// is run through `os.exec` with the arguments as a list.
+	out += 'command          ${args.map(shell_quote(it)).join(' ')}\n'
 	return out
 }
 
@@ -809,8 +811,8 @@ fn compile_pyc(python string, dir string, name string) ![]u8 {
 	script := "import py_compile,sys;" +
 		"py_compile.compile(sys.argv[1],cfile=sys.argv[2],doraise=True," +
 		'invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)'
-	quoted := shell_quote(dir.trim_right('/') + '/' + name) + ' ' + shell_quote(target)
-	result := os.execute(shell_quote(python) + ' -c "' + script + '" ' + quoted)
+	source := dir.trim_right('/') + '/' + name
+	result := os.exec([python, '-c', script, source, target])
 	if result.exit_code != 0 {
 		return error('cannot compile ${name}: ${result.output}')
 	}
@@ -819,11 +821,11 @@ fn compile_pyc(python string, dir string, name string) ![]u8 {
 	return data.bytes()
 }
 
-// shell_quote renders a shell argument safely.
+// shell_quote renders a command argument for display.
 //
 // Single quotes, so that a path with a space, a `|` or a `$` in it survives. The build
-// invokes a compiler through the shell rather than through `execve`, because V's `-cflags`
-// takes several values at once and passing them as a list is not supported.
+// itself runs commands through `os.exec` with the arguments as a list, where no quoting
+// is needed; this is only for the `--dry-run` plan, which prints a command to paste.
 pub fn shell_quote(text string) string {
 	return "'" + text.replace("'", "'\\''") + "'"
 }

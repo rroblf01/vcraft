@@ -84,7 +84,7 @@ pub fn develop(p Project, result BuildResult) ! {
 		return error('no interpreter at ${python}; activate a virtualenv first')
 	}
 	script := "import sysconfig;print(sysconfig.get_paths()['platlib'])"
-	site := os.execute(python + ' -c "' + script + '"')
+	site := os.exec([python, '-c', script])
 	if site.exit_code != 0 {
 		return error('cannot find site-packages for ${python}')
 	}
@@ -124,7 +124,7 @@ pub fn develop_editable(p Project, result BuildResult) ! {
 		return error('no interpreter at ${python}; activate a virtualenv first')
 	}
 	script := "import sysconfig;print(sysconfig.get_paths()['platlib'])"
-	site := os.execute(python + ' -c "' + script + '"')
+	site := os.exec([python, '-c', script])
 	target := site.output.trim_space()
 	if site.exit_code != 0 || target.len == 0 {
 		return error('cannot find site-packages for ${python}')

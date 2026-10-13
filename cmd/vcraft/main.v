@@ -214,7 +214,7 @@ fn cmd_build(args Args, develop bool) {
 	// No compiler is the first thing a new user hits, and V's own "command not found"
 	// says nothing about how to get one. A dry run plans without compiling.
 	v := vcraft_project.v_compiler()
-	if !args.flags['dry-run'] && os.execute('command -v ' + v).exit_code != 0 {
+	if !args.flags['dry-run'] && !command_exists(v) {
 		eprintln('error: no V compiler found')
 		eprintln('  install the one vcraft is tested with:')
 		eprintln('    vcraft toolchain install')
@@ -429,7 +429,7 @@ fn cmd_publish(args Args) {
 		exit(1)
 	}
 	mut uploader := ''
-	if os.exists('uv') || command_exists('uv') {
+	if command_exists('uv') {
 		uploader = 'uv'
 	} else if command_exists('twine') {
 		uploader = 'twine'
@@ -438,10 +438,11 @@ fn cmd_publish(args Args) {
 		eprintln('upload it yourself with `twine upload dist/*`')
 		exit(1)
 	}
-	mut result := os.execute('uv publish dist/*')
-	if uploader == 'twine' {
-		result = os.execute('twine upload dist/*')
+	mut upload := if uploader == 'twine' { ['twine', 'upload'] } else { ['uv', 'publish'] }
+	for entry in os.ls('dist') or { []string{} } {
+		upload << 'dist/' + entry
 	}
+	result := os.exec(upload)
 	if result.output.len > 0 {
 		eprintln(result.output)
 	}
@@ -453,7 +454,7 @@ fn cmd_publish(args Args) {
 
 // command_exists reports whether a program is on PATH.
 fn command_exists(name string) bool {
-	return os.execute('command -v ' + name).exit_code == 0
+	return os.find_abs_path_of_executable(name) or { '' } != ''
 }
 
 // cmd_clean removes build output.
@@ -475,7 +476,7 @@ fn cmd_toolchain(args Args) {
 	match action {
 		'' {
 			v := vcraft_project.v_compiler()
-			found := os.execute('command -v ' + v).exit_code == 0
+			found := command_exists(v)
 			println('pinned commit    ${vcraft_project.v_commit}')
 			println('toolchain dir    ${vcraft_project.toolchain_dir()}')
 			if !found {

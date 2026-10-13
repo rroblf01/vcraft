@@ -158,7 +158,7 @@ pub fn default_target() CrossTarget {
 // then exits 1 with a usage message, so requiring success would report gnu on the one
 // host this exists to detect.
 fn host_libc() string {
-	out := os.execute('ldd --version')
+	out := os.exec(['ldd', '--version'])
 	if out.output.contains('musl') {
 		return 'musl'
 	}

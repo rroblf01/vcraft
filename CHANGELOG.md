@@ -72,6 +72,12 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   counts "thirteen" workloads, its stale "Threads: what this benchmark did not measure"
   section now points at the thread-scaling table, and the roadmap's threaded-workloads
   item is checked off.
+- **No deprecated process APIs.** Every `os.execute`/`os.system` call was replaced with
+  `os.exec`/`os.system_args` (an argument array, no shell), removing the 23 V compiler
+  deprecation warnings. `command -v` now uses `os.find_abs_path_of_executable`, the
+  interpreter probes pass their script as one argument instead of building a quoted
+  shell string, and `vcraft publish` passes the files in `dist/` as arguments. The
+  `--dry-run` plan still prints the compiler command shell-quoted, so it can be pasted.
 
 ## [1.0.0] - 2026-10-09
 
