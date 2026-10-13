@@ -64,7 +64,7 @@ Other scripts:
   `Py_mod_gil` declaration surfaces as an error that way.
 - `tests/cli/test_cli.py` uses PyYAML to lint this repo's workflows and action and
   **skips** those checks when it is not installed.
-- Supported CPython is 3.11–3.14 plus 3.13t/3.14t. Keep `supported_pythons` /
+- Supported CPython is 3.11–3.15 plus 3.13t/3.14t/3.15t. Keep `supported_pythons` /
   `oldest_python` (`vlib/vcraft_project/build.v`), the `ci.yml` matrix, `Requires-Python`
   in `scripts/pack-vcraft-wheel.py` and `version` (`vlib/vcraft_project/env.v`) in step.
 

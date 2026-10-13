@@ -285,7 +285,7 @@ pub const free_threading_floor = '3.13'
 
 // supported_pythons are the CPython versions vcraft is tested against, oldest first.
 // The generated CI matrix builds one wheel per entry from a project's floor upwards.
-pub const supported_pythons = ['3.11', '3.12', '3.13', '3.14']
+pub const supported_pythons = ['3.11', '3.12', '3.13', '3.14', '3.15']
 
 // version_key turns `3.12` into a number that orders correctly: 312 sorts after 311 and
 // before 313, where comparing the strings puts `3.9` after `3.12`. Malformed input is

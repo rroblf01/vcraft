@@ -44,9 +44,8 @@ checked off here when it does.
 - [x] **macOS runners on `macos-26`**, off the deprecated `macos-14`.
 - [ ] **Linux aarch64 and musl green in CI.** The cells exist (`ubuntu-24.04-arm`,
       and the suites inside the musllinux image); checked off once a run is green.
-- [ ] **Python 3.15**, if its final release comes out before 1.0: into
-      `supported_pythons`, the CI matrix proper, the generated matrix and the
-      classifiers. CI already runs it as a non-blocking prerelease cell.
+- [x] **Python 3.15**: into `supported_pythons`, the CI matrix proper, the generated
+      matrix and the classifiers, after its final release.
 - [x] **V in one command.** `vcraft toolchain install`; V pinned to `36be926`.
 - [x] **Windows: decided.** Out of scope for 1.x; see [After 1.0](#after-10).
 

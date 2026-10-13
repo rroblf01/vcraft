@@ -74,6 +74,15 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   12-core machine (vcraft 6.5×, zig-maturin 7.6×, PyO3 5.4× at eight threads), so
   thread registration and GIL release hold; the pure-Python reference, which cannot
   release the GIL, is not measured.
+- **Python 3.15 support.** CPython 3.15.0 joined `supported_pythons`, the CI matrix, the
+  wheel classifiers and the matrix `vcraft generate-ci` writes; the free-threaded list
+  adds 3.15t. The GIL build needed no runtime changes — the slot ids, the layout check
+  and the conversions already match 3.15's headers. The free-threaded build did: 3.15's
+  `PyModuleDef_Init` rejects a definition whose head does not carry
+  `_Py_STATICALLY_ALLOCATED_FLAG`, which only `PyModuleDef_HEAD_INIT` sets, so the
+  module definition's head is now copied from a static one before its fields are filled
+  in. The full suite passes on 3.15, and a free-threaded 3.15t wheel imports with the
+  GIL disabled.
 - **Small cleanups.** A local variable shadowing the module `version` constant was
   renamed, removing a V compiler warning. The benchmark's Performance note no longer
   counts "thirteen" workloads, its stale "Threads: what this benchmark did not measure"

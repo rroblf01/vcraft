@@ -118,6 +118,16 @@ void vpy_end_allow_threads(void *state);
 void *vpy_mod_gil_not_used(void);
 int vpy_module_set_gil(void *module, void *gil);
 
+// Fills the head of a module definition with the bytes `PyModuleDef_HEAD_INIT` would
+// put there.
+//
+// CPython 3.15's `PyModuleDef_Init` rejects a free-threaded module whose head lacks
+// `_Py_STATICALLY_ALLOCATED_FLAG`, which only the macro's initializer sets; a
+// definition built field by field starts zeroed. The head is copied from a static
+// definition and the fields are filled in after. Compiles everywhere, a no-op on a GIL
+// build, and is called only under `$if vcraft_free_threaded`.
+void vpy_module_def_head(void *dst, size_t n);
+
 // The buffer protocol.
 //
 // `Py_buffer` is opaque under the limited API, so V cannot hold one, read its `buf`

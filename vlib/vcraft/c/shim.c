@@ -571,6 +571,30 @@ int vpy_module_set_gil(void *module, void *gil) {
 #endif
 }
 
+// vpy_module_def_head fills the head of a module definition from a static one.
+//
+// `PyModuleDef_HEAD_INIT` is the only thing that sets `_Py_STATICALLY_ALLOCATED_FLAG`
+// in `ob_flags`, and CPython 3.15's `PyModuleDef_Init` rejects a free-threaded module
+// whose head lacks it ("invalid PyModuleDef, extension possibly compiled for
+// non-free-threaded Python"). A definition the runtime builds field by field starts
+// zeroed, so the head is copied from a real static definition first. A no-op on a GIL
+// build, where the flag is not checked; the V side calls it only under
+// `$if vcraft_free_threaded`.
+void vpy_module_def_head(void *dst, size_t n) {
+#if defined(Py_GIL_DISABLED)
+	static const PyModuleDef head = {
+		PyModuleDef_HEAD_INIT, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL
+	};
+	if (n > sizeof(head)) {
+		n = sizeof(head);
+	}
+	memcpy(dst, &head, n);
+#else
+	(void)dst;
+	(void)n;
+#endif
+}
+
 // vpy_buffer_new allocates a view for one buffer acquisition.
 //
 // Zeroed, because `PyBuffer_Release` on a view whose acquisition failed must find

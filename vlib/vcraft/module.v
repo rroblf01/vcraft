@@ -111,6 +111,14 @@ pub fn (mut m Module) add_function_owned(name string, trampoline voidptr, flags 
 // it is the only form available to an abi3 extension.
 pub fn (mut m Module) seal() PyObj {
 	unsafe {
+		$if vcraft_free_threaded ? {
+			// CPython 3.15's `PyModuleDef_Init` rejects a free-threaded module whose
+			// head does not carry `_Py_STATICALLY_ALLOCATED_FLAG`, which only
+			// `PyModuleDef_HEAD_INIT` sets. The definition is built field by field here,
+			// so the head is copied from a static definition before the fields are
+			// filled in.
+			C.vpy_module_def_head(voidptr(&m.def), sizeof(PyModuleDef))
+		}
 		m.methods << PyMethodDef{}
 		m.def.m_name = m.name
 		m.def.m_doc = m.doc

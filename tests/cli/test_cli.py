@@ -1687,16 +1687,18 @@ print("ok" if not bad else bad)
         t.check("generate-ci succeeds with free-threading", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-300:])
         text = workflow.read_text()
-        # 3.13t and 3.14t, each on Linux and macOS.
+        # 3.13t, 3.14t and 3.15t, each on Linux and macOS.
         t.check("the free-threaded matrix is one cell per version and platform",
-                text.count("- target:") == 4, str(text.count("- target:")))
+                text.count("- target:") == 6, str(text.count("- target:")))
         t.check("macOS cells name a free-threaded interpreter",
-                'python: "3.13t"' in text and 'python: "3.14t"' in text, text[:1200])
+                'python: "3.13t"' in text and 'python: "3.14t"' in text
+                and 'python: "3.15t"' in text, text[:1200])
         t.check("and pass setup-python's exact interpreter to the build",
                 "steps.python.outputs.python-path" in text, text[-1500:])
         t.check("linux free-threaded cells build in the manylinux image",
                 "--interpreter /opt/python/cp313-cp313t/bin/python" in text
-                and "--interpreter /opt/python/cp314-cp314t/bin/python" in text,
+                and "--interpreter /opt/python/cp314-cp314t/bin/python" in text
+                and "--interpreter /opt/python/cp315-cp315t/bin/python" in text,
                 text[:1500])
         manifest.write_text(original)
 
@@ -1704,8 +1706,8 @@ print("ok" if not bad else bad)
         manifest.write_text(original)
         proc = vcraft("generate-ci", cwd=project)
         text = workflow.read_text()
-        t.check("the default 3.11 floor builds 3.11 to 3.14",
-                all(f"cp{v}-cp{v}/bin/python" in text for v in ("311", "312", "313", "314")),
+        t.check("the default 3.11 floor builds 3.11 to 3.15",
+                all(f"cp{v}-cp{v}/bin/python" in text for v in ("311", "312", "313", "314", "315")),
                 text[:1500])
         manifest.write_text(original.replace('minimum-version = "3.11"',
                                              'minimum-version = "3.14"'))

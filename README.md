@@ -45,7 +45,7 @@ add(a: int, b: int) -> int
   inheritance, equality, hashing, iteration and garbage-collected reference cycles.
 - **Zero-copy and GIL-free.** `[]u8` and `[]string` parameters alias Python's buffers,
   `@[vc_nogil]` releases the GIL around a call, and free-threaded CPython (3.13t,
-  3.14t) is supported.
+  3.14t, 3.15t) is supported.
 - **Wheels without the toolchain zoo.** `vcraft build` writes the wheel itself
   (DEFLATE, ZIP, RECORD, tags) for regular, abi3 and free-threaded builds,
   manylinux and musllinux, and refuses version combinations that would only fail
@@ -1015,7 +1015,7 @@ The matrix is derived from `vcraft.toml`:
   `minimum-version` up, for manylinux x86_64 and aarch64 and for macOS arm64.
 - **`abi3`:** one wheel per platform covers every CPython from the floor up, plus
   musllinux x86_64 and aarch64.
-- **`free-threading`:** 3.13t and 3.14t wheels for Linux and macOS.
+- **`free-threading`:** 3.13t, 3.14t and 3.15t wheels for Linux and macOS.
 
 Linux wheels are built inside published images that already carry V and vcraft,
 `ghcr.io/rroblf01/vcraft-manylinux` (derived from PyPA's `manylinux_2_28`) and
@@ -1130,11 +1130,11 @@ listed in the [changelog](CHANGELOG.md).
 
 What is tested on every commit:
 
-- CPython 3.11, 3.12, 3.13 and 3.14 on Linux x86_64, and 3.11 and 3.14 on macOS
+- CPython 3.11, 3.12, 3.13, 3.14 and 3.15 on Linux x86_64, and 3.11 and 3.15 on macOS
   arm64, with the full suite: runtime, code generator, wheel writer, packaging and
   the CLI end to end.
-- Free-threaded CPython 3.13t and 3.14t on Linux and 3.14t on macOS, importing with
-  the GIL disabled and calling from several threads.
+- Free-threaded CPython 3.13t, 3.14t and 3.15t on Linux and 3.15t on macOS, importing
+  with the GIL disabled and calling from several threads.
 
 Known limitations:
 
@@ -1169,7 +1169,7 @@ Renamed in 1.0, still accepted with a warning: `@[vc_gil]` (now `@[vc_nogil]`),
 
 ## Requirements
 
-- Python 3.11 to 3.14, or 3.13t/3.14t for free-threaded builds
+- Python 3.11 to 3.15, or 3.13t/3.14t/3.15t for free-threaded builds
 - Linux (glibc or musl) or macOS
 - A V compiler at the pinned commit: `vcraft toolchain install` builds it
 - gcc or clang, and the CPython development headers

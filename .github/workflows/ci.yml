@@ -91,7 +91,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-26]
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         # macOS runs the oldest and newest supported CPython only. Hosted macOS
         # runners are scarce, and with every version the cells queued for minutes
         # before starting; what breaks on macOS so far has been the platform
@@ -103,18 +103,14 @@ jobs:
             python: "3.12"
           - os: macos-26
             python: "3.13"
+          - os: macos-26
+            python: "3.14"
           - os: ubuntu-24.04-arm
             python: "3.12"
           - os: ubuntu-24.04-arm
             python: "3.13"
-        # The next CPython, while it is a prerelease: a heads-up that does not fail
-        # the run. It moves into the list above, and into `supported_pythons`, once
-        # it is released.
-        include:
-          - os: ubuntu-latest
-            python: "3.15"
-            experimental: true
-    continue-on-error: ${{ matrix.experimental == true }}
+          - os: ubuntu-24.04-arm
+            python: "3.14"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -182,7 +178,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-26]
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         # macOS runs the oldest and newest supported CPython only. Hosted macOS
         # runners are scarce, and with every version the cells queued for minutes
         # before starting; what breaks on macOS so far has been the platform
@@ -194,18 +190,14 @@ jobs:
             python: "3.12"
           - os: macos-26
             python: "3.13"
+          - os: macos-26
+            python: "3.14"
           - os: ubuntu-24.04-arm
             python: "3.12"
           - os: ubuntu-24.04-arm
             python: "3.13"
-        # The next CPython, while it is a prerelease: a heads-up that does not fail
-        # the run. It moves into the list above, and into `supported_pythons`, once
-        # it is released.
-        include:
-          - os: ubuntu-latest
-            python: "3.15"
-            experimental: true
-    continue-on-error: ${{ matrix.experimental == true }}
+          - os: ubuntu-24.04-arm
+            python: "3.14"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -329,11 +321,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-26]
-        python: ["3.13t", "3.14t"]
-        # One free-threaded cell on macOS, for the same reason as above.
+        python: ["3.13t", "3.14t", "3.15t"]
+        # One free-threaded cell on macOS, for the same reason as above: the newest.
         exclude:
           - os: macos-26
             python: "3.13t"
+          - os: macos-26
+            python: "3.14t"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
