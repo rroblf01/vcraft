@@ -7,6 +7,8 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-13
+
 ### Added
 
 - **A new project ships a runnable demo and a test.** `vcraft new` now writes `main.py`,

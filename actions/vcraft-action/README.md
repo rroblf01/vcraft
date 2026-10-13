@@ -12,7 +12,7 @@ container builds, Docker on the runner.
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
-    vcraft-version: v1.0.0
+    vcraft-version: v1.1.0
     args: build --release
 ```
 
@@ -24,7 +24,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/rroblf01/vcraft-manylinux:1.0.0
+      image: ghcr.io/rroblf01/vcraft-manylinux:1.1.0
     steps:
       - uses: actions/checkout@v5
       - run: vcraft build --target linux-x86_64-gnu --manylinux 2_28
@@ -34,7 +34,7 @@ jobs:
 
 | Input               | Default           | Meaning                                 |
 | ------------------- | ----------------- | --------------------------------------- |
-| `vcraft-version`    | `v1.0.0`          | The vcraft release to install from PyPI |
+| `vcraft-version`    | `v1.1.0`          | The vcraft release to install from PyPI |
 | `args`              | `build --release` | The vcraft command to run               |
 | `container`         | `''`              | An image to build inside instead        |
 | `working-directory` | `.`               | The project directory to run vcraft in  |
@@ -54,14 +54,14 @@ arguments for a POSIX shell and has never compiled there.
 ## Releases
 
 The action is versioned by tag on this repository, independently of the images.
-`v1` moves with every release and `v1.0` with every patch release, so `uses:
-...@v1` tracks the action while `...@v1.0.0` pins it:
+`v1` moves with every release and `v1.3` with every patch of that minor, so
+`uses: ...@v1` tracks the action while `...@v1.3.0` pins it:
 
 ```console
-$ git tag -a v1.0.0 -m "vcraft-action v1.0.0"
+$ git tag -a v1.3.0 -m "vcraft-action v1.3.0"
 $ git tag -fa v1 -m "vcraft-action v1"
-$ git tag -fa v1.0 -m "vcraft-action v1.0"
-$ git push origin v1.0.0 v1.0 v1
+$ git tag -fa v1.3 -m "vcraft-action v1.3"
+$ git push origin v1.3.0 v1.3 v1
 ```
 
 The release workflow in `.github/workflows/release-action.yml` moves the floating

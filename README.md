@@ -1033,7 +1033,7 @@ runners are refused with a clear error.
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
-    vcraft-version: v1.0.0
+    vcraft-version: v1.1.0
     args: build --release
 ```
 
