@@ -36,6 +36,15 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   step, and points at `python main.py` and `python -m unittest`. The README's quick
   start, "How it works" diagram and generated-layout section now match the files that
   are actually written.
+- **The benchmark probes edge cases, reference retention and error paths.** The
+  correctness matrix now covers integer limits and overflow, an embedded NUL and a
+  non-BMP code point in a `str`, empty and negative sizes, wrong-typed arguments and
+  every buffer-like object; a `sys.getrefcount` probe checks that no borrowed argument
+  is retained; and the memory scenarios include calls that raise on every iteration. A
+  case that aborts its process is re-run on its own instead of losing the run. The new
+  probes found a leak in vcraft's list-conversion error path (~48 bytes per call) and
+  three zig-maturin deviations (embedded-NUL truncation, a `str` read as bytes, and
+  `OverflowError` reported as `TypeError`).
 
 ## [1.0.0] - 2026-10-09
 

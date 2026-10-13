@@ -24,6 +24,10 @@ It needs `uv`, `cargo`, `zig` 0.16 and a `v` built at the commit pinned in `dock
 the Linux run is kept beside them as [`results-linux.md`](results-linux.md) and
 [`results-linux.json`](results-linux.json).
 
+The edge-case correctness matrix, the reference-retention probes and the error-path
+memory scenarios were added after those two runs; re-run `./run.sh` to regenerate the
+tables with the new sections.
+
 ## What is measured
 
 | workload | what it measures |
@@ -50,7 +54,21 @@ the Linux run is kept beside them as [`results-linux.md`](results-linux.md) and
 - **Import:** 8 processes. The first is reported separately, because macOS verifies each
   freshly installed binary once; the "warm" figure is the median of the rest.
 - **Size:** the wheel, the extension as built, and the extension after `strip -x`.
-- **Correctness:** expected values, including `2**40`, and that `2**63` raises `OverflowError`.
+- **Correctness:** a matrix of edge cases rather than a single happy path — integer
+  limits and overflow, an embedded NUL and a non-BMP code point in a `str`, empty and
+  negative sizes, wrong-typed arguments, and every buffer-like object (`bytearray`,
+  `memoryview`, `array.array`) against the bytes path. Where the backends legitimately
+  differ the expected outcome is written per backend, and a case the pure-Python
+  reference cannot share (it is duck-typed, not a binding) is `n/a`. The cases run in
+  one process; if a hostile one aborts it, the rest are re-run one by one so a single
+  crash is a row rather than a lost run.
+- **Reference retention:** each borrowed argument is passed many times in one process
+  and its `sys.getrefcount` compared before and after. A reader that keeps a reference
+  grows the count by one per call, which a heap that has already plateaued hides from
+  the memory table.
+- **Error paths:** the memory scenarios include calls that raise on every iteration, so
+  a leaked exception, error string or argument on the failure path is measured instead
+  of being averaged away by the success paths.
 
 Each tool compiles in its release mode: `cargo --release` (opt-level 3),
 `vcraft build --release` (`v -prod`) and `zig-maturin build --release` (`ReleaseSafe`). All
@@ -206,6 +224,10 @@ By priority. Each point is reproduced in this benchmark.
    `make_range` (1.2) do not move, nor does speed. The floor is set by heap
    granularity, not the divisor: 2 stays. `GC_FORCE_UNMAP_ON_GCOLLECT=1`
    does not move kept by a single KiB either.
+10. **The list-conversion error path leaks.** A call that fails while an element is
+    converted, such as `sum_floats(['x'])`, loses about 48 bytes each time: 9.6 MiB over
+    200,000 calls, reproducible, and 0 for the other three backends (the new *error
+    paths* probe). The success paths are clean. Not fixed yet.
 
 ### zig-maturin
 
@@ -224,6 +246,11 @@ By priority. Each point is reproduced in this benchmark.
    `zig-maturin` module must be imported to build a list with no copies.
 6. Without `--release`, `zig-maturin build` compiles in `Debug`. Worth keeping in mind when
    comparing.
+7. **A `str` is truncated at an embedded NUL** (`greet('a\x00b')` returns `'Hello, a!'`)
+   **and accepted where `bytes` is meant**: `checksum('ab')` returns 195 instead of
+   raising `TypeError`. Both are found by the edge-case correctness matrix.
+8. **Only exact `bytes` reaches a `[]const u8` parameter.** A `bytearray`, `memoryview`
+   or `array.array` is rejected, while vcraft and the reference accept every buffer.
 
 ### PyO3
 
@@ -400,6 +427,29 @@ sequence, a method with an argument, and an attribute read.
   through `METH_VARARGS` there, tuple included).
 - `c.value`: vcraft and zig tie at 15 ns, PyO3 at 21.
 - Correctness: all four pass the five new checks everywhere.
+
+### Edge cases, references and error paths
+
+Three probes the earlier waves did not have: a correctness matrix of edge cases, a
+`sys.getrefcount` check on every borrowed argument, and a memory scenario that raises on
+every call. Full figures in [`results.md`](results.md).
+
+- **A vcraft leak on the list-conversion error path.** `sum_floats(['x'])`, called
+  200,000 times, leaves about **9.6 MiB** resident, and a second identical batch adds the
+  same again — roughly 48 bytes lost per call. The other three backends keep and leak 0.
+  The failure happens while an element is converted, before the sum is computed.
+- **`make_range(-1)` matches nothing.** `list(range(-1))` is `[]`, PyO3 returns `[]`,
+  Zig fails inside CPython with a `listobject.c` SystemError, and vcraft raises
+  `RuntimeError: panic in V code: negative .cap:-1`. The V panic guard contains it — the
+  interpreter survives — but no backend here returns the reference's empty list.
+- **zig-maturin truncates a `str` at an embedded NUL**: `greet('a\x00b')` returns
+  `'Hello, a!'`, and it reads a `str` as bytes: `checksum('ab')` returns 195 instead of
+  raising `TypeError`.
+- **Only exact `bytes` is a buffer to PyO3 and Zig.** PyO3's `&[u8]` and Zig's
+  `[]const u8` reject `bytearray`, `memoryview` and `array.array`; the reference and
+  vcraft accept all of them through the buffer protocol.
+- **No reference leaks anywhere.** Every borrowed argument's count is unchanged after
+  2,000 calls in all four backends.
 
 ## Linux run
 

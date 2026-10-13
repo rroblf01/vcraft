@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Compares PyO3, vcraft and zig-maturin on the same thirteen workloads.
+"""Compares PyO3, vcraft and zig-maturin on the same workloads.
 
 Every backend is measured in fresh subprocesses so that one backend's allocator,
 garbage collector or imported runtime never shows up in another's numbers: one
-process for speed, and one process per memory scenario.
+process for speed, one for correctness, one per reference probe, and one process
+per memory scenario.
 
     python bench.py                  # run everything, write results.json and results.md
     python bench.py --quick          # fewer repeats, for checking the harness
@@ -18,6 +19,7 @@ import argparse
 import gc
 import importlib
 import json
+import math
 import os
 import platform
 import resource
@@ -39,6 +41,8 @@ BACKENDS = {
     "zig-maturin": ("bench_zig", HERE / "zig-maturin"),
     "python": ("pure_python", None),
 }
+
+BACKEND_BY_MODULE = {module: name for name, (module, _) in BACKENDS.items()}
 
 FLOATS = [i * 0.5 for i in range(100_000)]
 BYTES = bytes(range(256)) * 400
@@ -68,6 +72,7 @@ SPEED = {
 }
 
 # label -> (statement run `loops` times, loops). Each runs in its own process.
+# The statements may be expressions or small statement blocks; they are exec'd.
 MEMORY = {
     "greet x2M": ("m.greet('world')", 2_000_000),
     "make_range(100k) x200": ("m.make_range(100_000)", 200),
@@ -82,25 +87,129 @@ MEMORY = {
     "join_strings(new 1k strs) x500": (
         "m.join_strings(['s%05d' % i for i in range(1000)])", 500),
     "Counter() x1M": ("m.Counter()", 1_000_000),
+    # The failure path allocates too: a raised exception must not keep the arguments,
+    # the exception object, or the traceback. Success-only scenarios cannot see it.
+    "expect_positive(-1) x500k": (
+        "try:\n    m.expect_positive(-1)\nexcept ValueError:\n    pass", 500_000),
+    "sum_floats(wrong elem) x200k": (
+        "try:\n    m.sum_floats(['x'])\nexcept TypeError:\n    pass", 200_000),
 }
 
-# label -> (statement, expected). Exceptions are recorded, not raised.
+class AnyOf:
+    """A correctness case that accepts any of several outcomes.
+
+    A plain list would be ambiguous with an expected list value (`make_range`),
+    so membership is spelled out.
+    """
+
+    def __init__(self, *options):
+        self.options = options
+
+
+# label -> (statement, expected). Each runs in the importing process.
+#
+# `expected` is one of:
+#   * a value: the call must return it and compare equal;
+#   * the name of an exception class (a string): the call must raise exactly it;
+#   * ``AnyOf(...)`` of the above: any one of them is accepted;
+#   * "n/a": the case does not apply to this backend;
+#   * a dict {backend: <one of the above>}, with an optional "*" fallback, when the
+#     backends legitimately differ.
+# A raised exception whose name equals a value-looking string is still a match, so a
+# string return value and an exception name never collide in practice.
+#
+# `python` is a reference, not a binding: it is duck-typed, so it is "n/a" wherever the
+# point of the case is that a C implementation must enforce (or reject) a type.
 CORRECTNESS = {
     "add small": ("m.add(2, 3)", 5),
+    "add zero": ("m.add(0, 0)", 0),
+    "add negative": ("m.add(-5, 3)", -2),
     "add 2**40": ("m.add(2**40, 1)", 2**40 + 1),
+    "add i64 max": ("m.add(2**63 - 1, 0)", 2**63 - 1),
+    "add i64 min": ("m.add(-2**63, 0)", -2**63),
+    # A bool is an int in CPython and PyLong_AsLongLong accepts it; a binding that
+    # rejects the subclass is only stricter, not wrong, so both outcomes are accepted.
+    "add bool": ("m.add(True, True)", AnyOf(2, "TypeError")),
+    "add float rejected": ("m.add(1.0, 2)", {"python": "n/a", "*": "TypeError"}),
+    "add str rejected": ("m.add('1', 2)", "TypeError"),
+    "add 2**63 overflows": ("m.add(2**63, 0)", {"python": "n/a", "*": "OverflowError"}),
+    "add 2**64-1 overflows": ("m.add(2**64 - 1, 0)", {"python": "n/a", "*": "OverflowError"}),
+    "fib(0)": ("m.fib(0)", 0),
+    "fib(1)": ("m.fib(1)", 1),
     "fib(20)": ("m.fib(20)", 6765),
+    "fib(-1)": ("m.fib(-1)", -1),
+    "fib float rejected": ("m.fib(3.0)", {"python": "n/a", "*": "TypeError"}),
+    "count_primes(0)": ("m.count_primes(0)", 0),
+    "count_primes(1)": ("m.count_primes(1)", 0),
+    "count_primes(10)": ("m.count_primes(10)", 4),
     "count_primes(100)": ("m.count_primes(100)", 25),
-    "sum_floats": ("m.sum_floats([1.5, 2.5])", 4.0),
+    "count_primes negative": ("m.count_primes(-5)", 0),
+    "sum_floats empty": ("m.sum_floats([])", 0.0),
+    "sum_floats two": ("m.sum_floats([1.5, 2.5])", 4.0),
+    "sum_floats negative": ("m.sum_floats([-1.5, -2.5])", -4.0),
+    # PyFloat_AsDouble accepts an int where a float is expected.
+    "sum_floats ints": ("m.sum_floats([1, 2, 3])", AnyOf(6.0, "TypeError")),
+    "sum_floats nan": ("math.isnan(m.sum_floats([float('nan')]))", True),
+    "sum_floats inf": ("m.sum_floats([float('inf'), 1.0])", float("inf")),
+    "sum_floats str rejected": ("m.sum_floats('abc')", "TypeError"),
+    "sum_floats mixed rejected": ("m.sum_floats([1.0, 'x'])", "TypeError"),
+    "make_range(0)": ("m.make_range(0)", []),
+    "make_range(1)": ("m.make_range(1)", [0]),
     "make_range(3)": ("m.make_range(3)", [0, 1, 2]),
+    # list(range(-1)) is empty; a negative count is not a native allocation size.
+    "make_range negative": ("m.make_range(-1)", []),
+    "make_range float rejected": ("m.make_range(3.0)", "TypeError"),
+    "greet empty": ("m.greet('')", "Hello, !"),
     "greet unicode": ("m.greet('España')", "Hello, España!"),
+    # A non-BMP code point is four UTF-8 bytes; an embedded NUL is where a length
+    # carried through a C string truncates.
+    "greet emoji": ("m.greet('🐍')", "Hello, 🐍!"),
+    "greet embedded NUL": ("m.greet('a\\x00b')", "Hello, a\x00b!"),
+    "greet int rejected": ("m.greet(123)", {"python": "n/a", "*": "TypeError"}),
+    "greet bytes rejected": ("m.greet(b'x')", {"python": "n/a", "*": "TypeError"}),
+    "checksum empty": ("m.checksum(b'')", 0),
     "checksum 3 bytes": ("m.checksum(b'\\x01\\x02\\xff')", 258),
+    # PyO3's `&[u8]` takes exact bytes; a buffer-protocol reader takes all of these.
+    "checksum bytearray": ("m.checksum(bytearray(b'\\x01\\x02'))", {"pyo3": "n/a", "*": 3}),
+    "checksum memoryview": ("m.checksum(memoryview(b'\\x01\\x02'))", {"pyo3": "n/a", "*": 3}),
+    "checksum array": ("m.checksum(array.array('B', [1, 2, 3]))", {"pyo3": "n/a", "*": 6}),
+    # A str is not a buffer, so it must not be read as bytes.
+    "checksum str rejected": ("m.checksum('ab')", "TypeError"),
     "echo_bytes round trip": ("m.echo_bytes(b'\\x01\\x02\\xff')", b'\x01\x02\xff'),
+    "echo_bytes empty": ("m.echo_bytes(b'')", b''),
+    "echo_bytes from bytearray": ("m.echo_bytes(bytearray(b'ab'))", {"pyo3": "n/a", "*": b'ab'}),
+    "join_strings empty": ("m.join_strings([])", ''),
+    "join_strings single": ("m.join_strings(['a'])", 'a'),
     "join_strings 3 items": ("m.join_strings(['a', 'bb', 'ccc'])", 'a,bb,ccc'),
+    "join_strings nonstr rejected": ("m.join_strings(['a', 1])", "TypeError"),
     "counter starts at 0": ("(lambda c: c.value)(m.Counter())", 0),
+    "counter increment twice": ("(lambda c: [c.increment(), c.increment()])(m.Counter())", [1, 2]),
     "counter add and value": ("(lambda c: [c.add(2), c.add(3), c.value])(m.Counter())", [2, 5, 5]),
+    "counter add negative": ("(lambda c: c.add(-2))(m.Counter())", -2),
+    "expect_positive zero": ("m.expect_positive(0)", 0),
     "expect_positive ok": ("m.expect_positive(41)", 41),
     "expect_positive raises": ("m.expect_positive(-1)", "ValueError"),
-    "add 2**63 overflows": ("m.add(2**63, 0)", "OverflowError"),
+    "expect_positive str rejected": ("m.expect_positive('x')", "TypeError"),
+}
+
+# label -> (setup, target expression, call expression, loops). Each runs in its own
+# process. The target's refcount must not move while the extension borrows it: a
+# reader that keeps a reference grows it by one per call, which RSS is too coarse to
+# see in a short run.
+REFS = {
+    "sum_floats: borrowed list": ("xs = [1.0, 2.0, 3.0]", "xs", "m.sum_floats(xs)", 2_000),
+    # The elements are runtime objects, not interned literals, so a reader that keeps
+    # one reference per element read grows this count by one per call.
+    "sum_floats: borrowed elements": (
+        "xs = [float(i) + 0.5 for i in range(3)]", "xs[0]", "m.sum_floats(xs)", 2_000),
+    "checksum: borrowed bytes": ("buf = b'abc' * 100", "buf", "m.checksum(buf)", 2_000),
+    "checksum: borrowed bytearray": (
+        "buf = bytearray(b'abc' * 100)", "buf", "m.checksum(buf)", 2_000),
+    "checksum: borrowed memoryview": (
+        "buf = memoryview(b'abc' * 100)", "buf", "m.checksum(buf)", 2_000),
+    "echo_bytes: borrowed argument": (
+        "buf = b'abc' * 100", "buf", "m.echo_bytes(buf)", 2_000),
+    "method: borrowed self": ("obj = m.Counter()", "obj", "obj.increment()", 2_000),
 }
 
 
@@ -134,19 +243,6 @@ def worker_import(module: str) -> dict:
 
 def worker_speed(module: str, quick: bool) -> dict:
     m = importlib.import_module(module)
-    correctness = {}
-    for label, (stmt, expected) in CORRECTNESS.items():
-        if module == "pure_python" and expected == "OverflowError":
-            correctness[label] = "n/a"
-            continue
-        try:
-            got = eval(stmt, {"m": m})
-            ok = got == expected
-            correctness[label] = "ok" if ok else f"wrong: {got!r}"
-        except Exception as exc:  # noqa: BLE001
-            name = type(exc).__name__
-            correctness[label] = "ok" if name == expected else f"{name}: {exc}"
-
     c = m.Counter()
     env = {"m": m, "c": c, "FLOATS": FLOATS, "BYTES": BYTES, "STRINGS": STRINGS}
     repeat = 3 if quick else 7
@@ -158,24 +254,99 @@ def worker_speed(module: str, quick: bool) -> dict:
             number *= 2
         best = min(timer.repeat(repeat=repeat, number=number))
         speed[label] = best / number * 1e9  # ns per call
+    return {"speed_ns": speed}
 
-    return {"correctness": correctness, "speed_ns": speed}
+
+def correctness_env(m) -> dict:
+    import array
+    return {
+        "m": m,
+        "sys": sys,
+        "gc": gc,
+        "math": math,
+        "memoryview": memoryview,
+        "array": array,
+    }
+
+
+def expected_for(expected, backend: str):
+    if isinstance(expected, dict):
+        return expected.get(backend, expected.get("*"))
+    return expected
+
+
+def judge(want, got, exc_name) -> bool:
+    """Whether a return value or a raised exception satisfies `want`."""
+    options = want.options if isinstance(want, AnyOf) else (want,)
+    for option in options:
+        if exc_name is not None and option == exc_name:
+            return True
+        if exc_name is None and got == option:
+            return True
+    return False
+
+
+def check_correctness(label: str, module: str, m, env: dict) -> str:
+    stmt, expected = CORRECTNESS[label]
+    want = expected_for(expected, BACKEND_BY_MODULE.get(module, module))
+    if want is None or want == "n/a":
+        return "n/a"
+    try:
+        got = eval(stmt, env)
+    except Exception as exc:  # noqa: BLE001
+        name = type(exc).__name__
+        return "ok" if judge(want, None, name) else f"{name}: {exc}"
+    return "ok" if judge(want, got, None) else f"wrong: {got!r}"
+
+
+def worker_correctness(module: str) -> dict:
+    m = importlib.import_module(module)
+    env = correctness_env(m)
+    return {"correctness": {label: check_correctness(label, module, m, env)
+                            for label in CORRECTNESS}}
+
+
+def worker_correctness_one(module: str, label: str) -> dict:
+    m = importlib.import_module(module)
+    return {"result": check_correctness(label, module, m, correctness_env(m))}
+
+
+def worker_refs(module: str, label: str) -> dict:
+    m = importlib.import_module(module)
+    setup, target, call, loops = REFS[label]
+    env = {"m": m}
+    exec(setup, env)
+    obj = eval(target, env)
+    code = compile(call, "<bench>", "eval")
+    try:
+        eval(code, env)
+    except Exception as exc:  # noqa: BLE001
+        # The backend may not accept this argument at all (PyO3's `&[u8]` takes only
+        # exact bytes). That is a semantic difference, not a reference leak.
+        return {"unsupported": type(exc).__name__}
+    gc.collect()
+    before = sys.getrefcount(obj)
+    for _ in range(loops):
+        eval(code, env)
+    gc.collect()
+    after = sys.getrefcount(obj)
+    return {"before": before, "after": after, "delta": after - before, "loops": loops}
 
 
 def worker_memory(module: str, scenario: str) -> dict:
     m = importlib.import_module(module)
     stmt, loops = MEMORY[scenario]
-    code = compile(stmt, "<bench>", "eval")
+    code = compile(stmt, "<bench>", "exec")
     env = {"m": m}
-    eval(code, env)  # warm up: first-call allocations are not the scenario
+    exec(code, env)  # warm up: first-call allocations are not the scenario
     gc.collect()
     before = rss()
     for _ in range(loops):
-        eval(code, env)
+        exec(code, env)
     gc.collect()
     first = rss()
     for _ in range(loops):
-        eval(code, env)
+        exec(code, env)
     gc.collect()
     second = rss()
     return {
@@ -196,6 +367,24 @@ def run_worker(*args: str) -> dict:
     if proc.returncode != 0:
         return {"error": (proc.stderr or proc.stdout).strip()[-600:]}
     return json.loads(proc.stdout)
+
+
+def run_correctness(module: str) -> dict:
+    """Correctness for one backend, surviving a crash.
+
+    The cases include hostile ones, and a binding bug can abort the process instead of
+    raising. A single crashed worker would lose every row, so on a crash each case is
+    re-run on its own and the one that dies is recorded rather than taking the rest.
+    """
+    result = run_worker(module, "correctness")
+    if "correctness" in result:
+        return result["correctness"]
+    print("   correctness crashed, isolating each case", flush=True)
+    out = {}
+    for label in CORRECTNESS:
+        one = run_worker(module, "correctness-one", label)
+        out[label] = one["result"] if "result" in one else "crashed"
+    return out
 
 
 def wheel_sizes(project: Path | None) -> dict:
@@ -309,14 +498,35 @@ def render(results: dict) -> str:
                            f"{mib(r.get('leak'))} leak")
         out.append(f"| {label} | " + " | ".join(row) + " |")
 
+    out.append("\n### Reference retention\n")
+    out.append("Each probe calls the same borrowed argument many times in one process and")
+    out.append("reports the change in `sys.getrefcount` of the argument (or of an item it")
+    out.append("was handed). **0 is correct**; a positive number is one leaked reference per")
+    out.append("call, which a heap that has plateaued hides from the memory table.\n")
+    out.append("| probe | " + " | ".join(names) + " |")
+    out.append("|---" * (len(names) + 1) + "|")
+    for label in REFS:
+        row = []
+        for n in names:
+            r = results["backends"][n].get("refs", {}).get(label, {})
+            if "error" in r:
+                row.append("error")
+            elif "unsupported" in r:
+                row.append("unsupported")
+            elif "delta" not in r:
+                row.append("—")
+            else:
+                mark = "**0**" if r["delta"] == 0 else f"**+{r['delta']}**"
+                row.append(f"{mark} ({r.get('before')}→{r.get('after')})")
+        out.append(f"| {label} | " + " | ".join(row) + " |")
+
     out.append("\n### Correctness\n")
     out.append("| check | " + " | ".join(names) + " |")
     out.append("|---" * (len(names) + 1) + "|")
     for label in CORRECTNESS:
-        row = [results["backends"][n]["speed"].get("correctness", {}).get(label, "—")
-               for n in names]
+        row = [results["backends"][n].get("correctness", {}).get(label, "—") for n in names]
         out.append(f"| {label} | " + " | ".join(c if c in ("ok", "n/a", "—") else f"`{c}`"
-                                                  for c in row) + " |")
+                                                 for c in row) + " |")
     return "\n".join(out) + "\n"
 
 
@@ -336,6 +546,12 @@ def main() -> int:
             result = worker_import(module)
         elif mode == "speed":
             result = worker_speed(module, quick=bool(rest and rest[0] == "quick"))
+        elif mode == "correctness":
+            result = worker_correctness(module)
+        elif mode == "correctness-one":
+            result = worker_correctness_one(module, rest[0])
+        elif mode == "refs":
+            result = worker_refs(module, rest[0])
         else:
             result = worker_memory(module, rest[0])
         print(json.dumps(result))
@@ -370,6 +586,12 @@ def main() -> int:
         entry["speed"] = run_worker(module, "speed", "quick" if args.quick else "full")
         if "error" in entry["speed"]:
             print(entry["speed"]["error"], file=sys.stderr)
+        print("   correctness", flush=True)
+        entry["correctness"] = run_correctness(module)
+        entry["refs"] = {}
+        for label in REFS:
+            print(f"   refs: {label}", flush=True)
+            entry["refs"][label] = run_worker(module, "refs", label)
         entry["memory"] = {}
         for scenario in MEMORY:
             print(f"   memory: {scenario}", flush=True)
