@@ -74,6 +74,39 @@ mod bench_pyo3 {
         format!("{label}: {}{}", count * step, unit.unwrap_or(""))
     }
 
+    /// A value doubled, or None: an optional parameter and result.
+    #[pyfunction]
+    fn maybe_double(x: Option<i64>) -> Option<i64> {
+        x.map(|v| v * 2)
+    }
+
+    /// How often each word appears: a dict result.
+    #[pyfunction]
+    fn histogram(words: Vec<String>) -> std::collections::HashMap<String, i64> {
+        let mut counts = std::collections::HashMap::new();
+        for word in words {
+            *counts.entry(word).or_insert(0) += 1;
+        }
+        counts
+    }
+
+    /// The smallest and largest value: a multi-value (tuple) result.
+    #[pyfunction]
+    fn minmax(xs: Vec<i64>) -> PyResult<(i64, i64)> {
+        if xs.is_empty() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "minmax() arg is an empty sequence",
+            ));
+        }
+        Ok((*xs.iter().min().unwrap(), *xs.iter().max().unwrap()))
+    }
+
+    /// Three values reversed: a fixed-size array in and out.
+    #[pyfunction]
+    fn reverse3(a: [i64; 3]) -> [i64; 3] {
+        [a[2], a[1], a[0]]
+    }
+
     /// Bytes in without copying, one int out.
     #[pyfunction]
     fn checksum(data: &[u8]) -> u64 {

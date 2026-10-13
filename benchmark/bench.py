@@ -47,6 +47,8 @@ BACKEND_BY_MODULE = {module: name for name, (module, _) in BACKENDS.items()}
 FLOATS = [i * 0.5 for i in range(100_000)]
 BYTES = bytes(range(256)) * 400
 STRINGS = ["s%05d" % i for i in range(10_000)]
+INTS = [(i * 7) % 1000 for i in range(100_000)]
+WORDS = ["w%03d" % (i % 100) for i in range(10_000)]
 
 IMPORT_RUNS = 8
 
@@ -59,6 +61,10 @@ SPEED = {
     "make_range(100k)": ("m.make_range(100_000)", "native -> list[int]"),
     "greet": ("m.greet('world')", "str in, new str out"),
     "describe(3)": ("m.describe(3)", "keyword/default binding"),
+    "maybe_double(21)": ("m.maybe_double(21)", "optional in/out"),
+    "histogram(10k)": ("m.histogram(WORDS)", "list[str] -> dict"),
+    "minmax(100k)": ("m.minmax(INTS)", "list[int] -> tuple"),
+    "reverse3([1,2,3])": ("m.reverse3([1, 2, 3])", "fixed array in/out"),
     "checksum(100kB)": ("m.checksum(BYTES)", "bytes -> native, no copy"),
     "echo_bytes(100kB)": ("m.echo_bytes(BYTES)", "bytes in, fresh copy out"),
     "join_strings(10k)": ("m.join_strings(STRINGS)", "list[str] -> native -> str"),
@@ -87,6 +93,9 @@ MEMORY = {
     "echo_bytes(new 100kB) x500": ("m.echo_bytes(bytes(range(256)) * 400)", 500),
     "join_strings(new 1k strs) x500": (
         "m.join_strings(['s%05d' % i for i in range(1000)])", 500),
+    # A map result per call: the dict and its keys/values are fresh every time.
+    "histogram(new 1k words) x500": (
+        "m.histogram(['w%03d' % i for i in range(1000)])", 500),
     "Counter() x1M": ("m.Counter()", 1_000_000),
     # The failure path allocates too: a raised exception must not keep the arguments,
     # the exception object, or the traceback. Success-only scenarios cannot see it.
@@ -107,17 +116,28 @@ class AnyOf:
         self.options = options
 
 
+class PerBackend:
+    """A correctness case whose expected outcome differs per backend.
+
+    A plain dict expected value (a `histogram` result) is a value to compare against,
+    so the per-backend table is spelled out rather than inferred.
+    """
+
+    def __init__(self, mapping):
+        self.mapping = mapping
+
+
 # label -> (statement, expected). Each runs in the importing process.
 #
 # `expected` is one of:
 #   * a value: the call must return it and compare equal;
 #   * the name of an exception class (a string): the call must raise exactly it;
 #   * ``AnyOf(...)`` of the above: any one of them is accepted;
-#   * "n/a": the case does not apply to this backend;
-#   * a dict {backend: <one of the above>}, with an optional "*" fallback, when the
-#     backends legitimately differ.
+#   * ``PerBackend({...})`` with an optional "*": a different answer per backend;
+#   * "n/a": the case does not apply to this backend.
 # A raised exception whose name equals a value-looking string is still a match, so a
-# string return value and an exception name never collide in practice.
+# string return value and an exception name never collide in practice. A plain dict is a
+# dict value, never a per-backend table, so `histogram` can expect one.
 #
 # `python` is a reference, not a binding: it is duck-typed, so it is "n/a" wherever the
 # point of the case is that a C implementation must enforce (or reject) a type.
@@ -131,15 +151,15 @@ CORRECTNESS = {
     # A bool is an int in CPython and PyLong_AsLongLong accepts it; a binding that
     # rejects the subclass is only stricter, not wrong, so both outcomes are accepted.
     "add bool": ("m.add(True, True)", AnyOf(2, "TypeError")),
-    "add float rejected": ("m.add(1.0, 2)", {"python": "n/a", "*": "TypeError"}),
+    "add float rejected": ("m.add(1.0, 2)", PerBackend({"python": "n/a", "*": "TypeError"})),
     "add str rejected": ("m.add('1', 2)", "TypeError"),
-    "add 2**63 overflows": ("m.add(2**63, 0)", {"python": "n/a", "*": "OverflowError"}),
-    "add 2**64-1 overflows": ("m.add(2**64 - 1, 0)", {"python": "n/a", "*": "OverflowError"}),
+    "add 2**63 overflows": ("m.add(2**63, 0)", PerBackend({"python": "n/a", "*": "OverflowError"})),
+    "add 2**64-1 overflows": ("m.add(2**64 - 1, 0)", PerBackend({"python": "n/a", "*": "OverflowError"})),
     "fib(0)": ("m.fib(0)", 0),
     "fib(1)": ("m.fib(1)", 1),
     "fib(20)": ("m.fib(20)", 6765),
     "fib(-1)": ("m.fib(-1)", -1),
-    "fib float rejected": ("m.fib(3.0)", {"python": "n/a", "*": "TypeError"}),
+    "fib float rejected": ("m.fib(3.0)", PerBackend({"python": "n/a", "*": "TypeError"})),
     "count_primes(0)": ("m.count_primes(0)", 0),
     "count_primes(1)": ("m.count_primes(1)", 0),
     "count_primes(10)": ("m.count_primes(10)", 4),
@@ -166,8 +186,8 @@ CORRECTNESS = {
     # carried through a C string truncates.
     "greet emoji": ("m.greet('🐍')", "Hello, 🐍!"),
     "greet embedded NUL": ("m.greet('a\\x00b')", "Hello, a\x00b!"),
-    "greet int rejected": ("m.greet(123)", {"python": "n/a", "*": "TypeError"}),
-    "greet bytes rejected": ("m.greet(b'x')", {"python": "n/a", "*": "TypeError"}),
+    "greet int rejected": ("m.greet(123)", PerBackend({"python": "n/a", "*": "TypeError"})),
+    "greet bytes rejected": ("m.greet(b'x')", PerBackend({"python": "n/a", "*": "TypeError"})),
     "describe defaults": ("m.describe(3)", "item: 3"),
     "describe all positional": ("m.describe(3, 2, 'box', 'kg')", "box: 6kg"),
     "describe keyword label": ("m.describe(3, label='box')", "box: 3"),
@@ -176,17 +196,33 @@ CORRECTNESS = {
     "describe missing required": ("m.describe()", "TypeError"),
     "describe unknown keyword": ("m.describe(3, nope=1)", "TypeError"),
     "describe too many positional": ("m.describe(3, 1, 'x', 'y', 'z')", "TypeError"),
+    "maybe_double some": ("m.maybe_double(21)", 42),
+    "maybe_double none": ("m.maybe_double(None)", None),
+    "maybe_double wrong type": ("m.maybe_double('x')", PerBackend({"python": "n/a", "*": "TypeError"})),
+    "histogram counts": ("m.histogram(['a', 'b', 'a'])", {"a": 2, "b": 1}),
+    "histogram empty": ("m.histogram([])", {}),
+    "histogram str rejected": ("m.histogram('abc')", PerBackend({"python": "n/a", "*": "TypeError"})),
+    "histogram ints rejected": ("m.histogram([1, 2])", PerBackend({"python": "n/a", "*": "TypeError"})),
+    "minmax": ("m.minmax([3, 1, 4, 1, 5])", (1, 5)),
+    "minmax single": ("m.minmax([7])", (7, 7)),
+    "minmax empty": ("m.minmax([])", "ValueError"),
+    "minmax float rejected": ("m.minmax([2.5])", PerBackend({"python": "n/a", "*": "TypeError"})),
+    "reverse3": ("m.reverse3([1, 2, 3])", [3, 2, 1]),
+    "reverse3 wrong length": ("m.reverse3([1, 2])", PerBackend(
+        {"python": "ValueError", "*": AnyOf("TypeError", "ValueError")})),
+    "reverse3 float rejected": ("m.reverse3([1.0, 2.0, 3.0])", PerBackend(
+        {"python": "n/a", "*": AnyOf("TypeError", "ValueError")})),
     "checksum empty": ("m.checksum(b'')", 0),
     "checksum 3 bytes": ("m.checksum(b'\\x01\\x02\\xff')", 258),
     # PyO3's `&[u8]` takes exact bytes; a buffer-protocol reader takes all of these.
-    "checksum bytearray": ("m.checksum(bytearray(b'\\x01\\x02'))", {"pyo3": "n/a", "*": 3}),
-    "checksum memoryview": ("m.checksum(memoryview(b'\\x01\\x02'))", {"pyo3": "n/a", "*": 3}),
-    "checksum array": ("m.checksum(array.array('B', [1, 2, 3]))", {"pyo3": "n/a", "*": 6}),
+    "checksum bytearray": ("m.checksum(bytearray(b'\\x01\\x02'))", PerBackend({"pyo3": "n/a", "*": 3})),
+    "checksum memoryview": ("m.checksum(memoryview(b'\\x01\\x02'))", PerBackend({"pyo3": "n/a", "*": 3})),
+    "checksum array": ("m.checksum(array.array('B', [1, 2, 3]))", PerBackend({"pyo3": "n/a", "*": 6})),
     # A str is not a buffer, so it must not be read as bytes.
     "checksum str rejected": ("m.checksum('ab')", "TypeError"),
     "echo_bytes round trip": ("m.echo_bytes(b'\\x01\\x02\\xff')", b'\x01\x02\xff'),
     "echo_bytes empty": ("m.echo_bytes(b'')", b''),
-    "echo_bytes from bytearray": ("m.echo_bytes(bytearray(b'ab'))", {"pyo3": "n/a", "*": b'ab'}),
+    "echo_bytes from bytearray": ("m.echo_bytes(bytearray(b'ab'))", PerBackend({"pyo3": "n/a", "*": b'ab'})),
     "join_strings empty": ("m.join_strings([])", ''),
     "join_strings single": ("m.join_strings(['a'])", 'a'),
     "join_strings 3 items": ("m.join_strings(['a', 'bb', 'ccc'])", 'a,bb,ccc'),
@@ -253,7 +289,8 @@ def worker_import(module: str) -> dict:
 def worker_speed(module: str, quick: bool) -> dict:
     m = importlib.import_module(module)
     c = m.Counter()
-    env = {"m": m, "c": c, "FLOATS": FLOATS, "BYTES": BYTES, "STRINGS": STRINGS}
+    env = {"m": m, "c": c, "FLOATS": FLOATS, "BYTES": BYTES, "STRINGS": STRINGS,
+           "INTS": INTS, "WORDS": WORDS}
     repeat = 3 if quick else 7
     speed = {}
     for label, (stmt, _) in SPEED.items():
@@ -279,8 +316,8 @@ def correctness_env(m) -> dict:
 
 
 def expected_for(expected, backend: str):
-    if isinstance(expected, dict):
-        return expected.get(backend, expected.get("*"))
+    if isinstance(expected, PerBackend):
+        return expected.mapping.get(backend, expected.mapping.get("*"))
     return expected
 
 
@@ -298,7 +335,7 @@ def judge(want, got, exc_name) -> bool:
 def check_correctness(label: str, module: str, m, env: dict) -> str:
     stmt, expected = CORRECTNESS[label]
     want = expected_for(expected, BACKEND_BY_MODULE.get(module, module))
-    if want is None or want == "n/a":
+    if want == "n/a":
         return "n/a"
     try:
         got = eval(stmt, env)

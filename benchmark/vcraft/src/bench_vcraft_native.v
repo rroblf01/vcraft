@@ -77,6 +77,50 @@ pub fn describe(count int, step int, label string, unit ?string) string {
 	return '${label}: ${count * step}${suffix}'
 }
 
+// maybe_double doubles a value or returns none: an optional parameter and result.
+@[vc_fn]
+pub fn maybe_double(x ?int) ?int {
+	if v := x {
+		return v * 2
+	}
+	return none
+}
+
+// histogram counts how often each word appears: a map result.
+@[vc_fn]
+pub fn histogram(words []string) map[string]int {
+	mut counts := map[string]int{}
+	for word in words {
+		counts[word]++
+	}
+	return counts
+}
+
+// minmax returns the smallest and largest value: a multi-value (tuple) result.
+@[vc_fn]
+pub fn minmax(xs []int) !(int, int) {
+	if xs.len == 0 {
+		return vcraft.raise_domain(.value_error, 'minmax() arg is an empty sequence')
+	}
+	mut lo := xs[0]
+	mut hi := xs[0]
+	for x in xs {
+		if x < lo {
+			lo = x
+		}
+		if x > hi {
+			hi = x
+		}
+	}
+	return lo, hi
+}
+
+// reverse3 reverses three values: a fixed-size array in and out.
+@[vc_fn]
+pub fn reverse3(a [3]int) [3]int {
+	return [a[2], a[1], a[0]]!
+}
+
 // checksum sums bytes without copying them: the `[]u8` parameter aliases any
 // bytes-like object through the buffer protocol.
 @[vc_fn]

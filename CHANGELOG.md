@@ -49,6 +49,12 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   two defaults and an optional parameter is exercised positionally, by keyword, mixed,
   and with missing, unknown and surplus arguments. It surfaced a zig-maturin bug: an
   unknown keyword is silently ignored instead of raising `TypeError`.
+- **The benchmark covers optional values, maps, tuples and fixed-size arrays.** New
+  workloads exercise `?T` in and out (`maybe_double`), a `dict` result built from a
+  `list[str]` (`histogram`), a multi-value tuple result (`minmax`) and a `[N]T` in and
+  out (`reverse3`), with the empty, wrong-type and wrong-length cases alongside. A
+  plain dict expected value and a per-backend expectation table are now distinct
+  (`PerBackend`), so `histogram` can be checked against a dict.
 
 ## [1.0.0] - 2026-10-09
 

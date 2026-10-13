@@ -43,6 +43,29 @@ def describe(count, step=1, label="item", unit=None):
     return f"{label}: {count * step}{unit or ''}"
 
 
+def maybe_double(x=None):
+    return None if x is None else x * 2
+
+
+def histogram(words):
+    counts = {}
+    for word in words:
+        counts[word] = counts.get(word, 0) + 1
+    return counts
+
+
+def minmax(xs):
+    if not xs:
+        raise ValueError("minmax() arg is an empty sequence")
+    return min(xs), max(xs)
+
+
+def reverse3(a):
+    if len(a) != 3:
+        raise ValueError("reverse3() needs exactly 3 items")
+    return [a[2], a[1], a[0]]
+
+
 def checksum(data):
     total = 0
     for b in data:

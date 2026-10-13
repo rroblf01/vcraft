@@ -72,6 +72,48 @@ fn describe(count: i64, step: i64, label: []const u8, unit: ?[]const u8) !pz.PyS
     return pz.PyString.init(text);
 }
 
+// A value doubled, or null: an optional parameter and result.
+fn maybe_double(x: ?i64) ?i64 {
+    return if (x) |v| v * 2 else null;
+}
+
+// How often each word appears: a dict result. Built directly as a PyDict so no
+// native map is left allocated after the call.
+fn histogram(words: []const []const u8) !pz.PyDict {
+    const dict = try pz.PyDict.new();
+    for (words) |word| {
+        const key = try std.heap.c_allocator.dupeZ(u8, word);
+        defer std.heap.c_allocator.free(key);
+        const current = zm.PyDict_GetItemString(dict.borrow(), key);
+        const count: i64 = if (current) |v| zm.PyLong_AsLongLong(v) + 1 else 1;
+        const value = zm.PyLong_FromLongLong(count);
+        defer zm.Py_XDECREF(value);
+        _ = zm.PyDict_SetItemString(dict.borrow(), key, value);
+    }
+    return dict;
+}
+
+// The smallest and largest value: a multi-value (tuple) result.
+const MinMax = struct { i64, i64 };
+fn minmax(xs: []const i64) !MinMax {
+    if (xs.len == 0) {
+        zm.PyErr_SetString(zm.PyExc_ValueError(), "minmax() arg is an empty sequence");
+        return error.EmptySequence;
+    }
+    var lo: i64 = xs[0];
+    var hi: i64 = xs[0];
+    for (xs) |x| {
+        if (x < lo) lo = x;
+        if (x > hi) hi = x;
+    }
+    return .{ lo, hi };
+}
+
+// Three values reversed: a fixed-size array in and out.
+fn reverse3(a: [3]i64) [3]i64 {
+    return .{ a[2], a[1], a[0] };
+}
+
 // A list of str in, one new str out.
 fn join_strings(parts: []const []const u8) !pz.PyString {
     const text = try std.mem.join(std.heap.c_allocator, ",", parts);
@@ -142,6 +184,10 @@ const Mod = pz.pyModule("bench_zig", .{
             .args = &.{ "count", "step", "label", "unit" },
             .defaults = .{ .step = 1, .label = "item", .unit = null },
         }),
+        pz.pyFnNamed("maybe_double", maybe_double),
+        pz.pyFnNamed("histogram", histogram),
+        pz.pyFnNamed("minmax", minmax),
+        pz.pyFnNamed("reverse3", reverse3),
         pz.pyFnNamed("checksum", checksum),
         pz.pyFnNamed("expect_positive", expect_positive),
         pz.pyFnNamed("join_strings", join_strings),
