@@ -198,9 +198,14 @@ fn cmd_new(args Args) {
 		println('created ${w}')
 	}
 	println('')
+	println('The importable module is `${p.module}`.')
+	println('')
 	println('Next:')
 	println('  cd ${root}')
-	println('  vcraft develop')
+	println('  python -m venv .venv && source .venv/bin/activate')
+	println('  vcraft develop          # build and install into the active virtualenv')
+	println('  python main.py          # run the example in main.py')
+	println('  python -m unittest      # run the tests in tests/')
 }
 
 // cmd_build builds a wheel, or installs it when `develop` was asked for.

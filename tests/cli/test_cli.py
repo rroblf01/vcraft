@@ -114,6 +114,12 @@ def main() -> int:
         print("new")
         proc = vcraft("new", "mypkg", cwd=tmp)
         t.check("new succeeds", proc.returncode == 0, proc.stderr.strip())
+        t.check("new names the importable module",
+                "The importable module is `mypkg_native`." in proc.stdout, proc.stdout)
+        t.check("new shows how to run the demo", "python main.py" in proc.stdout,
+                proc.stdout)
+        t.check("new shows how to run the tests", "python -m unittest" in proc.stdout,
+                proc.stdout)
         project = tmp / "mypkg"
         t.check("vcraft.toml", (project / "vcraft.toml").exists())
         t.check("v.mod", (project / "v.mod").exists())

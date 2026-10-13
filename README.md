@@ -85,10 +85,18 @@ $ vcraft new my_extension
 $ cd my_extension
 $ python -m venv .venv && source .venv/bin/activate
 $ vcraft develop                      # build and install into the active venv
-$ python -c "import my_extension_native as m; print(m.greet('world'))"
+$ python main.py                      # the example `vcraft new` wrote
 Hello, world!
+5
+1
+parse_int: invalid literal for int()
+$ python -m unittest                  # the test under tests/
 $ vcraft build --release              # dist/my_extension-0.1.0-cp314-cp314-<platform>.whl
 ```
+
+The distribution is `my_extension`, but the extension module it builds is
+`my_extension_native`; that is the name Python imports. Pass `--module my_extension`
+to `vcraft new` if you want the two to match.
 
 **4. Ship it.** `vcraft generate-ci` writes a GitHub Actions workflow that builds a
 wheel per supported Python and platform, installs and imports each one, and is ready
@@ -165,18 +173,21 @@ On top of that, `vcraft` adds a code generator. It parses your V sources,
 discovers the annotated declarations, and emits the glue that CPython needs:
 
 ```
-src/lib.v  ──vcraft codegen──▶  src/_vcraft_generated.v
-                                          │
-                                          ▼
-                         v -shared  ──▶  my_extension/
-                                            ├── __init__.py
-                                            ├── helpers.py
-                                            ├── _stubs.pyi
-                                            └── _core.cpython-314-x86_64-linux-gnu.so
-                                          │
-                                          ▼
-                              dist/my_extension-0.1.0-cp314-cp314-linux_x86_64.whl
+src/my_extension.v ──vcraft codegen──▶ src/_vcraft_generated.v
+                                        (and python/my_extension.pyi)
+                                              │
+                                              ▼
+                        v -shared  ──▶  my_extension.cpython-314-x86_64-linux-gnu.so
+                                              │
+                                              ▼
+                  dist/my_extension-0.1.0-cp314-cp314-linux_x86_64.whl
+                    ├── my_extension.cpython-314-x86_64-linux-gnu.so
+                    └── my_extension.pyi
 ```
+
+The extension goes at the root of the wheel, not inside a directory named after it:
+a directory with no `__init__.py` is a namespace package, and Python resolves one
+without opening the files inside it, so the module would import empty.
 
 The generated glue is a normal V file. It calls your functions with their real V
 types, so a call from Python becomes a direct C call with no intermediate
@@ -957,21 +968,29 @@ What `vcraft new my_extension` writes:
 ```
 my_extension/
 ├── vcraft.toml                 packaging configuration (see Configuration)
-├── v.mod                       Module { name: 'my_extension' }
+├── v.mod                       Module { name: 'my_extension_native' }
 ├── pyproject.toml              names the PEP 517/660 build backend
 ├── vcraft_build.py             the backend, emitted by the vcraft that wrote it
+├── main.py                     a runnable example; not packaged into the wheel
+├── tests/
+│   ├── __init__.py
+│   └── test_my_extension.py    unittest cases for the example
 ├── README.md  .gitignore
 └── src/
     └── my_extension_native.v   your code
 ```
 
-A build adds `src/_vcraft_generated.v` and `python/<module>.pyi`, both
-generated and git-ignored, and writes wheels to `dist/`. `vcraft generate-ci` adds
+`vcraft develop` (and any other build) adds `src/_vcraft_generated.v` and
+`python/<module>.pyi`, both generated and git-ignored, installs the extension, and
+writes wheels to `dist/`. The `.pyi` stub travels in the wheel next to the extension,
+so a type checker sees the signatures `help()` shows. `vcraft generate-ci` adds
 `.github/workflows/build.yml`.
 
-Python and V coexist: pure-V packages get a generated `__init__.py` that
-re-exports the extension, while mixed packages can put whatever Python they like
-next to it. Both land in the same wheel.
+`main.py` and `tests/` are for the development loop and are not part of the
+distribution, though both travel in the sdist. Hand-written Python under a project's
+`python/` directory is packaged under the same relative names, so a project can mix
+V and Python in one module: the extension lands at the archive root and the Python
+helpers sit beside it under `python/`'s relative paths.
 
 ---
 

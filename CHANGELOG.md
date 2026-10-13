@@ -23,6 +23,14 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   installed wheel offered no type information. The stub is now `python/<module>.pyi`
   and travels in the wheel next to the extension.
 
+### Changed
+
+- **`vcraft new` prints the importable module and the first commands.** It names the
+  extension module (which differs from the distribution name), shows the virtualenv
+  step, and points at `python main.py` and `python -m unittest`. The README's quick
+  start, "How it works" diagram and generated-layout section now match the files that
+  are actually written.
+
 ## [1.0.0] - 2026-10-09
 
 The first stable release: from here on the annotation vocabulary, the `vcraft.toml`
