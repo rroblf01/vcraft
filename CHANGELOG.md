@@ -60,6 +60,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   checked against `StopIteration`; and a `BoundedCounter` exercises single inheritance,
   including an inherited field, an inherited method, `isinstance` both ways and the
   refusal path. All four backends pass.
+- **The benchmark measures thread scaling.** An `lcg` workload — a serial integer loop
+  with no vectorisation and no allocation — runs from 1 to 8 threads on each backend.
+  It releases the GIL through PyO3's `detach`, Zig's `allowThreads` and vcraft's
+  `@[vc_nogil]`, and the table reports the parallel speedup. All three scale on this
+  12-core machine (vcraft 6.5×, zig-maturin 7.6×, PyO3 5.4× at eight threads), so
+  thread registration and GIL release hold; the pure-Python reference, which cannot
+  release the GIL, is not measured.
 
 ## [1.0.0] - 2026-10-09
 

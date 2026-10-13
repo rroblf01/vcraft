@@ -38,6 +38,33 @@ fn count_primes(n: i64) !i64 {
     return count;
 }
 
+fn squares(n: i64) i64 {
+    var total: i64 = 0;
+    var i: i64 = 1;
+    while (i <= n) : (i += 1) total += i * i;
+    return total;
+}
+
+// Pure compute with the GIL released, for thread scaling.
+fn sum_squares(n: i64) i64 {
+    return pz.allowThreads(squares, .{n});
+}
+
+// A serial integer loop (a dependency between iterations, no allocation) with the
+// GIL released, so the work is identical in every backend.
+fn lcg_body(n: i64) i64 {
+    var x: i64 = 12345;
+    var i: i64 = 1;
+    while (i <= n) : (i += 1) {
+        x = (x * 1103515245 + 12345) & 0x7fffffff;
+    }
+    return x;
+}
+
+fn lcg(n: i64) i64 {
+    return pz.allowThreads(lcg_body, .{n});
+}
+
 // A Python list of floats converted into a native slice.
 fn sum_floats(xs: []const f64) f64 {
     var total: f64 = 0;
@@ -239,6 +266,8 @@ const Mod = pz.pyModule("bench_zig", .{
         pz.pyFnNamed("add", add),
         pz.pyFnNamed("fib", fib),
         pz.pyFnNamed("count_primes", count_primes),
+        pz.pyFnNamed("sum_squares", sum_squares),
+        pz.pyFnNamed("lcg", lcg),
         pz.pyFnNamed("sum_floats", sum_floats),
         pz.pyFnNamed("make_range", make_range),
         pz.pyFnNamed("greet", greet),

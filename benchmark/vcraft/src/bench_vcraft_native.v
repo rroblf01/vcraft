@@ -42,6 +42,30 @@ pub fn count_primes(n i64) i64 {
 	return count
 }
 
+// sum_squares is pure compute that releases the GIL, for thread scaling.
+@[vc_fn]
+@[vc_nogil]
+pub fn sum_squares(n i64) i64 {
+	mut total := i64(0)
+	for i in i64(1) .. n + 1 {
+		total += i * i
+	}
+	return total
+}
+
+// lcg is a serial integer loop with the GIL released: a dependency between
+// iterations, so no compiler turns it into a vector or a closed form, and no
+// allocation, so the work is identical in every backend.
+@[vc_fn]
+@[vc_nogil]
+pub fn lcg(n i64) i64 {
+	mut x := i64(12345)
+	for _ in i64(1) .. n + 1 {
+		x = (x * 1103515245 + 12345) & 0x7fffffff
+	}
+	return x
+}
+
 // sum_floats converts a Python list of floats into a native slice.
 @[vc_fn]
 pub fn sum_floats(xs []f64) f64 {

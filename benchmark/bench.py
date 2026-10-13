@@ -52,6 +52,13 @@ WORDS = ["w%03d" % (i % 100) for i in range(10_000)]
 
 IMPORT_RUNS = 8
 
+# Thread scaling. Each thread runs THREAD_STMT THREAD_CALLS times; a backend that
+# releases the GIL keeps the wall time roughly flat as the thread count grows. The
+# pure-Python reference cannot release the GIL, so it is not measured here.
+THREAD_STMT = "m.lcg(2_000_000)"
+THREAD_CALLS = 64
+THREAD_COUNTS = [1, 2, 4, 8]
+
 # label -> (statement, what it measures). `m` is the module, `c` a Counter instance.
 SPEED = {
     "add": ("m.add(1, 2)", "call overhead"),
@@ -168,6 +175,12 @@ CORRECTNESS = {
     "count_primes(10)": ("m.count_primes(10)", 4),
     "count_primes(100)": ("m.count_primes(100)", 25),
     "count_primes negative": ("m.count_primes(-5)", 0),
+    "sum_squares(0)": ("m.sum_squares(0)", 0),
+    "sum_squares(1)": ("m.sum_squares(1)", 1),
+    "sum_squares(10)": ("m.sum_squares(10)", 385),
+    "sum_squares float rejected": ("m.sum_squares(3.0)", PerBackend({"python": "n/a", "*": "TypeError"})),
+    "lcg(10)": ("m.lcg(10)", 803550167),
+    "lcg(0)": ("m.lcg(0)", 12345),
     "sum_floats empty": ("m.sum_floats([])", 0.0),
     "sum_floats two": ("m.sum_floats([1.5, 2.5])", 4.0),
     "sum_floats negative": ("m.sum_floats([-1.5, -2.5])", -4.0),
@@ -400,6 +413,28 @@ def worker_refs(module: str, label: str) -> dict:
     return {"before": before, "after": after, "delta": after - before, "loops": loops}
 
 
+def worker_threads(module: str, threads: str, calls: str) -> dict:
+    import threading
+    m = importlib.import_module(module)
+    code = compile(THREAD_STMT, "<bench>", "eval")
+    env = {"m": m}
+    n = int(threads)
+    barrier = threading.Barrier(n)
+
+    def run() -> None:
+        barrier.wait()
+        for _ in range(int(calls)):
+            eval(code, env)
+
+    workers = [threading.Thread(target=run) for _ in range(n)]
+    start = time.perf_counter()
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    return {"seconds": time.perf_counter() - start, "threads": n, "calls": int(calls)}
+
+
 def worker_memory(module: str, scenario: str) -> dict:
     m = importlib.import_module(module)
     stmt, loops = MEMORY[scenario]
@@ -587,6 +622,25 @@ def render(results: dict) -> str:
                 row.append(f"{mark} ({r.get('before')}→{r.get('after')})")
         out.append(f"| {label} | " + " | ".join(row) + " |")
 
+    out.append("\n### Thread scaling\n")
+    out.append(f"Each thread runs `{THREAD_STMT[2:]}` {THREAD_CALLS} times; wall seconds, and")
+    out.append("parallel speedup over one thread. A binding that releases the GIL scales close")
+    out.append("to the core count. The pure-Python reference cannot release the GIL, so it is")
+    out.append("not measured here.\n")
+    out.append("| threads | " + " | ".join(names) + " |")
+    out.append("|---" * (len(names) + 1) + "|")
+    base = {n: results["backends"][n].get("threads", {}).get("1", {}).get("seconds")
+            for n in names}
+    for k in THREAD_COUNTS:
+        row = []
+        for n in names:
+            r = results["backends"][n].get("threads", {}).get(str(k), {})
+            if "seconds" not in r or not base.get(n):
+                row.append("—")
+                continue
+            row.append(f"{r['seconds']:.3f} s ({base[n] * k / r['seconds']:.1f}×)")
+        out.append(f"| {k} | " + " | ".join(row) + " |")
+
     out.append("\n### Correctness\n")
     out.append("| check | " + " | ".join(names) + " |")
     out.append("|---" * (len(names) + 1) + "|")
@@ -619,6 +673,8 @@ def main() -> int:
             result = worker_correctness_one(module, rest[0])
         elif mode == "refs":
             result = worker_refs(module, rest[0])
+        elif mode == "threads":
+            result = worker_threads(module, rest[0], rest[1])
         else:
             result = worker_memory(module, rest[0])
         print(json.dumps(result))
@@ -659,6 +715,11 @@ def main() -> int:
         for label in REFS:
             print(f"   refs: {label}", flush=True)
             entry["refs"][label] = run_worker(module, "refs", label)
+        print("   threads", flush=True)
+        entry["threads"] = {
+            str(k): run_worker(module, "threads", str(k), str(THREAD_CALLS))
+            for k in THREAD_COUNTS
+        } if name != "python" else {}
         entry["memory"] = {}
         for scenario in MEMORY:
             print(f"   memory: {scenario}", flush=True)

@@ -49,6 +49,25 @@ mod bench_pyo3 {
         count
     }
 
+    /// Pure compute with the GIL released, for thread scaling.
+    #[pyfunction]
+    fn sum_squares(py: Python<'_>, n: i64) -> i64 {
+        py.detach(|| (1..=n).map(|i| i * i).sum())
+    }
+
+    /// A serial integer loop with the GIL released: a dependency between iterations,
+    /// so no compiler vectorises it or collapses it to a closed form.
+    #[pyfunction]
+    fn lcg(py: Python<'_>, n: i64) -> i64 {
+        py.detach(|| {
+            let mut x: i64 = 12345;
+            for _ in 1..=n {
+                x = (x * 1_103_515_245 + 12345) & 0x7fff_ffff;
+            }
+            x
+        })
+    }
+
     /// A Python list of floats converted into a native vector.
     #[pyfunction]
     fn sum_floats(xs: Vec<f64>) -> f64 {

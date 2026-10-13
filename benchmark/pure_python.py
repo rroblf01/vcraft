@@ -24,6 +24,20 @@ def count_primes(n):
     return count
 
 
+def sum_squares(n):
+    total = 0
+    for i in range(1, n + 1):
+        total += i * i
+    return total
+
+
+def lcg(n):
+    x = 12345
+    for _ in range(1, n + 1):
+        x = (x * 1103515245 + 12345) & 0x7FFFFFFF
+    return x
+
+
 def sum_floats(xs):
     total = 0.0
     for x in xs:
