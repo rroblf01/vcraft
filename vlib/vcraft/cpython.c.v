@@ -50,6 +50,8 @@ fn C.vpy_version_string() &char
 
 fn C.vpy_ssize_size() isize
 
+fn C.vpy_type_name_into(o voidptr, buf voidptr, n isize) int
+
 fn C.vpy_size_PyModuleDef() isize
 
 fn C.vpy_size_PyMethodDef() isize

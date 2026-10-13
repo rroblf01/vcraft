@@ -237,10 +237,13 @@ By priority. Each point is reproduced in this benchmark.
    `make_range` (1.2) do not move, nor does speed. The floor is set by heap
    granularity, not the divisor: 2 stays. `GC_FORCE_UNMAP_ON_GCOLLECT=1`
    does not move kept by a single KiB either.
-10. **The list-conversion error path leaks.** A call that fails while an element is
-    converted, such as `sum_floats(['x'])`, loses about 48 bytes each time: 9.6 MiB over
-    200,000 calls, reproducible, and 0 for the other three backends (the new *error
-    paths* probe). The success paths are clean. Not fixed yet.
+10. ✅ *Fixed in 1.0.* **The list-conversion error path leaked.** A call that failed
+    while an element was converted, such as `sum_floats(['x'])`, lost about 48 bytes
+    each time: 9.6 MiB over 200,000 calls, 0 for the other three backends. The cause was
+    `type_name()`, which read a type's `__name__` with `PyObject_GetAttrString` and built
+    a temporary Python str for the attribute key on every call. It now reads the name
+    with `PyType_GetName`/`PyUnicode_AsUTF8AndSize` through a shim; the scenario reports
+    a 0 leak.
 
 ### zig-maturin
 
@@ -450,10 +453,11 @@ Three probes the earlier waves did not have: a correctness matrix of edge cases,
 `sys.getrefcount` check on every borrowed argument, and a memory scenario that raises on
 every call. Full figures in [`results.md`](results.md).
 
-- **A vcraft leak on the list-conversion error path.** `sum_floats(['x'])`, called
-  200,000 times, leaves about **9.6 MiB** resident, and a second identical batch adds the
-  same again — roughly 48 bytes lost per call. The other three backends keep and leak 0.
-  The failure happens while an element is converted, before the sum is computed.
+- **A vcraft leak on the list-conversion error path, since fixed.** `sum_floats(['x'])`,
+  called 200,000 times, used to leave about **9.6 MiB** resident and a second identical
+  batch added the same again — roughly 48 bytes lost per call, 0 for the other three
+  backends. The cause was a per-call temporary in `type_name()`; the scenario now
+  reports a 0 leak (see the vcraft fix list below).
 - **`make_range(-1)` matches nothing.** `list(range(-1))` is `[]`, PyO3 returns `[]`,
   Zig fails inside CPython with a `listobject.c` SystemError, and vcraft raises
   `RuntimeError: panic in V code: negative .cap:-1`. The V panic guard contains it — the

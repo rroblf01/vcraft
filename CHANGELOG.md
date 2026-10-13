@@ -28,6 +28,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   top-level extension module, and the wheel packer dropped every `.pyi`, so an
   installed wheel offered no type information. The stub is now `python/<module>.pyi`
   and travels in the wheel next to the extension.
+- **The list-conversion error path no longer leaks.** `type_name()` read a type's
+  `__name__` with `PyObject_GetAttrString`, which builds a temporary Python str for the
+  attribute key on every call, so a hot failure path that named the offending type — a
+  list element that is not a float — lost about 48 bytes per call. It now reads the name
+  with `PyType_GetName` and `PyUnicode_AsUTF8AndSize` through the C shim, allocating
+  nothing. `sum_floats(['x'])` called 200,000 times went from a 9.2 MiB leak to 0,
+  measured by the benchmark's error-path memory scenario.
 
 ### Changed
 

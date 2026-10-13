@@ -134,12 +134,20 @@ pub fn (o PyObj) type_is(wanted PyObj) bool {
 
 // type_name returns the name of the object's type, for error messages.
 pub fn (o PyObj) type_name() string {
-	typ := o.type()
-	name := C.PyObject_GetAttrString(typ.ptr, voidptr(c'__name__'))
-	if name == unsafe { nil } {
+	if o.is_null() {
+		return 'None'
+	}
+	// A fixed buffer and the shim's `PyType_GetName`, rather than
+	// `PyObject_GetAttrString(..., "__name__")`, which builds a temporary Python str for
+	// the attribute key on every call. Naming the actual type happens on failure paths,
+	// and a hot one (a list element that is not a float) would otherwise lose that small
+	// allocation once per call.
+	mut buf := [64]u8{}
+	n := unsafe { C.vpy_type_name_into(o.ptr, voidptr(&buf[0]), isize(buf.len)) }
+	if n < 0 {
 		return '?'
 	}
-	return steal(name).to_vstring()
+	return buf[..n].bytestr()
 }
 
 // hash_value returns the Python hash of the object, or -1 with an error set.

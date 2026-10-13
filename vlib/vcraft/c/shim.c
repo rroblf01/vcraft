@@ -18,6 +18,33 @@ int vpy_python_api_version(void) {
 	return PYTHON_API_VERSION;
 }
 
+// vpy_type_name_into writes the unqualified type name of `o` into `buf` and returns its
+// length, or -1 with an exception set. `PyType_GetName` reads the name directly (stable
+// ABI since 3.11, vcraft's floor) and `PyUnicode_AsUTF8` returns the cached UTF-8 form,
+// so a caller that names the actual type on a failure path allocates nothing.
+int vpy_type_name_into(PyObject *o, char *buf, size_t n) {
+	if (o == NULL || buf == NULL || n == 0) {
+		return -1;
+	}
+	PyObject *name = PyType_GetName(Py_TYPE(o));
+	if (name == NULL) {
+		return -1;
+	}
+	Py_ssize_t len = 0;
+	const char *utf8 = PyUnicode_AsUTF8AndSize(name, &len);
+	if (utf8 == NULL) {
+		Py_DECREF(name);
+		return -1;
+	}
+	if ((size_t)len >= n) {
+		len = (Py_ssize_t)(n - 1);
+	}
+	memcpy(buf, utf8, (size_t)len);
+	buf[len] = '\0';
+	Py_DECREF(name);
+	return (int)len;
+}
+
 unsigned long vpy_version_hex(void) {
 	return PY_VERSION_HEX;
 }

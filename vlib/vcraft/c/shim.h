@@ -17,6 +17,12 @@ const char *vpy_version_string(void);
 Py_ssize_t vpy_ssize_size(void);
 int vpy_int_size(void);
 
+// Writes the unqualified type name of `o` into `buf` (NUL-terminated, truncated to
+// `n - 1` bytes) and returns its length, or -1 with an exception set. Reading the
+// name with `PyType_GetName` and the cached UTF-8 form allocates nothing, where
+// `PyObject_GetAttrString(..., "__name__")` builds a temporary key str per call.
+int vpy_type_name_into(PyObject *o, char *buf, size_t n);
+
 // Real C sizes of the structs the runtime mirrors, so `check_layout` can prove
 // the mirrors still agree with the headers the extension was built against.
 Py_ssize_t vpy_size_PyModuleDef(void);
