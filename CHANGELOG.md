@@ -67,6 +67,11 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   12-core machine (vcraft 6.5×, zig-maturin 7.6×, PyO3 5.4× at eight threads), so
   thread registration and GIL release hold; the pure-Python reference, which cannot
   release the GIL, is not measured.
+- **Small cleanups.** A local variable shadowing the module `version` constant was
+  renamed, removing a V compiler warning. The benchmark's Performance note no longer
+  counts "thirteen" workloads, its stale "Threads: what this benchmark did not measure"
+  section now points at the thread-scaling table, and the roadmap's threaded-workloads
+  item is checked off.
 
 ## [1.0.0] - 2026-10-09
 

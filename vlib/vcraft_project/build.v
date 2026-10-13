@@ -330,11 +330,11 @@ pub fn check_versions(interpreter string, abi3 string, free_threading bool) ! {
 // build compiles the project and writes a wheel.
 pub fn build(p Project, opt BuildOptions) !BuildResult {
 	python := if opt.interpreter.len > 0 { opt.interpreter } else { 'python3' }
-	version := interpreter_version(python)
-	if version.len == 0 {
+	interp_version := interpreter_version(python)
+	if interp_version.len == 0 {
 		return error('cannot run ${python}; is it on PATH?')
 	}
-	check_versions(version, p.abi3, p.free_threading)!
+	check_versions(interp_version, p.abi3, p.free_threading)!
 	// The target is resolved before anything else, because every error it can report is
 	// cheaper than compiling: an unknown name, a policy on the wrong libc, and a
 	// `--platform` that disagrees with the target all fail here.
@@ -377,7 +377,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		}
 	}
 	suffix := if explicit {
-		target.extension_suffix(version, p.abi3)
+		target.extension_suffix(interp_version, p.abi3)
 	} else {
 		interpreter_suffix(python, p.abi3)
 	}
@@ -411,10 +411,10 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 			os.setenv('MACOSX_DEPLOYMENT_TARGET', deployment, true)
 		}
 	}
-	// `version` arrives as `3.14` and the tag wants `314`: the interpreter tag has no
+	// `interp_version` arrives as `3.14` and the tag wants `314`: the interpreter tag has no
 	// separator between major and minor. A tag of `cp3.14-cp314-...` is not a tag pip
 	// knows, and it rejects the wheel with "no matching distribution".
-	numeric := version.replace('.', '')
+	numeric := interp_version.replace('.', '')
 	// An abi3 tag names the *floor*, not the interpreter that built it: PEP 425 spells
 	// it `cp<floor>-abi3-<platform>`. Building 3.14 against the 3.12 stable ABI produces
 	// `cp312-abi3-...`, and writing `cp314-cp312-...` instead makes every installer
@@ -423,7 +423,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	tag := if p.abi3.len > 0 {
 		'cp${p.abi3.replace('.', '')}-abi3-${tag_platform}'
 	} else {
-		'cp${numeric}-${abi_tag(version, p.free_threading, p.abi3)}-${tag_platform}'
+		'cp${numeric}-${abi_tag(interp_version, p.free_threading, p.abi3)}-${tag_platform}'
 	}
 	limited := limited_api_defines(p.abi3)
 
@@ -575,7 +575,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 			path:      ''
 			extension: p.module + suffix
 			tag:       ''
-			python:    version
+			python:    interp_version
 		}
 	}
 	if cc.len > 0 {
@@ -675,7 +675,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		path:      path
 		extension: p.module + suffix
 		tag:       tag
-		python:    version
+		python:    interp_version
 	}
 }
 

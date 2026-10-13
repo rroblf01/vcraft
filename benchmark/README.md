@@ -505,12 +505,14 @@ The shape holds from macOS: vcraft leads on call overhead, recursion and
 `join_strings` because `str.join` never leaves C. Import costs vcraft 684 KiB of RSS
 here, against 648 KiB for PyO3, rather than the 3.7× gap measured on macOS.
 
-## Threads: what this benchmark did not measure
+## Threads
 
-Every workload above runs on the thread that imported the module. Run on any other
-thread, vcraft 0.2.0 crashed: the V collector only knew the importing thread, and the
-first collection triggered from another one aborted the process with
-`Collecting from unknown thread`. One worker thread was enough; so was a
+Every workload above runs on the thread that imported the module; the *Thread scaling*
+table near the end measures how each backend behaves when it does not. Before 1.0 it did
+not, and the failure was silent until it aborted: run on any other thread, vcraft 0.2.0
+crashed, because the V collector only knew the importing thread and the first collection
+triggered from another one aborted the process with `Collecting from unknown thread`.
+One worker thread was enough; so was a
 `ThreadPoolExecutor`, a threaded web server, or `asyncio.to_thread`. With the GIL
 released (`@[vc_nogil]`) or on free-threaded CPython it was worse in principle: the
 collector neither stopped those threads nor scanned their stacks.

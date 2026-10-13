@@ -25,7 +25,7 @@ usage:
   vcraft clean                 remove build output
   vcraft toolchain             show which V compiler vcraft uses
   vcraft toolchain install     build the V compiler vcraft is tested with
-  vcraft version, --version     print the version
+  vcraft version, --version    print the version
 
 build options:
   --release                    compile with -prod

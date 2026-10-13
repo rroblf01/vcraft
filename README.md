@@ -1102,7 +1102,7 @@ stable ABI), and `free-threading` on anything older than 3.13.
 
 ## Performance
 
-Same thirteen functions implemented with PyO3, vcraft and zig-maturin, plus pure
+The same workloads implemented with PyO3, vcraft and zig-maturin, plus pure
 Python, measured on Python 3.13, macOS arm64. Time per call, lower is better:
 
 | workload | PyO3 | vcraft | pure Python |

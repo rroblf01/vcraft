@@ -76,7 +76,8 @@ Additions that do not change anything 1.0 promises.
 - [ ] **Subinterpreters:** multi-phase initialisation (PEP 489) for every build.
 - [ ] **V without building it:** a prebuilt V for each supported platform (as
       `ziglang` ships Zig on PyPI), so not even the five-minute build is needed.
-- [ ] **Threaded workloads in the benchmark**, against PyO3's `allow_threads`.
+- [x] **Threaded workloads in the benchmark**, against PyO3's `allow_threads`: an
+      `lcg` loop from 1 to 8 threads, with the GIL released on all three backends.
 - [ ] **Byte loops:** `checksum` is 3× PyO3; report the array lowering to V upstream
       and work around it in the runtime where possible.
 - [ ] **Documentation site:** a user guide and a reference split out of the README.
