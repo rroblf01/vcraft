@@ -156,6 +156,13 @@ def main() -> int:
         t.check("v.mod requires vcraft", 'requires: ["vcraft"]' in vmod, vmod)
         t.check("v.mod names the V module", '"mypkg_native"' in vmod, vmod)
 
+        pyproject = (project / "pyproject.toml").read_text()
+        t.check("pyproject names the build backend",
+                'build-backend = "vcraft_build"' in pyproject, pyproject)
+        t.check("pyproject points type checkers at python/",
+                "[tool.pyright]" in pyproject and 'extraPaths = ["python"]' in pyproject,
+                pyproject)
+
         demo = (project / "main.py").read_text()
         t.check("the demo imports the package", "import mypkg as m" in demo, demo)
         test = (project / "tests" / "test_mypkg.py").read_text()

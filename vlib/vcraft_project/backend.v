@@ -35,7 +35,16 @@ pub fn pyproject_toml() string {
 	return '[build-system]\n' +
 		'requires = []\n' +
 		'build-backend = "vcraft_build"\n' +
-		'backend-path = ["."]\n'
+		'backend-path = ["."]\n' +
+		'\n' +
+		'# A project keeps its Python package under `python/` (see the generated layout),\n' +
+		'# so a type checker or editor is told where to look: without this, `import\n' +
+		'# <name>` is unresolved in an editor until the package is installed.\n' +
+		'[tool.pyright]\n' +
+		'extraPaths = ["python"]\n' +
+		'\n' +
+		'[tool.mypy]\n' +
+		'mypy_path = "python"\n'
 }
 
 // write_backend writes `pyproject.toml` and the backend into a project.

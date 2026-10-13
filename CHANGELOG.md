@@ -22,6 +22,12 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   module `<name>_native` stays importable as an implementation detail. Hand-written
   Python under a project's `python/` directory was already packaged; the `py.typed`
   marker now travels with it.
+- **A new project resolves in an editor before it is built.** The generated
+  `pyproject.toml` now carries `[tool.pyright] extraPaths = ["python"]` and
+  `[tool.mypy] mypy_path = "python"`, so `import <name>` is not reported missing by
+  Pylance: a project keeps its Python package under `python/`, which is not on a type
+  checker's search path by default. After `vcraft develop`, the extension's `.pyi`
+  stub sits beside the package and the re-export resolves too.
 
 ### Fixed
 
