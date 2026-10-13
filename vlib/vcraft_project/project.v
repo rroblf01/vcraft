@@ -74,12 +74,41 @@ pub mut:
 	embed_pyc bool
 }
 
+// module_name is the Python and V module base derived from a distribution name.
+//
+// A PyPI name may contain `-`, `.` and uppercase, none of which a V module name
+// allows (`module My-Ext` and `module MyExt` are both rejected). PEP 503 normalises
+// names the same way, so `My-Ext` becomes `my_ext`. `vcraft new` checks the result is
+// a valid identifier before writing anything.
+pub fn module_name(name string) string {
+	return name.to_lower().replace('-', '_').replace('.', '_')
+}
+
+// is_valid_module reports whether `name` is a Python and V identifier: letters, digits
+// and underscores, not starting with a digit.
+pub fn is_valid_module(name string) bool {
+	if name.len == 0 {
+		return false
+	}
+	first := name[0]
+	if !first.is_letter() && first != `_` {
+		return false
+	}
+	for i in 1 .. name.len {
+		c := name[i]
+		if !c.is_letter() && !c.is_digit() && c != `_` {
+			return false
+		}
+	}
+	return true
+}
+
 // default_project returns what `vcraft new` writes.
 pub fn default_project(name string) Project {
 	return Project{
 		name:            name
 		version:         '0.1.0'
-		module:          '${name}_native'
+		module:          '${module_name(name)}_native'
 		description:     'A Python extension written in V.'
 		license:         'MIT'
 		requires_python: '>=3.11'

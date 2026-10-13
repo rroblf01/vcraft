@@ -881,8 +881,10 @@ A project from scratch, end to end:
 ```console
 $ ./scripts/build-vcraft.sh
 $ vcraft new mypkg
-$ cd mypkg && vcraft develop
-$ python -c "import mypkg_native as m; print(m.greet('world'))"
+$ cd mypkg
+$ python -m venv .venv && source .venv/bin/activate
+$ vcraft develop
+$ python -c "import mypkg as m; print(m.greet('world'))"
 Hello, world!
 ```
 

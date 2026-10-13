@@ -184,6 +184,21 @@ def main() -> int:
         t.check("new refuses a _test module", proc.returncode != 0, proc.stdout)
         t.check("and writes nothing for it either", not (tmp / "okpkg").exists())
 
+        # PyPI names may contain a hyphen or uppercase; V module names allow neither, so
+        # the module is normalised rather than written through.
+        proc = vcraft("new", "my-extension", cwd=tmp)
+        t.check("new accepts a hyphenated name", proc.returncode == 0, proc.stderr.strip())
+        hyphen = tmp / "my-extension"
+        hyphen_toml = (hyphen / "vcraft.toml").read_text()
+        t.check("a hyphenated name gets a valid module",
+                'module = "my_extension_native"' in hyphen_toml, hyphen_toml)
+        t.check("and a valid test file", (hyphen / "tests" / "test_my_extension.py").exists(),
+                str(sorted(p.name for p in (hyphen / "tests").iterdir())))
+        proc = vcraft("new", "123pkg", cwd=tmp)
+        t.check("new refuses a name that is not an identifier", proc.returncode != 0,
+                proc.stdout)
+        t.check("and writes nothing for it", not (tmp / "123pkg").exists())
+
         # Inheritance, on a project of its own: a chain three deep, declared
         # subclass-first, which is the order that breaks anything relying on declaration
         # order, and the diagnostics for the ways `@[vc_base]` can be wrong.
@@ -576,6 +591,14 @@ def main() -> int:
                 (proc.stderr or proc.stdout).strip()[-300:])
 
         print("develop")
+        # Without an active virtualenv there is nowhere to install: fail before the
+        # build rather than after it, naming the fix.
+        no_venv = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+        proc = subprocess.run([str(VCRAFT), "develop"], cwd=project, env=no_venv,
+                              capture_output=True, text=True)
+        t.check("develop without a virtualenv fails", proc.returncode != 0, proc.stdout)
+        t.check("and says how to activate one", "activate" in proc.stderr,
+                proc.stderr.strip())
         target = tmp / "venv-develop"
         make_venv(target)
         env = dict(os.environ, VIRTUAL_ENV=str(target))

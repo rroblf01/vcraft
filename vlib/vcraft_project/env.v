@@ -81,7 +81,7 @@ pub fn python_in_environment() string {
 pub fn develop(p Project, result BuildResult) ! {
 	python := python_in_environment()
 	if !os.exists(python) {
-		return error('no interpreter at ${python}; activate a virtualenv first')
+		return error('no Python interpreter at ${python}; the virtualenv may be broken')
 	}
 	script := "import sysconfig;print(sysconfig.get_paths()['platlib'])"
 	site := os.exec([python, '-c', script])
@@ -121,7 +121,7 @@ pub fn develop(p Project, result BuildResult) ! {
 pub fn develop_editable(p Project, result BuildResult) ! {
 	python := python_in_environment()
 	if !os.exists(python) {
-		return error('no interpreter at ${python}; activate a virtualenv first')
+		return error('no Python interpreter at ${python}; the virtualenv may be broken')
 	}
 	script := "import sysconfig;print(sysconfig.get_paths()['platlib'])"
 	site := os.exec([python, '-c', script])

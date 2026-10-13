@@ -189,6 +189,13 @@ fn cmd_new(args Args) {
 		eprintln('error: name `${name}` ends in `_test`, and V treats `*_test` files as test files; pick a name that does not end in `_test`')
 		exit(2)
 	}
+	// PyPI allows `-`, `.` and uppercase in a name; V allows none of them in a module.
+	// `default_project` normalises the derived module, so this only fires on a `--module`
+	// that is itself unusable, or a name whose stem is not an identifier (`123ext`).
+	if !vcraft_project.is_valid_module(p.module) {
+		eprintln('error: `${p.module}` is not a valid module name; use letters, digits and underscores, not starting with a digit (pass --module to choose one)')
+		exit(2)
+	}
 	root := if args.positional.len > 1 { args.positional[1] } else { name }
 	written := vcraft_project.write_scaffold(root, p) or {
 		eprintln('error: ${err.msg()}')
@@ -220,6 +227,16 @@ fn cmd_build(args Args, develop bool) {
 		eprintln('    vcraft toolchain install')
 		eprintln('  or point VCRAFT_V at a V built from commit ${vcraft_project.v_commit[..7]}')
 		exit(1)
+	}
+	// `develop` installs into the active virtualenv, which is VIRTUAL_ENV. Checked
+	// before the build rather than after: without it the build runs, then the install
+	// fails, and the error names the interpreter it could not find instead of the
+	// missing virtualenv.
+	if develop && os.getenv('VIRTUAL_ENV').len == 0 {
+		eprintln('error: `vcraft develop` needs an active virtualenv')
+		eprintln('  create and activate one:')
+		eprintln('    python -m venv .venv && source .venv/bin/activate')
+		exit(2)
 	}
 	mut p := vcraft_project.load(root) or {
 		eprintln('error: ${err.msg()}')

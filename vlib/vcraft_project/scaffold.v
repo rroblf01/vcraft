@@ -56,7 +56,7 @@ pub fn scaffold(p Project) []ScaffoldFile {
 		content: demo_main(p)
 	}
 	files << ScaffoldFile{
-		path:    'tests/test_${p.name}.py'
+		path:    'tests/test_${python_package(p)}.py'
 		content: example_test(p)
 	}
 	files << ScaffoldFile{
@@ -170,7 +170,7 @@ fn example_source(p Project) string {
 // A distribution name is not a Python identifier when it carries a hyphen or a dot
 // (`my-ext` is a valid PyPI name and not a valid module), so those become underscores.
 fn python_package(p Project) string {
-	return p.name.replace('-', '_').replace('.', '_')
+	return module_name(p.name)
 }
 
 // import_name is the name a user imports: the re-export package when the scaffold
