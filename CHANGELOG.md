@@ -26,6 +26,19 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **Capsules.** `vcraft.new_handle(value, destructor)` wraps an arbitrary native pointer in
   a `PyCapsule` and `vcraft.handle_data(capsule)` recovers it, as the escape hatch next to
   `@[vc_raw]` for state that is not a plain slice.
+- **`@[vc_static]` and `@[vc_raw]` methods.** A static method is written
+  `fn Class.name(...)` with no receiver and becomes a Python `staticmethod`; `@[vc_raw]` is
+  now allowed on a method, where the arguments arrive as borrowed `PyObject`s and the
+  receiver still works on the instance's state.
+- **Complex numbers.** `math.complex.Complex` (or `complex.Complex`) marshals to and from a
+  Python `complex`, and a real is accepted where a complex is expected.
+- **Authors and maintainers.** `[package] authors` and `maintainers` in `vcraft.toml` reach
+  `METADATA`, and a licence file at the project root travels in the wheel and the sdist.
+- **Multi-line arrays in `vcraft.toml`.** A `classifiers` or `dependencies` list may span
+  several lines instead of one very long one.
+- **Element-typed sequence stubs.** Generated stubs type `[]int` as `Sequence[int]` rather
+  than `Sequence[Any]`.
+- **`ty` configuration** in the scaffold, beside the pyright and mypy hints.
 
 ### Fixed
 
@@ -41,6 +54,18 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **Constructor name matching** now accepts the snake-cased spelling of a multi-word class,
   so `TallyBuffer` is built by `new_tally_buffer` as well as `new_tallybuffer`.
 - **`PyExc.buffer_error`** added, so a buffer-protocol failure can name `BufferError`.
+- **`vcraft develop` builds against the active virtualenv's interpreter.** It installed
+  into the virtualenv but compiled with whatever `python3` was first on `PATH`, so the
+  extension could be built for one CPython and installed into another.
+- **Interpreter probes read past stderr.** The version and platform queries captured
+  stdout and stderr together, so a stray warning became the answer and a working
+  interpreter was reported as unsupported.
+- **The editable pointer is silent and `vcraft clean` removes it.** A `.pth` naming a
+  removed build directory no longer warns on every interpreter start, and cleaning drops
+  the pointer and its `.dist-info` from the active environment.
+- **`vcraft toolchain` reports the compiler it actually resolved** and a build warns when
+  it is not the pinned commit, instead of printing a toolchain directory that may not
+  exist.
 
 ## [1.1.1] - 2026-10-13
 
