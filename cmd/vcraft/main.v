@@ -228,6 +228,19 @@ fn cmd_build(args Args, develop bool) {
 		eprintln('  or point VCRAFT_V at a V built from commit ${vcraft_project.v_commit[..7]}')
 		exit(1)
 	}
+	// A silently different V is a landmine: the flags and codegen vcraft relies on were
+	// verified against the pinned commit, and a release too old for them fails in a way
+	// that looks like a vcraft bug. Warn rather than refuse, so an expert who chose
+	// another V on purpose is not blocked.
+	if !args.flags['dry-run'] && !vcraft_project.v_matches_pin(v) {
+		eprintln('warning: V is not the pinned commit ${vcraft_project.v_commit[..7]}')
+		eprintln('  resolved  ${v}')
+		reported := vcraft_project.v_reported_commit(v)
+		if reported.len > 0 {
+			eprintln('  reports   commit ${reported}')
+		}
+		eprintln('  builds may fail or differ; run `vcraft toolchain install` to pin it')
+	}
 	// `develop` installs into the active virtualenv, which is VIRTUAL_ENV. Checked
 	// before the build rather than after: without it the build runs, then the install
 	// fails, and the error names the interpreter it could not find instead of the
@@ -377,7 +390,13 @@ fn cmd_info(args Args) {
 		}
 		print(target.describe())
 	}
-	println('v                ${vcraft_project.v_compiler()}')
+	vpath := vcraft_project.v_compiler()
+	vstatus := if vcraft_project.v_matches_pin(vpath) {
+		'the pinned commit'
+	} else {
+		'not the pinned commit'
+	}
+	println('v                ${vpath} (${vstatus})')
 	println('vlib             ${vcraft_project.vlib_path()}')
 	println('environment      ${vcraft_project.active_environment()}')
 	println('dependencies     ${p.dependencies.str()}')
@@ -518,16 +537,26 @@ fn cmd_toolchain(args Args) {
 			v := vcraft_project.v_compiler()
 			found := command_exists(v)
 			println('pinned commit    ${vcraft_project.v_commit}')
-			println('toolchain dir    ${vcraft_project.toolchain_dir()}')
+			// The pinned install directory is reported only through what is actually
+			// there: printing its path regardless made it look installed when it was not.
+			pinned := vcraft_project.installed_v()
+			if pinned.len > 0 {
+				println('pinned install   ${pinned}')
+			} else {
+				println('pinned install   not installed; run `vcraft toolchain install`')
+			}
 			if !found {
-				println('compiler         none found; run `vcraft toolchain install`')
+				println('compiler         none found')
 				exit(1)
 			}
 			println('compiler         ${v}')
+			reported := vcraft_project.v_reported_commit(v)
 			if vcraft_project.v_matches_pin(v) {
 				println('status           the pinned commit')
+			} else if reported.len > 0 {
+				println('status           commit ${reported}, not the pinned ${vcraft_project.v_commit[..7]}; run `vcraft toolchain install`')
 			} else {
-				println('status           not the pinned commit; builds may fail. `vcraft toolchain install` builds the pinned one')
+				println('status           could not read a commit from `${v} version`')
 			}
 		}
 		'install' {
