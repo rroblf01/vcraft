@@ -672,8 +672,9 @@ pub fn emit_trampoline(f Func) string {
 	if has_value {
 		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
 	}
-	// A raw function's result is a pointer the V side already owns, so it is
-	// handed back without touching the reference count.
+	// A raw function's result is a borrowed pointer, so `return_expr` takes a reference
+	// of its own on it before CPython receives it; the V side does not own the caller's
+	// reference.
 	//
 	// `@[vc_nogil]` replaces the guard with the release and its own pair of guards: the
 	// recover defer first so it runs last, already holding the GIL, and the restore
@@ -745,10 +746,9 @@ pub fn emit_trampoline(f Func) string {
 
 // return_expr is the final `return` of a trampoline.
 //
-// A raw result is a `voidptr` the V side already owns a reference to, so it is
-// wrapped as-is without touching the reference count. Everything else is a real
-// V value that has to be boxed. `v_type` is the declared value type, which a
-// sequence needs to choose how each element is boxed.
+// A raw result is a `voidptr` handed over borrowed, so a reference of the caller's own
+// is taken on it. Everything else is a real V value that has to be boxed. `v_type` is
+// the declared value type, which a sequence needs to choose how each element is boxed.
 pub fn return_expr(strategy Strategy, value string, raw bool, v_type string) string {
 	if raw {
 		// A raw function hands back a borrowed pointer, so the wrapper takes the
