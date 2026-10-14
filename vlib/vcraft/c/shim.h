@@ -168,6 +168,10 @@ PyObject *vpy_exc_zero_division_error(void);
 PyObject *vpy_exc_arithmetic_error(void);
 PyObject *vpy_exc_buffer_error(void);
 int vpy_is_complex(void *o);
+int vpy_slot_bf_getbuffer(void);
+int vpy_slot_bf_releasebuffer(void);
+int vpy_slot_mod_exec(void);
+int vpy_slot_mod_create(void);
 
 // Fast paths for the common argument types, and an instance check that borrows.
 int vpy_exact_long_as_i64(PyObject *o, long long *out);

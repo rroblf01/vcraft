@@ -139,7 +139,7 @@ pub fn (mut m Module) seal() PyObj {
 			// below reports success while every attribute is missing.
 			m.def.m_methods = unsafe { nil }
 			m.slots << PyModuleDefSlot{
-				slot:  mod_exec
+				slot:  i32(C.vpy_slot_mod_exec())
 				value: m.exec_fn
 			}
 			m.slots << PyModuleDefSlot{}

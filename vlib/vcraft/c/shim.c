@@ -757,10 +757,48 @@ PyObject *vpy_exc_buffer_error(void) {
 
 // vpy_is_complex reports whether an object is a Python complex.
 //
-// `PyComplex_Check` is a macro over `PyObject_TypeCheck`, which V cannot expand against
-// an opaque type, so the test lives here with the concrete header in scope.
+// By type name rather than by `PyComplex_Check`, which is a macro over
+// `PyObject_TypeCheck` and does not compile under `Py_LIMITED_API`: at 3.11 and above it
+// wraps itself and V's preprocessor output trips the C compiler, the same problem
+// `vpy_type_check` was written to sidestep. `PyType_GetName` is stable ABI, so the same
+// code serves an abi3 and a full build.
 int vpy_is_complex(void *o) {
-	return o != NULL && PyComplex_Check((PyObject *)o);
+	if (o == NULL) {
+		return 0;
+	}
+	char buf[32];
+	int n = vpy_type_name_into((PyObject *)o, buf, sizeof(buf));
+	if (n < 0) {
+		// A type with no name is not a complex, and the pending error is not the
+		// caller's: the reader falls through to the float path, which reports the type
+		// it got.
+		PyErr_Clear();
+		return 0;
+	}
+	return strcmp(buf, "complex") == 0;
+}
+
+// The buffer-protocol slot ids, read from the headers.
+//
+// PEP 820 renumbered these in CPython 3.15: `Py_bf_getbuffer` was 1 and is 88, and the
+// old number survives only as an alias for a limited-API build below 3.15. V cannot read
+// a macro, so the value is asked for here and the build it was compiled with decides it.
+int vpy_slot_bf_getbuffer(void) {
+	return Py_bf_getbuffer;
+}
+
+int vpy_slot_bf_releasebuffer(void) {
+	return Py_bf_releasebuffer;
+}
+
+// The multi-phase module slot ids, for the same reason: PEP 820 renumbers them too, and
+// an abi3 build whose floor is 3.15 reads the new values.
+int vpy_slot_mod_exec(void) {
+	return Py_mod_exec;
+}
+
+int vpy_slot_mod_create(void) {
+	return Py_mod_create;
 }
 
 PyObject *vpy_exc_overflow_error(void) {

@@ -616,13 +616,18 @@ pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voi
 	// The buffer protocol, both halves or neither. `PyBuffer_FillInfo` takes a reference
 	// on the exporter, so a type that acquires a view has to release it: a lone
 	// `bf_getbuffer` would leak the reference on every `memoryview`.
+	//
+	// The slot ids come from the headers rather than from a constant: PEP 820 renumbered
+	// the buffer slots in CPython 3.15 (`Py_bf_getbuffer` moved from 1 to 88), and a
+	// build without the limited API reads the new number. `PyType_FromSpec` wants
+	// whichever one the interpreter was built with.
 	if getbuffer != unsafe { nil } && releasebuffer != unsafe { nil } {
 		slots << PyTypeSlot{
-			slot:  slot_bf_getbuffer
+			slot:  i32(C.vpy_slot_bf_getbuffer())
 			value: getbuffer
 		}
 		slots << PyTypeSlot{
-			slot:  slot_bf_releasebuffer
+			slot:  i32(C.vpy_slot_bf_releasebuffer())
 			value: releasebuffer
 		}
 	}

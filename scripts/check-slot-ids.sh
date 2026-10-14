@@ -32,8 +32,6 @@ int main(void) {
 	printf("slot_richcompare %d\n", Py_tp_richcompare);
 	printf("slot_hash %d\n", Py_tp_hash);
 	printf("slot_str %d\n", Py_tp_str);
-	printf("slot_bf_getbuffer %d\n", Py_bf_getbuffer);
-	printf("slot_bf_releasebuffer %d\n", Py_bf_releasebuffer);
 	printf("sizeof_type_spec %zu\n", sizeof(PyType_Spec));
 	printf("sizeof_type_slot %zu\n", sizeof(PyType_Slot));
 	return 0;
@@ -61,8 +59,6 @@ slot_iter 62
 slot_iternext 63
 slot_hash 59
 slot_str 70
-slot_bf_getbuffer 1
-slot_bf_releasebuffer 2
 sizeof_type_spec 32
 sizeof_type_slot 16
 SRC

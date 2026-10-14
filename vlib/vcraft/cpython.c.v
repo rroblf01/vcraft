@@ -267,11 +267,12 @@ fn C.PyModule_AddFunctions(module voidptr, functions voidptr) int
 
 
 
-// Py_mod_exec is the multi-phase slot id, and Py_mod_create is the one before it. Both
-// are stable ABI, unlike the struct fields PyModule_Create2 needs.
-pub const mod_exec = i32(2)
+// Py_mod_exec is the multi-phase slot id and Py_mod_create is the one before it. They are
+// macros, and PEP 820 renumbered them in CPython 3.15, so they come from the headers
+// through the shim rather than as constants.
+fn C.vpy_slot_mod_exec() int
 
-pub const mod_create = i32(1)
+fn C.vpy_slot_mod_create() int
 
 fn C.PyModule_GetDict(m voidptr) voidptr
 
@@ -443,12 +444,13 @@ pub const slot_members = i32(72)
 
 pub const slot_getset = i32(73)
 
-// The two buffer-protocol slots. They are not `Py_tp_*`: `PyType_FromSpec` routes them
-// into `tp_as_buffer`, and the numbers are outside the type-slot range. Written down
-// here for the same reason as the others, and checked by `scripts/check-slot-ids.sh`.
-pub const slot_bf_getbuffer = i32(1)
+// The two buffer-protocol slots are not written down as constants like the `Py_tp_*`
+// ones: they are macros whose value PEP 820 changed in CPython 3.15, so they come from
+// the headers through the shim. A build with the limited API below 3.15 keeps the old
+// value (the alias the headers define for it); a full build reads the new one.
+fn C.vpy_slot_bf_getbuffer() int
 
-pub const slot_bf_releasebuffer = i32(2)
+fn C.vpy_slot_bf_releasebuffer() int
 
 // Py_TPFLAGS_BASETYPE, required before a Python class may be subclassed.
 pub const tpflags_basetype = u32(1 << 10)
