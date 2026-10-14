@@ -263,7 +263,18 @@ fn cmd_build(args Args, develop bool) {
 		root:        root
 		out_dir:     if args.options['out-dir'] != '' { args.options['out-dir'] } else { 'dist' }
 		release:     args.flags['release']
-		interpreter: args.options['interpreter']
+		// `develop` installs into the active virtualenv, so it has to build against that
+		// virtualenv's interpreter: with the venv not first on PATH, `python3` is a
+		// different CPython and the extension cannot be imported by the interpreter it
+		// was installed into. A plain `build` keeps the PATH default, so a PEP 517 build
+		// in an isolated environment is not redirected at whatever venv is active.
+		interpreter: if args.options['interpreter'] != '' {
+			args.options['interpreter']
+		} else if develop {
+			vcraft_project.python_in_environment()
+		} else {
+			''
+		}
 		platform:    args.options['platform']
 		target:      args.options['target']
 		manylinux:   args.options['manylinux']
@@ -345,9 +356,14 @@ fn cmd_info(args Args) {
 	if p.gc_free_space_divisor != 2 {
 		println('gc-free-space-divisor ${p.gc_free_space_divisor}')
 	}
-	println('python           ${vcraft_project.interpreter_version("python3")}')
-	println('extension        ${vcraft_project.extension_suffix("python3")}')
-	println('platform         ${vcraft_project.platform_tag("python3")}')
+	// The interpreter a `develop` would target: the active virtualenv's, or the one on
+	// PATH when there is none. The path is printed on its own line so a build against
+	// the wrong Python is visible here rather than at import time.
+	interp := vcraft_project.python_in_environment()
+	println('python           ${vcraft_project.interpreter_version(interp)}')
+	println('interpreter      ${interp}')
+	println('extension        ${vcraft_project.extension_suffix(interp)}')
+	println('platform         ${vcraft_project.platform_tag(interp)}')
 	if args.options['target'] != '' {
 		// The target is resolved the same way a build resolves it, so `info` answers
 		// the question "what would `--target X` do" without compiling anything.
