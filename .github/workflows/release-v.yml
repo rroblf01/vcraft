@@ -1,0 +1,95 @@
+name: release-v
+
+# Publishes the prebuilt V compiler this repository pins, so CI and releases can
+# download it instead of building it from source on every runner. One archive per
+# runner platform, attached to a release tagged `v/<commit>`: a download takes
+# seconds where the source build takes five to seven minutes.
+#
+# Runs when the pin in ci.yml moves, and on demand. It is an optimisation, not a
+# dependency: ci.yml and release-vcraft.yml fall back to building from source when an
+# archive is missing, so a first run or a failed publish only costs time.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/ci.yml
+      - .github/workflows/release-v.yml
+
+permissions:
+  contents: write
+
+# The same pins as ci.yml, docker/* and the vcraft-action.
+env:
+  V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
+  VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One archive per platform CI actually runs on. Intel macOS is left out
+          # because no runner in these workflows is one; the pin build itself is
+          # architecture-independent.
+          - os: ubuntu-latest
+            asset: linux-x86_64
+          - os: ubuntu-24.04-arm
+            asset: linux-aarch64
+          - os: macos-26
+            asset: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: build the V compiler from source
+        run: |
+          git init -q /tmp/v-src
+          cd /tmp/v-src
+          git remote add origin https://github.com/vlang/v.git
+          git fetch -q --depth 1 origin "$V_COMMIT"
+          git checkout -q FETCH_HEAD
+          git clone https://github.com/vlang/vc.git vc
+          (cd vc && git checkout -q "$VC_COMMIT")
+          make fresh_tcc
+          make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+          ./v version
+
+      - name: package it
+        # The compiler finds `vlib` and `thirdparty` beside its own binary, so the
+        # archive is the whole checkout minus the two directories a build only needs
+        # once: the bootstrap C sources and the git history.
+        run: |
+          cd /tmp/v-src
+          rm -rf vc .git
+          tar -czf "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz" .
+          ls -l "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz"
+
+      - name: upload the archive
+        uses: actions/upload-artifact@v6
+        with:
+          name: v-${{ matrix.asset }}
+          path: ${{ runner.temp }}/v-${{ env.V_COMMIT }}-${{ matrix.asset }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: download the archives
+        uses: actions/download-artifact@v7
+        with:
+          path: assets
+          pattern: v-*
+
+      - name: create or update the release
+        # One publish step rather than one per matrix cell: several cells racing to
+        # create the same release is how a tag ends up with only some of its assets.
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v/${{ env.V_COMMIT }}
+          name: V ${{ env.V_COMMIT }}
+          body: |
+            The V compiler vcraft pins for this commit, built from source on each
+            runner platform. `ci.yml` and `release-vcraft.yml` download these instead
+            of building V, and fall back to a source build when one is missing.
+          files: assets/**/*.tar.gz
+          fail_on_unmatched_files: true

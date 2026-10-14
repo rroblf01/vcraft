@@ -32,18 +32,43 @@ env:
   VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
 
 jobs:
-  # The V compiler, once per runner OS, before anything else starts. Without
-  # this job every cell restored-or-built it on its own: when the cache key
-  # changed, all twenty cells missed at once and each spent five to six minutes
-  # building the same compiler. Saved explicitly, so the cache is written even
-  # when a later suite fails, and as soon as the build is done.
+  # The V compiler, once per runner OS, before anything else starts. The suites and
+  # the CLI job restore the same cache this writes, so the compiler is built (or
+  # downloaded) once and every cell gets it.
+  #
+  # It comes from the release `v/<commit>` published by release-v.yml: a download
+  # takes seconds where the source build takes five to six minutes. The build is
+  # still here, behind the download, because the release is an optimisation: an
+  # unpublished archive, or a run before the first release, falls back to it rather
+  # than failing.
   v-compiler:
     name: V compiler (${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-26]
+        include:
+          - os: ubuntu-latest
+            asset: linux-x86_64
+          - os: ubuntu-24.04-arm
+            asset: linux-aarch64
+          - os: macos-26
+            asset: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
+      - name: download the prebuilt compiler
+        id: v-prebuilt
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/v-src
+          gh release download "v/$V_COMMIT" \
+            --pattern "v-$V_COMMIT-${{ matrix.asset }}.tar.gz" \
+            --dir /tmp/v-dl --clobber
+          tar -xzf "/tmp/v-dl/v-$V_COMMIT-${{ matrix.asset }}.tar.gz" -C /tmp/v-src
+          /tmp/v-src/v version
+
+      # Looked up, not restored: on a hit the compiler is already the one the suites
+      # restore, and there is nothing to do here but leave the cache for them.
       - name: look for a cached compiler
         id: v-cache
         uses: actions/cache/restore@v5
@@ -53,8 +78,9 @@ jobs:
           lookup-only: true
 
       - name: build the V compiler from source
-        if: steps.v-cache.outputs.cache-hit != 'true'
+        if: steps.v-prebuilt.outcome != 'success' && steps.v-cache.outputs.cache-hit != 'true'
         run: |
+          rm -rf /tmp/v-src
           git init -q /tmp/v-src
           cd /tmp/v-src
           git remote add origin https://github.com/vlang/v.git
@@ -69,6 +95,8 @@ jobs:
           # of ~2 GB, which is what every job restores on a cache hit.
           rm -rf vc
 
+      # The cache the other jobs restore. A download fills it too, so a run that used
+      # the release still hands the compiler to the suites.
       - name: save the compiler
         if: steps.v-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5

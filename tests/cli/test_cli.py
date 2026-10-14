@@ -1712,9 +1712,13 @@ print("ok" if not bad else bad)
                                      "tests/cli/test_cli.py"]),
                     "a suite CI never runs is a suite that rots")
             ci_text = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
-            t.check("CI builds V from a pinned commit, not a release",
-                    "V_COMMIT" in ci_text and "releases/download" not in ci_text,
-                    "no V release is newer than the flags vcraft passes")
+            # The compiler comes from the pinned commit, either as the archive
+            # release-v.yml publishes or as the source build kept behind it; never from
+            # a vlang release, none of which is new enough for the flags vcraft passes.
+            t.check("CI uses the pinned V, never a vlang release binary",
+                    "V_COMMIT" in ci_text and "releases/download" not in ci_text
+                    and "make fresh_tcc" in ci_text,
+                    ci_text[-500:])
             t.check("CI covers free-threading with the GIL disabled",
                     "PYTHON_GIL=0" in ci_text and "3.13t" in ci_text, ci_text[-500:])
             images = yaml.safe_load(
@@ -1886,6 +1890,7 @@ print("ok" if not bad else bad)
         pin_v = re.search(r"pub const v_commit = '([0-9a-f]{40})'", toolchain_v).group(1)
         pin_vc = re.search(r"pub const vc_commit = '([0-9a-f]{40})'", toolchain_v).group(1)
         for place in [".github/workflows/ci.yml", ".github/workflows/release-vcraft.yml",
+                      ".github/workflows/release-v.yml",
                       "actions/vcraft-action/action.yml", "docker/manylinux.Dockerfile",
                       "docker/musllinux.Dockerfile"]:
             text = (ROOT / place).read_text()
