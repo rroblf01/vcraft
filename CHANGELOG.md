@@ -7,6 +7,8 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-14
+
 ### Added
 
 - **Persistent native buffers in `@[vc_class]`.** A field annotated `@[vc_buffer]` holds a

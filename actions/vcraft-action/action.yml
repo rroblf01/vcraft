@@ -6,9 +6,9 @@ branding:
 
 inputs:
   vcraft-version:
-    description: The vcraft release to install from PyPI, e.g. v1.1.1.
+    description: The vcraft release to install from PyPI, e.g. v1.2.0.
     required: false
-    default: v1.1.1
+    default: v1.2.0
   args:
     description: The vcraft command to run, e.g. "build --release".
     required: false

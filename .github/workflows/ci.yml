@@ -289,7 +289,7 @@ jobs:
           - name: project-wheel
             suites: project/check_toml wheel/test_wheel
     env:
-      MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:1.1.1
+      MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:1.2.0
     steps:
       - uses: actions/checkout@v5
 
