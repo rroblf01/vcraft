@@ -537,6 +537,52 @@ def main() -> int:
         t.check("the rebuild is identical", wheel.read_bytes() == first,
                 "a build that is not reproducible makes a diff meaningless")
 
+        print("pyproject.toml is merged, not overwritten")
+        # A project's own tables must survive a build: uv keeps [dependency-groups] in
+        # pyproject.toml and refuses it anywhere else, and [tool.*] config would otherwise
+        # have to be split into separate files. Only vcraft's [build-system] is managed.
+        merge_manifest = project / "pyproject.toml"
+        merge_saved = merge_manifest.read_text()
+        try:
+            merge_manifest.write_text(merge_saved +
+                '\n[project]\nname = "mypkg"\ndescription = "custom".\n'
+                '\n[dependency-groups]\ndev = ["pytest"]\n'
+                '\n[tool.ruff]\nline-length = 100\n')
+            proc = vcraft("build", "--out-dir", str(tmp / "out-merge"), cwd=project)
+            t.check("a build with extra tables succeeds", proc.returncode == 0,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+            merged = merge_manifest.read_text()
+            t.check("[dependency-groups] survives a build",
+                    "[dependency-groups]" in merged and 'dev = ["pytest"]' in merged, merged)
+            t.check("[project] survives a build",
+                    '[project]\nname = "mypkg"' in merged, merged)
+            t.check("a [tool.*] table survives a build",
+                    "[tool.ruff]" in merged and "line-length = 100" in merged, merged)
+            t.check("the scaffold's [tool.pyright] is still there",
+                    "[tool.pyright]" in merged, merged)
+            t.check("the managed [build-system] is still correct",
+                    'build-backend = "vcraft_build"' in merged, merged)
+            # A foreign [build-system] is replaced, and the tables around it kept.
+            merge_manifest.write_text(
+                '[project]\nname = "mypkg"\n\n[build-system]\n'
+                'requires = ["setuptools"]\nbuild-backend = "setuptools.build_meta"\n')
+            proc = vcraft("build", "--out-dir", str(tmp / "out-merge2"), cwd=project)
+            replaced = merge_manifest.read_text()
+            t.check("a foreign build-system is replaced",
+                    proc.returncode == 0 and 'build-backend = "vcraft_build"' in replaced
+                    and "setuptools" not in replaced, replaced)
+            t.check("and the project tables around it stay",
+                    '[project]\nname = "mypkg"' in replaced, replaced)
+            # A project with no pyproject.toml at all gets the full template.
+            merge_manifest.unlink()
+            proc = vcraft("build", "--out-dir", str(tmp / "out-merge3"), cwd=project)
+            t.check("a missing pyproject.toml is created from the template",
+                    proc.returncode == 0
+                    and 'build-backend = "vcraft_build"' in merge_manifest.read_text()
+                    and "[tool.pyright]" in merge_manifest.read_text(), "")
+        finally:
+            merge_manifest.write_text(merge_saved)
+
         print("an explicit native target")
         # Naming the host's own target must change nothing: same tag, same suffix, same
         # bytes. If the explicit path diverged from the default one, this is where it
@@ -610,6 +656,19 @@ def main() -> int:
                 "installed into" in proc.stdout, proc.stdout)
         t.check("develop is editable by default", "(editable)" in proc.stdout,
                 proc.stdout)
+        # `develop` goes through the same build path, so its pyproject.toml write merges
+        # too: a development loop must not eat the project's tables either.
+        dev_manifest = project / "pyproject.toml"
+        dev_saved = dev_manifest.read_text()
+        try:
+            dev_manifest.write_text(dev_saved + '\n[dependency-groups]\ndev = ["pytest"]\n')
+            proc = subprocess.run([str(VCRAFT), "develop"], cwd=project, env=env,
+                                  capture_output=True, text=True)
+            t.check("[dependency-groups] survives develop",
+                    proc.returncode == 0 and "[dependency-groups]" in dev_manifest.read_text(),
+                    dev_manifest.read_text())
+        finally:
+            dev_manifest.write_text(dev_saved)
         platlib = next((target / "lib").glob("python*/site-packages"))
         pth = platlib / "_mypkg_editable.pth"
         t.check("an editable pointer is installed", pth.exists(),
@@ -1367,6 +1426,31 @@ print("ok" if not bad else bad)
             proc = vcraft("build", cwd=project)
             t.check(f"{label} is a diagnostic", proc.returncode != 0 and needle in proc.stderr,
                     (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved)
+
+        print("buffer and constructor diagnostics")
+        native.write_text(saved + "\n@[vc_class]\npub struct BadBuf {\nmut:\n"
+                          "\t@[vc_field] x int\n\t@[vc_buffer] y int\n}\n")
+        proc = vcraft("build", cwd=project)
+        t.check("a buffer field that is not a slice is a diagnostic",
+                proc.returncode != 0 and "must be a slice" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved + "\n@[vc_class]\npub struct BadElem {\nmut:\n"
+                          "\t@[vc_buffer] y []string\n}\n")
+        proc = vcraft("build", cwd=project)
+        t.check("a buffer of non-scalars is a diagnostic",
+                proc.returncode != 0 and "has no native buffer rule" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved + "\n"
+                          "@[vc_class]\npub struct BaseArg {\nmut:\n\t@[vc_field] a int\n}\n"
+                          "@[vc_fn]\npub fn new_basearg(n int) &BaseArg { return &BaseArg{} }\n"
+                          "@[vc_class]\n@[vc_base(BaseArg)]\npub struct SubArg {\nmut:\n"
+                          "\t@[vc_field] b int\n}\n"
+                          "@[vc_fn]\npub fn new_subarg(n int) &SubArg { return &SubArg{} }\n")
+        proc = vcraft("build", cwd=project)
+        t.check("an argument-taking base constructor is a diagnostic",
+                proc.returncode != 0 and "argument-free" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
         native.write_text(saved)
 
         print("sdist")
