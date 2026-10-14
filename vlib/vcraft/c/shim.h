@@ -166,6 +166,7 @@ PyObject *vpy_exc_system_error(void);
 PyObject *vpy_exc_overflow_error(void);
 PyObject *vpy_exc_zero_division_error(void);
 PyObject *vpy_exc_arithmetic_error(void);
+PyObject *vpy_exc_buffer_error(void);
 
 // Fast paths for the common argument types, and an instance check that borrows.
 int vpy_exact_long_as_i64(PyObject *o, long long *out);

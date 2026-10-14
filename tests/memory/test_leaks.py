@@ -49,6 +49,11 @@ SCENARIOS = {
     "object out, owned": ("", "m.boxed(12345)", 100_000),
     "object in, borrowed": ("obj = object()", "m.identity(obj)", 100_000),
     "instances created and freed": ("", "m.Counter().increment()", 100_000),
+    # A native buffer is allocated in the constructor and freed at dealloc: a free that
+    # is skipped, or run twice, shows up as growth or a crash over this many.
+    "native buffers created and freed": ("", "m.Vector(64)", 50_000),
+    "native buffers resized": ("v = m.Vector(64)", "v.resize(128)", 50_000),
+    "capsules created and freed": ("", "m.new_box(7)", 50_000),
     "reference cycles": (
         "",
         "a = m.Pair()\nb = m.Pair()\na.link(b)\nb.link(a)\ndel a, b",

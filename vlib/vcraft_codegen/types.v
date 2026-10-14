@@ -136,10 +136,15 @@ pub fn describe(v_type string) string {
 pub fn split_result(declared string) (string, bool) {
 	text := declared.trim_space()
 	if text.starts_with('!') {
-		return text[1..].trim_space(), true
+		// `!` with nothing after it is `!void`. Leaving the result empty would send it
+		// to `lookup('')`, which reads as `voidptr`/`.pyobj`, and the wrapper would then
+		// try to box a value the function never returned.
+		inner := text[1..].trim_space()
+		return if inner.len == 0 { 'void' } else { inner }, true
 	}
 	if text.ends_with('!') {
-		return text[..text.len - 1].trim_space(), true
+		inner := text[..text.len - 1].trim_space()
+		return if inner.len == 0 { 'void' } else { inner }, true
 	}
 	return text, false
 }

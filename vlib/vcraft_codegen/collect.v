@@ -804,10 +804,37 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			continue
 		}
 		block := read_inline(lines, field_line(ast, f.name))
-		if attr_field !in block.attrs && attr_ref !in block.attrs {
+		if attr_field !in block.attrs && attr_ref !in block.attrs && attr_buffer !in block.attrs {
 			continue
 		}
 		f.doc = block.doc
+		if attr_buffer in block.attrs {
+			// A buffer is a slice of scalars. A slice of anything else would be a pointer
+			// V's collector cannot follow into CPython-owned memory, which is the case
+			// the buffer exists to avoid, so it is refused with the element named.
+			if !f.v_type.trim_space().starts_with('[]') {
+				report(mut p, path, astquery.Declaration{
+					name:      f.name
+					type_name: f.v_type
+					line:      field_line(ast, f.name)
+					column:    1
+				}, 'error: `@[vc_buffer] ${struct_name}.${f.name}` has type `${f.v_type}`, but a native buffer must be a slice: declare it `[]int`, `[]f64` or another slice of a scalar')
+				continue
+			}
+			element := element_type(f.v_type)
+			if !is_scalar_type(element) {
+				report(mut p, path, astquery.Declaration{
+					name:      f.name
+					type_name: f.v_type
+					line:      field_line(ast, f.name)
+					column:    1
+				}, 'error: `@[vc_buffer] ${struct_name}.${f.name}` holds `${element}`, which has no native buffer rule; a buffer holds bool, integers or floats')
+				continue
+			}
+			f.buffer = true
+			exposed << f
+			continue
+		}
 		if attr_ref in block.attrs {
 			f.ref = true
 			f.ref_target = block.args[attr_ref]
@@ -989,21 +1016,34 @@ fn link_classes(mut p Project) {
 	link_iterators(mut p)
 	mut ctors := []string{}
 	for i, c in p.classes {
-		// V spells a constructor `new_TypeName` in snake case, so the lookup
-		// ignores case rather than guessing at a second naming convention.
-		wanted := 'new_${c.name}'.to_lower()
+		// A constructor is named after its class, and V snake-cases a multi-word type, so
+		// `TallyBuffer` is built by `new_tally_buffer`. Matching with the underscores
+		// removed accepts both spellings rather than guessing which one the user wrote.
+		wanted := ('new_' + c.name).to_lower().replace('_', '')
 		for f in p.funcs {
-			if f.name.to_lower() == wanted {
+			if f.name.to_lower().replace('_', '') == wanted {
 				p.classes[i].ctor_fn = f.name
+				p.classes[i].ctor_params = f.params
 				ctors << f.name
-				if f.params.len > 0 {
-					p.diagnostics << Diagnostic{
-						file:    f.origin
-						line:    f.line
-						column:  f.column
-						message: 'error: constructor `${f.name}` takes ${f.params.len} argument(s); a class constructor must take none, because it runs in `tp_new` before Python has set anything up'
-					}
-				}
+			}
+		}
+	}
+	// A constructor may take arguments, but only where there is nothing to forward them
+	// to. A derived class runs its base's constructor with no arguments -- `newstate`
+	// builds the base's half of the state on its own -- so a base constructor that wants
+	// arguments has nowhere to get them from when a subclass is built.
+	for i, c in p.classes {
+		if c.ctor_params.len == 0 {
+			continue
+		}
+		for base := c.base_index; base >= 0; base = p.classes[base].base_index {
+			if p.classes[base].ctor_params.len > 0 {
+				report(mut p, c.origin, astquery.Declaration{
+					name:   c.name
+					line:   c.line
+					column: c.column
+				}, 'error: `${c.name}` takes constructor arguments and its base `${p.classes[base].name}` does too; a base constructor runs with no arguments from a subclass, so arguments are allowed only on a class whose bases are all argument-free')
+				break
 			}
 		}
 	}
@@ -1012,14 +1052,14 @@ fn link_classes(mut p Project) {
 	}
 	link_iterators(mut p)
 	// A `new_X` function is the class's `tp_new`, not a module-level callable. It
-	// returns `&X`, which has no marshalling rule of its own, so it is dropped from
-	// the exported set along with any diagnostic raised for its signature.
+	// returns `&X`, which has no marshalling rule of its own, so that one diagnostic is
+	// dropped. A diagnostic about its parameters is kept: those are the user's to fix.
 	p.funcs = p.funcs.filter(it.name !in ctors)
 	mut kept := []Diagnostic{}
 	for d in p.diagnostics {
 		mut skip := false
 		for ctor in ctors {
-			if d.message.contains('`' + ctor + '`') {
+			if d.message.contains('`' + ctor + '`') && d.message.contains('return type') {
 				skip = true
 			}
 		}

@@ -284,6 +284,38 @@ scalars may live in it. A V `string` is a pointer into V's heap, and V's collect
 does not scan memory CPython allocated, so the string would be reclaimed while
 Python still holds it. A class that needs strings marshals them through a method.
 
+## Persistent native buffers
+
+A `@[vc_buffer]` field is the exception to "scalars only", and it is a narrow one: a
+`[]T` of scalars whose backing is allocated with the CPython allocator and owned by hand.
+The header of the slice still travels in the state block, where V's collector cannot see
+it; the backing it points at must not be in V's heap, or the pointer would look
+unreachable and be reclaimed while Python held the object.
+
+`vcraft.buffer_new_*` allocates that backing with a small header of its own: the count of
+open memoryviews, then the capacity in bytes. The slice it returns is the only kind of
+value such a field may hold, and `tp_dealloc` frees it with `buffer_free`, which knows
+about the header and is a no-op on a nil pointer. Because the count is in the header,
+`buffer_resize_*` can refuse with `BufferError` while a view is open: reallocating moves
+the memory a live `Py_buffer` still points at.
+
+The buffer protocol itself is two type slots, `Py_bf_getbuffer` and `Py_bf_releasebuffer`,
+which `PyType_FromSpec` routes into `tp_as_buffer`. `bf_getbuffer` fills the `Py_buffer`
+with `PyBuffer_FillInfo`, which takes a reference on the exporter and records it in the
+view; that reference, given back when the memoryview is collected, is the whole reason
+`memoryview(instance)` is sound where `PyMemoryView_FromMemory` is not -- the latter does
+not keep the owner alive. Only the class's first own buffer gets the slots; a class that
+merely inherits one is covered by the base through the type hierarchy.
+
+## Capsules
+
+`new_handle` wraps an arbitrary native pointer in an anonymous `PyCapsule` with a
+destructor, and `handle_data` recovers it. It is the escape hatch for state that is not a
+plain slice, and it needs nothing from the generator: a `@[vc_raw]` function receives the
+capsule as an opaque `voidptr` and calls `handle_data` itself. CPython calls the destructor
+with the capsule object rather than the stored pointer, so the destructor has to call
+`handle_data` to get its pointer back before freeing it.
+
 ## Inherited state is published, not reachable from the receiver
 
 A subclass's state block is the base's state followed by the subclass's own struct. V

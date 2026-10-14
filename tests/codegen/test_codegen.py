@@ -75,7 +75,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 23,
+            glue.count("add_function_owned") == 25,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -434,10 +434,13 @@ def main() -> int:
     t.check("the chain is restored on the way out", "vcraft.leave_state(previous)" in glue)
     # One per trampoline that works on a subclass's state, and none in a trampoline of a
     # class with no base: there is no generation above it to point at.
-    loaders = glue.count("mut state := unsafe { &BoundedCounterState(")
+    # BoundedCounter publishes one level; TallyBuffer (a buffer subclass) publishes one
+    # too. The exact count covers both, and the functions that load the state but never
+    # enter it -- dealloc, traverse, clear, the buffer callbacks -- are not trampolines and
+    # publish nothing.
     t.check("one published level per subclass trampoline",
-            glue.count("publish_base(1,") == loaders,
-            f"{glue.count('publish_base(1,')} published, {loaders} trampolines")
+            glue.count("publish_base(1,") == 9,
+            f"{glue.count('publish_base(1,')} published")
     t.check("the stub declares the base",
             "class BoundedCounter(Counter):" in stub, stub[-600:])
 
@@ -510,13 +513,14 @@ def main() -> int:
             "vcraft.traverse_ref(unsafe { voidptr(&state.peer)}, visit, arg)" in glue)
     t.check("and stops on the first failure it is told about",
             "if vcraft.traverse_ref(unsafe { voidptr(&state.peer)}, visit, arg) != 0 {" in glue)
+    # Pair and Chunk each hold a reference, so each gets traverse and clear.
     t.check("the type object is not mistaken for an instance",
-            glue.count("vcraft.is_type_object(self)") == 2,
+            glue.count("vcraft.is_type_object(self)") == 4,
             glue.count("vcraft.is_type_object(self)"))
     t.check("dealloc releases the references",
             "vcraft.clear_ref(unsafe { voidptr(&state.peer)})" in glue)
     t.check("a repr of a cycle is guarded", "vcraft.repr_enter(self)" in glue)
-    t.check("and only for a class that can recurse", glue.count("repr_enter") == 1,
+    t.check("and only for a class that can recurse", glue.count("repr_enter") == 2,
             glue.count("repr_enter"))
 
     print("error types")
@@ -585,6 +589,88 @@ def main() -> int:
             "defer { arg0_bytes.release() }" in glue)
     t.check("the slice aliases it", "arg0_bytes.data" in glue)
     t.check("a return copies out", "vcraft.to_py_bytes_slice(result)" in glue)
+
+    print("persistent native buffers")
+    # A `@[vc_buffer]` field is a slice whose backing lives for the object, is freed once
+    # at dealloc, and is exposed through the buffer protocol.
+    vec = h.Vector(4)
+    t.check("a constructor taking an argument", vec.size() == 4, vec.size())
+    t.equal("the buffer starts zeroed", vec.total(), 0.0)
+    vec.set(0, 1.5)
+    vec.set(1, 2.5)
+    t.equal("writes persist across calls", vec.total(), 4.0)
+    t.equal("a read across calls", vec.get(1), 2.5)
+    t.equal("an out-of-range write is ignored", (vec.set(9, 1.0), vec.total())[1], 4.0)
+    t.check("the repr shows the buffer length", repr(vec) == "Vector(data: buffer(4))",
+            repr(vec))
+
+    print("memoryview over a native buffer")
+    mv = memoryview(vec)
+    t.check("the view is byte-sized", len(mv) == 4 * 8, len(mv))
+    t.check("and reflects the V writes", list(mv.cast("d"))[:2] == [1.5, 2.5],
+            list(mv.cast("d")))
+    mv.cast("d")[2] = 9.0
+    t.equal("and V sees the Python write", vec.get(2), 9.0)
+    t.raises("resize is refused while a view is open", BufferError, "memoryview",
+             lambda: vec.resize(2))
+    del mv
+    gc.collect()
+    vec.resize(2)
+    t.equal("resize after the view closes", vec.size(), 2)
+    t.equal("and preserves the kept values", vec.total(), 4.0)
+
+    print("buffer constructors and their arguments")
+    t.equal("a keyword argument", h.Vector(n=3).size(), 3)
+    t.raises("a missing argument", TypeError, "missing required argument: 'n'",
+             lambda: h.Vector())
+    t.raises("too many arguments", TypeError, "takes at most 1", lambda: h.Vector(1, 2))
+    t.raises("an unknown keyword", TypeError, "unexpected keyword argument 'bad'",
+             lambda: h.Vector(bad=1))
+    t.raises("a repeated argument", TypeError, "multiple values for argument 'n'",
+             lambda: h.Vector(1, n=2))
+
+    print("buffers and inheritance")
+    # A subclass may take constructor arguments when its base is argument-free.
+    tb = h.TallyBuffer(4)
+    tb.push(3)
+    tb.push(4)
+    t.equal("the subclass's buffer holds what was pushed", tb.count, 2)
+    t.check("the base's constructor ran", tb.step == 1, tb.step)
+    t.check("the repr lists base fields then the buffer",
+            repr(tb) == "TallyBuffer(value: 0, step: 1, count: 2, buf: buffer(4))", repr(tb))
+
+    print("a class with a buffer and a reference")
+    chunk = h.Chunk()
+    chunk.fill(7)
+    t.check("the buffer is exposed", bytes(memoryview(chunk)) == b"\x07" * 4,
+            bytes(memoryview(chunk)))
+    buddy = h.Chunk()
+    chunk.buddy = buddy
+    t.check("the reference is stored", chunk.buddy is buddy)
+    del chunk, buddy
+    gc.collect()
+
+    print("buffers in the generated file")
+    t.check("the free runs at dealloc", "vcraft.buffer_free(state.data.data)" in glue)
+    t.check("the subclass's buffer is freed too",
+            "vcraft.buffer_free(state.self.buf.data)" in glue)
+    t.check("the getbuffer slot is emitted",
+            "fn vcraft_generated__getbuffer_vector(self voidptr, view voidptr, flags int) int {"
+            in glue)
+    t.check("the releasebuffer slot is emitted",
+            "fn vcraft_generated__releasebuffer_vector(self voidptr, view voidptr) int {"
+            in glue)
+    t.check("the constructor binds its arguments",
+            "vcraft.bind_new_args(raw_args, kwds, bound.data" in glue)
+
+    print("capsules")
+    box = h.new_box(1234)
+    t.equal("a capsule round-trips a pointer", h.box_value(box), 1234)
+    t.raises("a non-capsule is rejected", ValueError, "invalid PyCapsule",
+             lambda: h.box_value(123))
+    del box
+    gc.collect()
+    t.check("the capsule destructor freed without a crash", True)
 
     print("the GIL is released")
     # `@[vc_nogil]` marks a function as pure V, and the wrapper releases the GIL around

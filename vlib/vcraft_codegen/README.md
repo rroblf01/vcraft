@@ -91,6 +91,7 @@ place as the stub a type checker reads.
 | `@[vc_class]`  | `pub struct`    | Expose the struct as a Python type                     |
 | `@[vc_method]`| methods         | Add the method to its receiver's class                 |
 | `@[vc_field]`  | struct fields   | Expose the field as an instance attribute              |
+| `@[vc_buffer]` | struct fields   | A persistent native `[]T` of scalars, freed at dealloc  |
 | `@[vc_property]` | methods       | Register the method as a Python `property`             |
 | `@[vc_static]` | methods         | Register the method as a `staticmethod`                |
 
@@ -101,6 +102,20 @@ annotations that share one**. `@[vc.fn]` and `@[vc.raw]` on the same declaration
 An unknown `vc_` annotation is a diagnostic, not a shrug. A silently ignored
 annotation means a function quietly missing from the module, which is much worse
 than a failed build.
+
+## Constructors and native buffers
+
+`new_<Class>` is the class's `tp_new`. When it declares parameters, `tp_new` binds the
+positional tuple and the keyword dict CPython passes there with `vcraft.bind_new_args`,
+reads each parameter exactly as a method reads a vectorcall argument, and passes them to
+the constructor. A subclass builds its base's half with no arguments, so a class whose
+base chain has an argument-taking constructor is refused with a diagnostic.
+
+A `@[vc_buffer]` field is a `[]T` of scalars. The generator emits its free into the same
+`tp_dealloc` that releases the reference fields, installs the buffer protocol over the
+class's first such field (its own, not an inherited one), and prints its length in the
+repr rather than its contents. The backing belongs to the runtime's `buffer_new_*`
+helpers: only their values may be stored in such a field.
 
 ## What the generator refuses
 

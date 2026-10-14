@@ -228,7 +228,7 @@ pub fn render_class_exec(p Project, c Class) string {
 	} else {
 		w.write_string('\t\tunsafe { nil },\n')
 	}
-	if c.fields.len > 0 || c.methods.any(it.property) {
+	if c.scalar_fields().len > 0 || c.methods.any(it.property) {
 		w.write_string('\t\tunsafe { voidptr(&g_vc_getsets_' + c.key + '[0]) },\n')
 	} else {
 		w.write_string('\t\tunsafe { nil },\n')
@@ -258,6 +258,16 @@ pub fn render_class_exec(p Project, c Class) string {
 	if c.iter_fn.len > 0 {
 		w.write_string('\t\tvoidptr(' + c.iter_fn + '),\n')
 		w.write_string('\t\tvoidptr(' + c.next_fn + '),\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+		w.write_string('\t\tunsafe { nil },\n')
+	}
+	// The buffer protocol, only for a class with a buffer field of its own. The first
+	// `@[vc_buffer]` is the one `memoryview(instance)` exposes; a class that only
+	// inherits one is covered by the base's slots through the type hierarchy.
+	if c.own_buffer_fields().len > 0 {
+		w.write_string('\t\tvoidptr(vcraft_generated__getbuffer_' + c.key + '),\n')
+		w.write_string('\t\tvoidptr(vcraft_generated__releasebuffer_' + c.key + '),\n')
 	} else {
 		w.write_string('\t\tunsafe { nil },\n')
 		w.write_string('\t\tunsafe { nil },\n')
@@ -1135,8 +1145,13 @@ pub fn emit_stubs(p Project) string {
 		// are at runtime, and a stub that declared them as methods would type-check
 		// `c.value` as a bound method. Only this class's own fields: the stub's base
 		// declaration already accounts for the inherited ones.
-		for field in c.fields {
+		for field in c.scalar_fields() {
 			w.write_string('    ${field.name}: ${describe(field.v_type)}\n')
+		}
+		// A native buffer is not an attribute, so it has no field line; it is reachable
+		// through `memoryview(instance)` and through methods.
+		if c.ctor_fn.len > 0 {
+			w.write_string('    def __init__(self${c.stub_ctor_params()}) -> None: ...\n')
 		}
 		for method in c.methods {
 			if method.property {

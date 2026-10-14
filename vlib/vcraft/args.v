@@ -117,6 +117,75 @@ pub fn unexpected_kwarg(name string, keyword string) {
 	raise(.type_error, "${name}() got an unexpected keyword argument '${keyword}'")
 }
 
+// bind_new_args places the arguments of a `tp_new` call in one slot per parameter, in
+// declaration order, so the constructor's readers can take them by index exactly as a
+// method's readers take a METH_FASTCALL call's.
+//
+// `tp_new` receives the positional arguments as a tuple and the keywords as a dict,
+// which is not the vectorcall layout `bind_args` reads. Everything else is the same:
+// `out` has one slot per parameter, zeroed by the caller, a null slot is a parameter the
+// caller left out (only an optional one may be), and a Python-refused call raises
+// TypeError and returns false.
+pub fn bind_new_args(args voidptr, kwds voidptr, out voidptr, names []string,
+	optional []bool, func string) bool {
+	n := names.len
+	mut given := 0
+	if args != unsafe { nil } {
+		given = int(C.PyTuple_Size(args))
+	}
+	if given > n {
+		raise(.type_error, '${func}() takes at most ${n} argument${if n == 1 { '' } else { 's' }} (${given} given)')
+		return false
+	}
+	for i in 0 .. given {
+		item := C.PyTuple_GetItem(args, isize(i))
+		if item == unsafe { nil } {
+			return false
+		}
+		unsafe {
+			*(&voidptr(out) + i) = item
+		}
+	}
+	if kwds != unsafe { nil } {
+		mut pos := isize(0)
+		mut key := voidptr(nil)
+		mut value := voidptr(nil)
+		for C.PyDict_Next(kwds, &pos, &key, &value) != 0 {
+			k := borrow(key)
+			data, size := utf8_of(k)
+			if data == unsafe { nil } {
+				return false
+			}
+			keyword := unsafe { tos(&u8(data), size) }
+			mut slot := -1
+			for j, name in names {
+				if name == keyword {
+					slot = j
+					break
+				}
+			}
+			if slot < 0 {
+				unexpected_kwarg(func, keyword.clone())
+				return false
+			}
+			if unsafe { *(&voidptr(out) + slot) } != unsafe { nil } {
+				raise(.type_error, "${func}() got multiple values for argument '${keyword}'")
+				return false
+			}
+			unsafe {
+				*(&voidptr(out) + slot) = value
+			}
+		}
+	}
+	for j in 0 .. n {
+		if unsafe { *(&voidptr(out) + j) } == unsafe { nil } && !optional[j] {
+			raise(.type_error, "${func}() missing required argument: '${names[j]}'")
+			return false
+		}
+	}
+	return true
+}
+
 // required_arg returns positional argument `i`, raising TypeError when it is missing.
 // The narrow scalar parameters read it through this and then convert it with the
 // matching `*_from_py_*` narrower.

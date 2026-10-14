@@ -358,6 +358,41 @@ jobs:
         run: |
           ./bin/vcraft new ftcheck /tmp/ftcheck
           cd /tmp/ftcheck
+          # A class with a native buffer, so the run below exercises the buffer protocol
+          # and concurrent writes to one instance's buffer, not just the demo.
+          cat > src/buffer.v <<'V'
+          module ftcheck_native
+
+          import vcraft
+
+          @[vc_class]
+          pub struct Buf {
+          mut:
+          	@[vc_buffer] data []f64
+          }
+
+          @[vc_fn]
+          pub fn new_buf(n int) &Buf {
+          	return &Buf{
+          		data: vcraft.buffer_new_f64(n)
+          	}
+          }
+
+          @[vc_method]
+          pub fn (mut b Buf) set(i int, value f64) {
+          	if i >= 0 && i < b.data.len {
+          		b.data[i] = value
+          	}
+          }
+
+          @[vc_method]
+          pub fn (b &Buf) get(i int) f64 {
+          	if i >= 0 && i < b.data.len {
+          		return b.data[i]
+          	}
+          	return 0.0
+          }
+          V
           "$GITHUB_WORKSPACE/bin/vcraft" build --free-threading \
             --interpreter "${{ steps.ft-python.outputs.python-path }}" \
             --out-dir dist
@@ -387,5 +422,17 @@ jobs:
           [t.start() for t in threads]
           [t.join() for t in threads]
           assert len(seen) == 160_000, len(seen)
+          # A native buffer, its zero-copy view, and concurrent writes to disjoint slots.
+          buf = m.new_buf(8)
+          view = memoryview(buf)
+          assert len(view) == 64, len(view)
+          view.cast('d')[7] = 3.5
+          assert buf.get(7) == 3.5, buf.get(7)
+          def fill(i):
+              buf.set(i, float(i))
+          threads = [threading.Thread(target=fill, args=(i,)) for i in range(8)]
+          [t.start() for t in threads]
+          [t.join() for t in threads]
+          assert [buf.get(i) for i in range(8)] == [float(i) for i in range(8)], [buf.get(i) for i in range(8)]
           print('free-threaded import and threads ok')
           "

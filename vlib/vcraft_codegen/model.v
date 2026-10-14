@@ -25,6 +25,12 @@ pub const attr_methods = 'vc_method'
 
 pub const attr_field = 'vc_field'
 
+// attr_buffer marks a field as a persistent native buffer: a `[]T` of scalars whose
+// backing lives for the object's lifetime, is not copied per call, and is freed by the
+// generated `tp_dealloc`. Unlike `@[vc_field]` it is not exposed as a Python attribute;
+// it is reachable through `memoryview(instance)` (the first one) and through methods.
+pub const attr_buffer = 'vc_buffer'
+
 pub const attr_property = 'vc_property'
 
 pub const attr_static = 'vc_static'
@@ -88,6 +94,7 @@ pub const known_attrs = [
 	attr_class,
 	attr_methods,
 	attr_field,
+	attr_buffer,
 	attr_property,
 	attr_static,
 ]
@@ -173,6 +180,13 @@ pub mut:
 	// ctor_fn is the user's `new_*` function, run by `tp_new`. Empty when the class
 	// has none, in which case instances can only be built from V.
 	ctor_fn string
+	// ctor_params is the constructor's parameters. They travel through the same
+	// marshalling rules as a method's, read in `tp_new` from the tuple and dict CPython
+	// passes there, so a class can be sized at construction: `new_tableau(2 * n + 1)`.
+	ctor_params []Param
+	// ctor_has_defaults is true when any constructor parameter carries `@[vc_defaults]`,
+	// which only matters for the generated signature's rendering.
+	ctor_has_defaults bool
 	// ctor is the generated `tp_new` trampoline.
 	ctor string
 	// ctype is the local the generated `PyInit` holds the heap type in.
@@ -269,6 +283,9 @@ pub mut:
 	// ref marks a `@[vc_ref]` field, which holds a strong reference to another
 	// instance rather than a value of its own.
 	ref bool
+	// buffer marks a `@[vc_buffer]` field: a `[]T` of scalars whose backing vcraft frees
+	// at dealloc and that the first such field also exposes through the buffer protocol.
+	buffer bool
 	// ref_target is the class named by `@[vc_ref(Name)]`, empty when the field holds a
 	// reference to any vcraft instance. Only a check: the field holds a `PyObj`, so
 	// nothing in the layout depends on the target.
@@ -291,12 +308,29 @@ pub mut:
 // Only scalars are. A `string` copied there would be a Boehm pointer that nothing
 // keeps alive, because Boehm does not scan memory CPython allocated.
 pub fn (f Field) is_scalar() bool {
-	return match f.v_type {
+	return is_scalar_type(f.v_type)
+}
+
+// is_scalar_type reports whether a type name is one of the scalar types safe to hold in
+// CPython-owned memory, or as the element of a native buffer.
+pub fn is_scalar_type(v_type string) bool {
+	return match v_type.trim_space() {
 		'bool', 'int', 'i8', 'i16', 'i32', 'i64', 'isize' { true }
 		'u8', 'u16', 'u32', 'u64', 'usize' { true }
 		'f32', 'f64' { true }
 		else { false }
 	}
+}
+
+// is_buffer reports whether a field is a `@[vc_buffer]` native slice.
+pub fn (f Field) is_buffer() bool {
+	return f.buffer
+}
+
+// buffer_element is the element type of a `@[vc_buffer]` slice, which decides the runtime
+// allocation helper the user calls and the byte width `bf_getbuffer` reports.
+pub fn (f Field) buffer_element() string {
+	return element_type(f.v_type)
 }
 
 // is_pyobj reports whether a V type is the runtime's own object reference.

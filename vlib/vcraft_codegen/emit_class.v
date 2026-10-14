@@ -42,6 +42,7 @@ fn emit_class(p Project, c Class) string {
 	w.write_string(emit_class_iterators(p, c))
 	w.write_string(emit_class_traverse(p, c))
 	w.write_string(emit_class_clear(p, c))
+	w.write_string(emit_class_buffer_slots(p, c))
 	w.write_string(emit_class_dealloc(p, c))
 	w.write_string(emit_class_repr(p, c))
 	w.write_string(emit_class_richcompare(c))
@@ -62,7 +63,7 @@ pub fn doc_pointer(doc string) string {
 // emit_class_getsets renders the property table: one entry per field and per
 // property method.
 fn emit_class_getsets(c Class) string {
-	mut count := c.fields.len
+	mut count := c.scalar_fields().len
 	for m in c.methods {
 		if m.property {
 			count++
@@ -74,7 +75,7 @@ fn emit_class_getsets(c Class) string {
 	mut w := new_builder()
 	w.write_string('__global (\n')
 	w.write_string('\tg_vc_getsets_${c.key} = [\n')
-	for f in c.fields {
+	for f in c.scalar_fields() {
 		w.write_string('\t\tvcraft.PyGetSetDef{\n')
 		w.write_string("\t\t\tname:    voidptr(c'${f.name}')\n")
 		w.write_string("\t\t\tget:     voidptr(vcraft_generated__get_${c.key}_${f.name})\n")
@@ -107,11 +108,11 @@ fn emit_class_getsets(c Class) string {
 // sits in a `mut:` section, so the emitter cannot honour immutability, and the useful
 // default is what Python expects of an attribute.
 fn emit_field_accessors(p Project, c Class) string {
-	if c.fields.len == 0 {
+	if c.scalar_fields().len == 0 {
 		return ''
 	}
 	mut w := new_builder()
-	for f in c.fields {
+	for f in c.scalar_fields() {
 		w.write_string('fn vcraft_generated__get_${c.key}_${f.name}(self voidptr, closure voidptr) voidptr {\n')
 		w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
 		w.write_string(emit_enter_state(p, c))
@@ -189,6 +190,38 @@ fn emit_field_accessors(p Project, c Class) string {
 // has to be reported to the collector or a cycle through the base is never broken.
 pub fn (c Class) ref_fields() []Field {
 	return c.state_fields.filter(it.ref)
+}
+
+// buffer_fields returns every `@[vc_buffer]` field the instance holds, its own and its
+// bases', each carrying the path that reaches it inside the state block. This is what
+// `tp_dealloc` walks to free them, and the base's are in there for the same reason the
+// reference fields are: the block is one allocation and the most-derived dealloc frees it.
+pub fn (c Class) buffer_fields() []Field {
+	return c.state_fields.filter(it.buffer)
+}
+
+// own_buffer_fields returns only this class's own `@[vc_buffer]` fields, in declaration
+// order. The first is the one `memoryview(instance)` exposes.
+pub fn (c Class) own_buffer_fields() []Field {
+	return c.fields.filter(it.buffer)
+}
+
+// scalar_fields returns this class's own fields that are exposed as ordinary Python
+// attributes: everything but the native buffers, which are reached through
+// `memoryview` and methods rather than as an attribute.
+pub fn (c Class) scalar_fields() []Field {
+	return c.fields.filter(!it.buffer)
+}
+
+// stub_ctor_params renders the constructor's parameters for a `.pyi` `__init__`, with a
+// leading `, ` when there are any, so the call site can interpolate it directly.
+pub fn (c Class) stub_ctor_params() string {
+	if c.ctor_params.len == 0 {
+		return ''
+	}
+	return ', ' + param_list(Func{
+		params: c.ctor_params
+	})
 }
 
 // emit_ref_type_check renders the guard a reference setter runs on its argument.
@@ -376,13 +409,38 @@ fn emit_class_iterators(p Project, c Class) string {
 
 fn emit_class_new(c Class) string {
 	mut w := new_builder()
-	w.write_string('fn ${c.ctor}(type_obj voidptr, args voidptr, kwds voidptr) voidptr {\n')
-	// `tp_init` is left null, so the arguments land here, and `object.__init__` stays
-	// quiet about extra ones whenever `tp_new` is overridden. Rejecting them here is
-	// what makes `Counter(1)` an error rather than a silently ignored argument.
-	w.write_string('\tif C.vpy_tuple_size(args) != 0 || kwds != unsafe { nil } {\n')
-	w.write_string("\t\tvcraft.raise_type_error('${c.name}() takes no arguments')\n")
-	w.write_string('\t\treturn unsafe { nil }\n\t}\n')
+	w.write_string('fn ${c.ctor}(type_obj voidptr, raw_args voidptr, kwds voidptr) voidptr {\n')
+	mut call_args := []string{}
+	if c.ctor_params.len > 0 {
+		// `tp_new` gets the positional arguments as a tuple and the keywords as a dict,
+		// which is not the vectorcall layout a method reads. `bind_new_args` turns the
+		// pair into one slot per parameter, and from there the readers are the same ones
+		// a function or method uses.
+		mut names := []string{}
+		mut optional := []string{}
+		for param in c.ctor_params {
+			names << vstring_literal(param.name)
+			optional << (if param.optional() { 'true' } else { 'false' })
+		}
+		w.write_string('\tbound := []voidptr{len: ${c.ctor_params.len}, init: unsafe { nil }}\n')
+		w.write_string('\tif !vcraft.bind_new_args(raw_args, kwds, bound.data, [${names.join(', ')}], [${optional.join(', ')}], ' +
+			vstring_literal(c.name) + ') {\n')
+		w.write_string('\t\treturn unsafe { nil }\n\t}\n')
+		// `args` from here on is the slot array, which is what the readers below index.
+		w.write_string('\targs := bound.data\n')
+		for i, param in c.ctor_params {
+			name := local_name(i)
+			call_args << name
+			w.write_string('\t${param_reader(param, name, i, c.name)}\n')
+		}
+	} else {
+		// `tp_init` is left null, so the arguments land here, and `object.__init__` stays
+		// quiet about extra ones whenever `tp_new` is overridden. Rejecting them here is
+		// what makes `Counter(1)` an error rather than a silently ignored argument.
+		w.write_string('\tif C.vpy_tuple_size(raw_args) != 0 || kwds != unsafe { nil } {\n')
+		w.write_string("\t\tvcraft.raise_type_error('${c.name}() takes no arguments')\n")
+		w.write_string('\t\treturn unsafe { nil }\n\t}\n')
+	}
 	w.write_string('\tinstance := vcraft.type_alloc(type_obj)\n')
 	w.write_string('\tif instance == unsafe { nil } {\n\t\treturn vcraft.no_memory()\n\t}\n')
 	w.write_string('\tstorage := vcraft.instance_alloc(${c.size_fn}())\n')
@@ -400,7 +458,7 @@ fn emit_class_new(c Class) string {
 	w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 	w.write_string('\t\t}\n')
 	w.write_string('\t}\n')
-	w.write_string('\tinitial := ${c.newstate_fn}()\n')
+	w.write_string('\tinitial := ${c.newstate_fn}(${call_args.join(', ')})\n')
 	w.write_string('\tvcraft.load_state(unsafe { voidptr(&initial) }, storage, ${c.size_fn}())\n')
 	w.write_string('\tif vcraft.error_is_set() {\n')
 	w.write_string('\t\tvcraft.instance_free(storage)\n')
@@ -499,12 +557,52 @@ fn emit_enter_state(p Project, c Class) string {
 fn emit_class_dealloc(p Project, c Class) string {
 	mut w := new_builder()
 	w.write_string('fn vcraft_generated__dealloc_${c.key}(self voidptr) voidptr {\n')
-	if c.ref_fields().len > 0 {
+	refs := c.ref_fields()
+	bufs := c.buffer_fields()
+	if refs.len > 0 || bufs.len > 0 {
 		w.write_string(emit_state_pointer(c, '\t\treturn vcraft.class_dealloc(self)\n'))
-		w.write_string(emit_clear_refs(c))
+		if refs.len > 0 {
+			w.write_string(emit_clear_refs(c))
+		}
+		// The backing of every buffer, the base's included, is released before the block
+		// that holds it. `buffer_free` is a no-op on an unset field, which is what a class
+		// constructed without allocating them holds.
+		for f in bufs {
+			w.write_string('\tvcraft.buffer_free(state.' + f.path + '.data)\n')
+		}
 	}
 	w.write_string('\treturn vcraft.class_dealloc(self)\n')
 	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_class_buffer_slots renders the two buffer-protocol callbacks for a class whose
+// first `@[vc_buffer]` field is the one `memoryview(instance)` exposes.
+//
+// `PyBuffer_FillInfo` takes its own reference on the exporter and records it in the view,
+// so `memoryview` keeps the instance alive with no help from vcraft; the view count is
+// separate, and exists only so a resize can refuse while a view is open. The byte length
+// is the element count times the element's width, and the view is writable.
+fn emit_class_buffer_slots(p Project, c Class) string {
+	own := c.own_buffer_fields()
+	if own.len == 0 {
+		return ''
+	}
+	f := own[0]
+	access := c.field_access(f.name)
+	elem := f.buffer_element()
+	mut w := new_builder()
+	w.write_string('fn vcraft_generated__getbuffer_${c.key}(self voidptr, view voidptr, flags int) int {\n')
+	w.write_string(emit_state_pointer(c, no_state_exit(c, '-1')))
+	w.write_string('\tfield := state.' + access + '\n')
+	w.write_string('\trc := vcraft.buffer_fill(view, self, field.data, isize(field.len) * isize(sizeof(' +
+		elem + ')), 0, flags)\n')
+	w.write_string('\tif rc == 0 {\n\t\tvcraft.buffer_views_incr(field.data)\n\t}\n')
+	w.write_string('\treturn rc\n}\n\n')
+	w.write_string('fn vcraft_generated__releasebuffer_${c.key}(self voidptr, view voidptr) int {\n')
+	w.write_string(emit_state_pointer(c, '\t\treturn 0\n'))
+	w.write_string('\tvcraft.buffer_views_decr(state.' + access + '.data)\n')
+	w.write_string('\treturn 0\n}\n\n')
 	return w.str()
 }
 
@@ -611,23 +709,31 @@ fn emit_class_state_struct(p Project, c Class) string {
 // `vcraft_generated__newstate_boundedcounter()` build the same value.
 fn emit_class_newstate(p Project, c Class) string {
 	mut w := new_builder()
-	w.write_string('fn ${c.newstate_fn}() ${c.state_type()} {\n')
+	mut params := []string{}
+	mut call_args := []string{}
+	for i, param in c.ctor_params {
+		params << '${local_name(i)} ${param.v_type}'
+		call_args << local_name(i)
+	}
+	w.write_string('fn ${c.newstate_fn}(${params.join(', ')}) ${c.state_type()} {\n')
 	w.write_string('\tmut state := ${c.state_type()}{}\n')
 	if c.base_index >= 0 {
 		base := p.classes[c.base_index]
 		// An assignment rather than a literal: `BoundedCounterState{}` already holds the
 		// base's zero value, and this is the only thing that replaces it with the base's
-		// constructor result.
+		// constructor result. A base constructor takes no arguments, which the collector
+		// has already enforced.
 		w.write_string('\tstate.base = ' + base.newstate_fn + '()\n')
 	}
 	if c.ctor_fn != '' {
-	// A class with no base holds its own struct, so the whole of `state` is replaced. A
-	// subclass holds the base followed by its own, so only the `self` half is.
-	if c.base_index >= 0 {
-		w.write_string('\tstate.self = *${c.ctor_fn}()\n')
-	} else {
-		w.write_string('\tstate = *${c.ctor_fn}()\n')
-	}
+		call := '${c.ctor_fn}(${call_args.join(', ')})'
+		// A class with no base holds its own struct, so the whole of `state` is replaced.
+		// A subclass holds the base followed by its own, so only the `self` half is.
+		if c.base_index >= 0 {
+			w.write_string('\tstate.self = *${call}\n')
+		} else {
+			w.write_string('\tstate = *${call}\n')
+		}
 	}
 	w.write_string('\treturn state\n}\n\n')
 	return w.str()
@@ -740,6 +846,11 @@ fn emit_class_repr(p Project, c Class) string {
 		mut rendered := ''
 		if f.is_reference() {
 			rendered = 'vcraft.repr_ref(state.' + f.path + '.ptr)'
+		} else if f.is_buffer() {
+			// A native buffer prints its length rather than its contents: a repr of a
+			// million-element tableau is not useful and would walk the whole thing.
+			rendered = vstring_literal('buffer(') + ' + state.' + f.path + '.len.str() + ' +
+				vstring_literal(')')
 		} else {
 			rendered = py_repr_expr(lookup(f.v_type), 'state.' + f.path)
 		}

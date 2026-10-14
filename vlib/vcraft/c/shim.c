@@ -751,6 +751,10 @@ PyObject *vpy_exc_arithmetic_error(void) {
 	return PyExc_ArithmeticError;
 }
 
+PyObject *vpy_exc_buffer_error(void) {
+	return PyExc_BufferError;
+}
+
 PyObject *vpy_exc_overflow_error(void) {
 	return PyExc_OverflowError;
 }

@@ -326,6 +326,38 @@ fn C.vpy_exc_system_error() voidptr
 fn C.vpy_exc_overflow_error() voidptr
 fn C.vpy_exc_zero_division_error() voidptr
 fn C.vpy_exc_arithmetic_error() voidptr
+fn C.vpy_exc_buffer_error() voidptr
+
+// ----------------------------------------------------------------- capsules
+
+// PyCapsule carries an arbitrary native pointer across the Python boundary, with a
+// destructor that runs when the capsule is collected. It is how a V value that is not
+// marshallable -- a handle from a C library, a struct full of pointers -- can still be
+// owned by a Python object. All three are part of the stable ABI.
+fn C.PyCapsule_New(pointer voidptr, name voidptr, destructor voidptr) voidptr
+
+fn C.PyCapsule_GetPointer(capsule voidptr, name voidptr) voidptr
+
+fn C.PyCapsule_SetName(capsule voidptr, name voidptr) int
+
+// ------------------------------------------------------------------- buffers
+
+// PyBuffer_FillInfo fills a `Py_buffer` for an exporter that shares one contiguous
+// run of bytes. It sets `view->obj` to the exporter and takes a reference, which is
+// what makes the memoryview keep the instance alive; the generated `bf_releasebuffer`
+// and this pair are the whole of the zero-copy contract. Stable ABI.
+fn C.PyBuffer_FillInfo(view voidptr, o voidptr, buf voidptr, len isize, readonly int, flags int) int
+
+// The CPython allocator. The state of a class is CPython-owned memory that V's
+// collector does not scan, so a native buffer kept in it is owned manually and freed
+// by `tp_dealloc`. These are the matching allocator and are part of the stable ABI.
+fn C.PyObject_Malloc(n usize) voidptr
+
+fn C.PyObject_Calloc(n usize, size usize) voidptr
+
+fn C.PyObject_Realloc(p voidptr, n usize) voidptr
+
+fn C.PyObject_Free(p voidptr)
 
 // ---------------------------------------------------------------- constants
 
@@ -394,6 +426,13 @@ pub const slot_richcompare = i32(67)
 pub const slot_members = i32(72)
 
 pub const slot_getset = i32(73)
+
+// The two buffer-protocol slots. They are not `Py_tp_*`: `PyType_FromSpec` routes them
+// into `tp_as_buffer`, and the numbers are outside the type-slot range. Written down
+// here for the same reason as the others, and checked by `scripts/check-slot-ids.sh`.
+pub const slot_bf_getbuffer = i32(1)
+
+pub const slot_bf_releasebuffer = i32(2)
 
 // Py_TPFLAGS_BASETYPE, required before a Python class may be subclassed.
 pub const tpflags_basetype = u32(1 << 10)

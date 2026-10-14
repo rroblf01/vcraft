@@ -110,6 +110,7 @@ pub enum PyExc {
 	overflow_error
 	zero_division_error
 	arithmetic_error
+	buffer_error
 }
 
 // pyexc_obj resolves an enum member to the CPython exception type.
@@ -129,6 +130,7 @@ pub fn pyexc_obj(kind PyExc) PyObj {
 		.overflow_error { C.vpy_exc_overflow_error() }
 		.zero_division_error { C.vpy_exc_zero_division_error() }
 		.arithmetic_error { C.vpy_exc_arithmetic_error() }
+		.buffer_error { C.vpy_exc_buffer_error() }
 	})
 }
 
@@ -269,14 +271,14 @@ pub fn raise_custom(exc voidptr, message string) IError {
 // code, and those are common -- so it falls back to `.runtime_error` rather than being
 // read as one.
 pub fn pyexc_from_code(code int) PyExc {
-	// One through thirteen, which is every member of `PyExc` that names a class. Zero is
+	// One through fourteen, which is every member of `PyExc` that names a class. Zero is
 	// `.none`, whose object is the null pointer, and it is deliberately not in the list:
 	// `code()` is 0 for every anonymous `error('...')`, so mapping it would send every
 	// plain V error to a null exception type. `PyErr_SetString(NULL, msg)` does not
 	// complain about that; it dereferences it, and the interpreter dies inside the call
 	// with a message about nothing at all.
 	return match code {
-		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 { unsafe { PyExc(code) } }
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 { unsafe { PyExc(code) } }
 		else { .runtime_error }
 	}
 }

@@ -569,3 +569,160 @@ pub fn (mut t Tally) add_then_fail(by i64) {
 	t.sum += by
 	panic('failed after writing')
 }
+
+// A vector of doubles held in a native buffer.
+//
+// The buffer lives for the object's lifetime, is not copied on every call, and is freed
+// exactly once at dealloc. `memoryview(v)` exposes it without a copy, and the methods
+// below read and write it in place.
+@[vc_class]
+pub struct Vector {
+mut:
+	@[vc_buffer] data []f64
+}
+
+// A vector of `n` zeroed doubles.
+//
+// The constructor takes an argument, which `tp_new` binds from Python's tuple and dict
+// and passes here; it sizes the native buffer through `buffer_new_f64`.
+@[vc_fn]
+pub fn new_vector(n int) &Vector {
+	return &Vector{
+		data: vcraft.buffer_new_f64(n)
+	}
+}
+
+// set stores a value at `i`, ignoring an out-of-range index.
+@[vc_method]
+pub fn (mut v Vector) set(i int, value f64) {
+	if i >= 0 && i < v.data.len {
+		v.data[i] = value
+	}
+}
+
+// get reads the value at `i`, or zero when the index is out of range.
+@[vc_method]
+pub fn (v &Vector) get(i int) f64 {
+	if i >= 0 && i < v.data.len {
+		return v.data[i]
+	}
+	return 0.0
+}
+
+// total sums the buffer in V, with no per-element crossing of the boundary.
+@[vc_method]
+pub fn (v &Vector) size() int {
+	return v.data.len
+}
+
+// total sums the buffer in V.
+@[vc_method]
+pub fn (v &Vector) total() f64 {
+	mut sum := 0.0
+	for x in v.data {
+		sum += x
+	}
+	return sum
+}
+
+// resize replaces the buffer with `n` zeroed doubles, refusing while a memoryview is open.
+@[vc_method]
+pub fn (mut v Vector) resize(n int) ! {
+	v.data = vcraft.buffer_resize_f64(v.data, n)!
+}
+
+// A subclass with a native buffer of its own, on top of Counter.
+//
+// The buffer field is freed by the most-derived `tp_dealloc`, alongside whatever the base
+// holds, because the state block is one allocation.
+@[vc_class]
+@[vc_base(Counter)]
+pub struct TallyBuffer {
+mut:
+	@[vc_field] count int
+	@[vc_buffer] buf []int
+}
+
+// A TallyBuffer with an `n`-element buffer.
+//
+// A subclass may take constructor arguments because its base, Counter, is
+// argument-free: the base's constructor runs with no arguments and this one keeps
+// the arguments it was given.
+@[vc_fn]
+pub fn new_tally_buffer(n int) &TallyBuffer {
+	return &TallyBuffer{
+		buf: vcraft.buffer_new_int(n)
+	}
+}
+
+// push stores a value at the next free slot, or does nothing when full.
+@[vc_method]
+pub fn (mut t TallyBuffer) push(value int) {
+	if t.count < t.buf.len {
+		t.buf[t.count] = value
+		t.count++
+	}
+}
+
+// A class that holds both a reference and a native buffer, so the type is collectable and
+// still owns memory that has to be freed.
+@[vc_class]
+pub struct Chunk {
+mut:
+	// buddy is a unique field name: the generator matches a field's annotation by name
+	// across the whole project, so two classes sharing a field name would share its
+	// annotation too.
+	@[vc_ref] buddy vcraft.PyObj
+	@[vc_buffer] bytes []u8
+}
+
+// A chunk with a four-byte buffer.
+@[vc_fn]
+pub fn new_chunk() &Chunk {
+	return &Chunk{
+		bytes: vcraft.buffer_new_u8(4)
+	}
+}
+
+// fill writes one byte into the buffer.
+@[vc_method]
+pub fn (mut c Chunk) fill(b u8) {
+	for i in 0 .. c.bytes.len {
+		c.bytes[i] = b
+	}
+}
+
+// A native pointer wrapped in a capsule.
+//
+// A capsule is the escape hatch for state that is not a plain slice: it carries a native
+// pointer with a destructor that runs when Python collects it. `new_box` allocates one
+// int, `box_value` reads it, and `box_free` releases the allocation.
+@[vc_fn]
+pub fn new_box(value int) vcraft.PyObj {
+	p := vcraft.native_alloc(usize(sizeof(int)))
+	if p == unsafe { nil } {
+		panic('memory allocation failure')
+	}
+	unsafe {
+		*(&int(p)) = value
+	}
+	return vcraft.new_handle(p, voidptr(box_free))
+}
+
+// box_free releases the int a capsule owns.
+//
+// A capsule destructor is called with the *capsule object*, not the pointer it holds, so
+// it extracts the pointer first. `handle_data` is that extraction.
+pub fn box_free(capsule voidptr) {
+	vcraft.native_free(vcraft.handle_data(capsule))
+}
+
+// box_value reads the int a capsule holds, or zero when it is not a capsule.
+@[vc_fn]
+pub fn box_value(handle voidptr) int {
+	p := vcraft.handle_data(handle)
+	if p == unsafe { nil } {
+		return 0
+	}
+	return unsafe { *(&int(p)) }
+}

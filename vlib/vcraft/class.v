@@ -26,11 +26,15 @@ module vcraft
 //
 // ## What that costs
 //
-// A `@[vc_class]` struct may hold scalar fields only. A `string` or `[]T` copied into
-// CPython memory would be a Boehm pointer that nothing keeps alive, and the crash
-// it produces would be far from the code that caused it. The code generator reports
-// that case rather than generating it. Strings belong behind methods, which already
-// marshal to and from Python str.
+// A plain `@[vc_field]` may hold scalars only. A `string` or `[]T` copied into CPython
+// memory would be a Boehm pointer that nothing keeps alive, and the crash it produces
+// would be far from the code that caused it. The code generator reports that case rather
+// than generating it. Strings belong behind methods, which already marshal to and from
+// Python str.
+//
+// A `@[vc_buffer]` field is the exception, and it is one because its backing is not V's:
+// the slice header still sits in CPython memory, but the memory it points at is allocated
+// with the CPython allocator and owned by hand, freed at dealloc. See `buffer.v`.
 
 // TypeObject wraps a heap type created by `PyType_FromSpec`.
 pub struct TypeObject {
@@ -532,7 +536,8 @@ pub fn type_from_spec(name string, basicsize int, slots voidptr) PyObj {
 // Callers that have nothing to pass write `unsafe { nil }`.
 pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voidptr,
 	methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr, hash voidptr,
-	bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr, next_fn voidptr) PyObj {
+	bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr, next_fn voidptr,
+	getbuffer voidptr, releasebuffer voidptr) PyObj {
 	// The instance size is the larger of this class's own header plus its storage
 	// pointer, and whatever its base already needs. A subclass that is smaller than its
 	// base is rejected by CPython with "tp_basicsize ... too small for base", and the
@@ -606,6 +611,19 @@ pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voi
 		slots << PyTypeSlot{
 			slot:  slot_iternext
 			value: next_fn
+		}
+	}
+	// The buffer protocol, both halves or neither. `PyBuffer_FillInfo` takes a reference
+	// on the exporter, so a type that acquires a view has to release it: a lone
+	// `bf_getbuffer` would leak the reference on every `memoryview`.
+	if getbuffer != unsafe { nil } && releasebuffer != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_bf_getbuffer
+			value: getbuffer
+		}
+		slots << PyTypeSlot{
+			slot:  slot_bf_releasebuffer
+			value: releasebuffer
 		}
 	}
 	// The base tuple has to outlive this call: CPython reads it and keeps a reference to
