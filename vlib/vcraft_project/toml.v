@@ -237,7 +237,16 @@ fn (mut p Parser) run() !Table {
 			p.pending_name = name
 			continue
 		}
-		key, value := p.parse_pair(line)!
+		// A value whose `[` is not closed continues on the following lines, so a long
+		// `classifiers = [...]` list can be written one element per line instead of on
+		// one enormous line. Each continuation line has its own trailing comment lifted
+		// first, so a `#` there cannot swallow the rest of the list.
+		mut joined := strip_comment(line)
+		for p.at < p.lines.len && bracket_depth(joined) > 0 {
+			joined += ' ' + strip_comment(p.lines[p.at].trim_space())
+			p.at++
+		}
+		key, value := p.parse_pair(joined)!
 		// A key before any header is a root key, and a key after one belongs to that
 		// table. `pending_name` says which, and routing by it rather than by which
 		// table object is being filled is what keeps the two from being confused: V
@@ -399,6 +408,32 @@ fn strip_comment(text string) string {
 		}
 	}
 	return text
+}
+
+// bracket_depth counts the unmatched `[` characters in `text`, ignoring any inside a
+// quoted string. A positive depth means the value continues on the next line.
+fn bracket_depth(text string) int {
+	mut depth := 0
+	mut quote := u8(0)
+	for i in 0 .. text.len {
+		ch := text[i]
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == `"` || ch == `'` {
+			quote = ch
+			continue
+		}
+		if ch == `[` {
+			depth++
+		} else if ch == `]` {
+			depth--
+		}
+	}
+	return depth
 }
 
 // unquote removes surrounding quotes and resolves the escapes a name or a description
