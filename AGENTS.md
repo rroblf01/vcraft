@@ -1,8 +1,8 @@
 # AGENTS.md
 
-Agent guidance for this repo. `CLAUDE.md` (git-ignored, local-only) covers similar
-ground at greater length; the executable sources of truth are `scripts/` and
-`.github/workflows/ci.yml`.
+Agent guidance for this repo. The executable sources of truth are `scripts/` and
+`.github/workflows/ci.yml`; per-module detail is in `vlib/*/README.md`. `CLAUDE.md` is
+git-ignored and local-only, so it may not be in your checkout.
 
 ## What this is
 
@@ -10,6 +10,9 @@ vcraft is to the V language what PyO3 + maturin is to Rust: CPython bindings wri
 V, a code generator that turns `@[vc_*]` annotations into extension glue, and a CLI that
 compiles the project with `v -shared` and writes the wheel itself. Currently at 1.1.1
 (see `CHANGELOG.md`). No Rust, C++ or zlib in the pipeline.
+
+`bin/`, `build/`, `**/_vcraft_generated.v` and `python/*.pyi` are generated and
+git-ignored — never hand-edit them; regenerate with `scripts/build-vcraft.sh` or a suite.
 
 ## Invoking the V compiler
 
@@ -29,7 +32,7 @@ The same pins appear in `docker/*`, `actions/vcraft-action/action.yml` and
 
 Each suite is a standalone, stdlib-only Python script (not pytest) that builds its own
 prerequisites. Running a script runs that whole area — **there is no per-test filter**.
-All print `ok`/`FAIL` through one shared `Suite` helper. CI order:
+Each prints `ok`/`FAIL`, most through a local `Suite` helper copied into the file. CI order:
 
 ```
 python3 tests/project/check_toml.py     # vcraft.toml parser (builds its own V driver)
@@ -38,8 +41,8 @@ python3 tests/wheel/test_wheel.py       # wheel writer
 python3 tests/runtime/test_runtime.py   # CPython runtime
 python3 tests/codegen/test_codegen.py   # code generator, end to end
 python3 tests/memory/test_leaks.py      # each scenario twice per process; fails on growth
-python3 tests/fuzz/test_fuzz.py [rounds] [calls]
-python3 tests/docs/test_readme.py       # builds every ```v block of README.md
+python3 tests/fuzz/test_fuzz.py [rounds] [calls-per-round]
+python3 tests/docs/test_readme.py       # builds every ```v block of README.md (see markers)
 python3 tests/cli/test_cli.py           # builds bin/vcraft, uses fresh venvs
 ```
 
@@ -54,6 +57,9 @@ Other scripts:
 - `./scripts/check-slot-ids.sh` checks the hard-coded `Py_tp_*` slot ids in
   `vlib/vcraft/cpython.c.v` against the installed CPython headers (the codegen suite runs
   it too).
+- `scripts/build-probe.sh`, `build-runtime-tests.sh` and `build-wheel-test.sh` each
+  compile one artifact (the Gate 0 probe, the runtime test module, the example wheel) and
+  are called by the suites; prefer running the suite over these directly.
 
 ## Test environment quirks
 
@@ -64,9 +70,16 @@ Other scripts:
   `Py_mod_gil` declaration surfaces as an error that way.
 - `tests/cli/test_cli.py` uses PyYAML to lint this repo's workflows and action and
   **skips** those checks when it is not installed.
+- `tests/docs/test_readme.py` compiles every ```v block in `README.md`; put
+  `<!-- readme-test: continue -->` or `<!-- readme-test: skip -->` on the line before a
+  block to join it to the previous one or exclude it.
 - Supported CPython is 3.11–3.15 plus 3.13t/3.14t/3.15t. Keep `supported_pythons` /
   `oldest_python` (`vlib/vcraft_project/build.v`), the `ci.yml` matrix, `Requires-Python`
   in `scripts/pack-vcraft-wheel.py` and `version` (`vlib/vcraft_project/env.v`) in step.
+- CI also runs the suites on musl inside the published `vcraft-musllinux` image, under
+  ASan/UBSan, and against a free-threaded interpreter. On release, bump the `MUSL_IMAGE`
+  tag in `ci.yml`, the `vcraft-action` default version, and the `images/v<version>` tag;
+  `release-images.yml` checks the tag against `version` in `env.v`.
 
 ## Architecture
 
@@ -76,7 +89,7 @@ Layered modules under `vlib/`; each has a README with the easy-to-get-wrong deta
   C accessors (`c/shim.{c,h}`), conversions, classes, buffers, iterators, errors, panic
   guard, GIL. The API is stateless free functions; argument helpers take an explicit index.
 - `vlib/vcraft_codegen` — parses V sources with `v.astquery` and emits
-  `src/_vcraft_generated.v` (git-ignored) and `python/<pkg>/_stubs.pyi`. The `@[...]`
+  `src/_vcraft_generated.v` (git-ignored) and `python/<package>.pyi`. The `@[...]`
   attribute block is read from the **source text** because V's parse tree drops attributes.
   `cmd/vc-generate` is a thin driver.
 - `vlib/vcraft_wheel` — writes wheels and sdists from scratch: fixed-Huffman DEFLATE, ZIP,
