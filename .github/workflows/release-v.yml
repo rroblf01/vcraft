@@ -5,6 +5,9 @@ name: release-v
 # runner platform, attached to a release tagged `v/<commit>`: a download takes
 # seconds where the source build takes five to seven minutes.
 #
+# The release is a prerelease, so it is a toolchain cache and never the repository's
+# "latest release": that stays the real vcraft release under the `vcraft/v*` tag.
+#
 # Runs when the pin in ci.yml moves, and on demand. It is an optimisation, not a
 # dependency: ci.yml and release-vcraft.yml fall back to building from source when an
 # archive is missing, so a first run or a failed publish only costs time.
@@ -83,13 +86,21 @@ jobs:
       - name: create or update the release
         # One publish step rather than one per matrix cell: several cells racing to
         # create the same release is how a tag ends up with only some of its assets.
+        #
+        # A prerelease on purpose. This is a toolchain cache for the workflows, not a
+        # release of vcraft: marking it prerelease keeps it out of the "latest release"
+        # slot, so the repository's Releases page still points at the real vcraft
+        # version. The vcraft releases are the `vcraft/v*` tags, a different namespace.
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v/${{ env.V_COMMIT }}
-          name: V ${{ env.V_COMMIT }}
+          name: V toolchain ${{ env.V_COMMIT }}
+          prerelease: true
           body: |
             The V compiler vcraft pins for this commit, built from source on each
             runner platform. `ci.yml` and `release-vcraft.yml` download these instead
             of building V, and fall back to a source build when one is missing.
+
+            This is a workflow toolchain cache, not a vcraft release.
           files: assets/**/*.tar.gz
           fail_on_unmatched_files: true
