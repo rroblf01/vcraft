@@ -69,18 +69,37 @@ pub mut:
 	python string
 }
 
-// interpreter_version returns `major.minor` for a Python executable.
-pub fn interpreter_version(python string) string {
-	// Single quotes inside the `-c` script, because the whole script is wrapped in
-	// double quotes for the shell. A nested `"` ends the shell argument early and the
-	// interpreter sees a truncated program, which it reports as an error rather than as
-	// the quoting mistake it is.
-	script := "import sys;print(str(sys.version_info[0])+'.'+str(sys.version_info[1]))"
+// python_line runs a one-line Python expression and returns the value it prints.
+//
+// `os.exec` merges stderr into stdout (V's capture redirects both to one pipe), so a
+// stray warning from the interpreter -- a stale editable `.pth` naming a removed build
+// directory, a startup hook, a sitecustomize -- would otherwise be read as the answer.
+// The value is printed behind a tag and the tag is what is searched for, so noise on
+// stderr cannot be mistaken for it.
+//
+// Single quotes inside the expression, because the whole `-c` script is wrapped in
+// double quotes for the shell: a nested `"` ends the shell argument early and the
+// interpreter sees a truncated program, which it reports as a syntax error rather than
+// as the quoting mistake it is.
+fn python_line(python string, expression string) string {
+	// The common modules are imported up front so an expression can use them: this is a
+	// single expression, not a program, so it cannot carry its own import.
+	script := "import sys,sysconfig,os;print('__vcraft__' + str(${expression}))"
 	out := os.exec([python, '-c', script])
 	if out.exit_code != 0 {
 		return ''
 	}
-	return out.output.trim_space()
+	for line in out.output.split_into_lines() {
+		if line.starts_with('__vcraft__') {
+			return line['__vcraft__'.len..].trim_space()
+		}
+	}
+	return ''
+}
+
+// interpreter_version returns `major.minor` for a Python executable.
+pub fn interpreter_version(python string) string {
+	return python_line(python, "str(sys.version_info[0])+'.'+str(sys.version_info[1])")
 }
 
 // interpreter_is_free_threaded reports whether an interpreter has no global interpreter
@@ -91,12 +110,7 @@ pub fn interpreter_version(python string) string {
 // interpreter is never detected. The build flag is the honest answer: it is set at
 // compile time and does not change while the process runs.
 pub fn interpreter_is_free_threaded(python string) bool {
-	script := "import sysconfig;print(sysconfig.get_config_var('Py_GIL_DISABLED') or 0)"
-	out := os.exec([python, '-c', script])
-	if out.exit_code != 0 {
-		return false
-	}
-	return out.output.trim_space() == '1'
+	return python_line(python, "sysconfig.get_config_var('Py_GIL_DISABLED') or 0") == '1'
 }
 
 // extension_suffix returns the suffix CPython expects for an extension, including the
@@ -104,22 +118,13 @@ pub fn interpreter_is_free_threaded(python string) bool {
 // one build and `cpython-313` on another is the difference between a wheel that
 // installs and one that is ignored.
 pub fn extension_suffix(python string) string {
-	script := "import sysconfig;print(sysconfig.get_config_var('EXT_SUFFIX') or '.so')"
-	out := os.exec([python, '-c', script])
-	if out.exit_code != 0 {
-		return '.so'
-	}
-	return out.output.trim_space()
+	value := python_line(python, "sysconfig.get_config_var('EXT_SUFFIX') or '.so'")
+	return if value.len == 0 { '.so' } else { value }
 }
 
 // include_dir returns the directory holding Python.h.
 pub fn include_dir(python string) string {
-	script := "import sysconfig;print(sysconfig.get_paths()['include'])"
-	out := os.exec([python, '-c', script])
-	if out.exit_code != 0 {
-		return ''
-	}
-	return out.output.trim_space()
+	return python_line(python, "sysconfig.get_paths()['include']")
 }
 
 // platform_tag returns the platform tag for the running interpreter.
@@ -129,12 +134,8 @@ pub fn include_dir(python string) string {
 // how a wheel ends up tagged `linux_x86_64` instead of `manylinux_2_17_x86_64`, and pip
 // then refuses it with "not a supported wheel on this platform".
 pub fn platform_tag(python string) string {
-	script := "import sysconfig;print(sysconfig.get_platform().replace('-', '_').replace('.', '_'))"
-	out := os.exec([python, '-c', script])
-	if out.exit_code != 0 {
-		return 'linux_x86_64'
-	}
-	return out.output.trim_space()
+	value := python_line(python, "sysconfig.get_platform().replace('-', '_').replace('.', '_')")
+	return if value.len == 0 { 'linux_x86_64' } else { value }
 }
 
 // abi_tag returns the ABI tag for an interpreter version.

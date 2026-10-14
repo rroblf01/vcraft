@@ -83,12 +83,7 @@ pub fn develop(p Project, result BuildResult) ! {
 	if !os.exists(python) {
 		return error('no Python interpreter at ${python}; the virtualenv may be broken')
 	}
-	script := "import sysconfig;print(sysconfig.get_paths()['platlib'])"
-	site := os.exec([python, '-c', script])
-	if site.exit_code != 0 {
-		return error('cannot find site-packages for ${python}')
-	}
-	target := site.output.trim_space()
+	target := python_line(python, "sysconfig.get_paths()['platlib']")
 	if target.len == 0 {
 		return error('cannot find site-packages for ${python}')
 	}
@@ -123,10 +118,8 @@ pub fn develop_editable(p Project, result BuildResult) ! {
 	if !os.exists(python) {
 		return error('no Python interpreter at ${python}; the virtualenv may be broken')
 	}
-	script := "import sysconfig;print(sysconfig.get_paths()['platlib'])"
-	site := os.exec([python, '-c', script])
-	target := site.output.trim_space()
-	if site.exit_code != 0 || target.len == 0 {
+	target := python_line(python, "sysconfig.get_paths()['platlib']")
+	if target.len == 0 {
 		return error('cannot find site-packages for ${python}')
 	}
 	dir := target.trim_right('/')
