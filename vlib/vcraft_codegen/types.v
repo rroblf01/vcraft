@@ -117,11 +117,14 @@ pub fn describe(v_type string) string {
 		// `.pyref` needs its own arm: V compiled this match without it, and the missing
 		// arm returned an unset string that crashed the generator inside `+`.
 		.pyobj, .pyref { 'Any' }
-		.seq { 'Sequence[Any]' }
+		// The element type, not `Any`: a `[]int` parameter is `Sequence[int]`, so a user
+		// does not lose the element type at every call. `[]u8` is `.bytes` above.
+		.seq { 'Sequence[' + describe(element_type(v_type)) + ']' }
 		.optional { describe(v_type.trim_space()[1..]) + ' | None' }
 		.dict { 'dict[str, ' + describe(v_type.trim_space()['map[string]'.len..]) + ']' }
 		.tuple { 'tuple[' + tuple_parts(v_type.trim_space()).map(describe(it)).join(', ') + ']' }
 		.fixed { 'list[' + describe(fixed_element(v_type)) + ']' }
+		.complex { 'complex' }
 		.unsupported { 'Any' }
 	}
 }

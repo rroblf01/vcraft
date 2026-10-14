@@ -100,7 +100,7 @@ def main() -> int:
     stubs = STUBS.read_text() if STUBS.exists() else ""
     t.check("stub has add", "def add(a: int, b: int) -> int: ..." in stubs)
     t.check("stub has the docstring", "Adds two integers" in stubs)
-    t.check("stub types the sequence", "values: Sequence[Any]" in stubs)
+    t.check("stub types the sequence element", "values: Sequence[int]" in stubs)
 
     print("module behaviour")
     sys.path.insert(0, str(PYTHON_DIR))
