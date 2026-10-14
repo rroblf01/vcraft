@@ -36,6 +36,13 @@ pub fn sdist(p Project, root string) ![]u8 {
 		data := os.read_file(path) or { return error('cannot read ${path}') }
 		tar.add_file('${base_name(p)}/' + name, data.bytes()) or { return err }
 	}
+	// The licence file travels too, so a build from the sdist still carries it.
+	if license_path := find_license_file(root) {
+		data := os.read_file(license_path) or { return error('cannot read ${license_path}') }
+		tar.add_file('${base_name(p)}/' + license_path.all_after_last('/'), data.bytes()) or {
+			return err
+		}
+	}
 	// The demo's tests travel too: a checkout has them, so an sdist built from the
 	// same tree should give the recipient the same project rather than one with a
 	// `main.py` that refers to tests nobody received.

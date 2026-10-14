@@ -642,6 +642,18 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		}
 	}
 
+	// The licence text travels in the wheel so it is distributed with the code, under
+	// the `.dist-info/licenses/` directory PEP 639 puts it in. The `License:` metadata
+	// field is a separate, human-readable label.
+	if license_path := find_license_file(opt.root) {
+		data := os.read_file(license_path) or { return error('cannot read ${license_path}') }
+		dist_info := '${vcraft_wheel.escape(p.name)}-${vcraft_wheel.normalize_version(p.version)}.dist-info'
+		extras << vcraft_wheel.ExtraFile{
+			name: dist_info + '/licenses/' + license_path.all_after_last('/')
+			data: data.bytes()
+		}
+	}
+
 	long, long_type := p.long_description(opt.root)
 	mut wheel := vcraft_wheel.build(vcraft_wheel.BuildInput{
 		distribution:    p.name
@@ -657,6 +669,8 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		description:     long
 		description_content_type: long_type
 		license:         p.license
+		authors:         p.authors
+		maintainers:     p.maintainers
 		keywords:        p.keywords
 		project_urls:    p.urls
 		requires_python: p.requires_python
@@ -820,6 +834,19 @@ fn compile_pyc(python string, dir string, name string) ![]u8 {
 	data := os.read_file(target) or { return error('cannot read ${target}') }
 	os.rm(target) or {}
 	return data.bytes()
+}
+
+// find_license_file returns the first conventional licence file at the project root, or
+// none. The names are the ones PyPI, setuptools and the metadata spec recognise.
+fn find_license_file(root string) ?string {
+	for name in ['LICENSE', 'LICENSE.txt', 'LICENSE.md', 'LICENSE.rst', 'COPYING',
+		'COPYING.txt'] {
+		path := root.trim_right('/') + '/' + name
+		if os.exists(path) {
+			return path
+		}
+	}
+	return none
 }
 
 // shell_quote renders a command argument for display.

@@ -17,6 +17,10 @@ pub mut:
 	// `text/markdown`. Without it PyPI renders a Markdown README as plain text.
 	description_content_type string
 	license     string
+	// authors, each `Name <email>` or a bare name, written as `Author`.
+	authors []string
+	// maintainers, written as `Maintainer`.
+	maintainers []string
 	// keywords, e.g. `parser`, written comma-separated.
 	keywords []string
 	// project_urls, each `Label, https://...`.
@@ -43,6 +47,12 @@ pub fn render_metadata(m MetaData) string {
 	}
 	if m.license.len > 0 {
 		out += 'License: ${m.license}\n'
+	}
+	if m.authors.len > 0 {
+		out += 'Author: ${m.authors.join(', ')}\n'
+	}
+	if m.maintainers.len > 0 {
+		out += 'Maintainer: ${m.maintainers.join(', ')}\n'
 	}
 	if m.keywords.len > 0 {
 		out += 'Keywords: ${m.keywords.join(',')}\n'

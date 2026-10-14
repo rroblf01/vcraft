@@ -44,6 +44,10 @@ pub mut:
 	readme string
 	// keywords go into METADATA as `Keywords`.
 	keywords []string
+	// authors go into METADATA as `Author`, as `Name <email>` or a bare name.
+	authors []string
+	// maintainers go into METADATA as `Maintainer`.
+	maintainers []string
 	// urls are `Project-URL` entries, `Label, https://...`, from the `[urls]` table.
 	urls []string
 	// minimum_version is the oldest CPython this builds against. It picks the ABI
@@ -160,6 +164,8 @@ pub fn load(root string) !Project {
 	p.dependencies = pkg.string_list_of('dependencies')
 	p.readme = pkg.string_of('readme', p.readme)
 	p.keywords = pkg.string_list_of('keywords')
+	p.authors = pkg.string_list_of('authors')
+	p.maintainers = pkg.string_list_of('maintainers')
 	// `[urls]` maps a label to an address, as in PEP 621's `[project.urls]`, and each
 	// becomes one `Project-URL`. Read in file order so the page lists them as written.
 	for e in table.subtable('urls').entries {
@@ -225,6 +231,12 @@ pub fn (p Project) render() string {
 	}
 	if p.keywords.len > 0 {
 		out += 'keywords = [' + p.keywords.map(quote(it)).join(', ') + ']\n'
+	}
+	if p.authors.len > 0 {
+		out += 'authors = [' + p.authors.map(quote(it)).join(', ') + ']\n'
+	}
+	if p.maintainers.len > 0 {
+		out += 'maintainers = [' + p.maintainers.map(quote(it)).join(', ') + ']\n'
 	}
 	if p.classifiers.len > 0 {
 		out += 'classifiers = [' + p.classifiers.map(quote(it)).join(', ') + ']\n'
