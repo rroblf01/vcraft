@@ -471,7 +471,7 @@ jobs:
           [t.join() for t in threads]
           assert len(seen) == 160_000, len(seen)
           # A native buffer, its zero-copy view, and concurrent writes to disjoint slots.
-          buf = m.new_buf(8)
+          buf = m.Buf(8)
           view = memoryview(buf)
           assert len(view) == 64, len(view)
           view.cast('d')[7] = 3.5
