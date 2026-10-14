@@ -208,6 +208,7 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_class]`   | `pub struct`    | Creates a Python type backed by the V struct                |
 | `@[vc_method]` | methods         | Adds the method to the class of its receiver                |
 | `@[vc_field]`   | struct fields   | Exposes the field as an attribute of the instance           |
+| `@[vc_buffer]`  | struct fields   | A persistent native `[]T` of scalars, freed at dealloc      |
 | `@[vc_property]`| methods         | Registers the method as a Python `property`                 |
 | `@[vc_base]`    | `pub struct`    | Makes the class inherit the named one                       |
 | `@[vc_ref]`     | struct fields   | Exposes the field as a strong reference to another instance  |
@@ -404,10 +405,14 @@ registering a setter, rather than from a hand-written check per field. An
 `@[vc_property]` method becomes a read-only property, and a plain `@[vc_method]`
 method takes arguments like any other exposed function.
 
-The constructor runs in `tp_new` and takes no arguments, so `Counter(1)` is a
-`TypeError`. That is deliberate: there is no implied `__init__` signature to keep
-in sync with a V constructor that could change shape. Give the constructor
-parameters and you would have to keep two signatures aligned by hand.
+The constructor runs in `tp_new`, and it may take arguments: `new_vector(4)` is called by
+`Vector(4)`. They are read from the tuple and dict Python passes `tp_new` with the same
+marshalling rules a method's parameters use, so keyword arguments and `@[vc_defaults]`
+work, and the signature reaches the `.pyi` stub as `__init__`. An argument-free
+constructor is still a `TypeError` when called with arguments, as before. A subclass runs
+its base's constructor with no arguments, so an argument-taking constructor is allowed
+only on a class whose base chain is argument-free; the generator reports the other case
+rather than guessing how to forward the arguments.
 
 Docstrings reach `__doc__` on the type, its methods, its properties and its fields.
 
@@ -530,6 +535,115 @@ borrowed, so the field counts its own rather than adopting CPython's.
 
 Weak references are not supported yet: that needs a `tp_weaklistoffset` inside the
 instance and registration in `tp_traverse`.
+
+### Persistent native buffers
+
+An `@[vc_buffer]` field is a slice of scalars that lives for the object's lifetime, is
+not copied on each call, and is freed exactly once at dealloc. It is how numeric state
+stays in V across many calls instead of crossing the boundary per element: a stabilizer
+tableau, a state vector, a scratch workspace.
+
+```v
+// A vector of doubles held in a native buffer.
+//
+// The backing is allocated by `buffer_new_f64` in the constructor and freed by the
+// generated `tp_dealloc`. `memoryview(v)` exposes the first buffer of the class with no
+// copy; the others, if any, are reached through methods.
+@[vc_class]
+pub struct Vector {
+mut:
+	@[vc_buffer] data []f64
+}
+
+// new_vector allocates a zeroed buffer of `n` doubles. The constructor takes an
+// argument, which `tp_new` binds and passes here.
+@[vc_fn]
+pub fn new_vector(n int) &Vector {
+	return &Vector{
+		data: vcraft.buffer_new_f64(n)
+	}
+}
+
+// set stores a value at `i`, ignoring an out-of-range index.
+@[vc_method]
+pub fn (mut v Vector) set(i int, value f64) {
+	if i >= 0 && i < v.data.len {
+		v.data[i] = value
+	}
+}
+
+// total sums the buffer in V, with no per-element crossing of the boundary.
+@[vc_method]
+pub fn (v &Vector) total() f64 {
+	mut sum := 0.0
+	for x in v.data {
+		sum += x
+	}
+	return sum
+}
+
+// resize replaces the buffer with `n` zeroed doubles, refusing while a memoryview is open.
+@[vc_method]
+pub fn (mut v Vector) resize(n int) ! {
+	v.data = vcraft.buffer_resize_f64(v.data, n)!
+}
+```
+
+```pycon
+>>> v = m.Vector(4)              # calls new_vector(4)
+>>> v.set(0, 1.5); v.set(1, 2.5)
+>>> v.total()
+4.0
+>>> mv = memoryview(v)           # zero-copy; writes go both ways
+>>> mv.cast('d')[2] = 9.0
+>>> v.total()
+13.0
+>>> v.resize(2)                  # refused while the view is alive
+BufferError: cannot resize a buffer while a memoryview of it is open
+```
+
+The backing is allocated with the CPython allocator, not V's, because the state block is
+CPython-owned memory that V's collector does not scan: a V-heap pointer kept there would
+look unreachable and be reclaimed while Python still held the object. It is therefore
+owned by hand, and the only values an `@[vc_buffer]` field may hold are the ones the
+`buffer_new_*` helpers return; assigning an ordinary V array to it would hand `buffer_free`
+a pointer it does not own. The first `@[vc_buffer]` field of a class is the one
+`memoryview(instance)` exposes; a class with more than one gets a warning, and the rest are
+read and written through methods. A class that only inherits a buffer is covered by the
+base's slot.
+
+A resize refuses with `BufferError` while a `memoryview` is open, because reallocating
+moves the memory a live view still points at. A class that holds both an `@[vc_buffer]` and
+an `@[vc_ref]` is collectable and owns native memory: `tp_dealloc` releases the references
+and frees the buffers before the state block goes.
+
+For state that is not a plain slice -- a handle from a C library, a struct full of
+pointers -- `vcraft.new_handle(value, destructor)` wraps a native pointer in an anonymous
+`PyCapsule`, and `vcraft.handle_data(capsule)` recovers it. The capsule calls `destructor`
+when Python collects it; CPython passes the destructor the capsule object, so call
+`handle_data` there to get the pointer back:
+
+```v
+// new_box allocates an int behind a capsule that frees it.
+@[vc_fn]
+pub fn new_box(value int) vcraft.PyObj {
+	p := vcraft.native_alloc(usize(sizeof(int)))
+	if p == unsafe { nil } {
+		panic('memory allocation failure')
+	}
+	unsafe {
+		*(&int(p)) = value
+	}
+	return vcraft.new_handle(p, voidptr(box_free))
+}
+
+fn box_free(capsule voidptr) {
+	vcraft.native_free(vcraft.handle_data(capsule))
+}
+```
+
+This is the general escape hatch next to `@[vc_raw]`: a `@[vc_raw]` function can take the
+capsule as an opaque `voidptr` and call `vcraft.handle_data` on it.
 
 ### Custom error types
 
@@ -1001,6 +1115,10 @@ so a type checker sees the signatures `help()` shows. `vcraft generate-ci` adds
 `main.py` and `tests/` are for the development loop and are not part of the
 distribution, though both travel in the sdist.
 
+`pyproject.toml` is written once by `vcraft new` and then merged on every build: vcraft
+owns its `[build-system]` table and preserves everything else the project adds to the
+file.
+
 ---
 
 ## Continuous integration
@@ -1047,7 +1165,11 @@ wheel-building tools can drive it, but only the workflow above is tested.
 ## Configuration
 
 Packaging configuration lives in `vcraft.toml` at the project root. `vcraft new`
-writes one; `pyproject.toml` only names the build backend.
+writes one. `pyproject.toml` is the only other file vcraft touches, and it is merged
+rather than replaced: a build rewrites just the `[build-system]` table and leaves every
+other table alone. A project's own `[project]`, `[dependency-groups]` (PEP 735, so
+`uv sync --group dev` works) and `[tool.*]` config survive `vcraft build` and
+`vcraft develop`.
 
 ```toml
 [package]

@@ -7,6 +7,41 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+### Added
+
+- **Persistent native buffers in `@[vc_class]`.** A field annotated `@[vc_buffer]` holds a
+  `[]T` of scalars whose backing lives for the object's lifetime, is not copied per call,
+  and is freed exactly once at dealloc. State that used to be rebuilt or batched per call
+  can now live in V: a stabilizer tableau, a state vector, a scratch workspace. The
+  `vcraft.buffer_new_*` helpers allocate the backing, `memoryview(instance)` exposes the
+  first buffer of a class with no copy, `vcraft.buffer_resize_*` grows or shrinks it, and a
+  resize is refused with `BufferError` while a memoryview is open. A class holding both a
+  buffer and a `@[vc_ref]` is collectable and frees both.
+- **Constructors that take arguments.** `new_<class>` may declare parameters; `tp_new`
+  binds Python's positional and keyword arguments with the same marshalling rules a method
+  uses, so `Vector(4)` calls `new_vector(4)` and the signature reaches the `.pyi` stub as
+  `__init__`. A subclass runs its base's constructor with no arguments, so an
+  argument-taking constructor is allowed only on a class whose base chain is argument-free;
+  the generator reports the other case.
+- **Capsules.** `vcraft.new_handle(value, destructor)` wraps an arbitrary native pointer in
+  a `PyCapsule` and `vcraft.handle_data(capsule)` recovers it, as the escape hatch next to
+  `@[vc_raw]` for state that is not a plain slice.
+
+### Fixed
+
+- **`pyproject.toml` is merged, not overwritten.** `vcraft build` and `vcraft develop`
+  used to replace the whole file with vcraft's template, silently deleting a project's own
+  `[project]`, `[dependency-groups]` (PEP 735, so `uv sync --group dev` works) and
+  `[tool.*]` tables. A build now rewrites only vcraft's `[build-system]` table and leaves
+  every other table, comment and ordering in place; a file that does not exist yet is
+  created from the full template.
+- **`!void` functions and methods.** A result type of `!` (may fail, returns no value) was
+  read as `voidptr`, and the wrapper tried to box a value the function never produced,
+  which failed to compile. It is now treated as `void`.
+- **Constructor name matching** now accepts the snake-cased spelling of a multi-word class,
+  so `TallyBuffer` is built by `new_tally_buffer` as well as `new_tallybuffer`.
+- **`PyExc.buffer_error`** added, so a buffer-protocol failure can name `BufferError`.
+
 ## [1.1.1] - 2026-10-13
 
 ### Fixed

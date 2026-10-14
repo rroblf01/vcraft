@@ -66,6 +66,10 @@ checked off here when it does.
 
 Additions that do not change anything 1.0 promises.
 
+- [x] **Persistent native buffers:** a `@[vc_buffer]` field holds a `[]T` of scalars for
+      the object's lifetime, freed at dealloc and exposed through the buffer protocol.
+- [x] **Constructors with arguments:** `new_<class>` may take parameters, bound in
+      `tp_new` with the same marshalling rules as a method.
 - [ ] **More types:** enums, plain structs, maps with non-string keys, nested
       composites, and class instances (`&T`) in plain functions.
 - [ ] **Callbacks:** calling a Python callable from V.
