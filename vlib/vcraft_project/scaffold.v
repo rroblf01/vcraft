@@ -69,7 +69,9 @@ pub fn scaffold(p Project) []ScaffoldFile {
 	}
 	files << ScaffoldFile{
 		path:    '.gitignore'
-		content: '/build/\n/dist/\n/.vcraft/\n/src/_vcraft_generated.v\npython/*.pyi\n*.so\n__pycache__/\n*.pyc\n.pytest_cache/\n'
+		// Only the generated stub is ignored, not every `.pyi`: a project may keep a
+		// hand-written top-level stub under `python/`.
+		content: '/build/\n/dist/\n/.vcraft/\n/src/_vcraft_generated.v\npython/${p.module}.pyi\n*.so\n__pycache__/\n*.pyc\n.pytest_cache/\n'
 	}
 	// The PEP 517 backend, so that `pip install .` works from a fresh checkout without
 	// the project having to know anything about it.
