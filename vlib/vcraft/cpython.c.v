@@ -169,6 +169,18 @@ fn C.PyFloat_FromDouble(v f64) voidptr
 
 fn C.PyFloat_AsDouble(o voidptr) f64
 
+// ----------------------------------------------------------------- complex
+
+// `PyComplex_Check` is a macro over `PyObject_TypeCheck`, so it goes through the shim.
+// The other three are exported functions even under the limited API.
+fn C.PyComplex_FromDoubles(re f64, im f64) voidptr
+
+fn C.PyComplex_RealAsDouble(o voidptr) f64
+
+fn C.PyComplex_ImagAsDouble(o voidptr) f64
+
+fn C.vpy_is_complex(o voidptr) int
+
 // ----------------------------------------------------------------- strings
 
 fn C.PyUnicode_FromStringAndSize(s voidptr, len isize) voidptr

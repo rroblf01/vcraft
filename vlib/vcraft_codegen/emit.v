@@ -972,6 +972,9 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 		.seq { '${v_type}{}' }
 		.optional { '${v_type.trim_space()}(none)' }
 		.dict, .fixed { '${v_type.trim_space()}{}' }
+		// A call rather than a literal, so generated code never has to name
+		// `complex.Complex` and the glue needs no `math.complex` import.
+		.complex { 'vcraft.zero_complex()' }
 		// Never declared as one local: `result_decl` declares one per element.
 		.tuple { 'unsafe { nil }' }
 		.pyobj, .unsupported { 'unsafe { nil }' }
@@ -1076,6 +1079,9 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 			"\t${local} := vcraft.require_voidptr_arg(args, ${index}, '${func}', '${param}')\n" +
 				'\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}'
 		}
+		.complex {
+			"vcraft.from_py_complex(vcraft.required_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }, '${param}')"
+		}
 		else {
 			"\t${local} := vcraft.require_arg(args, ${index}, '${func}', '${param}')\n" +
 				'\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}'
@@ -1113,6 +1119,8 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 		.uint { 'vcraft.to_py_uint(' + value + ')' }
 		.float { 'vcraft.to_py_f64(' + value + ')' }
 		.str { 'vcraft.to_py_string(' + value + ')' }
+		// A V `math.complex.Complex` becomes a Python `complex`.
+		.complex { 'vcraft.to_py_complex(' + value + ')' }
 		// Copying: a Python `bytes` owns immutable storage, so there is nothing to
 		// alias a V slice into. Reads cost nothing; writes pay for the type.
 		.bytes { 'vcraft.to_py_bytes_slice(' + value + ')' }
@@ -1145,6 +1153,7 @@ pub fn unbox_expr(strategy Strategy, value string, v_type string) string {
 		.int { 'vcraft.unbox_int(' + value + ', ' + vstring_literal('value') + ')' }
 		.uint { 'vcraft.unbox_uint(' + value + ', ' + vstring_literal('value') + ')' }
 		.float { 'vcraft.unbox_f64(' + value + ', ' + vstring_literal('value') + ')' }
+		.complex { 'vcraft.from_py_complex(vcraft.borrow(' + value + '), ' + vstring_literal('value') + ')' }
 		// Borrowed, because the caller keeps its own reference to whatever it passed.
 		// The value it ends up in is released with `decref` or handed to a field, which
 		// counts it.

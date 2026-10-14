@@ -1,5 +1,6 @@
 module hello_native
 
+import math.complex
 import vcraft
 
 // Adds two integers and returns the sum.
@@ -141,6 +142,15 @@ pub fn squares(n int) []int {
 @[vc_fn]
 pub fn words(text string) []string {
 	return text.split(' ')
+}
+
+// scale_complex multiplies a complex number by a real one.
+//
+// `complex.Complex` marshals to and from a Python `complex`, and a plain real is accepted
+// where a complex is expected, as Python itself coerces.
+@[vc_fn]
+pub fn scale_complex(z complex.Complex, k f64) complex.Complex {
+	return complex.complex(z.re * k, z.im * k)
 }
 
 // Wraps an integer in a one-element list it builds itself.

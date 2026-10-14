@@ -1,5 +1,7 @@
 module vcraft
 
+import math.complex
+
 // Value marshalling between V and CPython.
 //
 // Two directions, named for where the data comes from:
@@ -95,6 +97,26 @@ pub fn from_py_f64(obj PyObj, name string) !f64 {
 	}
 	set_error(pyexc_obj(.type_error), '${name}: expected float, got ${obj.type_name()}')
 	return error('${name}: expected float')
+}
+
+// from_py_complex reads a Python complex into a V `math.complex.Complex`.
+//
+// A real number is accepted too, with no imaginary part, matching Python's own coercion
+// of a real where a complex is expected: `scale(2)` works next to `scale(2+1j)`.
+pub fn from_py_complex(obj PyObj, name string) !complex.Complex {
+	if obj.is_null() {
+		set_error(pyexc_obj(.type_error), '${name}: missing argument')
+		return error('${name}: missing')
+	}
+	if C.vpy_is_complex(obj.ptr) != 0 {
+		return complex.complex(C.PyComplex_RealAsDouble(obj.ptr), C.PyComplex_ImagAsDouble(obj.ptr))
+	}
+	if obj.type_is(float_type()) || obj.type_is(long_type()) {
+		re := from_py_f64(obj, name)!
+		return complex.complex(re, 0.0)
+	}
+	set_error(pyexc_obj(.type_error), '${name}: expected complex, got ${obj.type_name()}')
+	return error('${name}: expected complex')
 }
 
 // from_py_bool reads any object as Python's `bool()` would.
@@ -288,6 +310,18 @@ pub fn to_py_uint(value u64) PyObj {
 // to_py_f64 boxes a V float.
 pub fn to_py_f64(value f64) PyObj {
 	return steal(C.PyFloat_FromDouble(value))
+}
+
+// to_py_complex boxes a V `math.complex.Complex` as a Python complex.
+pub fn to_py_complex(value complex.Complex) PyObj {
+	return steal(C.PyComplex_FromDoubles(value.re, value.im))
+}
+
+// zero_complex is the zero value of `math.complex.Complex`, as a call so generated code
+// can default a result local without naming the type (and so without importing the
+// module in the glue file).
+pub fn zero_complex() complex.Complex {
+	return complex.complex(0.0, 0.0)
 }
 
 // to_py_string boxes a V string as a Python str, decoding it as UTF-8.

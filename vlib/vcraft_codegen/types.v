@@ -42,6 +42,8 @@ pub enum Strategy {
 	// Fixed is a fixed-size array, `[N]T`: any sequence of exactly N items in, a `list`
 	// out.
 	fixed
+	// Complex is `math.complex.Complex`, which becomes a Python `complex`.
+	complex
 	// Unsupported means the generator refuses to emit code for it.
 	unsupported
 }
@@ -63,6 +65,12 @@ pub fn lookup(v_type string) Strategy {
 	// is the same type written out.
 	if base == 'PyObj' || base == 'vcraft.PyObj' {
 		return .pyref
+	}
+	// `math.complex.Complex` is a struct, but a well-known one: it crosses as a Python
+	// `complex` rather than as an unsupported struct. Both spellings, because a project
+	// may import `math.complex` under either name.
+	if base == 'complex.Complex' || base == 'math.complex.Complex' {
+		return .complex
 	}
 	// The composite types are recognised by their shape before the scalar names, and
 	// only over element types that are themselves plain values: anything else stays

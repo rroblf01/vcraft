@@ -75,7 +75,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 25,
+            glue.count("add_function_owned") == 26,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -175,6 +175,19 @@ def main() -> int:
     # scenarios are the backstop there.
     refs = sys.getrefcount(held)
     t.check("a PyObj result is owned once", refs <= 2, f"got {refs}")
+
+    print("complex numbers")
+    # `math.complex.Complex` crosses as a Python `complex`, both directions, and a plain
+    # real is accepted where a complex is expected.
+    t.equal("a complex argument and result", h.scale_complex(1 + 2j, 3), 3 + 6j)
+    t.check("the result is a Python complex", type(h.scale_complex(1j, 1)) is complex)
+    t.equal("a real is coerced to complex", h.scale_complex(2, 5), 10 + 0j)
+    t.equal("a negative scale", h.scale_complex(1.5 - 0.5j, -2), -3 + 1j)
+    t.raises("a non-number is rejected as a complex", TypeError, "expected complex",
+             lambda: h.scale_complex("x", 1))
+    t.check("the signature names complex",
+            h.scale_complex.__doc__ == "scale_complex(z: complex, k: float) -> complex",
+            h.scale_complex.__doc__)
 
     print("i64 fields")
     tally = h.Tally()

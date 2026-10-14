@@ -755,6 +755,14 @@ PyObject *vpy_exc_buffer_error(void) {
 	return PyExc_BufferError;
 }
 
+// vpy_is_complex reports whether an object is a Python complex.
+//
+// `PyComplex_Check` is a macro over `PyObject_TypeCheck`, which V cannot expand against
+// an opaque type, so the test lives here with the concrete header in scope.
+int vpy_is_complex(void *o) {
+	return o != NULL && PyComplex_Check((PyObject *)o);
+}
+
 PyObject *vpy_exc_overflow_error(void) {
 	return PyExc_OverflowError;
 }
