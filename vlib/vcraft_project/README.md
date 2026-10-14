@@ -158,6 +158,14 @@ So `vcraft_build.py` is generated text. It locates the binary, runs it, and retu
 artefact's name. Every hook does one thing, and the logic is in the binary where it can
 be tested against a real project.
 
+`pyproject.toml` is rewritten on every build, but merged rather than replaced: vcraft
+owns its `[build-system]` table and nothing else. `merge_pyproject` (in `backend.v`) works
+on lines rather than through the TOML parser on purpose — the parser is a subset that
+drops comments and reorders entries, and a project's `pyproject.toml` is where a comment
+and an ordering are the author's to keep. `[project]`, `[dependency-groups]` and
+`[tool.*]` tables survive `vcraft build` and `vcraft develop`. The backend file itself is
+still rewritten every time, because it describes the binary doing the building.
+
 Three things in it are not obvious:
 
 - PEP 517 wants the artefact's **name**, and pip joins it onto the directory it chose.

@@ -26,18 +26,30 @@ pub fn backend_py() string {
 	return 'vcraft_build.py'
 }
 
-// pyproject_toml is the build-system table pointing at it.
+// build_system_toml is the one table vcraft manages.
 //
 // `backend-path` is what makes a local file importable without it being installed. It
 // is the reason this approach works at all: the frontend adds the project directory to
 // `sys.path`, finds the file, and never asks where it came from.
-pub fn pyproject_toml() string {
+//
+// This is the whole of what a build rewrites. Every other table -- a project's
+// `[project]`, `[dependency-groups]`, `[tool.*]` -- belongs to the project and is left
+// alone, so `uv sync --group dev` and a custom `[tool.pytest.ini_options]` survive a
+// build. `merge_pyproject` is what keeps that promise.
+pub fn build_system_toml() string {
 	return '[build-system]\n' +
 		'requires = []\n' +
 		'build-backend = "vcraft_build"\n' +
-		'backend-path = ["."]\n' +
-		'\n' +
-		'# A project keeps its Python package under `python/` (see the generated layout),\n' +
+		'backend-path = ["."]\n'
+}
+
+// tool_hints_toml is the editor guidance `vcraft new` scaffolds, and nothing more.
+//
+// It is written once, when the project is created or when it has no `pyproject.toml` at
+// all. A later build does not touch it: a project that edits its `[tool.pyright]` or
+// removes it keeps its decision.
+pub fn tool_hints_toml() string {
+	return '# A project keeps its Python package under `python/` (see the generated layout),\n' +
 		'# so a type checker or editor is told where to look: without this, `import\n' +
 		'# <name>` is unresolved in an editor until the package is installed.\n' +
 		'[tool.pyright]\n' +
@@ -47,15 +59,102 @@ pub fn pyproject_toml() string {
 		'mypy_path = "python"\n'
 }
 
+// pyproject_toml is the whole file a project starts with: the managed table and the
+// editor hints. Written by `vcraft new` and by a build whose project has no
+// `pyproject.toml` yet. When one exists, `write_backend` merges instead.
+pub fn pyproject_toml() string {
+	return build_system_toml() + '\n' + tool_hints_toml()
+}
+
+// merge_pyproject returns `existing` with its `[build-system]` table replaced by
+// `build_system_toml`, or that table appended when the file has none.
+//
+// It works on lines rather than through the TOML parser on purpose: the parser is a
+// subset that drops comments and reorders entries, and a project's `pyproject.toml` is
+// exactly where a comment and an ordering are the author's to keep. Only a line whose
+// trimmed text is `[build-system]` marks the table, and the table runs to the next line
+// that begins a header, so everything between is the one block rewritten. A `[` opening
+// a line inside a multi-line string would be read as a header; that is the one shape
+// this does not handle, and it costs a stray blank line rather than corruption.
+pub fn merge_pyproject(existing string) string {
+	lines := existing.split_into_lines()
+	mut out := []string{}
+	mut replaced := false
+	mut skipping := false
+	// Blank lines and comments met while dropping the old `[build-system]` table. They
+	// may belong to the table (inside it) or to whatever follows it (the comment block
+	// before `[tool.pyright]`), and the next non-blank line decides: a key means they
+	// were inside the table and are dropped with it, a header means they are kept.
+	mut pending := []string{}
+	for line in lines {
+		trimmed := line.trim_space()
+		is_header := trimmed.starts_with('[')
+		if is_header {
+			for pl in pending {
+				out << pl
+			}
+			pending = []
+			if skipping {
+				skipping = false
+			}
+			if trimmed == '[build-system]' {
+				// The managed table is emitted once, in its canonical form.
+				for bl in build_system_toml().split_into_lines() {
+					out << bl
+				}
+				replaced = true
+				skipping = true
+				continue
+			}
+			out << line
+			continue
+		}
+		if skipping {
+			if trimmed == '' || trimmed.starts_with('#') {
+				pending << line
+			} else {
+				// A body line of the old table: whatever was pending was inside it too.
+				pending = []
+			}
+			continue
+		}
+		out << line
+	}
+	// Comments and blanks left after the table's last key belong to the file, not to the
+	// table, so they are kept.
+	for pl in pending {
+		out << pl
+	}
+	if !replaced {
+		if out.len > 0 && out.last().trim_space() != '' {
+			out << ''
+		}
+		for bl in build_system_toml().split_into_lines() {
+			out << bl
+		}
+	}
+	return out.join('\n') + '\n'
+}
+
 // write_backend writes `pyproject.toml` and the backend into a project.
 //
-// Both are rewritten every time rather than only when absent. They describe the tool
-// that is building, and a project that upgraded vcraft should get the matching backend
-// rather than whichever one it happened to be generated with.
+// The backend is rewritten every time: it describes the tool that is building, and a
+// project that upgraded vcraft should get the matching backend rather than whichever
+// one it happened to be generated with.
+//
+// `pyproject.toml` is merged rather than replaced. Only vcraft's own `[build-system]`
+// table is written; every other table a project added -- `[project]`,
+// `[dependency-groups]`, `[tool.*]` -- is preserved. A file that does not exist yet is
+// created from the full template.
 pub fn write_backend(root string) ![]string {
 	mut written := []string{}
 	manifest := root.trim_right('/') + '/pyproject.toml'
-	os.write_file(manifest, pyproject_toml()) or {
+	content := if os.exists(manifest) {
+		merge_pyproject(os.read_file(manifest) or { return error('cannot read ${manifest}') })
+	} else {
+		pyproject_toml()
+	}
+	os.write_file(manifest, content) or {
 		return error('cannot write ${manifest}')
 	}
 	written << manifest
