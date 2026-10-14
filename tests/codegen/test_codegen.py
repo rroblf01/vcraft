@@ -288,7 +288,8 @@ def main() -> int:
     t.check("method with one argument", stepped == 104, stepped)
     t.check("class attributes", sorted(
         n for n in dir(h.Counter) if not n.startswith("_")) ==
-        ["double", "increment", "is_zero", "set_step", "step", "value"])
+        ["double", "increment", "is_zero", "raw_echo", "set_step", "step", "triple",
+         "value"])
     t.check("instances are distinct",
             h.Counter().value == 0 and h.Counter().value == 0)
     t.check("isinstance", isinstance(counter, h.Counter))
@@ -300,6 +301,24 @@ def main() -> int:
     t.raises("fields cannot be deleted", AttributeError, "cannot be deleted",
              lambda: delattr(counter, "value"))
     t.check("rejected assignment changes nothing", counter.value == 104, counter.value)
+
+    print("static and raw methods")
+    # `@[vc_static]` makes a `staticmethod`: callable on the class with no instance, and
+    # on an instance with the instance ignored.
+    t.equal("a static method on the class", h.Counter.triple(4), 12)
+    t.equal("a static method on an instance", h.Counter().triple(5), 15)
+    t.check("it is really a staticmethod",
+            isinstance(h.Counter.__dict__["triple"], staticmethod))
+    # `@[vc_raw]` on a method skips marshalling: the argument is the borrowed object and
+    # the return is owned by the caller, exactly as for a raw module function.
+    raw_sentinel = object()
+    t.check("a raw method returns the same object", counter.raw_echo(raw_sentinel) is raw_sentinel)
+    raw_before = sys.getrefcount(raw_sentinel)
+    for _ in range(100):
+        counter.raw_echo(raw_sentinel)
+    t.check("a raw method keeps no extra reference",
+            sys.getrefcount(raw_sentinel) == raw_before,
+            sys.getrefcount(raw_sentinel) - raw_before)
 
     print("class docstrings")
     t.check("class docstring", h.Counter.__doc__.startswith("A counter with state."),
@@ -319,7 +338,16 @@ def main() -> int:
     t.check("fields are attributes", "    value: int" in stub, stub[-400:])
     t.check("methods are declared", "    def increment(self) -> int: ..." in stub)
     t.check("property is decorated", "    @property\n" in stub)
+    t.check("a static method is a staticmethod in the stub",
+            "    @staticmethod\n" in stub and "def triple(n: int) -> int: ..." in stub, stub)
     t.check("class docstring reaches the stub", "A counter with state." in stub)
+
+    print("static and raw methods in the generated file")
+    t.check("the static method carries METH_STATIC", "vcraft.meth_static |" in glue)
+    t.check("a static trampoline is emitted",
+            "fn vcraft_generated__static_counter_triple(" in glue)
+    t.check("a raw method reads its argument directly",
+            "vcraft.require_arg(args, 0, 'raw_echo', 'obj')" in glue)
 
     print("class operators")
     a = h.Counter()

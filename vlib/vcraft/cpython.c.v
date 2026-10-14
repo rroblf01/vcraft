@@ -394,6 +394,10 @@ pub const meth_fastcall = 0x0080
 // METH_FASTCALL | METH_KEYWORDS
 pub const meth_fastcall_keywords = meth_fastcall | 0x0002
 
+// METH_STATIC makes a `PyMethodDef` entry a static method: CPython passes NULL as the
+// receiver, so the trampoline gets no instance. `@[vc_static]` is its only user.
+pub const meth_static = 0x0020
+
 // Type slot identifiers, from CPython's typeslots.h. A slot id is a macro, so the
 // runtime repeats the numbers and `check_layout` would catch a future change only
 // by name, not by value. They are part of the stable ABI.

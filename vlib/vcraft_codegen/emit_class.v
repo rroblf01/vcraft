@@ -277,7 +277,9 @@ fn emit_class_methods(c Class) string {
 }
 
 fn method_flags(m Func) string {
-	return if m.params.len == 0 { 'vcraft.meth_noargs' } else { 'vcraft.meth_fastcall_keywords' }
+	base := if m.params.len == 0 { 'vcraft.meth_noargs' } else { 'vcraft.meth_fastcall_keywords' }
+	// METH_STATIC is what makes CPython pass NULL as the receiver for a `@[vc_static]`.
+	return if m.static { 'vcraft.meth_static | ' + base } else { base }
 }
 
 // emit_class_new renders `tp_new`.

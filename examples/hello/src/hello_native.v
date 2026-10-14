@@ -307,6 +307,26 @@ pub fn (c &Counter) is_zero() bool {
 	return c.value == 0
 }
 
+// triple is a static method: it belongs to the class but takes no instance.
+//
+// `@[vc_static]` on a `fn Counter.triple()` (no receiver) makes a Python
+// `staticmethod`, so `Counter.triple(4)` works without constructing anything.
+@[vc_static]
+pub fn Counter.triple(n int) int {
+	return n * 3
+}
+
+// raw_echo hands one Python object through untouched.
+//
+// `@[vc_raw]` on a method skips marshalling for its arguments exactly as it does on a
+// module function: the receiver still works on the instance's state, each argument is
+// the borrowed `PyObject` itself, and the return is owned by the caller.
+@[vc_method]
+@[vc_raw]
+pub fn (mut c Counter) raw_echo(obj voidptr) voidptr {
+	return obj
+}
+
 // A node in a chain, and the class that exists to show a cycle being collected.
 //
 // `peer` is a strong reference: Node holds it, and a Node can hold one of these back.

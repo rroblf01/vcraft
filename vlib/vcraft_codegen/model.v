@@ -146,6 +146,10 @@ pub mut:
 	property bool
 	// static marks a method that takes no receiver.
 	static bool
+	// static_receiver names the class a `@[vc_static]` method belongs to. The V function
+	// is `Receiver.name` and its trampoline gets NULL as `self`, so the call target and
+	// the Python name have to be carried separately.
+	static_receiver string
 	// eq marks a method used as `tp_richcompare`'s equality. Exactly one per class.
 	eq bool
 	// hash marks a method used as `tp_hash`.

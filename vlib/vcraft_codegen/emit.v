@@ -66,6 +66,8 @@ pub fn emit_glue(p Project) string {
 			w.write_string('\n')
 			if m.property {
 				w.write_string(emit_property_trampoline(p, c, m))
+			} else if m.static {
+				w.write_string(emit_static_trampoline(m))
 			} else {
 				w.write_string(emit_method_trampoline(p, c, m))
 			}
@@ -482,12 +484,20 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	for i, param in f.params {
 		name := local_name(i)
 		names << name
+		// A `@[vc_raw]` method reads each argument as the borrowed PyObject itself, the
+		// same as a raw module function; the receiver is still the instance's state.
+		if f.raw {
+			w.write_string('\t${name} := vcraft.from_py_voidptr(' +
+				"vcraft.require_arg(args, ${i}, '${f.name}', '${param.name}'))\n")
+			w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+			continue
+		}
 		w.write_string('\t${param_reader(param, name, i, f.name)}\n')
 	}
 	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
-	has_value := ret != .void
+	has_value := f.raw || ret != .void
 	if has_value {
 		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
 	}
@@ -537,6 +547,83 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	}
 	// The instance is written back before anything can fail, so a method that
 	// raises leaves the object consistent.
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	if has_value {
+		w.write_string('\treturn ${return_expr(ret, 'result', f.raw, f.v_ret)}\n')
+	} else {
+		w.write_string('\treturn vcraft.to_py_none().ptr\n')
+	}
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_static_trampoline renders a `@[vc_static]` method.
+//
+// It is the module-function trampoline with the call target spelled `Receiver.name`. A
+// static method takes no receiver, so CPython passes NULL as `self` and nothing here
+// touches an instance: no state pointer, no published chain. The Python name is the
+// method's own; only the V call carries the receiver.
+pub fn emit_static_trampoline(f Func) string {
+	mut w := new_builder()
+	signature := if f.params.len == 0 {
+		'self voidptr, args voidptr'
+	} else {
+		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
+	}
+	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
+	if f.params.len > 0 {
+		w.write_string(emit_bind(f))
+	}
+	mut names := []string{}
+	for i, param in f.params {
+		name := local_name(i)
+		names << name
+		w.write_string('\t${param_reader(param, name, i, f.name)}\n')
+	}
+	ret := lookup(f.v_ret)
+	has_value := ret != .void
+	if has_value {
+		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
+	}
+	if f.nogil {
+		w.write_string(emit_nogil_open())
+	} else {
+		w.write_string('\tdefer {\n')
+		w.write_string('\t\tif message := recover() {\n')
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
+		w.write_string('\t\t}\n')
+		w.write_string('\t}\n')
+	}
+	call := '${f.static_receiver}.${f.name}(${names.join(', ')})'
+	if f.returns_result {
+		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
+		if has_value {
+			if f.nogil {
+				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n' + emit_nogil_failure(inner) +
+					'\t}\n')
+			} else {
+				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n\t\t${inner}\n\t}\n')
+			}
+		} else {
+			if f.nogil {
+				w.write_string('\t${call} or {\n' + emit_nogil_failure(inner) + '\t}\n')
+			} else {
+				w.write_string('\t${call} or {\n\t\t${inner}\n\t}\n')
+			}
+		}
+		if f.nogil {
+			w.write_string(emit_nogil_close())
+		}
+	} else {
+		if has_value {
+			w.write_string('\t${result_target(ret, f.v_ret)} = ${call}\n')
+		} else {
+			w.write_string('\t${call}\n')
+		}
+		if f.nogil {
+			w.write_string(emit_nogil_close())
+		}
+	}
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	if has_value {
 		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
@@ -1156,6 +1243,12 @@ pub fn emit_stubs(p Project) string {
 		for method in c.methods {
 			if method.property {
 				w.write_string('    @property\n')
+			}
+			if method.static {
+				w.write_string('    @staticmethod\n')
+				args := method_params(method).all_after(', ').trim_space()
+				w.write_string('    def ${method.name}(${args}) -> ${describe(method.v_ret)}: ...\n')
+				continue
 			}
 			w.write_string('    def ${method.name}(self${method_params(method)}) -> ' +
 				'${describe(method.v_ret)}: ...\n')

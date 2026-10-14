@@ -33,6 +33,9 @@ pub fn collect_file(path string, mut p Project) {
 				if collect_operator(path, lines, ast, decl, mut p) {
 					continue
 				}
+				if collect_static_method(path, lines, ast, decl, mut p) {
+					continue
+				}
 				collect_fn(path, lines, ast, decl, mut p)
 			}
 			.method { collect_method(path, lines, ast, decl, mut p) }
@@ -635,12 +638,7 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	}
 	if attr_static in block.attrs {
 		report(mut p, path, decl,
-			'error: `@[vc_static] ${decl.name}` is not supported yet; a static method still needs a receiver in V')
-		return
-	}
-	if m.raw {
-		report(mut p, path, decl,
-			'error: `@[vc_raw] ${decl.name}` is only for module functions; a method takes its arguments through the same marshalling rules as a function')
+			'error: `@[vc_static] ${decl.name}` is on a method with a receiver; a static method is written `fn ${decl.receiver}.${decl.name}(...)` without a receiver')
 		return
 	}
 	if m.property && m.params.len > 0 {
@@ -657,6 +655,80 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	p.classes[target].methods << m
 }
 
+
+// collect_static_method records a `@[vc_static]` declaration. V reports a static method
+// as a `.fn` whose name is `Receiver@static@name`, so it arrives on the function path
+// rather than the method one. Returns true when the declaration was a static method,
+// whether or not it was accepted, so the ordinary function path does not then try to
+// export `Receiver@static@name`.
+fn collect_static_method(path string, lines []string, ast &flat.FlatAst,
+	decl astquery.Declaration, mut p Project) bool {
+	if !decl.name.contains('@static@') {
+		return false
+	}
+	block := read_above(lines, decl.line)
+	if attr_static !in block.attrs {
+		// A V static method without the annotation is an ordinary V helper. Take the
+		// declaration so it is not exported under its mangled name.
+		return true
+	}
+	parts := decl.name.split('@static@')
+	if parts.len != 2 || parts[0].len == 0 || parts[1].len == 0 {
+		report(mut p, path, decl, 'error: could not read the receiver and name of `@[vc_static] ${decl.name}`')
+		return true
+	}
+	receiver := parts[0]
+	name := parts[1]
+	mut target := -1
+	for i, c in p.classes {
+		if c.name == receiver {
+			target = i
+			break
+		}
+	}
+	if target < 0 {
+		report(mut p, path, decl,
+			'error: `${decl.name}` is annotated @[vc_static] but `${receiver}` is not annotated @[vc_class]')
+		return true
+	}
+	if attr_raw in block.attrs {
+		report(mut p, path, decl,
+			'error: `@[vc_static]` and `@[vc_raw]` cannot be combined on `${decl.name}`; a static method uses the ordinary marshalling rules')
+		return true
+	}
+	node := find_fn_node(ast, decl.name) or {
+		report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
+		return true
+	}
+	mut m := Func{
+		name:            name
+		doc:             block.doc
+		static:          true
+		static_receiver: receiver
+		params:          params_of(ast, node, false)
+	}
+	defaults := parse_defaults(block.args[attr_defaults] or { '' })
+	for dname, value in defaults {
+		mut found := false
+		for mut param in m.params {
+			if param.name == dname {
+				param.default = value
+				found = true
+			}
+		}
+		if !found {
+			m.unknown_defaults << dname
+		}
+	}
+	m.v_ret, m.returns_result = split_result(decl.type_name)
+	m.trampoline = 'vcraft_generated__static_${receiver.to_lower()}_${name}'
+	m.origin = path
+	m.line = decl.line
+	m.column = decl.column
+	validate(mut p, path, decl, m)
+	p.classes[target].methods << m
+	return true
+}
 
 fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.Declaration,
 	mut p Project) {
