@@ -56,7 +56,10 @@ pub fn tool_hints_toml() string {
 		'extraPaths = ["python"]\n' +
 		'\n' +
 		'[tool.mypy]\n' +
-		'mypy_path = "python"\n'
+		'mypy_path = "python"\n' +
+		'\n' +
+		'[tool.ty.environment]\n' +
+		'extra-paths = ["./python"]\n'
 }
 
 // pyproject_toml is the whole file a project starts with: the managed table and the
