@@ -155,6 +155,26 @@ pub fn develop_editable(p Project, result BuildResult) ! {
 	return
 }
 
+// remove_editable deletes an editable install's `.pth` and `.dist-info` from the active
+// environment.
+//
+// `vcraft clean` removes the build output those files point at, and a `.pth` naming a
+// directory that is gone is at best noise on every interpreter start. Silent when there
+// is no active environment or the project was never developed into it.
+pub fn remove_editable(p Project) {
+	if active_environment().len == 0 {
+		return
+	}
+	target := python_line(python_in_environment(), "sysconfig.get_paths()['platlib']")
+	if target.len == 0 {
+		return
+	}
+	dir := target.trim_right('/')
+	os.rm(dir + '/' + vcraft_wheel.editable_pth_name(p.name)) or {}
+	dist_info := '${vcraft_wheel.escape(p.name)}-${vcraft_wheel.normalize_version(p.version)}.dist-info'
+	os.rmdir_all(dir + '/' + dist_info) or {}
+}
+
 // is_editable_wheel reports whether a wheel points at local build output.
 //
 // It looks for a `.pth` entry, which is the shape `vcraft build --editable` writes.

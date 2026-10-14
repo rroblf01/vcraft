@@ -492,6 +492,13 @@ fn command_exists(name string) bool {
 
 // cmd_clean removes build output.
 fn cmd_clean(args Args) {
+	// An editable install wrote a `.pth` and a `.dist-info` into the active environment
+	// that name the directories removed below. Dropping them too keeps a later
+	// interpreter start from warning about a build directory that is gone, and keeps a
+	// reinstall from finding half of a previous one.
+	if p := vcraft_project.load('.') {
+		vcraft_project.remove_editable(p)
+	}
 	for dir in ['build', 'dist', '.vcraft'] {
 		if os.exists(dir) {
 			os.rmdir_all(dir) or {

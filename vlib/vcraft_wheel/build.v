@@ -60,6 +60,12 @@ pub fn editable_pth_name(distribution string) string {
 	return '_${escape(distribution)}_editable.pth'
 }
 
+// pth_quote renders a path as a Python single-quoted string literal, so it survives a
+// backslash or a quote in the directory name.
+fn pth_quote(path string) string {
+	return "'" + path.replace('\\', '\\\\').replace("'", "\\'") + "'"
+}
+
 // ExtraFile is one file to add to a wheel under a chosen name.
 pub struct ExtraFile {
 pub mut:
@@ -96,13 +102,16 @@ pub fn build(input BuildInput) ![]u8 {
 		// on `sys.path`, so imports find the files that are there rather than copies
 		// made when the wheel was installed.
 		//
-		// One absolute directory per line, and the file has to end in a newline: `site`
-		// reads a `.pth` line by line and a last line without one is still processed,
-		// but some tools that write `.pth` files by hand get this wrong and it is not
-		// worth the risk.
+		// Each line is an `import` statement rather than a bare directory. `site` adds a
+		// bare directory only when it exists, but newer CPython warns about one that does
+		// not -- and that warning lands on the stderr of every interpreter start, which
+		// `os.exec` merges into stdout, poisoning anything that reads a version. The
+		// guarded append is silent when the path is gone, which is what a cleaned
+		// `dist/` leaves behind. The file still ends in a newline.
 		mut paths := ''
 		for path in input.editable_paths {
-			paths += path + '\n'
+			paths += 'import os,sys;p=' + pth_quote(path) +
+				';os.path.isdir(p) and p not in sys.path and sys.path.append(p)\n'
 		}
 		archive.add_file(editable_pth_name(input.distribution), paths.bytes())
 	} else {
