@@ -264,11 +264,30 @@ jobs:
     # at the pinned commit, gcc and CPython. Run with `docker run` from the runner
     # rather than as a job container: GitHub's JavaScript actions (checkout, cache)
     # cannot run inside Alpine. Bump MUSL_IMAGE when the images are re-released.
-    name: musl (alpine, x86_64)
+    #
+    # Split into groups that run on their own runner. The suites were one job, and
+    # the container was the critical path of the whole run: every suite compiled the
+    # example again, one after another. Groups put the slow ones (cli, codegen) on
+    # their own runner and the quick ones together, so the wall clock is the slowest
+    # group rather than the sum. Each group still runs its suites in order, in its
+    # own container, so nothing is shared and nothing races.
+    name: musl (${{ matrix.name }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: cli
+            suites: cli/test_cli
+          - name: codegen
+            suites: codegen/test_codegen
+          - name: runtime-memory-fuzz
+            suites: runtime/test_runtime memory/test_leaks fuzz/test_fuzz
+          - name: project-wheel
+            suites: project/check_toml wheel/test_wheel
     env:
       MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:1.1.1
     steps:
@@ -282,15 +301,16 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: run the suites on musl
+        env:
+          SUITES: ${{ matrix.suites }}
         run: |
           # As the runner's user, so nothing in the checkout ends up owned by root,
           # with a writable HOME for V's module cache and pip.
-          docker run --rm --memory 6g --user "$(id -u):$(id -g)" -e HOME=/tmp \
+          docker run --rm --memory 6g --user "$(id -u):$(id -g)" -e HOME=/tmp -e SUITES \
             -v "$PWD:/work" -w /work "$MUSL_IMAGE" sh -c '
             set -e
             python3 -VV
-            for suite in project/check_toml wheel/test_wheel runtime/test_runtime \
-                         codegen/test_codegen memory/test_leaks fuzz/test_fuzz cli/test_cli; do
+            for suite in $SUITES; do
               echo "== $suite"
               python3 tests/$suite.py
             done
