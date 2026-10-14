@@ -1,98 +1,271 @@
 {
   "environment": {
-    "python": "3.13.13",
+    "python": "3.13.16",
     "machine": "x86_64",
-    "platform": "Linux-6.18.55-1-lts-x86_64-with-glibc2.44"
+    "platform": "Linux-6.18.56-1-lts-x86_64-with-glibc2.44"
   },
   "backends": {
     "pyo3": {
       "sizes": {
         "wheel_file": "bench_pyo3-0.1.0-cp313-cp313-manylinux_2_34_x86_64.whl",
-        "wheel": 265560,
-        "extension": 637328,
-        "extension_stripped": 474744,
+        "wheel": 280566,
+        "extension": 689760,
+        "extension_stripped": 510800,
         "files_in_wheel": 6
       },
-      "build_s": 7.999215222000203,
+      "build_s": 9.580285837997508,
       "import": {
-        "first_s": 0.001510298001448973,
-        "warm_s": 0.0004444530004548142,
-        "rss_bytes": 544768
+        "first_s": 0.0007242529973154888,
+        "warm_s": 0.0005447520015877672,
+        "rss_bytes": 974848
       },
       "speed": {
-        "correctness": {
-          "add small": "ok",
-          "add 2**40": "ok",
-          "fib(20)": "ok",
-          "count_primes(100)": "ok",
-          "sum_floats": "ok",
-          "make_range(3)": "ok",
-          "greet unicode": "ok",
-          "checksum 3 bytes": "ok",
-          "echo_bytes round trip": "ok",
-          "join_strings 3 items": "ok",
-          "counter starts at 0": "ok",
-          "counter add and value": "ok",
-          "expect_positive ok": "ok",
-          "expect_positive raises": "ok",
-          "add 2**63 overflows": "ok"
-        },
         "speed_ns": {
-          "add": 71.72705699995277,
-          "fib(25)": 205466.8999999194,
-          "count_primes(1e6)": 1910309.494996909,
-          "sum_floats(100k)": 859025.8229996834,
-          "make_range(100k)": 2182051.195004533,
-          "greet": 135.11494925023726,
-          "checksum(100kB)": 13360.761950025335,
-          "echo_bytes(100kB)": 3730.026260000159,
-          "join_strings(10k)": 510240.35900081805,
-          "expect_positive(err)": 211.6240724999443,
-          "Counter()": 89.96399589996145,
-          "c.increment()": 51.00534280009015,
-          "c.add(1)": 67.57301310008188,
-          "c.value": 48.714100399956806
+          "add": 72.30925689946162,
+          "fib(25)": 222137.4155014928,
+          "count_primes(1e6)": 1797721.5475002595,
+          "sum_floats(100k)": 849154.9940008554,
+          "make_range(100k)": 2214539.405031246,
+          "greet": 135.7570764994307,
+          "describe(3)": 167.213726999762,
+          "maybe_double(21)": 65.2120114005811,
+          "histogram(10k)": 797278.9529958391,
+          "minmax(100k)": 1101885.1975131838,
+          "reverse3([1,2,3])": 202.91465149784926,
+          "checksum(100kB)": 13401.921750119072,
+          "echo_bytes(100kB)": 3650.023959999089,
+          "join_strings(10k)": 491839.7729998105,
+          "expect_positive(err)": 218.63766049864353,
+          "Counter()": 102.32153329998255,
+          "c.increment()": 46.578891899844166,
+          "c.add(1)": 67.17725230046199,
+          "c.value": 46.850919000280555,
+          "c.is_zero": 35.492267749941675,
+          "c == c": 47.16435129957972,
+          "list(Countdown())": 345.2699814988591
+        }
+      },
+      "correctness": {
+        "add small": "ok",
+        "add zero": "ok",
+        "add negative": "ok",
+        "add 2**40": "ok",
+        "add i64 max": "ok",
+        "add i64 min": "ok",
+        "add bool": "ok",
+        "add float rejected": "ok",
+        "add str rejected": "ok",
+        "add 2**63 overflows": "ok",
+        "add 2**64-1 overflows": "ok",
+        "fib(0)": "ok",
+        "fib(1)": "ok",
+        "fib(20)": "ok",
+        "fib(-1)": "ok",
+        "fib float rejected": "ok",
+        "count_primes(0)": "ok",
+        "count_primes(1)": "ok",
+        "count_primes(10)": "ok",
+        "count_primes(100)": "ok",
+        "count_primes negative": "ok",
+        "sum_squares(0)": "ok",
+        "sum_squares(1)": "ok",
+        "sum_squares(10)": "ok",
+        "sum_squares float rejected": "ok",
+        "lcg(10)": "ok",
+        "lcg(0)": "ok",
+        "sum_floats empty": "ok",
+        "sum_floats two": "ok",
+        "sum_floats negative": "ok",
+        "sum_floats ints": "ok",
+        "sum_floats nan": "ok",
+        "sum_floats inf": "ok",
+        "sum_floats str rejected": "ok",
+        "sum_floats mixed rejected": "ok",
+        "make_range(0)": "ok",
+        "make_range(1)": "ok",
+        "make_range(3)": "ok",
+        "make_range negative": "ok",
+        "make_range float rejected": "ok",
+        "greet empty": "ok",
+        "greet unicode": "ok",
+        "greet emoji": "ok",
+        "greet embedded NUL": "ok",
+        "greet int rejected": "ok",
+        "greet bytes rejected": "ok",
+        "describe defaults": "ok",
+        "describe all positional": "ok",
+        "describe keyword label": "ok",
+        "describe keyword unit": "ok",
+        "describe mixed kw and pos": "ok",
+        "describe missing required": "ok",
+        "describe unknown keyword": "ok",
+        "describe too many positional": "ok",
+        "maybe_double some": "ok",
+        "maybe_double none": "ok",
+        "maybe_double wrong type": "ok",
+        "histogram counts": "ok",
+        "histogram empty": "ok",
+        "histogram str rejected": "ok",
+        "histogram ints rejected": "ok",
+        "minmax": "ok",
+        "minmax single": "ok",
+        "minmax empty": "ok",
+        "minmax float rejected": "ok",
+        "reverse3": "ok",
+        "reverse3 wrong length": "ok",
+        "reverse3 float rejected": "ok",
+        "checksum empty": "ok",
+        "checksum 3 bytes": "ok",
+        "checksum bytearray": "n/a",
+        "checksum memoryview": "n/a",
+        "checksum array": "n/a",
+        "checksum str rejected": "ok",
+        "echo_bytes round trip": "ok",
+        "echo_bytes empty": "ok",
+        "echo_bytes from bytearray": "n/a",
+        "join_strings empty": "ok",
+        "join_strings single": "ok",
+        "join_strings 3 items": "ok",
+        "join_strings nonstr rejected": "ok",
+        "counter starts at 0": "ok",
+        "counter increment twice": "ok",
+        "counter add and value": "ok",
+        "counter add negative": "ok",
+        "counter is_zero": "ok",
+        "counter not is_zero": "ok",
+        "counter equality": "ok",
+        "counter inequality": "ok",
+        "counter not equal to int": "ok",
+        "counter ne": "ok",
+        "counter hash collapses a set": "ok",
+        "countdown yields": "ok",
+        "countdown two steps": "ok",
+        "countdown raises StopIteration": "ok",
+        "bounded inherits value": "ok",
+        "bounded bump": "ok",
+        "bounded over limit": "ok",
+        "bounded base method": "ok",
+        "bounded is a Counter": "ok",
+        "counter is not bounded": "ok",
+        "expect_positive zero": "ok",
+        "expect_positive ok": "ok",
+        "expect_positive raises": "ok",
+        "expect_positive str rejected": "ok"
+      },
+      "refs": {
+        "sum_floats: borrowed list": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "sum_floats: borrowed elements": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed bytes": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed bytearray": {
+          "unsupported": "TypeError"
+        },
+        "checksum: borrowed memoryview": {
+          "unsupported": "TypeError"
+        },
+        "echo_bytes: borrowed argument": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "method: borrowed self": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        }
+      },
+      "threads": {
+        "1": {
+          "seconds": 0.16169636599806836,
+          "threads": 1,
+          "calls": 64
+        },
+        "2": {
+          "seconds": 0.18648946000030264,
+          "threads": 2,
+          "calls": 64
+        },
+        "4": {
+          "seconds": 0.19013554199773353,
+          "threads": 4,
+          "calls": 64
+        },
+        "8": {
+          "seconds": 0.22941648599953623,
+          "threads": 8,
+          "calls": 64
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 29638656,
-          "kept": 4096,
+          "peak": 33464320,
+          "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 34418688,
-          "kept": 1007616,
+          "peak": 38412288,
+          "kept": 925696,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 39022592,
-          "kept": 9998336,
+          "peak": 43757568,
+          "kept": 9994240,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 29876224,
-          "kept": 479232,
+          "peak": 33935360,
+          "kept": 487424,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 29319168,
-          "kept": 106496,
-          "leak": 0
+          "peak": 33591296,
+          "kept": 102400,
+          "leak": 4096
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 29691904,
-          "kept": 311296,
-          "leak": 0
+          "peak": 33792000,
+          "kept": 307200,
+          "leak": 4096
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 29188096,
-          "kept": 49152,
-          "leak": 0
+          "peak": 33259520,
+          "kept": 69632,
+          "leak": 4096
+        },
+        "histogram(new 1k words) x500": {
+          "peak": 34107392,
+          "kept": 212992,
+          "leak": 4096
         },
         "Counter() x1M": {
-          "peak": 29540352,
-          "kept": 4096,
+          "peak": 33484800,
+          "kept": 0,
+          "leak": 0
+        },
+        "expect_positive(-1) x500k": {
+          "peak": 33103872,
+          "kept": 0,
+          "leak": 0
+        },
+        "sum_floats(wrong elem) x200k": {
+          "peak": 33841152,
+          "kept": 0,
           "leak": 0
         }
       }
@@ -100,91 +273,270 @@
     "vcraft": {
       "sizes": {
         "wheel_file": "bench_vcraft-0.1.0-cp313-cp313-linux_x86_64.whl",
-        "wheel": 265121,
-        "extension": 501144,
-        "extension_stripped": 443432,
-        "files_in_wheel": 4
+        "wheel": 295480,
+        "extension": 562608,
+        "extension_stripped": 496992,
+        "files_in_wheel": 5
       },
-      "build_s": 5.2789666169992415,
+      "build_s": 11.377923576998,
       "import": {
-        "first_s": 0.0006669630001852056,
-        "warm_s": 0.0006580530007340712,
-        "rss_bytes": 733184
+        "first_s": 0.0007096619956428185,
+        "warm_s": 0.0007147830037865788,
+        "rss_bytes": 888832
       },
       "speed": {
-        "correctness": {
-          "add small": "ok",
-          "add 2**40": "ok",
-          "fib(20)": "ok",
-          "count_primes(100)": "ok",
-          "sum_floats": "ok",
-          "make_range(3)": "ok",
-          "greet unicode": "ok",
-          "checksum 3 bytes": "ok",
-          "echo_bytes round trip": "ok",
-          "join_strings 3 items": "ok",
-          "counter starts at 0": "ok",
-          "counter add and value": "ok",
-          "expect_positive ok": "ok",
-          "expect_positive raises": "ok",
-          "add 2**63 overflows": "ok"
-        },
         "speed_ns": {
-          "add": 73.36865770012082,
-          "fib(25)": 102366.11425034425,
-          "count_primes(1e6)": 2139870.9999994026,
-          "sum_floats(100k)": 247817.841500364,
-          "make_range(100k)": 2305685.1649926105,
-          "greet": 114.39552474985248,
-          "checksum(100kB)": 39388.22735008216,
-          "echo_bytes(100kB)": 1750.7902350007498,
-          "join_strings(10k)": 321379.92450043384,
-          "expect_positive(err)": 229.99460400023963,
-          "Counter()": 102.87254249988109,
-          "c.increment()": 47.92861719997745,
-          "c.add(1)": 66.2870431000556,
-          "c.value": 33.5388684499776
+          "add": 69.73661109950626,
+          "fib(25)": 108873.08600104006,
+          "count_primes(1e6)": 2164436.5300016943,
+          "sum_floats(100k)": 238282.62299866765,
+          "make_range(100k)": 2397578.980016988,
+          "greet": 115.28342124984192,
+          "describe(3)": 206.31775050060241,
+          "maybe_double(21)": 56.3761543999135,
+          "histogram(10k)": 569289.7150001954,
+          "minmax(100k)": 652065.4759951867,
+          "reverse3([1,2,3])": 208.54118949864642,
+          "checksum(100kB)": 40130.71504996333,
+          "echo_bytes(100kB)": 1865.9129299885535,
+          "join_strings(10k)": 290632.6900010754,
+          "expect_positive(err)": 228.45906899965485,
+          "Counter()": 105.2995390000433,
+          "c.increment()": 82.01765589983552,
+          "c.add(1)": 101.21715550121735,
+          "c.value": 71.71844189942931,
+          "c.is_zero": 70.11040249999496,
+          "c == c": 37.94341325010464,
+          "list(Countdown())": 637.5139919982757
+        }
+      },
+      "correctness": {
+        "add small": "ok",
+        "add zero": "ok",
+        "add negative": "ok",
+        "add 2**40": "ok",
+        "add i64 max": "ok",
+        "add i64 min": "ok",
+        "add bool": "ok",
+        "add float rejected": "ok",
+        "add str rejected": "ok",
+        "add 2**63 overflows": "ok",
+        "add 2**64-1 overflows": "ok",
+        "fib(0)": "ok",
+        "fib(1)": "ok",
+        "fib(20)": "ok",
+        "fib(-1)": "ok",
+        "fib float rejected": "ok",
+        "count_primes(0)": "ok",
+        "count_primes(1)": "ok",
+        "count_primes(10)": "ok",
+        "count_primes(100)": "ok",
+        "count_primes negative": "ok",
+        "sum_squares(0)": "ok",
+        "sum_squares(1)": "ok",
+        "sum_squares(10)": "ok",
+        "sum_squares float rejected": "ok",
+        "lcg(10)": "ok",
+        "lcg(0)": "ok",
+        "sum_floats empty": "ok",
+        "sum_floats two": "ok",
+        "sum_floats negative": "ok",
+        "sum_floats ints": "ok",
+        "sum_floats nan": "ok",
+        "sum_floats inf": "ok",
+        "sum_floats str rejected": "ok",
+        "sum_floats mixed rejected": "ok",
+        "make_range(0)": "ok",
+        "make_range(1)": "ok",
+        "make_range(3)": "ok",
+        "make_range negative": "RuntimeError: panic in V code: negative .cap:-1",
+        "make_range float rejected": "ok",
+        "greet empty": "ok",
+        "greet unicode": "ok",
+        "greet emoji": "ok",
+        "greet embedded NUL": "ok",
+        "greet int rejected": "ok",
+        "greet bytes rejected": "ok",
+        "describe defaults": "ok",
+        "describe all positional": "ok",
+        "describe keyword label": "ok",
+        "describe keyword unit": "ok",
+        "describe mixed kw and pos": "ok",
+        "describe missing required": "ok",
+        "describe unknown keyword": "ok",
+        "describe too many positional": "ok",
+        "maybe_double some": "ok",
+        "maybe_double none": "ok",
+        "maybe_double wrong type": "ok",
+        "histogram counts": "ok",
+        "histogram empty": "ok",
+        "histogram str rejected": "ok",
+        "histogram ints rejected": "ok",
+        "minmax": "ok",
+        "minmax single": "ok",
+        "minmax empty": "ok",
+        "minmax float rejected": "ok",
+        "reverse3": "ok",
+        "reverse3 wrong length": "ok",
+        "reverse3 float rejected": "ok",
+        "checksum empty": "ok",
+        "checksum 3 bytes": "ok",
+        "checksum bytearray": "ok",
+        "checksum memoryview": "ok",
+        "checksum array": "ok",
+        "checksum str rejected": "ok",
+        "echo_bytes round trip": "ok",
+        "echo_bytes empty": "ok",
+        "echo_bytes from bytearray": "ok",
+        "join_strings empty": "ok",
+        "join_strings single": "ok",
+        "join_strings 3 items": "ok",
+        "join_strings nonstr rejected": "ok",
+        "counter starts at 0": "ok",
+        "counter increment twice": "ok",
+        "counter add and value": "ok",
+        "counter add negative": "ok",
+        "counter is_zero": "ok",
+        "counter not is_zero": "ok",
+        "counter equality": "ok",
+        "counter inequality": "ok",
+        "counter not equal to int": "ok",
+        "counter ne": "ok",
+        "counter hash collapses a set": "ok",
+        "countdown yields": "ok",
+        "countdown two steps": "ok",
+        "countdown raises StopIteration": "ok",
+        "bounded inherits value": "ok",
+        "bounded bump": "ok",
+        "bounded over limit": "ok",
+        "bounded base method": "ok",
+        "bounded is a Counter": "ok",
+        "counter is not bounded": "ok",
+        "expect_positive zero": "ok",
+        "expect_positive ok": "ok",
+        "expect_positive raises": "ok",
+        "expect_positive str rejected": "ok"
+      },
+      "refs": {
+        "sum_floats: borrowed list": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "sum_floats: borrowed elements": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed bytes": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed bytearray": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed memoryview": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "echo_bytes: borrowed argument": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "method: borrowed self": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        }
+      },
+      "threads": {
+        "1": {
+          "seconds": 0.16005479900195496,
+          "threads": 1,
+          "calls": 64
+        },
+        "2": {
+          "seconds": 0.19601540100120474,
+          "threads": 2,
+          "calls": 64
+        },
+        "4": {
+          "seconds": 0.20219785200606566,
+          "threads": 4,
+          "calls": 64
+        },
+        "8": {
+          "seconds": 0.20497772199450992,
+          "threads": 8,
+          "calls": 64
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 29782016,
-          "kept": 151552,
+          "peak": 33443840,
+          "kept": 131072,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 37113856,
-          "kept": 4120576,
-          "leak": 450560
+          "peak": 41689088,
+          "kept": 4014080,
+          "leak": 499712
         },
         "count_primes(10M) x5": {
-          "peak": 59670528,
-          "kept": 20045824,
+          "peak": 53800960,
+          "kept": 10018816,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 30490624,
-          "kept": 827392,
-          "leak": 0
+          "peak": 34537472,
+          "kept": 1036288,
+          "leak": 24576
         },
         "checksum(new 100kB) x500": {
-          "peak": 29483008,
+          "peak": 33665024,
           "kept": 98304,
-          "leak": 4096
+          "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 29667328,
+          "peak": 33660928,
           "kept": 200704,
-          "leak": 4096
+          "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 30027776,
-          "kept": 520192,
-          "leak": 4096
+          "peak": 33632256,
+          "kept": 299008,
+          "leak": 0
+        },
+        "histogram(new 1k words) x500": {
+          "peak": 34668544,
+          "kept": 1101824,
+          "leak": 0
         },
         "Counter() x1M": {
-          "peak": 29597696,
-          "kept": 143360,
+          "peak": 34029568,
+          "kept": 122880,
+          "leak": 0
+        },
+        "expect_positive(-1) x500k": {
+          "peak": 33685504,
+          "kept": 122880,
+          "leak": 0
+        },
+        "sum_floats(wrong elem) x200k": {
+          "peak": 33693696,
+          "kept": 131072,
           "leak": 0
         }
       }
@@ -192,90 +544,266 @@
     "zig-maturin": {
       "sizes": {
         "wheel_file": "bench_zig-0.1.0-cp313-cp313-manylinux_2_28_x86_64.whl",
-        "wheel": 1009816,
-        "extension": 3540944,
-        "extension_stripped": 582896,
+        "wheel": 1038606,
+        "extension": 3654352,
+        "extension_stripped": 603736,
         "files_in_wheel": 4
       },
-      "build_s": 16.59476062899921,
+      "build_s": 18.085330474998045,
       "import": {
-        "first_s": 0.0002043410004262114,
-        "warm_s": 0.00019247099953645375,
-        "rss_bytes": 184320
+        "first_s": 0.00024117100110743195,
+        "warm_s": 0.00022339000133797526,
+        "rss_bytes": 434176
       },
       "speed": {
-        "correctness": {
-          "add small": "ok",
-          "add 2**40": "ok",
-          "fib(20)": "ok",
-          "count_primes(100)": "ok",
-          "sum_floats": "ok",
-          "make_range(3)": "ok",
-          "greet unicode": "ok",
-          "checksum 3 bytes": "ok",
-          "echo_bytes round trip": "ok",
-          "join_strings 3 items": "ok",
-          "counter starts at 0": "ok",
-          "counter add and value": "ok",
-          "expect_positive ok": "ok",
-          "expect_positive raises": "ok",
-          "add 2**63 overflows": "TypeError: expected int, got int"
-        },
         "speed_ns": {
-          "add": 84.71949609993317,
-          "fib(25)": 316558.729999997,
-          "count_primes(1e6)": 1874546.1200023782,
-          "sum_floats(100k)": 1086827.3774985936,
-          "make_range(100k)": 2230443.619992002,
-          "greet": 210.07023550009762,
-          "checksum(100kB)": 40252.993749982124,
-          "echo_bytes(100kB)": 1837.7560975022789,
-          "join_strings(10k)": 286265.76099941303,
-          "expect_positive(err)": 218.62843849976343,
-          "Counter()": 77.9182412999944,
-          "c.increment()": 67.79004660002101,
-          "c.add(1)": 86.64074259995687,
-          "c.value": 31.798286350021957
+          "add": 88.79923119966406,
+          "fib(25)": 383521.4349965099,
+          "count_primes(1e6)": 2132959.4149938202,
+          "sum_floats(100k)": 1185115.0399888866,
+          "make_range(100k)": 2211004.2850181344,
+          "greet": 220.51843699955498,
+          "describe(3)": 136.40257350016327,
+          "maybe_double(21)": 76.94796229989151,
+          "histogram(10k)": 1842466.609996336,
+          "minmax(100k)": 1287704.654987465,
+          "reverse3([1,2,3])": 177.60694324897486,
+          "checksum(100kB)": 39951.403599843616,
+          "echo_bytes(100kB)": 1887.1293749907636,
+          "join_strings(10k)": 295096.026497049,
+          "expect_positive(err)": 227.77766500075813,
+          "Counter()": 75.39391090031131,
+          "c.increment()": 60.1962717002607,
+          "c.add(1)": 74.40313569968566,
+          "c.value": 32.21472224977333,
+          "c.is_zero": 46.61084010003833,
+          "c == c": 48.520015599933686,
+          "list(Countdown())": 267.6808405012707
+        }
+      },
+      "correctness": {
+        "add small": "ok",
+        "add zero": "ok",
+        "add negative": "ok",
+        "add 2**40": "ok",
+        "add i64 max": "ok",
+        "add i64 min": "ok",
+        "add bool": "ok",
+        "add float rejected": "ok",
+        "add str rejected": "ok",
+        "add 2**63 overflows": "TypeError: expected int, got int",
+        "add 2**64-1 overflows": "TypeError: expected int, got int",
+        "fib(0)": "ok",
+        "fib(1)": "ok",
+        "fib(20)": "ok",
+        "fib(-1)": "ok",
+        "fib float rejected": "ok",
+        "count_primes(0)": "ok",
+        "count_primes(1)": "ok",
+        "count_primes(10)": "ok",
+        "count_primes(100)": "ok",
+        "count_primes negative": "ok",
+        "sum_squares(0)": "ok",
+        "sum_squares(1)": "ok",
+        "sum_squares(10)": "ok",
+        "sum_squares float rejected": "ok",
+        "lcg(10)": "ok",
+        "lcg(0)": "ok",
+        "sum_floats empty": "ok",
+        "sum_floats two": "ok",
+        "sum_floats negative": "ok",
+        "sum_floats ints": "ok",
+        "sum_floats nan": "ok",
+        "sum_floats inf": "ok",
+        "sum_floats str rejected": "ok",
+        "sum_floats mixed rejected": "ok",
+        "make_range(0)": "ok",
+        "make_range(1)": "ok",
+        "make_range(3)": "ok",
+        "make_range negative": "SystemError: Objects/listobject.c:265: bad argument to internal function",
+        "make_range float rejected": "ok",
+        "greet empty": "ok",
+        "greet unicode": "ok",
+        "greet emoji": "ok",
+        "greet embedded NUL": "wrong: 'Hello, a!'",
+        "greet int rejected": "ok",
+        "greet bytes rejected": "wrong: 'Hello, x!'",
+        "describe defaults": "ok",
+        "describe all positional": "ok",
+        "describe keyword label": "ok",
+        "describe keyword unit": "ok",
+        "describe mixed kw and pos": "ok",
+        "describe missing required": "ok",
+        "describe unknown keyword": "wrong: 'item: 3'",
+        "describe too many positional": "ok",
+        "maybe_double some": "ok",
+        "maybe_double none": "ok",
+        "maybe_double wrong type": "ok",
+        "histogram counts": "ok",
+        "histogram empty": "ok",
+        "histogram str rejected": "ok",
+        "histogram ints rejected": "ok",
+        "minmax": "ok",
+        "minmax single": "ok",
+        "minmax empty": "ok",
+        "minmax float rejected": "ok",
+        "reverse3": "ok",
+        "reverse3 wrong length": "ok",
+        "reverse3 float rejected": "ok",
+        "checksum empty": "ok",
+        "checksum 3 bytes": "ok",
+        "checksum bytearray": "ok",
+        "checksum memoryview": "TypeError: expected str or bytes, got memoryview",
+        "checksum array": "TypeError: expected str or bytes, got array.array",
+        "checksum str rejected": "wrong: 195",
+        "echo_bytes round trip": "ok",
+        "echo_bytes empty": "ok",
+        "echo_bytes from bytearray": "ok",
+        "join_strings empty": "ok",
+        "join_strings single": "ok",
+        "join_strings 3 items": "ok",
+        "join_strings nonstr rejected": "ok",
+        "counter starts at 0": "ok",
+        "counter increment twice": "ok",
+        "counter add and value": "ok",
+        "counter add negative": "ok",
+        "counter is_zero": "ok",
+        "counter not is_zero": "ok",
+        "counter equality": "ok",
+        "counter inequality": "ok",
+        "counter not equal to int": "ok",
+        "counter ne": "ok",
+        "counter hash collapses a set": "ok",
+        "countdown yields": "ok",
+        "countdown two steps": "ok",
+        "countdown raises StopIteration": "ok",
+        "bounded inherits value": "ok",
+        "bounded bump": "ok",
+        "bounded over limit": "ok",
+        "bounded base method": "ok",
+        "bounded is a Counter": "ok",
+        "counter is not bounded": "ok",
+        "expect_positive zero": "ok",
+        "expect_positive ok": "ok",
+        "expect_positive raises": "ok",
+        "expect_positive str rejected": "ok"
+      },
+      "refs": {
+        "sum_floats: borrowed list": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "sum_floats: borrowed elements": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed bytes": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed bytearray": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed memoryview": {
+          "unsupported": "TypeError"
+        },
+        "echo_bytes: borrowed argument": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "method: borrowed self": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        }
+      },
+      "threads": {
+        "1": {
+          "seconds": 0.16063235500041628,
+          "threads": 1,
+          "calls": 64
+        },
+        "2": {
+          "seconds": 0.1911398510055733,
+          "threads": 2,
+          "calls": 64
+        },
+        "4": {
+          "seconds": 0.19260430500435177,
+          "threads": 4,
+          "calls": 64
+        },
+        "8": {
+          "seconds": 0.20335101400269195,
+          "threads": 8,
+          "calls": 64
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 29675520,
+          "peak": 33861632,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 33546240,
-          "kept": 1679360,
+          "peak": 37789696,
+          "kept": 1597440,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 39268352,
-          "kept": 10006528,
+          "peak": 43327488,
+          "kept": 9998336,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 29827072,
-          "kept": 479232,
+          "peak": 33845248,
+          "kept": 483328,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 29687808,
-          "kept": 102400,
+          "peak": 33570816,
+          "kept": 98304,
           "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 29605888,
-          "kept": 204800,
+          "peak": 33742848,
+          "kept": 200704,
           "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 29716480,
-          "kept": 49152,
+          "peak": 33460224,
+          "kept": 53248,
+          "leak": 0
+        },
+        "histogram(new 1k words) x500": {
+          "peak": 33710080,
+          "kept": 90112,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 29487104,
+          "peak": 33177600,
+          "kept": 0,
+          "leak": 0
+        },
+        "expect_positive(-1) x500k": {
+          "peak": 33103872,
+          "kept": 0,
+          "leak": 0
+        },
+        "sum_floats(wrong elem) x200k": {
+          "peak": 33464320,
           "kept": 0,
           "leak": 0
         }
@@ -284,83 +812,241 @@
     "python": {
       "sizes": {},
       "import": {
-        "first_s": 0.0001000400006887503,
-        "warm_s": 0.00010101999941980466,
-        "rss_bytes": 4096
+        "first_s": 0.0020065670032636262,
+        "warm_s": 0.00014117099635768682,
+        "rss_bytes": 24576
       },
       "speed": {
-        "correctness": {
-          "add small": "ok",
-          "add 2**40": "ok",
-          "fib(20)": "ok",
-          "count_primes(100)": "ok",
-          "sum_floats": "ok",
-          "make_range(3)": "ok",
-          "greet unicode": "ok",
-          "checksum 3 bytes": "ok",
-          "echo_bytes round trip": "ok",
-          "join_strings 3 items": "ok",
-          "counter starts at 0": "ok",
-          "counter add and value": "ok",
-          "expect_positive ok": "ok",
-          "expect_positive raises": "ok",
-          "add 2**63 overflows": "n/a"
-        },
         "speed_ns": {
-          "add": 34.835524699974485,
-          "fib(25)": 9282701.939991968,
-          "count_primes(1e6)": 92725410.89994775,
-          "sum_floats(100k)": 1534516.5625012668,
-          "make_range(100k)": 2221440.9800017164,
-          "greet": 77.73145840001234,
-          "checksum(100kB)": 2213627.1549970843,
-          "echo_bytes(100kB)": 2059.1346550008893,
-          "join_strings(10k)": 71467.15250000852,
-          "expect_positive(err)": 225.05753849964094,
-          "Counter()": 78.51947570015909,
-          "c.increment()": 59.32918350008549,
-          "c.add(1)": 63.09062010004709,
-          "c.value": 12.401663350010494
+          "add": 36.21724334989267,
+          "fib(25)": 9113291.639951058,
+          "count_primes(1e6)": 93821060.89979061,
+          "sum_floats(100k)": 1577160.8899922285,
+          "make_range(100k)": 2150561.150010617,
+          "greet": 68.58590580013697,
+          "describe(3)": 156.6155982491182,
+          "maybe_double(21)": 37.4449058999744,
+          "histogram(10k)": 592649.9760025763,
+          "minmax(100k)": 1904068.6349944735,
+          "reverse3([1,2,3])": 122.91305449980428,
+          "checksum(100kB)": 2267980.9799956274,
+          "echo_bytes(100kB)": 1976.7261699962548,
+          "join_strings(10k)": 72811.70209971606,
+          "expect_positive(err)": 230.7721875004063,
+          "Counter()": 93.36574979970464,
+          "c.increment()": 54.62292809970677,
+          "c.add(1)": 54.13601949985605,
+          "c.value": 11.715796525095357,
+          "c.is_zero": 37.336446100016474,
+          "c == c": 71.39441370018176,
+          "list(Countdown())": 565.2913199955947
         }
       },
+      "correctness": {
+        "add small": "ok",
+        "add zero": "ok",
+        "add negative": "ok",
+        "add 2**40": "ok",
+        "add i64 max": "ok",
+        "add i64 min": "ok",
+        "add bool": "ok",
+        "add float rejected": "n/a",
+        "add str rejected": "ok",
+        "add 2**63 overflows": "n/a",
+        "add 2**64-1 overflows": "n/a",
+        "fib(0)": "ok",
+        "fib(1)": "ok",
+        "fib(20)": "ok",
+        "fib(-1)": "ok",
+        "fib float rejected": "n/a",
+        "count_primes(0)": "ok",
+        "count_primes(1)": "ok",
+        "count_primes(10)": "ok",
+        "count_primes(100)": "ok",
+        "count_primes negative": "ok",
+        "sum_squares(0)": "ok",
+        "sum_squares(1)": "ok",
+        "sum_squares(10)": "ok",
+        "sum_squares float rejected": "n/a",
+        "lcg(10)": "ok",
+        "lcg(0)": "ok",
+        "sum_floats empty": "ok",
+        "sum_floats two": "ok",
+        "sum_floats negative": "ok",
+        "sum_floats ints": "ok",
+        "sum_floats nan": "ok",
+        "sum_floats inf": "ok",
+        "sum_floats str rejected": "ok",
+        "sum_floats mixed rejected": "ok",
+        "make_range(0)": "ok",
+        "make_range(1)": "ok",
+        "make_range(3)": "ok",
+        "make_range negative": "ok",
+        "make_range float rejected": "ok",
+        "greet empty": "ok",
+        "greet unicode": "ok",
+        "greet emoji": "ok",
+        "greet embedded NUL": "ok",
+        "greet int rejected": "n/a",
+        "greet bytes rejected": "n/a",
+        "describe defaults": "ok",
+        "describe all positional": "ok",
+        "describe keyword label": "ok",
+        "describe keyword unit": "ok",
+        "describe mixed kw and pos": "ok",
+        "describe missing required": "ok",
+        "describe unknown keyword": "ok",
+        "describe too many positional": "ok",
+        "maybe_double some": "ok",
+        "maybe_double none": "ok",
+        "maybe_double wrong type": "n/a",
+        "histogram counts": "ok",
+        "histogram empty": "ok",
+        "histogram str rejected": "n/a",
+        "histogram ints rejected": "n/a",
+        "minmax": "ok",
+        "minmax single": "ok",
+        "minmax empty": "ok",
+        "minmax float rejected": "n/a",
+        "reverse3": "ok",
+        "reverse3 wrong length": "ok",
+        "reverse3 float rejected": "n/a",
+        "checksum empty": "ok",
+        "checksum 3 bytes": "ok",
+        "checksum bytearray": "ok",
+        "checksum memoryview": "ok",
+        "checksum array": "ok",
+        "checksum str rejected": "ok",
+        "echo_bytes round trip": "ok",
+        "echo_bytes empty": "ok",
+        "echo_bytes from bytearray": "ok",
+        "join_strings empty": "ok",
+        "join_strings single": "ok",
+        "join_strings 3 items": "ok",
+        "join_strings nonstr rejected": "ok",
+        "counter starts at 0": "ok",
+        "counter increment twice": "ok",
+        "counter add and value": "ok",
+        "counter add negative": "ok",
+        "counter is_zero": "ok",
+        "counter not is_zero": "ok",
+        "counter equality": "ok",
+        "counter inequality": "ok",
+        "counter not equal to int": "ok",
+        "counter ne": "ok",
+        "counter hash collapses a set": "ok",
+        "countdown yields": "ok",
+        "countdown two steps": "ok",
+        "countdown raises StopIteration": "ok",
+        "bounded inherits value": "ok",
+        "bounded bump": "ok",
+        "bounded over limit": "ok",
+        "bounded base method": "ok",
+        "bounded is a Counter": "ok",
+        "counter is not bounded": "ok",
+        "expect_positive zero": "ok",
+        "expect_positive ok": "ok",
+        "expect_positive raises": "ok",
+        "expect_positive str rejected": "ok"
+      },
+      "refs": {
+        "sum_floats: borrowed list": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "sum_floats: borrowed elements": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed bytes": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed bytearray": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "checksum: borrowed memoryview": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "echo_bytes: borrowed argument": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        },
+        "method: borrowed self": {
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
+        }
+      },
+      "threads": {},
       "memory": {
         "greet x2M": {
-          "peak": 28921856,
+          "peak": 32681984,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 32944128,
-          "kept": 1695744,
-          "leak": -16384
+          "peak": 36843520,
+          "kept": 1581056,
+          "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 38694912,
+          "peak": 42512384,
           "kept": 9998336,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 29163520,
-          "kept": 401408,
+          "peak": 33288192,
+          "kept": 409600,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 29106176,
+          "peak": 32833536,
           "kept": 98304,
-          "leak": 4096
+          "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 28733440,
+          "peak": 33058816,
           "kept": 200704,
-          "leak": 4096
+          "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 28594176,
-          "kept": 40960,
-          "leak": 4096
+          "peak": 32960512,
+          "kept": 45056,
+          "leak": 0
+        },
+        "histogram(new 1k words) x500": {
+          "peak": 32768000,
+          "kept": 69632,
+          "leak": 0
         },
         "Counter() x1M": {
-          "peak": 28471296,
+          "peak": 32813056,
+          "kept": 0,
+          "leak": 0
+        },
+        "expect_positive(-1) x500k": {
+          "peak": 32817152,
+          "kept": 0,
+          "leak": 0
+        },
+        "sum_floats(wrong elem) x200k": {
+          "peak": 32894976,
           "kept": 0,
           "leak": 0
         }

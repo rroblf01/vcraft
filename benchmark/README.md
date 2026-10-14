@@ -26,8 +26,9 @@ the Linux run is kept beside them as [`results-linux.md`](results-linux.md) and
 
 The edge-case correctness matrix, the reference-retention probes, the error-path
 memory scenarios, the keyword/optional/map/tuple/fixed-array workloads, the class
-surface and the thread-scaling table were added after those two runs; re-run
-`./run.sh` to regenerate the tables with the new sections.
+surface and the thread-scaling table were added after the macOS run. `results-linux.md`
+is the current full run and includes them; `results.md` is the older macOS run, which
+predates them. `./run.sh` regenerates whichever file this machine writes.
 
 ## What is measured
 
@@ -566,4 +567,45 @@ What moved, and why:
   to 103 ns.
 - The rest is within run-to-run noise, which is about ±10% for one run on this
   machine.
+
+## vcraft 1.2.0 on Linux
+
+The same machine as the Linux run above (AMD Ryzen 5 3600, 12 threads), CPython
+3.13.16. Full figures in [`results-linux.md`](results-linux.md), which this run
+replaced.
+
+This is the first run that includes the whole benchmark: the edge-case matrix, the
+reference probes and the class surface. That matters for the method rows. The
+benchmark's `BoundedCounter` inherits, and its generated `bump` reads the base through
+`vcraft.state_at(1)`, so the module publishes the state chain on **every** trampoline —
+one `PyMem_Malloc` and two chain copies per call (step 3 above). The earlier macOS and
+1.0 Linux runs predate the class surface and did not pay it. So the method and
+attribute rows are higher here than in those tables, and PyO3, which has no such
+per-call cost, is ahead on them:
+
+| workload | pyo3 | vcraft | zig-maturin | python |
+|---|---|---|---|---|
+| `add` | 72 ns | 70 ns | 89 ns | 36 ns |
+| `fib(25)` | 222.1 µs | 108.9 µs | 383.5 µs | 9.11 ms |
+| `greet` | 136 ns | 115 ns | 221 ns | 69 ns |
+| `Counter()` | 102 ns | 105 ns | 75 ns | 93 ns |
+| `c.increment()` | 47 ns | 82 ns | 60 ns | 55 ns |
+| `c.add(1)` | 67 ns | 101 ns | 74 ns | 54 ns |
+| `c.value` | 47 ns | 72 ns | 32 ns | 12 ns |
+| `c.is_zero` | 35 ns | 70 ns | 47 ns | 37 ns |
+
+vcraft still leads the boundaries the benchmark was built around: `fib` (2.0× over
+PyO3), `sum_floats` (238 vs 849 µs), `greet`, `minmax` (652 vs 1,102 µs) and
+`histogram` (569 vs 797 µs). It trails PyO3 on `checksum` (40.1 vs 13.4 µs, the same
+byte-loop lowering noted above) and on `count_primes` and `make_range`, which are V's
+array-write lowering rather than vcraft's. Thread scaling is unchanged: vcraft 6.2× on
+eight threads, against PyO3 5.6× and zig-maturin 6.3×. Memory stays at the same floor —
+868 KiB added at import and a 0.5 MiB round-off on `make_range`'s heap — with no leak
+on any scenario and no leaked reference on any probe.
+
+The method-call cost is worth a look before 1.3: the chain is published for a class
+with no base too, and a module that never calls `state_at` pays nothing, but one
+subclass turns it on for every trampoline in the file. Scoping the publish to the
+classes that can observe it — one with a base, or a method whose body mentions
+`state_at` — would take it off the common paths.
 
