@@ -68,7 +68,9 @@ pub fn emit_glue(p Project) string {
 			w.write_string(emit_bind_globals(m))
 			if m.property {
 				w.write_string(emit_property_trampoline(p, c, m))
-			} else if m.static {
+			} else if m.static || m.classmethod {
+				// A classmethod is the static shape with METH_CLASS: `self` is the class
+				// CPython passes, and the V call still carries the receiver by name.
 				w.write_string(emit_static_trampoline(m))
 			} else {
 				w.write_string(emit_method_trampoline(p, c, m))
@@ -181,6 +183,12 @@ pub fn glue_module_body(p Project) string {
 	for c in p.classes {
 		w.write_string(render_class_exec(p, c))
 	}
+	// Module-level constants, each a boxed literal attached under its own name. The
+	// reference the boxer returns is stolen by `add_object_owned`, so nothing leaks.
+	for cn in p.consts {
+		w.write_string('\tvcraft.add_object_owned(module, ' + vstring_literal(cn.name) +
+			', ' + const_value_expr(cn) + ')\n')
+	}
 	w.write_string('\t_ = module\n')
 	w.write_string('\treturn 0\n}\n')
 	return w.str()
@@ -204,6 +212,32 @@ pub fn interp(name string) string {
 	return '$' + '{' + name + '}'
 }
 
+// const_stub_type is the Python type a `@[vc_const]` appears as in the `.pyi`.
+fn const_stub_type(kind string) string {
+	return match kind {
+		'int' { 'int' }
+		'float' { 'float' }
+		'bool' { 'bool' }
+		'str' { 'str' }
+		else { 'Any' }
+	}
+}
+
+// const_value_expr boxes a `@[vc_const]` literal as a Python object.
+//
+// The value is a literal the generator read from the source, so it is emitted as a V
+// literal of the matching type: an int wide enough for any signed literal, a float, a
+// bool, or a string with its inner text escaped through `vstring_literal`.
+fn const_value_expr(cn Const) string {
+	return match cn.kind {
+		'int' { 'vcraft.to_py_int(i64(${cn.value}))' }
+		'float' { 'vcraft.to_py_f64(f64(${cn.value}))' }
+		'bool' { 'vcraft.to_py_bool(${cn.value})' }
+		'str' { 'vcraft.to_py_string(${vstring_literal(cn.value[1..cn.value.len - 1])})' }
+		else { 'vcraft.to_py_none()' }
+	}
+}
+
 // render_class_exec renders a class's registration for inside `exec`.
 pub fn render_class_exec(p Project, c Class) string {
 	// Rendered at generation time rather than as a `for` in the output: every value
@@ -219,6 +253,9 @@ pub fn render_class_exec(p Project, c Class) string {
 	}
 	w.write_string('\t' + c.ctype + ' = vcraft.new_type(')
 	w.write_string(vstring_literal(c.qualified) + ',\n')
+	// The state lives inside the object, so the type's `tp_basicsize` is the header plus
+	// this class's state struct; the generator knows the size and passes it here.
+	w.write_string('\t\tint(${c.size_fn}()),\n')
 	w.write_string('\t\t' + vstring_literal(c.doc) + ',\n')
 	w.write_string('\t\tvoidptr(' + c.ctor + '),\n')
 	// `tp_init` is left null: the constructor runs in `tp_new`, so a subclass that
@@ -275,6 +312,14 @@ pub fn render_class_exec(p Project, c Class) string {
 	} else {
 		w.write_string('\t\tunsafe { nil },\n')
 		w.write_string('\t\tunsafe { nil },\n')
+	}
+	// The sequence protocol, each slot only when the class declares it.
+	for fn_ in [c.len_fn, c.item_fn, c.contains_fn] {
+		if fn_.len > 0 {
+			w.write_string('\t\tvoidptr(' + fn_ + '),\n')
+		} else {
+			w.write_string('\t\tunsafe { nil },\n')
+		}
 	}
 	w.write_string('\t)\n')
 	// The error check is here rather than inside `new_type` because a class that fails
@@ -440,6 +485,22 @@ fn emit_bind(f Func) string {
 // first, so a positional-only call that stops short is a missing-argument error rather
 // than a read past the argument array.
 fn param_reader(param Param, local string, index int, func string) string {
+	// A `&T` parameter is an instance reference: the argument must be an instance of `T`,
+	// and the function receives a pointer into that instance's state. The object read is
+	// kept in `${local}_obj` so a `&T` result of the same call can be resolved back to it.
+	if param.instance_target.len > 0 {
+		object := '${local}_obj'
+		read := '\t${object} := vcraft.require_voidptr_arg(args, ${index}, ${vstring_literal(func)}, ${vstring_literal(param.name)})\n' +
+			'\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n' +
+			'\t${local} := unsafe { &${param.instance_target}(vcraft.from_py_instance(${object}, ${param.instance_handle}, ${vstring_literal(param.instance_target)}, ${param.instance_offset}, ${vstring_literal(func)}, ${vstring_literal(param.name)})) }\n' +
+			'\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}'
+		if param.default.len == 0 && !param.optional() {
+			return 'if !vcraft.arg_present(args, nargs, kwnames, ${index}) {\n' +
+				'\t\tvcraft.missing_arg(${vstring_literal(func)}, ${vstring_literal(param.name)})\n' +
+				'\t\treturn unsafe { nil }\n\t}\n' + read
+		}
+		return read
+	}
 	strategy := lookup(param.v_type)
 	if param.default.len == 0 {
 		if param.optional() {
@@ -518,12 +579,12 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 		}
 		w.write_string('\t${param_reader(param, name, i, f.name)}\n')
 	}
-	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
+	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
 	has_value := f.raw || ret != .void
 	if has_value {
-		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
+		w.write_string('\t${result_decl_of(f, ret)}\n')
 	}
 	if f.nogil {
 		w.write_string(emit_nogil_open())
@@ -573,7 +634,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	// raises leaves the object consistent.
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	if has_value {
-		w.write_string('\treturn ${return_expr(ret, 'result', f.raw, f.v_ret)}\n')
+		w.write_string(emit_tail_return(f, ret, instance_candidates(f, true), f.raw))
 	} else {
 		w.write_string('\treturn vcraft.to_py_none().ptr\n')
 	}
@@ -607,7 +668,7 @@ pub fn emit_static_trampoline(f Func) string {
 	ret := lookup(f.v_ret)
 	has_value := ret != .void
 	if has_value {
-		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
+		w.write_string('\t${result_decl_of(f, ret)}\n')
 	}
 	if f.nogil {
 		w.write_string(emit_nogil_open())
@@ -650,7 +711,7 @@ pub fn emit_static_trampoline(f Func) string {
 	}
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	if has_value {
-		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
+		w.write_string(emit_tail_return(f, ret, instance_candidates(f, false), false))
 	} else {
 		w.write_string('\treturn vcraft.to_py_none().ptr\n')
 	}
@@ -665,7 +726,7 @@ pub fn emit_static_trampoline(f Func) string {
 pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
 	w.write_string('fn ${f.trampoline}(self voidptr, closure voidptr) voidptr {\n')
-	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
+	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
 	if f.nogil {
@@ -681,7 +742,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		// A property getter declares its own `result`. It has no argument tuple, so it
 		// does not go through the path that declares one for a method, and without this
 		// the return statement at the end refers to a variable that was never declared.
-		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
+		w.write_string('\t${result_decl_of(f, ret)}\n')
 	}
 	if f.returns_result {
 		inner := 'vcraft.raise_from_error(err)\n\treturn unsafe { nil }'
@@ -698,7 +759,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 			w.write_string(emit_nogil_close())
 		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
-		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
+		w.write_string(emit_tail_return(f, ret, instance_candidates(f, true), false))
 	} else if ret != .void {
 		// A plain getter: the call is assigned to the `result` declared above. Without
 		// this the value is computed and dropped on the floor, and the getter returns the
@@ -707,7 +768,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}
-		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
+		w.write_string(emit_tail_return(f, ret, instance_candidates(f, true), false))
 	} else {
 		// A property returning nothing has no `result` to assign: it was never declared,
 		// and assigning to it is a compile error rather than a warning.
@@ -715,7 +776,7 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}
-		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
+		w.write_string(emit_tail_return(f, ret, instance_candidates(f, true), false))
 	}
 	w.write_string('}\n')
 	return w.str()
@@ -781,7 +842,7 @@ pub fn emit_trampoline(f Func) string {
 	// below assigns to it rather than introducing it with `:=`, because `:=` on an
 	// existing name is a redefinition and V rejects that outright.
 	if has_value {
-		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
+		w.write_string('\t${result_decl_of(f, ret)}\n')
 	}
 	// A raw function's result is a borrowed pointer, so `return_expr` takes a reference
 	// of its own on it before CPython receives it; the V side does not own the caller's
@@ -843,7 +904,7 @@ pub fn emit_trampoline(f Func) string {
 		}
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 		if has_value {
-			w.write_string('\treturn ${return_expr(ret, 'result', f.raw, f.v_ret)}\n')
+			w.write_string(emit_tail_return(f, ret, instance_candidates(f, false), f.raw))
 		} else {
 			w.write_string('\treturn vcraft.to_py_none().ptr\n')
 		}
@@ -851,7 +912,8 @@ pub fn emit_trampoline(f Func) string {
 		return w.str()
 	}
 
-	w.write_string('\treturn ${return_expr(ret, 'result', f.raw, f.v_ret)}\n}\n')
+	w.write_string(emit_tail_return(f, ret, instance_candidates(f, false), f.raw))
+	w.write_string('}\n')
 	return w.str()
 }
 
@@ -860,13 +922,19 @@ pub fn emit_trampoline(f Func) string {
 // A raw result is a `voidptr` handed over borrowed, so a reference of the caller's own
 // is taken on it. Everything else is a real V value that has to be boxed. `v_type` is
 // the declared value type, which a sequence needs to choose how each element is boxed.
-pub fn return_expr(strategy Strategy, value string, raw bool, v_type string) string {
+pub fn return_expr(strategy Strategy, value string, raw bool, v_type string, export_buffer bool) string {
 	if raw {
 		// A raw function hands back a borrowed pointer, so the wrapper takes the
 		// reference itself. Without this the caller receives a pointer it never
 		// owned and CPython over-decrements it at teardown, which crashes the
 		// interpreter on exit rather than at the call.
 		return "vcraft.borrow(${value}).new_ref().ptr"
+	}
+	if export_buffer {
+		// A `@[vc_memoryview]` result: hand the native-backed slice to CPython as a
+		// writable `memoryview`, transferring ownership of its backing. Nothing is
+		// boxed, so the element's format family is all the runtime needs.
+		return 'vcraft.buffer_export_${element_type(v_type)}(${value}).ptr'
 	}
 	// `boxed_expr` already produces an expression that yields the object, except for
 	// `.pyref`, where it is the object itself rather than a pointer to one.
@@ -885,6 +953,40 @@ pub fn return_expr(strategy Strategy, value string, raw bool, v_type string) str
 		.optional, .dict, .fixed { '${composite_boxed_expr(strategy, value, v_type)}.ptr' }
 		else { '${boxed_expr(strategy, value)}.ptr' }
 	}
+}
+
+// instance_candidates is the V expression for the list of instances a `&T` result could
+// point into: the receiver when there is one, then the object read for each `&T`
+// parameter. It is the set the runtime matches the returned pointer against.
+fn instance_candidates(f Func, with_self bool) string {
+	mut parts := []string{}
+	if with_self {
+		parts << 'voidptr(self)'
+	}
+	for i, param in f.params {
+		if param.instance_target.len > 0 {
+			parts << 'voidptr(${local_name(i)}_obj)'
+		}
+	}
+	if parts.len == 0 {
+		return '[]voidptr{}'
+	}
+	return '[${parts.join(', ')}]'
+}
+
+// instance_result_expr hands Python the instance a `&T` result points into, resolved from
+// the candidates of the call. It yields the object pointer, which is what a trampoline
+// returns.
+fn instance_result_expr(f Func, value string, candidates string) string {
+	return 'vcraft.instance_ref(voidptr(${value}), ${f.instance_result_handle}, ${vstring_literal(f.instance_result)}, ${f.instance_result_offset}, ${candidates}, ${vstring_literal(f.name)})'
+}
+
+// emit_tail_return is the final `return` of a trampoline, instance reference or not.
+fn emit_tail_return(f Func, ret Strategy, candidates string, raw bool) string {
+	if f.instance_result.len > 0 {
+		return '\treturn ${instance_result_expr(f, 'result', candidates)}\n'
+	}
+	return '\treturn ${return_expr(ret, 'result', raw, f.v_ret, f.export_buffer)}\n'
 }
 
 // composite_boxed_expr boxes an optional, a map or a fixed-size array as an expression.
@@ -907,6 +1009,16 @@ fn composite_boxed_expr(strategy Strategy, value string, v_type string) string {
 		.fixed { seq_boxed_expr(fixed_element(t), '${value}[..]') }
 		else { boxed_expr(strategy, value) }
 	}
+}
+
+// result_decl_of declares the local a trampoline assigns the call's result to, with the
+// pointer type a `&T` result needs: an instance reference is a typed pointer, not the
+// null `voidptr` the generic zero value would give it.
+fn result_decl_of(f Func, strategy Strategy) string {
+	if f.instance_result.len > 0 {
+		return 'mut result := unsafe { &${f.instance_result}(nil) }'
+	}
+	return result_decl(strategy, f.v_ret)
 }
 
 // result_decl declares the local a trampoline assigns the call's result to: `result`,
@@ -1122,7 +1234,17 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 
 // python_signature renders `name(a: int, b: int) -> int` for `__text_signature__`.
 pub fn python_signature(f Func) string {
-	return '${f.name}(${param_list(f)}) -> ${describe(f.v_ret)}'
+	return '${f.name}(${param_list(f)}) -> ${result_annotation(f)}'
+}
+
+// result_annotation is the Python type name for a function's result. A
+// `@[vc_memoryview]` result is a `memoryview` whatever the V slice's element type, so it
+// does not go through `describe`.
+pub fn result_annotation(f Func) string {
+	if f.export_buffer {
+		return 'memoryview'
+	}
+	return describe(f.v_ret)
 }
 
 fn param_list(f Func) string {
@@ -1241,12 +1363,16 @@ pub fn emit_stubs(p Project) string {
 	w.write_string('# Generated by vcraft. Do not edit.\n')
 	w.write_string('# Regenerate with `vcraft build`.\n\n')
 	w.write_string('from typing import Any, Sequence\n')
+	// Module-level constants, declared with their Python type so a type checker sees them.
+	for cn in p.consts {
+		w.write_string('${cn.name}: ${const_stub_type(cn.kind)}\n')
+	}
 	for f in p.funcs {
 		w.write_string('\n')
 		if f.doc.len > 0 {
 			w.write_string('${indent_doc(f.doc)}\n')
 		}
-		w.write_string('def ${f.name}(${param_list(f)}) -> ${describe(f.v_ret)}: ...\n')
+		w.write_string('def ${f.name}(${param_list(f)}) -> ${result_annotation(f)}: ...\n')
 	}
 	for c in p.classes {
 		w.write_string('\n')
@@ -1270,21 +1396,24 @@ pub fn emit_stubs(p Project) string {
 		}
 		// A native buffer is not an attribute, so it has no field line; it is reachable
 		// through `memoryview(instance)` and through methods.
-		if c.ctor_fn.len > 0 {
+		// A subclass with no constructor of its own still takes Python arguments when its
+		// base does: `tp_new` binds the base's parameters and `newstate` forwards them.
+		// The signature has to say so, or a type checker rejects a call that works.
+		if c.ctor_fn.len > 0 || c.newstate_params.len > 0 {
 			w.write_string('    def __init__(self${c.stub_ctor_params()}) -> None: ...\n')
 		}
 		for method in c.methods {
 			if method.property {
 				w.write_string('    @property\n')
 			}
-			if method.static {
-				w.write_string('    @staticmethod\n')
+			if method.static || method.classmethod {
+				w.write_string(if method.classmethod { '    @classmethod\n' } else { '    @staticmethod\n' })
 				args := method_params(method).all_after(', ').trim_space()
-				w.write_string('    def ${method.name}(${args}) -> ${describe(method.v_ret)}: ...\n')
+				w.write_string('    def ${method.name}(${args}) -> ${result_annotation(method)}: ...\n')
 				continue
 			}
 			w.write_string('    def ${method.name}(self${method_params(method)}) -> ' +
-				'${describe(method.v_ret)}: ...\n')
+				'${result_annotation(method)}: ...\n')
 		}
 	}
 	return w.str()

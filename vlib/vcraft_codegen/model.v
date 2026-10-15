@@ -31,6 +31,16 @@ pub const attr_field = 'vc_field'
 // it is reachable through `memoryview(instance)` (the first one) and through methods.
 pub const attr_buffer = 'vc_buffer'
 
+// attr_buffer_typed is `@[vc_buffer]`'s opt-in: `memoryview(instance)` reports a typed
+// view -- format and itemsize from the element type, one item per element -- instead of
+// the default 1-D byte view. It is a separate annotation so the change is deliberate.
+pub const attr_buffer_typed = 'vc_buffer_typed'
+
+// attr_memoryview marks a function or method whose `[]T` result is handed to Python as a
+// writable `memoryview` with no copy, instead of being boxed as a list or a `bytes`. The
+// slice must be native-backed (`buffer_new_*`), because the view takes ownership of it.
+pub const attr_memoryview = 'vc_memoryview'
+
 pub const attr_property = 'vc_property'
 
 pub const attr_static = 'vc_static'
@@ -53,6 +63,38 @@ pub const attr_ref = 'vc_ref'
 pub const attr_defaults = 'vc_defaults'
 
 pub const attr_eq = 'vc_eq'
+
+// The ordering operators. Each is a free function `(a voidptr, b voidptr) bool`, like
+// `@[vc_eq]`, because V allows one receiver per method and an operator needs two
+// operands. They fill `tp_richcompare`'s `<`, `<=`, `>` and `>=`.
+pub const attr_lt = 'vc_lt'
+
+pub const attr_le = 'vc_le'
+
+pub const attr_gt = 'vc_gt'
+
+pub const attr_ge = 'vc_ge'
+
+// attr_len marks a method as `__len__`: no parameters, an integer result, installed as
+// `sq_length`. It makes `len(instance)` and `bool(instance)` work.
+pub const attr_len = 'vc_len'
+
+// attr_getitem marks a method as `__getitem__`: one integer parameter, installed as
+// `sq_item`. It makes `instance[i]` work.
+pub const attr_getitem = 'vc_getitem'
+
+// attr_contains marks a method as `__contains__`: one parameter, a bool result,
+// installed as `sq_contains`. It makes `x in instance` work.
+pub const attr_contains = 'vc_contains'
+
+// attr_classmethod marks a `fn Class.name(...)` as a Python `classmethod`. It is like
+// `@[vc_static]` but CPython passes the class rather than NULL, so a subclass calling it
+// sees the subclass.
+pub const attr_classmethod = 'vc_classmethod'
+
+// attr_const marks a `pub const NAME = value` as a module-level Python attribute. The
+// value must be an int, a float, a bool or a string.
+pub const attr_const = 'vc_const'
 
 // attr_iter marks a method as the class's `__iter__`: the instance is its own iterator,
 // so the slot returns the instance itself after running the method for its side effects.
@@ -85,6 +127,15 @@ pub const known_attrs = [
 	attr_raw,
 	attr_eq,
 	attr_hash,
+	attr_lt,
+	attr_le,
+	attr_gt,
+	attr_ge,
+	attr_len,
+	attr_getitem,
+	attr_contains,
+	attr_classmethod,
+	attr_const,
 	attr_iter,
 	attr_next,
 	attr_base,
@@ -95,6 +146,8 @@ pub const known_attrs = [
 	attr_methods,
 	attr_field,
 	attr_buffer,
+	attr_buffer_typed,
+	attr_memoryview,
 	attr_property,
 	attr_static,
 ]
@@ -110,6 +163,15 @@ pub mut:
 	// or empty when the parameter has none. Validated against the type before any
 	// glue is written.
 	default string
+	// instance_target is the class name when the parameter is `&T` and `T` resolved to a
+	// class: the wrapper checks the argument is an instance of it and hands the V
+	// function a pointer into that instance's state. Empty for every other parameter.
+	instance_target string
+	// instance_handle is the V expression for the target class's type object, and
+	// instance_offset is where its struct starts in the state block. Both are filled in
+	// with instance_target.
+	instance_handle string
+	instance_offset string
 }
 
 // optional reports whether a caller may leave the parameter out: it has a default, or
@@ -139,6 +201,10 @@ pub mut:
 	raw bool
 	// nogil marks a pure V function the wrapper may call with the GIL released.
 	nogil bool
+	// export_buffer marks a function whose `[]T` result is returned as a zero-copy
+	// `memoryview` over native-backed memory, rather than boxed as a list. The slice's
+	// backing must come from `buffer_new_*`: the view takes ownership of it.
+	export_buffer bool
 	// unknown_defaults are names in `@[vc_defaults]` that are not parameters, kept for
 	// a diagnostic once the declaration's position is known.
 	unknown_defaults []string
@@ -160,6 +226,21 @@ pub mut:
 	is_iter bool
 	// is_next marks a method used as `tp_iternext`.
 	is_next bool
+	// is_len, is_getitem and is_contains mark a method used as `sq_length`, `sq_item`
+	// and `sq_contains`: `len(instance)`, `instance[i]` and `x in instance`.
+	is_len      bool
+	is_getitem  bool
+	is_contains bool
+	// classmethod marks a `fn Class.name(...)` registered with `METH_CLASS`, so CPython
+	// passes the class rather than NULL and a subclass sees itself.
+	classmethod bool
+	// instance_result is the class name when the function returns `&T` and `T` resolved
+	// to a class: the wrapper hands Python the instance the pointer points into. Empty
+	// for every other result. instance_result_handle and instance_result_offset are its
+	// type object and struct offset, filled in with instance_result.
+	instance_result        string
+	instance_result_handle string
+	instance_result_offset string
 	// mangled is the C-level V name of the trampoline, unique within the module.
 	trampoline string
 	// origin, line and column place the declaration, for a diagnostic raised in a
@@ -191,6 +272,15 @@ pub mut:
 	// ctor_has_defaults is true when any constructor parameter carries `@[vc_defaults]`,
 	// which only matters for the generated signature's rendering.
 	ctor_has_defaults bool
+	// base_ctor_count is how many of `newstate_params` belong to the base: `newstate`
+	// forwards that many to the base's own state constructor. Zero for a class with no
+	// base, or one whose base takes no arguments.
+	base_ctor_count int
+	// newstate_params is the full parameter list of the generated state constructor: the
+	// base's parameters followed by the class's own. It is the Python signature of
+	// `new_<class>`, because `tp_new` binds every one of them and `newstate` splits them
+	// again, handing the base's to the base's constructor.
+	newstate_params []Param
 	// ctor is the generated `tp_new` trampoline.
 	ctor string
 	// ctype is the local the generated `PyInit` holds the heap type in.
@@ -222,6 +312,12 @@ pub mut:
 	// empty when the class declares neither.
 	eq_fn     string
 	hash_name string
+	// lt_fn, le_fn, gt_fn and ge_fn are the user's `@[vc_lt]`, `@[vc_le]`, `@[vc_gt]`
+	// and `@[vc_ge]` functions, empty when the class declares none.
+	lt_fn string
+	le_fn string
+	gt_fn string
+	ge_fn string
 	// richcompare and hash_fn are the generated `tp_richcompare` and `tp_hash`.
 	richcompare string
 	hash_fn string
@@ -229,6 +325,12 @@ pub mut:
 	// class declares no `@[vc_iter]` and `@[vc_next]` pair.
 	iter_fn string
 	next_fn string
+	// len_fn, item_fn and contains_fn are the generated `sq_length`, `sq_item` and
+	// `sq_contains`, empty when the class declares no `@[vc_len]`, `@[vc_getitem]` or
+	// `@[vc_contains]`.
+	len_fn string
+	item_fn string
+	contains_fn string
 	// key is the class name folded to snake_case, because V rejects an identifier
 	// with uppercase letters in it.
 	key string
@@ -290,6 +392,9 @@ pub mut:
 	// buffer marks a `@[vc_buffer]` field: a `[]T` of scalars whose backing vcraft frees
 	// at dealloc and that the first such field also exposes through the buffer protocol.
 	buffer bool
+	// buffer_typed is `@[vc_buffer_typed]`: the buffer protocol reports a typed view
+	// instead of the default byte view.
+	buffer_typed bool
 	// ref_target is the class named by `@[vc_ref(Name)]`, empty when the field holds a
 	// reference to any vcraft instance. Only a check: the field holds a `PyObj`, so
 	// nothing in the layout depends on the target.
@@ -329,6 +434,18 @@ pub fn is_scalar_type(v_type string) bool {
 // is_buffer reports whether a field is a `@[vc_buffer]` native slice.
 pub fn (f Field) is_buffer() bool {
 	return f.buffer
+}
+
+// buffer_kind is the element family of a buffer scalar, numbered as the runtime's
+// `buffer_export_kind_*` constants are: the family says signed, unsigned, float or bool,
+// and the element's width picks the format character within it.
+pub fn buffer_kind(v_type string) int {
+	return match v_type.trim_space() {
+		'bool' { 3 }
+		'f32', 'f64' { 2 }
+		'i8', 'i16', 'i32', 'i64', 'isize', 'int' { 1 }
+		else { 0 }
+	}
 }
 
 // buffer_element is the element type of a `@[vc_buffer]` slice, which decides the runtime
@@ -391,6 +508,21 @@ pub mut:
 	column int
 }
 
+// Const is a `pub const NAME = value` annotated `@[vc_const]`, exposed as a module-level
+// Python attribute.
+pub struct Const {
+pub mut:
+	name string
+	// value is the literal as written, and kind is `int`, `float`, `bool` or `str`.
+	// Nothing else can cross: a const is read at generation time, not at run time, so
+	// the value has to be a literal the generator can box itself.
+	value  string
+	kind   string
+	origin string
+	line   int
+	column int
+}
+
 pub struct Project {
 pub mut:
 	// errors are the `@[vc_error]` types found, in declaration order.
@@ -407,6 +539,8 @@ pub mut:
 	// to. They are free functions, so they are dispatched from the `.fn` arm and the
 	// class may not have been collected yet.
 	operators []Operator
+	// consts are the `@[vc_const]` module-level constants, in declaration order.
+	consts []Const
 	// diagnostics are problems found while scanning. They do not stop generation;
 	// the emitter reports them all at once so a project with five mistakes takes
 	// one build to fix rather than five.

@@ -2,10 +2,11 @@ module vcraft_codegen
 
 // Emitting classes.
 //
-// A class is four things: a heap type, a `tp_new` that allocates the state block,
-// accessors that work on that block in place, and a `tp_dealloc` that releases it.
+// A class is four things: a heap type, a `tp_new` that allocates the object whose state
+// sits inside it, accessors that work on that state in place, and a `tp_dealloc` that
+// releases whatever the state holds.
 //
-// A method receives a pointer to the block, so it writes the instance directly, as a
+// A method receives a pointer to the state, so it writes the instance directly, as a
 // PyO3 method writes its cell. A method that panics halfway leaves the fields it had
 // already written:
 //
@@ -28,6 +29,15 @@ import strings as _
 fn emit_class(p Project, c Class) string {
 	mut w := new_builder()
 	w.write_string('\n// ---- ${c.name}\n\n')
+	// The constructor binds its parameters against the same name and optional arrays a
+	// function does, and they are hoisted to module level for the same reason: as
+	// literals in the call they were a fresh heap array on every `Class(...)`.
+	if c.newstate_params.len > 0 {
+		w.write_string(emit_bind_globals(Func{
+			trampoline: c.ctor
+			params:     c.newstate_params
+		}))
+	}
 	if c.base_index >= 0 {
 		w.write_string(emit_class_state_struct(p, c))
 	}
@@ -40,6 +50,7 @@ fn emit_class(p Project, c Class) string {
 	w.write_string(emit_field_accessors(p, c))
 	w.write_string(emit_class_new(c))
 	w.write_string(emit_class_iterators(p, c))
+	w.write_string(emit_class_sequences(p, c))
 	w.write_string(emit_class_traverse(p, c))
 	w.write_string(emit_class_clear(p, c))
 	w.write_string(emit_class_buffer_slots(p, c))
@@ -114,7 +125,7 @@ fn emit_field_accessors(p Project, c Class) string {
 	mut w := new_builder()
 	for f in c.scalar_fields() {
 		w.write_string('fn vcraft_generated__get_${c.key}_${f.name}(self voidptr, closure voidptr) voidptr {\n')
-		w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
+		w.write_string(emit_state_pointer(c))
 		w.write_string(emit_enter_state(p, c))
 		if f.is_reference() {
 			// A new reference, because CPython steals whatever a getter returns and the
@@ -137,7 +148,7 @@ fn emit_field_accessors(p Project, c Class) string {
 			w.write_string("\t\tvcraft.raise_attribute_error('${c.name}.${f.name} cannot be deleted')\n")
 			w.write_string('\t\treturn -1\n\t}\n')
 			w.write_string(emit_ref_type_check(p, c, f))
-			w.write_string(emit_state_pointer(c, no_state_exit(c, '-1')))
+			w.write_string(emit_state_pointer(c))
 			w.write_string(emit_enter_state(p, c))
 			// `value` is the reference CPython handed over and this setter now owns.
 			// `set_ref` releases whatever the field held, so assigning over a field does
@@ -170,7 +181,7 @@ fn emit_field_accessors(p Project, c Class) string {
 		// error here would leave two set at once, which CPython later reports as an
 		// unrelated SystemError.
 		w.write_string('\tmut field := ' + conv + ' or { return -1 }\n')
-		w.write_string(emit_state_pointer(c, no_state_exit(c, '-1')))
+		w.write_string(emit_state_pointer(c))
 		w.write_string(emit_enter_state(p, c))
 		// Only the field is copied, so the size is the field's, not the struct's.
 		w.write_string('\tvcraft.set_state(unsafe { voidptr(&state.' +
@@ -216,11 +227,11 @@ pub fn (c Class) scalar_fields() []Field {
 // stub_ctor_params renders the constructor's parameters for a `.pyi` `__init__`, with a
 // leading `, ` when there are any, so the call site can interpolate it directly.
 pub fn (c Class) stub_ctor_params() string {
-	if c.ctor_params.len == 0 {
+	if c.newstate_params.len == 0 {
 		return ''
 	}
 	return ', ' + param_list(Func{
-		params: c.ctor_params
+		params: c.newstate_params
 	})
 }
 
@@ -278,8 +289,15 @@ fn emit_class_methods(c Class) string {
 
 fn method_flags(m Func) string {
 	base := if m.params.len == 0 { 'vcraft.meth_noargs' } else { 'vcraft.meth_fastcall_keywords' }
-	// METH_STATIC is what makes CPython pass NULL as the receiver for a `@[vc_static]`.
-	return if m.static { 'vcraft.meth_static | ' + base } else { base }
+	// METH_STATIC makes CPython pass NULL as the receiver for a `@[vc_static]`, and
+	// METH_CLASS makes it pass the class for a `@[vc_classmethod]`.
+	if m.static {
+		return 'vcraft.meth_static | ' + base
+	}
+	if m.classmethod {
+		return 'vcraft.meth_class | ' + base
+	}
+	return base
 }
 
 // emit_class_new renders `tp_new`.
@@ -300,7 +318,7 @@ fn method_flags(m Func) string {
 fn emit_iter_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
 	w.write_string('fn ${c.iter_fn}(self voidptr) voidptr {\n')
-	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
+	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
 	if f.nogil {
 		w.write_string(emit_nogil_open())
@@ -330,12 +348,12 @@ fn emit_iter_trampoline(p Project, c Class, f Func) string {
 fn emit_next_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
 	w.write_string('fn ${c.next_fn}(self voidptr) voidptr {\n')
-	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
+	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
 	has_value := ret != .void
 	if has_value {
-		w.write_string('\t${result_decl(ret, f.v_ret)}\n')
+		w.write_string('\t${result_decl_of(f, ret)}\n')
 	}
 	if f.nogil {
 		w.write_string(emit_nogil_open())
@@ -366,7 +384,9 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 		if f.nogil {
 			w.write_string(emit_nogil_close())
 		}
-		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+		// The check is emitted once, after the branches: a `!T` call that failed sets
+		// its exception here and the success path checks nothing. Emitting it inside
+		// this branch too made every item of an iterator pay two `PyErr_Occurred`.
 	} else if has_value {
 		w.write_string('\t${result_target(ret, f.v_ret)} = ${call}\n')
 		if f.nogil {
@@ -380,11 +400,149 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 	}
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	if has_value {
-		w.write_string('\treturn ${return_expr(ret, 'result', false, f.v_ret)}\n')
+		w.write_string(emit_tail_return(f, ret, instance_candidates(f, true), false))
 	} else {
 		w.write_string('\treturn vcraft.to_py_none().ptr\n')
 	}
 	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_len_trampoline renders `sq_length`, the slot behind `len(instance)` and
+// `bool(instance)`.
+//
+// The slot returns a `Py_ssize_t`, not an object, so nothing is boxed: the user's
+// integer result goes straight back, and a failure returns -1 with the Python exception
+// already set. CPython raises the ValueError itself for a negative length.
+fn emit_len_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${c.len_fn}(self voidptr) isize {\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	if f.nogil {
+		w.write_string(emit_nogil_open())
+	} else {
+		w.write_string('\tdefer {\n')
+		w.write_string('\t\tif message := recover() {\n')
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
+		w.write_string('\t\t}\n')
+		w.write_string('\t}\n')
+	}
+	call := 'state.' + c.self_access() + '${f.name}()'
+	if f.returns_result {
+		w.write_string('\tresult := ${call} or {\n')
+		w.write_string('\t\tvcraft.raise_from_error(err)\n\t\treturn -1\n\t}\n')
+	} else {
+		w.write_string('\tresult := ${call}\n')
+	}
+	if f.nogil {
+		w.write_string(emit_nogil_close())
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
+	w.write_string('\treturn isize(result)\n')
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_item_trampoline renders `sq_item`, the slot behind `instance[i]`.
+//
+// CPython hands the index as a `Py_ssize_t`, cast to the user method's own integer width
+// before the call. The result is boxed like any other method result; an out-of-range
+// index is the user's own `IndexError`, raised from a `!T` method.
+fn emit_item_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	ret := lookup(f.v_ret)
+	index_cast := '${f.params[0].v_type.trim_space()}(index)'
+	w.write_string('fn ${c.item_fn}(self voidptr, index isize) voidptr {\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	if f.nogil {
+		w.write_string(emit_nogil_open())
+	} else {
+		w.write_string('\tdefer {\n')
+		w.write_string('\t\tif message := recover() {\n')
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
+		w.write_string('\t\t}\n')
+		w.write_string('\t}\n')
+	}
+	call := 'state.' + c.self_access() + '${f.name}(${index_cast})'
+	// The result is declared first and assigned after, so the same local serves both the
+	// plain and the `!T` method: `result_decl_of` introduces it, and the call assigns.
+	w.write_string('\t${result_decl_of(f, ret)}\n')
+	if f.returns_result {
+		w.write_string('\tresult = ${call} or {\n')
+		w.write_string('\t\tvcraft.raise_from_error(err)\n\t\treturn unsafe { nil }\n\t}\n')
+	} else {
+		w.write_string('\tresult = ${call}\n')
+	}
+	if f.nogil {
+		w.write_string(emit_nogil_close())
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	w.write_string(emit_tail_return(f, ret, instance_candidates(f, true), false))
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_contains_trampoline renders `sq_contains`, the slot behind `x in instance`.
+//
+// The slot returns an int, and the argument readers' error paths return a null object,
+// so the work happens in a helper that returns the Python bool and the slot maps it: a
+// null result is an error (-1, the exception already set), True is 1 and False is 0. The
+// helper's reference is consumed by `consume_bool`, so nothing leaks.
+fn emit_contains_trampoline(p Project, c Class, f Func) string {
+	box := 'vcraft_generated__containsbox_${c.key}'
+	mut w := new_builder()
+	w.write_string('fn ${box}(self voidptr, item voidptr) voidptr {\n')
+	w.write_string('\targs := unsafe { voidptr(&item) }\n')
+	w.write_string('\tnargs := isize(1)\n')
+	w.write_string('\tkwnames := unsafe { nil }\n')
+	w.write_string('\t${param_reader(f.params[0], 'arg0', 0, f.name)}\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	if f.nogil {
+		w.write_string(emit_nogil_open())
+	} else {
+		w.write_string('\tdefer {\n')
+		w.write_string('\t\tif message := recover() {\n')
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
+		w.write_string('\t\t}\n')
+		w.write_string('\t}\n')
+	}
+	call := 'state.' + c.self_access() + '${f.name}(arg0)'
+	if f.returns_result {
+		w.write_string('\tresult := ${call} or {\n')
+		w.write_string('\t\tvcraft.raise_from_error(err)\n\t\treturn unsafe { nil }\n\t}\n')
+	} else {
+		w.write_string('\tresult := ${call}\n')
+	}
+	if f.nogil {
+		w.write_string(emit_nogil_close())
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	w.write_string('\treturn vcraft.to_py_bool(result).ptr\n')
+	w.write_string('}\n\n')
+	w.write_string('fn ${c.contains_fn}(self voidptr, item voidptr) int {\n')
+	w.write_string('\treturn vcraft.consume_bool(${box}(self, item))\n')
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_class_sequences renders the `sq_length`, `sq_item` and `sq_contains` trampolines
+// for the methods that fill them.
+fn emit_class_sequences(p Project, c Class) string {
+	mut w := new_builder()
+	for m in c.methods {
+		if m.is_len {
+			w.write_string(emit_len_trampoline(p, c, m))
+		}
+		if m.is_getitem {
+			w.write_string(emit_item_trampoline(p, c, m))
+		}
+		if m.is_contains {
+			w.write_string(emit_contains_trampoline(p, c, m))
+		}
+	}
 	return w.str()
 }
 
@@ -413,19 +571,16 @@ fn emit_class_new(c Class) string {
 	mut w := new_builder()
 	w.write_string('fn ${c.ctor}(type_obj voidptr, raw_args voidptr, kwds voidptr) voidptr {\n')
 	mut call_args := []string{}
-	if c.ctor_params.len > 0 {
+	if c.newstate_params.len > 0 {
 		// `tp_new` gets the positional arguments as a tuple and the keywords as a dict,
 		// which is not the vectorcall layout a method reads. `bind_new_args` turns the
 		// pair into one slot per parameter, and from there the readers are the same ones
-		// a function or method uses.
-		mut names := []string{}
-		mut optional := []string{}
-		for param in c.ctor_params {
-			names << vstring_literal(param.name)
-			optional << (if param.optional() { 'true' } else { 'false' })
-		}
-		w.write_string('\tbound := []voidptr{len: ${c.ctor_params.len}, init: unsafe { nil }}\n')
-		w.write_string('\tif !vcraft.bind_new_args(raw_args, kwds, bound.data, [${names.join(', ')}], [${optional.join(', ')}], ' +
+		// a function or method uses. The list is the full one, base parameters included,
+		// because `newstate` forwards the base's share on to the base's constructor.
+		// The name and optional arrays are module-level globals (`emit_class` hoists
+		// them), not literals, so a construction allocates nothing for them.
+		w.write_string('\tmut bound := unsafe { [${c.newstate_params.len}]voidptr{} }\n')
+		w.write_string('\tif !vcraft.bind_new_args(raw_args, kwds, unsafe { voidptr(&bound[0]) }, g_vc_names_${c.ctor}, g_vc_optional_${c.ctor}, ' +
 			vstring_literal(c.name) + ') {\n')
 		w.write_string('\t\treturn unsafe { nil }\n\t}\n')
 		// `args` from here on is the slot array, which is what the readers below index.
@@ -433,10 +588,10 @@ fn emit_class_new(c Class) string {
 		// slot -- the shape the keyword path of a trampoline has. Declaring `nargs` and a
 		// non-null `kwnames` lets the same `param_reader` be used, which checks presence
 		// through `arg_present`.
-		w.write_string('\targs := bound.data\n')
+		w.write_string('\targs := unsafe { voidptr(&bound[0]) }\n')
 		w.write_string('\tnargs := isize(bound.len)\n')
 		w.write_string('\tkwnames := args\n')
-		for i, param in c.ctor_params {
+		for i, param in c.newstate_params {
 			name := local_name(i)
 			call_args << name
 			w.write_string('\t${param_reader(param, name, i, c.name)}\n')
@@ -451,51 +606,47 @@ fn emit_class_new(c Class) string {
 	}
 	w.write_string('\tinstance := vcraft.type_alloc(type_obj)\n')
 	w.write_string('\tif instance == unsafe { nil } {\n\t\treturn vcraft.no_memory()\n\t}\n')
-	w.write_string('\tstorage := vcraft.instance_alloc(${c.size_fn}())\n')
-	w.write_string('\tif storage == unsafe { nil } {\n\t\treturn vcraft.no_memory()\n\t}\n')
-	w.write_string('\tvcraft.instance_set_storage(instance, storage)\n')
-	// A class whose whole state is its own struct can be left uninitialised when there is
-	// no constructor. A subclass cannot: its state includes the base's, so the base's
-	// constructor still has to run even when this class declares none of its own.
+	// A class whose whole state is its own struct can stop here when it has no
+	// constructor: `PyType_GenericAlloc` zeroed the state, which is the V zero value. A
+	// subclass cannot: its state includes the base's, so the base's constructor still has
+	// to run even when this class declares none of its own.
 	if c.ctor_fn == '' && c.base_index < 0 {
 		w.write_string('\treturn instance\n}\n\n')
 		return w.str()
 	}
+	// The state is part of the object; `storage_of` names it so the readers below and
+	// the V constructor write into the same bytes.
+	w.write_string('\tstorage := vcraft.storage_of(instance)\n')
+	// `tp_new` owns the object: a panic on this path must release it, or the object
+	// `tp_alloc` handed over leaks when nil travels back to CPython. `instance_fail`
+	// decrefs it, which runs the generated dealloc and frees whatever the constructor
+	// had already stored.
 	w.write_string('\tdefer {\n')
 	w.write_string('\t\tif message := recover() {\n')
+	w.write_string('\t\t\t_ := vcraft.instance_fail(instance)\n')
 	w.write_string('\t\t\tvcraft.raise_panic(message)\n')
 	w.write_string('\t\t}\n')
 	w.write_string('\t}\n')
 	w.write_string('\tinitial := ${c.newstate_fn}(${call_args.join(', ')})\n')
 	w.write_string('\tvcraft.load_state(unsafe { voidptr(&initial) }, storage, ${c.size_fn}())\n')
 	w.write_string('\tif vcraft.error_is_set() {\n')
-	w.write_string('\t\tvcraft.instance_free(storage)\n')
-	w.write_string('\t\treturn unsafe { nil }\n')
+	w.write_string('\t\treturn vcraft.instance_fail(instance)\n')
 	w.write_string('\t}\n')
 	w.write_string('\treturn instance\n}\n\n')
 	return w.str()
 }
 
-// emit_state_pointer renders `state`, a pointer to the instance's state block.
+// emit_state_pointer renders `state`, a pointer to the instance's inline state.
 //
-// Methods, accessors and slots work on the block in place, as PyO3 does with the cell
+// Methods, accessors and slots work on the state in place, as PyO3 does with the cell
 // that holds a `#[pyclass]`. They used to load a copy of the whole struct before the
 // call and store it back after, which was most of what a method cost. The trade is the
 // one PyO3 makes: a method that panics halfway leaves the fields it had already written.
 //
-// `fail` is the body of the branch taken when the instance has no block. Every instance
-// that reaches Python has one, but an instance whose block failed to allocate is
-// already tracked by the cycle collector and can reach `tp_traverse` without one.
-fn emit_state_pointer(c Class, fail string) string {
-	return '\tmut state := unsafe { &${c.state_type()}(vcraft.instance_storage(self)) }\n' +
-		'\tif isnil(state) {\n' + fail + '\t}\n'
-}
-
-// no_state_exit raises for an instance with no state block and returns `value`, the
-// failure value of the slot being emitted.
-fn no_state_exit(c Class, value string) string {
-	return "\t\tvcraft.raise_runtime_error('${c.name} instance has no state')\n" +
-		'\t\treturn ${value}\n'
+// The state lives inside the object, so the pointer is never null and there is no
+// failure branch to guard against: `instance_storage` is `obj` plus the header.
+fn emit_state_pointer(c Class) string {
+	return '\tmut state := unsafe { &${c.state_type()}(vcraft.instance_storage(self)) }\n'
 }
 
 // emit_enter_state publishes the state block and every generation above it, so a method
@@ -563,10 +714,10 @@ fn emit_enter_state(p Project, c Class) string {
 
 // emit_class_dealloc renders `tp_dealloc`.
 //
-// The state block is released first, then the base deallocator runs. Calling the
-// base last is the documented requirement for a subtype.
+// The state is released first, then the base deallocator runs. Calling the base last
+// is the documented requirement for a subtype.
 //
-// A class holding references releases them before the block goes. `tp_clear` is not
+// A class holding references releases them before the object goes. `tp_clear` is not
 // enough on its own: the collector calls it for an instance it found in a cycle, but an
 // instance whose last reference is simply dropped reaches `tp_dealloc` with its reference
 // count already at zero and nothing else having released what it pointed at.
@@ -576,12 +727,12 @@ fn emit_class_dealloc(p Project, c Class) string {
 	refs := c.ref_fields()
 	bufs := c.buffer_fields()
 	if refs.len > 0 || bufs.len > 0 {
-		w.write_string(emit_state_pointer(c, '\t\treturn vcraft.class_dealloc(self)\n'))
+		w.write_string(emit_state_pointer(c))
 		if refs.len > 0 {
 			w.write_string(emit_clear_refs(c))
 		}
-		// The backing of every buffer, the base's included, is released before the block
-		// that holds it. `buffer_free` is a no-op on an unset field, which is what a class
+		// The backing of every buffer, the base's included, is released before the state
+		// that holds it goes. `buffer_free` is a no-op on an unset field, which is what a class
 		// constructed without allocating them holds.
 		for f in bufs {
 			w.write_string('\tvcraft.buffer_free(state.' + f.path + '.data)\n')
@@ -595,10 +746,15 @@ fn emit_class_dealloc(p Project, c Class) string {
 // emit_class_buffer_slots renders the two buffer-protocol callbacks for a class whose
 // first `@[vc_buffer]` field is the one `memoryview(instance)` exposes.
 //
-// `PyBuffer_FillInfo` takes its own reference on the exporter and records it in the view,
-// so `memoryview` keeps the instance alive with no help from vcraft; the view count is
-// separate, and exists only so a resize can refuse while a view is open. The byte length
-// is the element count times the element's width, and the view is writable.
+// The view takes its own reference on the exporter and records it, so `memoryview`
+// keeps the instance alive with no help from vcraft; the view count is separate, and
+// exists only so a resize can refuse while a view is open. The byte length is the element
+// count times the element's width, and the view is writable.
+//
+// By default the view is a 1-D byte view (`format "B"`, itemsize 1) through
+// `PyBuffer_FillInfo`. A `@[vc_buffer_typed]` field instead gets a typed view -- format
+// and itemsize from the element type, one item per element -- which is what makes
+// `memoryview(instance).tolist()` and `struct.unpack` see the right values.
 fn emit_class_buffer_slots(p Project, c Class) string {
 	own := c.own_buffer_fields()
 	if own.len == 0 {
@@ -609,14 +765,19 @@ fn emit_class_buffer_slots(p Project, c Class) string {
 	elem := f.buffer_element()
 	mut w := new_builder()
 	w.write_string('fn vcraft_generated__getbuffer_${c.key}(self voidptr, view voidptr, flags int) int {\n')
-	w.write_string(emit_state_pointer(c, no_state_exit(c, '-1')))
+	w.write_string(emit_state_pointer(c))
 	w.write_string('\tfield := state.' + access + '\n')
-	w.write_string('\trc := vcraft.buffer_fill(view, self, field.data, isize(field.len) * isize(sizeof(' +
-		elem + ')), 0, flags)\n')
+	if f.buffer_typed {
+		w.write_string('\trc := vcraft.buffer_fill_typed(view, self, field.data, isize(field.len) * isize(sizeof(' +
+			elem + ')), isize(sizeof(' + elem + ')), ' + buffer_kind(elem).str() + ', 0, flags)\n')
+	} else {
+		w.write_string('\trc := vcraft.buffer_fill(view, self, field.data, isize(field.len) * isize(sizeof(' +
+			elem + ')), 0, flags)\n')
+	}
 	w.write_string('\tif rc == 0 {\n\t\tvcraft.buffer_views_incr(field.data)\n\t}\n')
 	w.write_string('\treturn rc\n}\n\n')
 	w.write_string('fn vcraft_generated__releasebuffer_${c.key}(self voidptr, view voidptr) int {\n')
-	w.write_string(emit_state_pointer(c, '\t\treturn 0\n'))
+	w.write_string(emit_state_pointer(c))
 	w.write_string('\tvcraft.buffer_views_decr(state.' + access + '.data)\n')
 	w.write_string('\treturn 0\n}\n\n')
 	return w.str()
@@ -643,7 +804,7 @@ fn emit_class_traverse(p Project, c Class) string {
 	// dict, not a state block, so that case goes to CPython before anything is read.
 	w.write_string('\tif vcraft.is_type_object(self) {\n')
 	w.write_string('\t\treturn vcraft.traverse_type(self, visit, arg)\n\t}\n')
-	w.write_string(emit_state_pointer(c, '\t\treturn 0\n'))
+	w.write_string(emit_state_pointer(c))
 	for f in refs {
 		w.write_string('\tif vcraft.traverse_ref(unsafe { voidptr(&state.' + f.path +
 			')}, visit, arg) != 0 {\n')
@@ -670,7 +831,7 @@ fn emit_class_clear(p Project, c Class) string {
 	w.write_string('\tif vcraft.is_type_object(self) {\n')
 	w.write_string('\t\tvcraft.clear_type(self)\n')
 	w.write_string('\t\treturn unsafe { nil }\n\t}\n')
-	w.write_string(emit_state_pointer(c, '\t\treturn unsafe { nil }\n'))
+	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_clear_refs(c))
 	w.write_string('\treturn unsafe { nil }\n')
 	w.write_string('}\n\n')
@@ -727,29 +888,36 @@ fn emit_class_newstate(p Project, c Class) string {
 	mut w := new_builder()
 	mut params := []string{}
 	mut call_args := []string{}
-	for i, param in c.ctor_params {
+	for i, param in c.newstate_params {
 		params << '${local_name(i)} ${param.v_type}'
 		call_args << local_name(i)
 	}
 	w.write_string('fn ${c.newstate_fn}(${params.join(', ')}) ${c.state_type()} {\n')
+	// A class with no base whose only content is its own constructor returns the
+	// constructor's value directly: the state type *is* the class's struct, so there is
+	// nothing to zero first and nothing to merge. The general path below keeps the
+	// `mut state` local, which a subclass needs to hold the base and its own half.
+	if c.base_index < 0 && c.ctor_fn != '' {
+		w.write_string('\treturn *${c.ctor_fn}(${call_args.join(', ')})\n')
+		w.write_string('}\n\n')
+		return w.str()
+	}
 	w.write_string('\tmut state := ${c.state_type()}{}\n')
 	if c.base_index >= 0 {
 		base := p.classes[c.base_index]
 		// An assignment rather than a literal: `BoundedCounterState{}` already holds the
 		// base's zero value, and this is the only thing that replaces it with the base's
-		// constructor result. A base constructor takes no arguments, which the collector
-		// has already enforced.
-		w.write_string('\tstate.base = ' + base.newstate_fn + '()\n')
+		// constructor result. The base's parameters are the leading ones -- `tp_new`
+		// bound them and `newstate` forwards them here -- so an argument-free base gets a
+		// bare call.
+		base_args := call_args[..c.base_ctor_count]
+		w.write_string('\tstate.base = ' + base.newstate_fn + '(' + base_args.join(', ') + ')\n')
 	}
 	if c.ctor_fn != '' {
-		call := '${c.ctor_fn}(${call_args.join(', ')})'
-		// A class with no base holds its own struct, so the whole of `state` is replaced.
-		// A subclass holds the base followed by its own, so only the `self` half is.
-		if c.base_index >= 0 {
-			w.write_string('\tstate.self = *${call}\n')
-		} else {
-			w.write_string('\tstate = *${call}\n')
-		}
+		call := '${c.ctor_fn}(${call_args[c.base_ctor_count..].join(', ')})'
+		// A subclass holds the base followed by its own, so only the `self` half is
+		// replaced here.
+		w.write_string('\tstate.self = *${call}\n')
 	}
 	w.write_string('\treturn state\n}\n\n')
 	return w.str()
@@ -768,36 +936,59 @@ fn emit_class_newstate(p Project, c Class) string {
 // defines `==` quietly claim to be smaller than everything.
 fn emit_class_richcompare(c Class) string {
 	mut w := new_builder()
+	orderings := {
+		'lt': c.lt_fn
+		'le': c.le_fn
+		'gt': c.gt_fn
+		'ge': c.ge_fn
+	}
+	has_order := c.lt_fn.len > 0 || c.le_fn.len > 0 || c.gt_fn.len > 0 || c.ge_fn.len > 0
 	w.write_string('fn ${c.richcompare}(self voidptr, other voidptr, op int) voidptr {\n')
-	if c.eq_fn.len == 0 {
-		// No `@[vc_eq]`, so the defaults are the identity comparison CPython gives every
-		// other object: `==` and `!=` by address, and nothing else.
+	if c.eq_fn.len == 0 && !has_order {
+		// No comparison at all, so the defaults are the identity comparison CPython gives
+		// every other object: `==` and `!=` by address, and nothing else.
 		w.write_string('\treturn vcraft.identity_richcompare(self, other, op)\n')
 		w.write_string('}\n\n')
 		return w.str()
 	}
-	w.write_string('\tif op == vcraft.op_lt || op == vcraft.op_le || op == vcraft.op_gt ' +
-		'|| op == vcraft.op_ge {\n')
-	w.write_string('\t\treturn vcraft.richcompare_not_implemented()\n')
+	w.write_string('\tif op == vcraft.op_eq || op == vcraft.op_ne {\n')
+	if c.eq_fn.len == 0 {
+		// Ordering without equality: `==` and `!=` keep the identity behaviour, and the
+		// ordering operators below are still reachable.
+		w.write_string('\t\treturn vcraft.identity_richcompare(self, other, op)\n')
+	} else {
+		// `.ptr` on both: the type handle is a `PyObj` and `is_instance_of` takes the raw
+		// pointer. Passing the struct makes V emit a cast of the wrong thing, and the check
+		// then answers for an address rather than for the type.
+		w.write_string('\t\tif !vcraft.is_instance_of(other, g_vc_type_${c.key}.ptr) {\n')
+		w.write_string('\t\t\treturn vcraft.richcompare_not_implemented()\n\t\t}\n')
+		// Both operands are passed as the state block's address rather than as a copy of
+		// the struct. A copy would have to be written back afterwards, and a method that
+		// panicked between the load and the store would leave the instance holding a
+		// half-written value. The user reads the fields through `state_from_ptr`, which is
+		// what makes the signature a free function taking two pointers.
+		w.write_string('\t\tmut same := ${c.eq_fn}(vcraft.instance_storage(self), ' +
+			'vcraft.instance_storage(other))\n')
+		// `!=` is the negation of `==` rather than a call of its own. A V `bool` is not
+		// the same thing as a Python `True`, so the negation happens here rather than in
+		// the user's code, where `a != b` would mean comparing the two answers.
+		w.write_string('\t\tif op == vcraft.op_ne {\n\t\t\tsame = !same\n\t\t}\n')
+		w.write_string('\t\treturn vcraft.to_py_bool(same).ptr\n')
+	}
 	w.write_string('\t}\n')
-	// `.ptr` on both: the type handle is a `PyObj` and `is_instance_of` takes the raw
-	// pointer. Passing the struct makes V emit a cast of the wrong thing, and the check
-	// then answers for an address rather than for the type.
-	w.write_string('\tif !vcraft.is_instance_of(other, g_vc_type_${c.key}.ptr) {\n')
-	w.write_string('\t\treturn vcraft.richcompare_not_implemented()\n')
-	w.write_string('\t}\n')
-	// Both operands are passed as the state block's address rather than as a copy of the
-	// struct. A copy would have to be written back afterwards, and a method that panicked
-	// between the load and the store would leave the instance holding a half-written
-	// value. The user reads the fields through `state_from_ptr`, which is what makes the
-	// signature a free function taking two pointers.
-	w.write_string('\tmut same := ${c.eq_fn}(vcraft.instance_storage(self), ' +
-		'vcraft.instance_storage(other))\n')
-	// `!=` is the negation of `==` rather than a call of its own. A V `bool` is not
-	// the same thing as a Python `True`, so the negation happens here rather than in the
-	// user's code, where `a != b` would mean comparing the two answers.
-	w.write_string('\tif op == vcraft.op_ne {\n\t\tsame = !same\n\t}\n')
-	w.write_string('\treturn vcraft.to_py_bool(same).ptr\n')
+	if has_order {
+		w.write_string('\tif !vcraft.is_instance_of(other, g_vc_type_${c.key}.ptr) {\n')
+		w.write_string('\t\treturn vcraft.richcompare_not_implemented()\n\t}\n')
+		for kind, opfn in orderings {
+			if opfn.len == 0 {
+				continue
+			}
+			w.write_string('\tif op == vcraft.op_${kind} {\n')
+			w.write_string('\t\treturn vcraft.to_py_bool(${opfn}(vcraft.instance_storage(self), ' +
+				'vcraft.instance_storage(other))).ptr\n\t}\n')
+		}
+	}
+	w.write_string('\treturn vcraft.richcompare_not_implemented()\n')
 	w.write_string('}\n\n')
 	return w.str()
 }
@@ -842,7 +1033,7 @@ fn emit_class_repr(p Project, c Class) string {
 		w.write_string("\t\treturn vcraft.to_py_string('${c.name}(...)').ptr\n\t}\n")
 		w.write_string('\tdefer { vcraft.repr_leave(self) }\n')
 	}
-	w.write_string(emit_state_pointer(c, no_state_exit(c, 'unsafe { nil }')))
+	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
 	if c.fields.len == 0 {
 		w.write_string("\treturn vcraft.to_py_string('${c.name}()').ptr\n}\n\n")

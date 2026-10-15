@@ -56,6 +56,13 @@ def halves(values: Sequence[float]) -> Sequence[float]: ...
 """Squares of zero up to `n`, as ints."""
 def squares(n: int) -> Sequence[int]: ...
 
+"""Squares of zero up to `n`, handed to Python as a zero-copy `memoryview`.
+
+	The result is a native-backed `[]int`, so it crosses as a writable view rather than a
+	list of boxed ints. The memoryview owns the buffer and frees it once it is collected.
+"""
+def squares_view(n: int) -> memoryview: ...
+
 """Splits text on spaces into a list of words."""
 def words(text: str) -> Sequence[str]: ...
 
@@ -80,6 +87,42 @@ def identity(obj: Any) -> Any: ...
 
 """Takes any Python object and returns it unchanged."""
 def passthrough(obj: Any) -> Any: ...
+
+"""counter_value reads a counter through a borrowed reference.
+
+	A `&Counter` parameter is an instance reference: the caller must pass a `Counter` or an
+	instance of a subclass, and the function reads that instance's state in place. A
+	`BoundedCounter`, which inherits `Counter`, is accepted and its inherited `value` read
+	through the same pointer.
+"""
+def counter_value(c: Counter) -> int: ...
+
+"""bounded_limit reads a subclass-only field through a borrowed reference.
+
+	`&BoundedCounter` accepts only a `BoundedCounter` or a class below it, and the pointer
+	lands on the subclass half of the state, after the inherited `Counter`. The offset is
+	the base's size, which the generator emits, so this is what proves it is right.
+"""
+def bounded_limit(b: BoundedCounter) -> int: ...
+
+"""pick returns one of its two arguments as the instance it came from.
+
+	A `&Counter` result is handed to Python as an instance, not a pointer: the wrapper
+	matches the returned address against the receiver and the instance arguments of the
+	call, and gives back the one that owns it. Returning a pointer that is not one of them
+	raises rather than handing Python an object it does not own.
+"""
+def pick(first: Counter, second: Counter) -> Counter: ...
+
+"""orphan returns an instance no argument owns, which the wrapper must refuse.
+
+	A `&T` result is only handed to Python when the pointer points into the receiver or one
+	of the call's instance arguments; a pointer into anything else would give Python an
+	object it does not own, so the wrapper raises instead of guessing. The function compiles
+	-- it takes an instance, so the generator has something to match against -- and fails at
+	the call.
+"""
+def orphan(first: Counter) -> Counter: ...
 
 """load_config reads a `name=value` line out of some configuration text.
 
@@ -159,6 +202,8 @@ class Counter:
     def is_zero(self) -> bool: ...
     @staticmethod
     def triple(n: int) -> int: ...
+    def self_ref(self) -> Counter: ...
+    def add_counter(self, other: Counter) -> int: ...
     def raw_echo(self, obj: Any) -> Any: ...
 
 """BoundedCounter inherits Counter's state and adds a limit.
@@ -232,6 +277,17 @@ class Vector:
     def size(self) -> int: ...
     def total(self) -> float: ...
     def resize(self, n: int) -> None: ...
+
+"""A class whose buffer is exposed as a *typed* `memoryview`.
+
+	`@[vc_buffer_typed]` makes `memoryview(instance)` report one item per element with the
+	element's own format, instead of the default 1-D byte view: `format "d"`, `itemsize 8`,
+	and a length in elements rather than bytes.
+"""
+class Samples:
+    def __init__(self, n: int) -> None: ...
+    def set(self, i: int, value: float) -> None: ...
+    def at(self, i: int) -> float: ...
 
 """A subclass with a native buffer of its own, on top of Counter.
 

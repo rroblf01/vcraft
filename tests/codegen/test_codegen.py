@@ -75,7 +75,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 26,
+            glue.count("add_function_owned") == 31,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -101,6 +101,8 @@ def main() -> int:
     t.check("stub has add", "def add(a: int, b: int) -> int: ..." in stubs)
     t.check("stub has the docstring", "Adds two integers" in stubs)
     t.check("stub types the sequence element", "values: Sequence[int]" in stubs)
+    t.check("stub types a memoryview result",
+            "def squares_view(n: int) -> memoryview: ..." in stubs)
 
     print("module behaviour")
     sys.path.insert(0, str(PYTHON_DIR))
@@ -153,6 +155,19 @@ def main() -> int:
     t.equal("a float list", h.halves([1, 3]), [0.5, 1.5])
     t.equal("an int list", h.squares(3), [0, 1, 4])
     t.equal("an i64 list at full width", h.count_up(2)[-1] + 2**40, 2**40 + 1)
+
+    print("a zero-copy memoryview result")
+    # `@[vc_memoryview]` hands a native-backed slice over as a writable memoryview. The
+    # view owns the backing, so writes go through it and the buffer is freed with it.
+    mv = h.squares_view(4)
+    t.check("the result is a memoryview", isinstance(mv, memoryview), type(mv))
+    t.check("it is writable and typed", mv.readonly is False and mv.itemsize >= 4,
+            (mv.readonly, mv.itemsize, mv.format))
+    t.equal("its contents are the squares", list(mv), [0, 1, 4, 9])
+    mv[2] = 42
+    t.equal("writes go through the view", list(mv), [0, 1, 42, 9])
+    t.check("a zero-length export is an empty view",
+            isinstance(h.squares_view(0), memoryview) and list(h.squares_view(0)) == [])
     t.equal("a PyObj result", h.boxed(2**40), [2**40])
     t.check("a PyObj signature", h.boxed.__doc__.startswith("boxed(n: int) -> Any"),
             h.boxed.__doc__)
@@ -301,8 +316,8 @@ def main() -> int:
     t.check("method with one argument", stepped == 104, stepped)
     t.check("class attributes", sorted(
         n for n in dir(h.Counter) if not n.startswith("_")) ==
-        ["double", "increment", "is_zero", "raw_echo", "set_step", "step", "triple",
-         "value"])
+        ["add_counter", "double", "increment", "is_zero", "raw_echo", "self_ref", "set_step",
+         "step", "triple", "value"])
     t.check("instances are distinct",
             h.Counter().value == 0 and h.Counter().value == 0)
     t.check("isinstance", isinstance(counter, h.Counter))
@@ -496,6 +511,71 @@ def main() -> int:
     t.check("the stub declares the base",
             "class BoundedCounter(Counter):" in stub, stub[-600:])
 
+    print("instance references")
+    # A `&T` parameter is an instance reference: the caller passes an instance, which may
+    # be of a subclass, and the V function reads that instance's state in place. A `&T`
+    # result is handed back to Python as the instance the pointer belongs to.
+    c = h.Counter()
+    c.increment()   # value = 1
+    c.increment()   # value = 2
+    t.equal("a &T parameter reads the instance", h.counter_value(c), 2)
+    t.equal("a &T parameter accepts a subclass", h.counter_value(bounded), bounded.value)
+    t.equal("a &T parameter with a nonzero offset", h.bounded_limit(bounded), bounded.limit)
+
+    t.check("a &T result is the instance it came from", h.pick(c, other) is c)
+    t.check("a method can return its receiver", c.self_ref() is c)
+
+    n = h.Counter()
+    n.increment()   # value = 1
+    t.equal("a method takes an instance reference", n.add_counter(c), 3)
+
+    t.raises("a non-instance is refused", TypeError, "must be a Counter",
+             lambda: h.counter_value(42))
+    t.raises("a base is not an instance of its subclass", TypeError,
+             "must be a BoundedCounter", lambda: h.bounded_limit(c))
+    t.raises("a result no argument owns is refused", RuntimeError,
+             "does not belong to any instance", lambda: h.orphan(c))
+
+    t.check("the glue checks the argument is an instance",
+            "vcraft.from_py_instance(" in glue)
+    t.check("the glue matches a result against the candidates",
+            "vcraft.instance_ref(" in glue and
+            "[voidptr(arg0_obj), voidptr(arg1_obj)]" in glue)
+    t.check("a subclass offset is the base's size",
+            "g_vc_type_boundedcounter.ptr, 'BoundedCounter', vcraft_generated__sizeof_counter()" in glue)
+    t.check("the stub types a &T parameter as the class",
+            "def bounded_limit(b: BoundedCounter) -> int: ..." in stub)
+    t.check("the stub types a &T result as the class",
+            "def pick(first: Counter, second: Counter) -> Counter: ..." in stub)
+
+    print("instance reference layout")
+    # The offset for `&T` is the immediate base's state size, not the sum of every
+    # ancestor: the generated state nests (`CState { base BState; self C }`), so a
+    # depth-3 class's own struct sits exactly one base-state in. A sum would double-count
+    # the grandparent and land the pointer past the end of the object.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "src").mkdir()
+        (root / "src" / "deep.v").write_text(
+            "module deep\n\n"
+            "import vcraft\n\n"
+            "@[vc_class]\npub struct A {\nmut:\n\t@[vc_field] a int\n}\n\n"
+            "@[vc_class]\n@[vc_base(A)]\npub struct B {\nmut:\n\t@[vc_field] b int\n}\n\n"
+            "@[vc_class]\n@[vc_base(B)]\npub struct C {\nmut:\n\t@[vc_field] c int\n}\n\n"
+            "@[vc_fn]\npub fn c_of(x &C) int {\n\treturn x.c\n}\n"
+        )
+        gen = subprocess.run(
+            [str(ROOT / "build" / "vc-generate"), str(root), "deep", "deep"],
+            capture_output=True, text=True,
+        )
+        t.check("the depth-3 project generates", gen.returncode == 0, gen.stderr[-500:])
+        deep_glue = (root / "src" / "_vcraft_generated.v").read_text()
+        t.check("the offset is the immediate base only",
+                "'C', vcraft_generated__sizeof_b(), 'c_of'" in deep_glue, deep_glue[-600:])
+        t.check("and not the sum of both ancestors",
+                "sizeof_b() + vcraft_generated__sizeof_a()" not in deep_glue)
+
     print("references and cycles")
     # A `@[vc_ref]` field holds a strong reference, which is the whole reason a cycle can
     # exist at all. Everything here is about the ownership of that reference: the count it
@@ -671,6 +751,22 @@ def main() -> int:
     t.equal("resize after the view closes", vec.size(), 2)
     t.equal("and preserves the kept values", vec.total(), 4.0)
 
+    print("a typed memoryview over a native buffer")
+    # `@[vc_buffer_typed]` opts into a typed view: format and itemsize from the element,
+    # and the length in elements rather than bytes.
+    samples = h.Samples(4)
+    smv = memoryview(samples)
+    t.check("the view is typed", smv.format == "d" and smv.itemsize == 8,
+            (smv.format, smv.itemsize))
+    t.check("and counts elements, not bytes", len(smv) == 4, len(smv))
+    samples.set(0, 1.5)
+    samples.set(1, 2.5)
+    t.check("it reads the V writes", smv.tolist()[:2] == [1.5, 2.5], smv.tolist())
+    smv[2] = 9.0
+    t.equal("and V sees the Python write", samples.at(2), 9.0)
+    del smv
+    gc.collect()
+
     print("buffer constructors and their arguments")
     t.equal("a keyword argument", h.Vector(n=3).size(), 3)
     t.raises("a missing argument", TypeError, "missing required argument: 'n'",
@@ -690,6 +786,10 @@ def main() -> int:
     t.check("the base's constructor ran", tb.step == 1, tb.step)
     t.check("the repr lists base fields then the buffer",
             repr(tb) == "TallyBuffer(value: 0, step: 1, count: 2, buf: buffer(4))", repr(tb))
+    # The constructor raises after `tp_new` allocated the object: the failure path has to
+    # release it, and the half-built instance must not reach Python.
+    t.raises("a constructor that raises", ValueError,
+             "buffer size must not be negative", lambda: h.TallyBuffer(-1))
 
     print("a class with a buffer and a reference")
     chunk = h.Chunk()
@@ -713,7 +813,12 @@ def main() -> int:
             "fn vcraft_generated__releasebuffer_vector(self voidptr, view voidptr) int {"
             in glue)
     t.check("the constructor binds its arguments",
-            "vcraft.bind_new_args(raw_args, kwds, bound.data" in glue)
+            "vcraft.bind_new_args(raw_args, kwds, unsafe { voidptr(&bound[0]) }" in glue)
+    # The slots are a fixed array on the stack and the parameter names are a module
+    # global, so a construction allocates neither per call.
+    t.check("the slots are a stack array", "mut bound := unsafe { [1]voidptr{} }" in glue)
+    t.check("the constructor's parameter names are a module global",
+            "g_vc_names_vcraft_generated__new_vector" in glue)
 
     print("capsules")
     box = h.new_box(1234)

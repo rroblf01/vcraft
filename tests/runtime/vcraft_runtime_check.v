@@ -32,6 +32,8 @@ fn pyinit_vcraft_runtime_check() voidptr {
 		'identity(obj)')
 	m.add_function_owned('sum_all', voidptr(sum_all_trampoline), vcraft.meth_fastcall,
 		'sum_all(values)')
+	m.add_function_owned('export_squares', voidptr(export_squares_trampoline),
+		vcraft.meth_fastcall, 'export_squares(n)')
 	m.add_function_owned('layout', voidptr(layout_trampoline), vcraft.meth_noargs,
 		'layout()')
 	return m.seal().ptr
@@ -175,6 +177,19 @@ fn sum_all_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	return vcraft.to_py_int(total).ptr
 }
 
+fn export_squares_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('export_squares', 1, int(nargs))
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	n := vcraft.from_py_int_arg(args, 0, 'export_squares', 'n') or { return unsafe { nil } }
+	vcraft.reject_extra_args('export_squares', 1, int(nargs))
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	return vcraft.buffer_export_int(export_squares(n)).ptr
+}
+
 fn layout_trampoline(self voidptr, args voidptr) voidptr {
 	vcraft.check_layout() or {
 		return unsafe { nil }
@@ -219,4 +234,14 @@ fn checked(a int, b int) int {
 // boom panics outright rather than returning an error.
 fn boom() {
 	panic('boom: deliberate panic from V')
+}
+
+// export_squares is native-backed, so the runtime hands it to Python as a memoryview
+// that owns the buffer, rather than copying it into a boxed list.
+fn export_squares(n int) []int {
+	mut out := vcraft.buffer_new_int(n)
+	for i in 0 .. n {
+		out[i] = i * i
+	}
+	return out
 }

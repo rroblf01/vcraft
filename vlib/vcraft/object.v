@@ -111,6 +111,18 @@ pub fn (o PyObj) is(other PyObj) bool {
 	return C.Py_Is(o.ptr, other.ptr) == 1
 }
 
+// consume_bool maps an owned bool object to `sq_contains`'s int result and releases it:
+// 1 for a true object, 0 for a false one, and -1 for null, which is the error the caller
+// already set. The object is consumed, so the reference is not leaked.
+pub fn consume_bool(obj voidptr) int {
+	if obj == unsafe { nil } {
+		return -1
+	}
+	truth := borrow(obj).is_true()
+	borrow(obj).decref()
+	return if truth { 1 } else { 0 }
+}
+
 // is_true reports the truth value of the object, as Python's `bool()` would.
 pub fn (o PyObj) is_true() bool {
 	if o.ptr == unsafe { nil } {

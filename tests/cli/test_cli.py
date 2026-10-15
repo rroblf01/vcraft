@@ -289,6 +289,238 @@ def main() -> int:
         diagnostic("a chain deeper than the runtime publishes", deep,
                    "vcraft can publish at most 8")
 
+        # Instance references. A `&T` needs `T` to be a class, a plain function returning
+        # one needs an instance to resolve the result against, and an instance reference
+        # cannot carry a default because it has no owner to borrow from.
+        diagnostic("an instance reference to a non-class",
+                   chain_source() + "\n@[vc_fn]\npub fn takes(n &Nope) int {\n"
+                   "\treturn n.mid\n}\n",
+                   "but `Nope` is not a class")
+        diagnostic("a free function returning an instance reference with nothing to match",
+                   chain_source() + "\n@[vc_fn]\npub fn makes() &Root {\n"
+                   "\treturn &Root{}\n}\n",
+                   "receives no instance it could point into")
+        diagnostic("a default on an instance reference",
+                   chain_source() + "\n@[vc_defaults: 'n=1']\n@[vc_fn]\npub fn takes(n &Root) int {\n"
+                   "\treturn n.root\n}\n",
+                   "instance reference must come from the caller")
+
+        # A field annotation on the line above the field is a common mistake: a field
+        # goes unexposed unless the generator says so. It warns and still builds, because
+        # an ignored annotation must not break a project that otherwise compiles.
+        source.write_text(chain_source().replace(
+            "\t@[vc_field] depth int", "\t@[vc_field]\n\tdepth int"), encoding="utf-8")
+        out = vcraft("build", cwd=inh)
+        t.check("a field annotation on the line above still builds", out.returncode == 0,
+                out.stderr.strip()[-300:])
+        t.check("a field annotation on the line above warns",
+                "on the line above `Grandchild.depth`" in out.stderr,
+                out.stderr.strip()[-300:])
+
+        # A base constructor that takes arguments. The subclass's `tp_new` binds the
+        # base's parameters too and `newstate` forwards them, so one call builds both
+        # halves: `Mid(10, 3)` puts 10 in the base and 3 in the subclass, and a subclass
+        # with no constructor of its own still accepts its base's arguments.
+        args_source = (
+            "module inh_native\n\nimport vcraft\n\n"
+            "@[vc_class]\npub struct Root {\nmut:\n\t@[vc_field] n int\n}\n\n"
+            "@[vc_class]\n@[vc_base(Root)]\npub struct Mid {\nmut:\n"
+            "\t@[vc_field] m int\n}\n\n"
+            "@[vc_class]\n@[vc_base(Mid)]\npub struct Leaf {\nmut:\n"
+            "\t@[vc_field] s int\n}\n\n"
+            "@[vc_fn]\npub fn new_root(n int) &Root {\n\treturn &Root{ n: n }\n}\n\n"
+            "@[vc_fn]\npub fn new_mid(m int) &Mid {\n\treturn &Mid{ m: m }\n}\n")
+        source.write_text(args_source, encoding="utf-8")
+        out = vcraft("build", cwd=inh)
+        t.check("a base constructor with arguments builds", out.returncode == 0,
+                out.stderr.strip()[-400:])
+        if out.returncode == 0:
+            built = sorted(inh.glob("dist/build/*.so"))
+            probe = subprocess.run(
+                [sys.executable, "-c",
+                 "import sys\n"
+                 "sys.path.insert(0, sys.argv[1])\n"
+                 "import inh_native as m\n"
+                 "print(m.Mid(10, 3).n, m.Mid(10, 3).m, "
+                 "m.Leaf(5, 9).n, m.Leaf(5, 9).m, m.Leaf(5, 9).s)\n",
+                 str(built[0].parent)], capture_output=True, text=True)
+            t.check("the base's arguments reach the base", probe.returncode == 0,
+                    probe.stderr.strip()[-400:])
+            t.check("one call builds both halves",
+                    probe.stdout.splitlines()[:1] == ["10 3 5 9 0"], probe.stdout)
+
+        # Protocol slots, classmethods, module constants and callbacks, on a project of
+        # their own. `len()`, `obj[i]`, `x in obj`, ordering, a classmethod, a boxed const
+        # and a call back into Python all have to work at run time, not just generate.
+        proto = tmp / "proto"
+        (proto / "src").mkdir(parents=True)
+        (proto / "v.mod").write_text(
+            'Module {\n\tname: "proto_native"\n\tbase_url: "src"\n'
+            '\trequires: ["vcraft"]\n}\n')
+        (proto / "vcraft.toml").write_text(
+            '[package]\nname = "proto"\nversion = "0.1.0"\n'
+            'description = "protocols"\n\n[build]\nmodule = "proto_native"\n'
+            'source = "src"\noutput = "python"\n')
+        proto_src = proto / "src" / "proto_native.v"
+        proto_source = '''module proto_native
+
+import vcraft
+
+@[vc_class]
+pub struct Deck {
+mut:
+	@[vc_field] n int
+}
+
+@[vc_fn]
+pub fn new_deck(n int) &Deck {
+	return &Deck{ n: n }
+}
+
+@[vc_method]
+@[vc_len]
+pub fn (d &Deck) size() int {
+	return d.n
+}
+
+@[vc_method]
+@[vc_getitem]
+pub fn (d &Deck) at(i int) !int {
+	if i < 0 || i >= d.n {
+		return vcraft.raise_domain(.index_error, 'Deck index out of range')
+	}
+	return i * 2
+}
+
+@[vc_method]
+@[vc_contains]
+pub fn (d &Deck) has(x int) bool {
+	return x >= 0 && x < d.n
+}
+
+@[vc_eq]
+pub fn deck_eq(a voidptr, b voidptr) bool {
+	mut x := Deck{}
+	mut y := Deck{}
+	vcraft.load_state(a, voidptr(&x), sizeof(Deck))
+	vcraft.load_state(b, voidptr(&y), sizeof(Deck))
+	return x.n == y.n
+}
+
+@[vc_lt]
+pub fn deck_lt(a voidptr, b voidptr) bool {
+	mut x := Deck{}
+	mut y := Deck{}
+	vcraft.load_state(a, voidptr(&x), sizeof(Deck))
+	vcraft.load_state(b, voidptr(&y), sizeof(Deck))
+	return x.n < y.n
+}
+
+@[vc_classmethod]
+pub fn Deck.named(n int) int {
+	return n * 10
+}
+
+@[vc_const]
+pub const limit = 7
+
+@[vc_const]
+pub const label = 'deck'
+
+@[vc_fn]
+pub fn apply(f voidptr, x int) !int {
+	args := [vcraft.to_py_int(i64(x))]
+	r := vcraft.call_owned(f, args)
+	if vcraft.error_is_set() {
+		return error('callback failed')
+	}
+	out := vcraft.from_py_int(r, 'result')!
+	r.decref()
+	return out
+}
+'''
+        proto_src.write_text(proto_source, encoding="utf-8")
+        out = vcraft("build", cwd=proto)
+        t.check("protocols and callbacks build", out.returncode == 0,
+                out.stderr.strip()[-500:])
+        if out.returncode == 0:
+            built = sorted(proto.glob("dist/build/*.so"))
+            probe = subprocess.run(
+                [sys.executable, "-c",
+                 "import sys\n"
+                 "sys.path.insert(0, sys.argv[1])\n"
+                 "import proto_native as m\n"
+                 "d = m.Deck(4)\n"
+                 "print(len(d), bool(d), d[3], 1 in d, 9 in d)\n"
+                 "try:\n    d[9]\nexcept IndexError:\n    print('index-error')\n"
+                 "print(sorted([m.Deck(3), m.Deck(1), m.Deck(2)])[0].n)\n"
+                 "print(m.Deck(4) == m.Deck(4), m.Deck(4) < m.Deck(5), "
+                 "m.Deck(4) > m.Deck(5))\n"
+                 "print(m.Deck.named(3), m.Deck(0).named(4))\n"
+                 "print(m.limit, m.label)\n"
+                 "print(m.apply(lambda v: v + 1, 41))\n",
+                 str(built[0].parent)], capture_output=True, text=True)
+            t.check("the protocol project runs", probe.returncode == 0,
+                    probe.stderr.strip()[-400:])
+            lines = probe.stdout.splitlines()
+            t.check("len and bool work", lines[:1] == ["4 True 6 True False"], probe.stdout)
+            t.check("an out-of-range index raises", lines[1:2] == ["index-error"], probe.stdout)
+            t.check("ordering operators sort", lines[2:3] == ["1"], probe.stdout)
+            t.check("equality and ordering agree",
+                    lines[3:4] == ["True True False"], probe.stdout)
+            t.check("a classmethod is callable on the class and an instance",
+                    lines[4:5] == ["30 40"], probe.stdout)
+            t.check("module constants are attributes", lines[5:6] == ["7 deck"], probe.stdout)
+            t.check("a V function calls back into Python", lines[6:7] == ["42"], probe.stdout)
+            stub = (proto / "python" / "proto_native.pyi").read_text()
+            t.check("the stub declares a constant", "limit: int" in stub, stub)
+            t.check("the stub marks a classmethod", "@classmethod" in stub, stub)
+
+        def proto_diagnostic(label: str, source_text: str, needle: str) -> None:
+            proto_src.write_text(source_text, encoding="utf-8")
+            out = vcraft("build", cwd=proto)
+            t.check(f"{label} fails", out.returncode != 0, out.stdout[-200:])
+            t.check(f"{label} says why", needle in out.stderr, out.stderr.strip()[-300:])
+
+        proto_diagnostic("a __len__ with an argument",
+                         proto_source.replace("pub fn (d &Deck) size() int {",
+                                              "pub fn (d &Deck) size(x int) int {"),
+                         "takes none")
+        proto_diagnostic("a __len__ returning a non-integer",
+                         proto_source.replace("pub fn (d &Deck) size() int {",
+                                              "pub fn (d &Deck) size() string {")
+                         .replace("return d.n\n}", "return 'x'\n}"),
+                         "`__len__` returns an integer")
+        proto_diagnostic("a __getitem__ with a non-integer index",
+                         proto_source.replace("pub fn (d &Deck) at(i int) !int {",
+                                              "pub fn (d &Deck) at(i string) !int {"),
+                         "`__getitem__` takes an integer")
+        proto_diagnostic("a __contains__ not returning a bool",
+                         proto_source.replace("pub fn (d &Deck) has(x int) bool {",
+                                              "pub fn (d &Deck) has(x int) int {")
+                         .replace("return x >= 0 && x < d.n\n}",
+                                  "return x\n}"),
+                         "`__contains__` returns a bool")
+        proto_diagnostic("a duplicated equality operator",
+                         proto_source + "\n@[vc_eq]\npub fn deck_eq2(a voidptr, b voidptr) bool {\n"
+                         "\treturn false\n}\n",
+                         "only one @[vc_eq]")
+        proto_diagnostic("a const that is not a literal",
+                         proto_source + "\n@[vc_const]\npub const derived = limit + 1\n",
+                         "must be an int, a float, a bool or a string literal")
+        proto_diagnostic("an operator name with no class",
+                         proto_source + "\n@[vc_lt]\npub fn nothing_lt(a voidptr, b voidptr) bool {\n"
+                         "\treturn false\n}\n",
+                         "does not start with its class in snake case")
+        proto_diagnostic("a method marked both static and classmethod",
+                         proto_source.replace(
+                             "@[vc_classmethod]\npub fn Deck.named(n int) int {",
+                             "@[vc_static]\n@[vc_classmethod]\npub fn Deck.named(n int) int {"),
+                         "choose one")
+        proto_diagnostic("a duplicated constant",
+                         proto_source + "\n@[vc_const]\npub const limit = 8\n",
+                         "declared more than once")
+
         print("info")
         proc = vcraft("info", cwd=project)
         t.check("info succeeds", proc.returncode == 0, proc.stderr.strip())
@@ -1441,6 +1673,15 @@ print("ok" if not bad else bad)
         t.check("a buffer of non-scalars is a diagnostic",
                 proc.returncode != 0 and "has no native buffer rule" in proc.stderr,
                 (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved + "\n@[vc_class]\npub struct LoneTyped {\nmut:\n"
+                          "\t@[vc_buffer_typed] samples []f64\n}\n")
+        proc = vcraft("build", cwd=project)
+        t.check("a typed buffer without a buffer is a diagnostic",
+                proc.returncode != 0 and "needs a `@[vc_buffer]`" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        # A base constructor may take arguments -- the subclass forwards them -- but a
+        # name shared with the base's is a collision, because both travel in the one
+        # Python signature the subclass binds.
         native.write_text(saved + "\n"
                           "@[vc_class]\npub struct BaseArg {\nmut:\n\t@[vc_field] a int\n}\n"
                           "@[vc_fn]\npub fn new_basearg(n int) &BaseArg { return &BaseArg{} }\n"
@@ -1448,8 +1689,8 @@ print("ok" if not bad else bad)
                           "\t@[vc_field] b int\n}\n"
                           "@[vc_fn]\npub fn new_subarg(n int) &SubArg { return &SubArg{} }\n")
         proc = vcraft("build", cwd=project)
-        t.check("an argument-taking base constructor is a diagnostic",
-                proc.returncode != 0 and "argument-free" in proc.stderr,
+        t.check("a base constructor parameter reused by the subclass is a diagnostic",
+                proc.returncode != 0 and "give them distinct names" in proc.stderr,
                 (proc.stderr or proc.stdout).strip()[-300:])
         native.write_text(saved)
 

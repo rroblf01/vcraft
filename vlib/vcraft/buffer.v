@@ -306,6 +306,18 @@ pub fn buffer_fill(view voidptr, exporter voidptr, data voidptr, len_bytes isize
 	return C.PyBuffer_FillInfo(view, exporter, data, len_bytes, readonly, flags)
 }
 
+// buffer_fill_typed wraps a run of bytes in a typed `Py_buffer`, for a class whose
+// `@[vc_buffer_typed]` field implements the buffer protocol. `itemsize` is the element's
+// width and `kind` its family (0 unsigned, 1 signed, 2 float, 3 bool), so the view
+// reports one item per element with the matching format instead of a byte view.
+// `PyBuffer_FillInfo`, which only expresses a byte view, backs `buffer_fill` instead.
+// Returns CPython's status.
+pub fn buffer_fill_typed(view voidptr, exporter voidptr, data voidptr, len_bytes isize,
+	itemsize isize, kind int, readonly int, flags int) int {
+	return C.vpy_buffer_fill_typed(view, exporter, data, len_bytes, itemsize, kind, readonly,
+		flags)
+}
+
 // new_handle wraps a native pointer in a Python capsule.
 //
 // The general escape hatch for state that is not a plain slice: a handle from a C library,
@@ -737,4 +749,157 @@ pub fn buffer_resize_f64(s []f64, n int) ![]f64 {
 		buffer_free(s.data)
 	}
 	return out
+}
+
+// Exporting a native buffer as a Python `memoryview`, with no copy.
+//
+// Returns go the other way and copy by default: `to_py_bytes_slice` builds a Python
+// `bytes` that owns its storage, so there is nothing to alias into. A function whose
+// result is a `buffer_new_*` slice and is annotated `@[vc_memoryview]` takes the other
+// path: the slice's backing is handed to a CPython object that implements the buffer
+// protocol, and the wrapper returns a writable `memoryview` over it. No element is
+// boxed and no byte is copied, so a large numeric result crosses as a view instead of as
+// a list of Python objects.
+//
+// Ownership moves to the view: the exporter frees the backing through its header when
+// the last `memoryview` of it is released. The slice must therefore come from
+// `buffer_new_*` (or from a `buffer_resize_*` of one); exporting an ordinary V slice
+// would hand the exporter a pointer the CPython allocator does not own.
+//
+// `buffer_export_kind_*` is the element's format family; the element's size picks the
+// width, so `int` and `i64` share a family and differ in `itemsize`.
+
+const buffer_export_kind_uint = 0
+
+const buffer_export_kind_int = 1
+
+const buffer_export_kind_float = 2
+
+const buffer_export_kind_bool = 3
+
+// buffer_export hands a native-backed payload to CPython. `owner` is the allocation to
+// free (the payload minus its header), nil for an empty slice that was never allocated.
+fn buffer_export(data voidptr, owner voidptr, nbytes isize, itemsize isize, kind int) PyObj {
+	return steal(C.vpy_buffer_export(data, owner, nbytes, itemsize, kind))
+}
+
+// buffer_export_owner is the allocation behind an exported payload, nil when the slice is
+// empty and nothing was allocated.
+fn buffer_export_owner(data voidptr) voidptr {
+	if data == unsafe { nil } {
+		return unsafe { nil }
+	}
+	return native_base(data)
+}
+
+// buffer_export_bool exports a `[]bool` as a writable memoryview, transferring ownership.
+pub fn buffer_export_bool(s []bool) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(bool)), isize(sizeof(bool)), buffer_export_kind_bool)
+	}
+}
+
+// buffer_export_int exports a `[]int` as a writable memoryview, transferring ownership.
+pub fn buffer_export_int(s []int) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(int)), isize(sizeof(int)), buffer_export_kind_int)
+	}
+}
+
+// buffer_export_i8 exports a `[]i8` as a writable memoryview, transferring ownership.
+pub fn buffer_export_i8(s []i8) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(i8)), isize(sizeof(i8)), buffer_export_kind_int)
+	}
+}
+
+// buffer_export_i16 exports a `[]i16` as a writable memoryview, transferring ownership.
+pub fn buffer_export_i16(s []i16) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(i16)), isize(sizeof(i16)), buffer_export_kind_int)
+	}
+}
+
+// buffer_export_i32 exports a `[]i32` as a writable memoryview, transferring ownership.
+pub fn buffer_export_i32(s []i32) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(i32)), isize(sizeof(i32)), buffer_export_kind_int)
+	}
+}
+
+// buffer_export_i64 exports a `[]i64` as a writable memoryview, transferring ownership.
+pub fn buffer_export_i64(s []i64) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(i64)), isize(sizeof(i64)), buffer_export_kind_int)
+	}
+}
+
+// buffer_export_isize exports a `[]isize` as a writable memoryview, transferring ownership.
+pub fn buffer_export_isize(s []isize) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(isize)), isize(sizeof(isize)), buffer_export_kind_int)
+	}
+}
+
+// buffer_export_u8 exports a `[]u8` as a writable memoryview, transferring ownership.
+pub fn buffer_export_u8(s []u8) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(u8)), isize(sizeof(u8)), buffer_export_kind_uint)
+	}
+}
+
+// buffer_export_u16 exports a `[]u16` as a writable memoryview, transferring ownership.
+pub fn buffer_export_u16(s []u16) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(u16)), isize(sizeof(u16)), buffer_export_kind_uint)
+	}
+}
+
+// buffer_export_u32 exports a `[]u32` as a writable memoryview, transferring ownership.
+pub fn buffer_export_u32(s []u32) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(u32)), isize(sizeof(u32)), buffer_export_kind_uint)
+	}
+}
+
+// buffer_export_u64 exports a `[]u64` as a writable memoryview, transferring ownership.
+pub fn buffer_export_u64(s []u64) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(u64)), isize(sizeof(u64)), buffer_export_kind_uint)
+	}
+}
+
+// buffer_export_usize exports a `[]usize` as a writable memoryview, transferring ownership.
+pub fn buffer_export_usize(s []usize) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(usize)), isize(sizeof(usize)), buffer_export_kind_uint)
+	}
+}
+
+// buffer_export_f32 exports a `[]f32` as a writable memoryview, transferring ownership.
+pub fn buffer_export_f32(s []f32) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(f32)), isize(sizeof(f32)), buffer_export_kind_float)
+	}
+}
+
+// buffer_export_f64 exports a `[]f64` as a writable memoryview, transferring ownership.
+pub fn buffer_export_f64(s []f64) PyObj {
+	unsafe {
+		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
+			isize(s.len) * isize(sizeof(f64)), isize(sizeof(f64)), buffer_export_kind_float)
+	}
 }

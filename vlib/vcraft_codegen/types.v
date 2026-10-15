@@ -113,8 +113,43 @@ pub fn lookup(v_type string) Strategy {
 	}
 }
 
+// pointer_target returns the pointed-to name when `v_type` is a pointer to one bare
+// identifier, `&Counter` -> `Counter`, and '' otherwise.
+//
+// A `&T` parameter or result is an instance reference: the wrapper checks the argument is
+// an instance and, for a result, hands back the instance the pointer points into. Only a
+// plain name can be a class; a pointer to `[]f64`, to a qualified name or to a builtin has
+// no instance to read and falls through to the usual unsupported-type diagnostic.
+pub fn pointer_target(v_type string) string {
+	t := v_type.trim_space()
+	if !t.starts_with('&') {
+		return ''
+	}
+	inner := t[1..].trim_space()
+	if inner.len == 0 {
+		return ''
+	}
+	for i, ch in inner {
+		if i == 0 {
+			if ch != `_` && !ch.is_letter() {
+				return ''
+			}
+			continue
+		}
+		if ch != `_` && !ch.is_letter() && !ch.is_digit() {
+			return ''
+		}
+	}
+	return inner
+}
+
 // describe returns the type as it should appear in a Python signature.
 pub fn describe(v_type string) string {
+	// A `&T` is `T` to Python: an instance of the class, not a pointer.
+	target := pointer_target(v_type)
+	if target.len > 0 {
+		return target
+	}
 	return match lookup(v_type) {
 		.void { 'None' }
 		.bool { 'bool' }

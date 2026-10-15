@@ -40,6 +40,9 @@ SCENARIOS = {
     "keyword call": ("", "m.repeat(text='ab', n=50)", 50_000),
     "list of str out": ("", "m.words('alpha beta gamma delta')", 50_000),
     "list of int out": ("", "m.count_up(1000)", 5_000),
+    # A `@[vc_memoryview]` result hands a native-backed slice to a memoryview that owns
+    # it: a free skipped or run twice shows up as growth or a crash over this many.
+    "memoryview results freed": ("", "m.squares_view(64)", 50_000),
     "new list of float in": ("", "m.mean([i * 0.5 for i in range(1000)])", 5_000),
     "new list of int in": ("", "m.total(list(range(1000)))", 5_000),
     "new bytes in, copy out": ("", "m.echoed(bytes(range(256)) * 40)", 10_000),
@@ -49,6 +52,13 @@ SCENARIOS = {
     "object out, owned": ("", "m.boxed(12345)", 100_000),
     "object in, borrowed": ("obj = object()", "m.identity(obj)", 100_000),
     "instances created and freed": ("", "m.Counter().increment()", 100_000),
+    # A `&T` result takes a new reference on the instance it resolves to; the caller owns
+    # it and drops it, so a reference taken but not owned -- or owned twice -- grows.
+    "instance references in and out": ("", "m.pick(m.Counter(), m.Counter()).increment()", 50_000),
+    # The constructor raises after `tp_new` allocated the object and ran the base's
+    # constructor: a `tp_new` that returns nil without releasing the object leaks it.
+    "constructors that fail": (
+        "", "try:\n    m.TallyBuffer(-1)\nexcept ValueError:\n    pass", 50_000),
     # A native buffer is allocated in the constructor and freed at dealloc: a free that
     # is skipped, or run twice, shows up as growth or a crash over this many.
     "native buffers created and freed": ("", "m.Vector(64)", 50_000),
@@ -73,6 +83,9 @@ BORROWED = {
     "greet": ("obj = 'someone'", "m.greet(obj)", "obj"),
     "total": ("obj = list(range(100))", "m.total(obj)", "obj"),
     "checksum": ("obj = b'abc' * 100", "m.checksum(obj)", "obj"),
+    # A `&T` parameter only borrows the instance: the glue hands the V function a pointer
+    # into it and never takes a reference, so the caller's count must not move.
+    "counter_value": ("obj = m.Counter()", "m.counter_value(obj)", "obj"),
 }
 
 WORKER = r"""

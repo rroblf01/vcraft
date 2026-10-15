@@ -41,12 +41,14 @@ pub fn clear_error() {
 }
 
 // set_error raises `exc` with `message` as its text.
+//
+// The message goes across as a pointer and its length rather than as a NUL-terminated
+// copy: a V string has no terminator, so `PyErr_SetString` would need one built first,
+// and every error the runtime reports would pay a malloc, a copy and a free for it.
 pub fn set_error(exc PyObj, message string) {
-	msg := cstring(message)
 	unsafe {
-		C.PyErr_SetString(exc.ptr, msg)
+		C.vpy_set_error_utf8(exc.ptr, message.str, isize(message.len))
 	}
-	free_cstring(msg)
 }
 
 // fetch_error takes the pending exception out of CPython and returns its type,

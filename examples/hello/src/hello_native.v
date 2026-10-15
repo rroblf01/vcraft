@@ -138,6 +138,20 @@ pub fn squares(n int) []int {
 	return out
 }
 
+// Squares of zero up to `n`, handed to Python as a zero-copy `memoryview`.
+//
+// The result is a native-backed `[]int`, so it crosses as a writable view rather than a
+// list of boxed ints. The memoryview owns the buffer and frees it once it is collected.
+@[vc_fn]
+@[vc_memoryview]
+pub fn squares_view(n int) []int {
+	mut out := vcraft.buffer_new_int(n)
+	for i in 0 .. n {
+		out[i] = i * i
+	}
+	return out
+}
+
 // Splits text on spaces into a list of words.
 @[vc_fn]
 pub fn words(text string) []string {
@@ -324,6 +338,66 @@ pub fn (c &Counter) is_zero() bool {
 @[vc_static]
 pub fn Counter.triple(n int) int {
 	return n * 3
+}
+
+// counter_value reads a counter through a borrowed reference.
+//
+// A `&Counter` parameter is an instance reference: the caller must pass a `Counter` or an
+// instance of a subclass, and the function reads that instance's state in place. A
+// `BoundedCounter`, which inherits `Counter`, is accepted and its inherited `value` read
+// through the same pointer.
+@[vc_fn]
+pub fn counter_value(c &Counter) int {
+	return c.value
+}
+
+// bounded_limit reads a subclass-only field through a borrowed reference.
+//
+// `&BoundedCounter` accepts only a `BoundedCounter` or a class below it, and the pointer
+// lands on the subclass half of the state, after the inherited `Counter`. The offset is
+// the base's size, which the generator emits, so this is what proves it is right.
+@[vc_fn]
+pub fn bounded_limit(b &BoundedCounter) int {
+	return b.limit
+}
+
+// pick returns one of its two arguments as the instance it came from.
+//
+// A `&Counter` result is handed to Python as an instance, not a pointer: the wrapper
+// matches the returned address against the receiver and the instance arguments of the
+// call, and gives back the one that owns it. Returning a pointer that is not one of them
+// raises rather than handing Python an object it does not own.
+@[vc_fn]
+pub fn pick(first &Counter, second &Counter) &Counter {
+	return first
+}
+
+// orphan returns an instance no argument owns, which the wrapper must refuse.
+//
+// A `&T` result is only handed to Python when the pointer points into the receiver or one
+// of the call's instance arguments; a pointer into anything else would give Python an
+// object it does not own, so the wrapper raises instead of guessing. The function compiles
+// -- it takes an instance, so the generator has something to match against -- and fails at
+// the call.
+@[vc_fn]
+pub fn orphan(first &Counter) &Counter {
+	return &Counter{ step: 1 }
+}
+
+// self_ref returns the receiver itself, the simplest `&T` result.
+@[vc_method]
+pub fn (c &Counter) self_ref() &Counter {
+	return c
+}
+
+// add_counter reads another instance's state through a borrowed reference.
+//
+// A method may take an instance reference alongside its receiver, so an instance can be
+// combined with another of the same class or of a subclass.
+@[vc_method]
+pub fn (mut c Counter) add_counter(other &Counter) int {
+	c.value += other.value
+	return c.value
 }
 
 // raw_echo hands one Python object through untouched.
@@ -658,6 +732,42 @@ pub fn (mut v Vector) resize(n int) ! {
 	v.data = vcraft.buffer_resize_f64(v.data, n)!
 }
 
+// A class whose buffer is exposed as a *typed* `memoryview`.
+//
+// `@[vc_buffer_typed]` makes `memoryview(instance)` report one item per element with the
+// element's own format, instead of the default 1-D byte view: `format "d"`, `itemsize 8`,
+// and a length in elements rather than bytes.
+@[vc_class]
+pub struct Samples {
+mut:
+	@[vc_buffer; vc_buffer_typed] samples []f64
+}
+
+// A Samples with an `n`-element buffer of doubles.
+@[vc_fn]
+pub fn new_samples(n int) &Samples {
+	return &Samples{
+		samples: vcraft.buffer_new_f64(n)
+	}
+}
+
+// set stores a value at `i`, ignoring an out-of-range index.
+@[vc_method]
+pub fn (mut s Samples) set(i int, value f64) {
+	if i >= 0 && i < s.samples.len {
+		s.samples[i] = value
+	}
+}
+
+// at reads the value at `i`, or zero when the index is out of range.
+@[vc_method]
+pub fn (s &Samples) at(i int) f64 {
+	if i >= 0 && i < s.samples.len {
+		return s.samples[i]
+	}
+	return 0.0
+}
+
 // A subclass with a native buffer of its own, on top of Counter.
 //
 // The buffer field is freed by the most-derived `tp_dealloc`, alongside whatever the base
@@ -675,8 +785,16 @@ mut:
 // A subclass may take constructor arguments because its base, Counter, is
 // argument-free: the base's constructor runs with no arguments and this one keeps
 // the arguments it was given.
+//
+// A negative size is refused. The exception is set here, after `tp_new` has already
+// allocated the object and run the base's constructor, so this is the shape a
+// constructor failure takes: vcraft releases the half-built instance and Python sees
+// the ValueError.
 @[vc_fn]
 pub fn new_tally_buffer(n int) &TallyBuffer {
+	if n < 0 {
+		vcraft.raise(.value_error, 'buffer size must not be negative')
+	}
 	return &TallyBuffer{
 		buf: vcraft.buffer_new_int(n)
 	}

@@ -111,6 +111,17 @@ def main() -> int:
     t.equal("sum_all over a tuple", m.sum_all((5, 5)), 10)
     t.equal("sum_all empty", m.sum_all([]), 0)
 
+    print("a native buffer exported as a memoryview")
+    mv = m.export_squares(4)
+    t.check("export_squares returns a memoryview", isinstance(mv, memoryview), type(mv))
+    t.check("the view is writable", mv.readonly is False)
+    t.check("the view is typed", mv.format in ("i", "q") and mv.itemsize in (4, 8),
+            (mv.format, mv.itemsize))
+    t.equal("its contents are the squares", list(mv), [0, 1, 4, 9])
+    mv[0] = 7
+    t.equal("a write lands in the buffer", list(mv), [7, 1, 4, 9])
+    t.check("a zero-length export is an empty view", list(m.export_squares(0)) == [])
+
     print("layout check")
     major, minor = sys.version_info[:2]
     t.check("layout()", m.layout() == f"{major}.{minor} api=1013", f"got {m.layout()}")

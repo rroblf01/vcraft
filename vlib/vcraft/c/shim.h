@@ -53,14 +53,6 @@ long vpy_hash_bits(void);
 int vpy_type_check(PyObject *o, PyTypeObject *type);
 PyObject *vpy_not_implemented(void);
 
-// Instance storage.
-//
-// A class instance keeps its V state in memory CPython owns, so it is released
-// with the matching allocator and no V object is ever left for the garbage
-// collector to find or lose.
-void *vpy_instance_alloc(size_t n);
-void vpy_instance_free(void *p);
-
 // CPython's singletons, which are exported as data.
 // Cycle collection.
 //
@@ -140,6 +132,27 @@ long vpy_buffer_len(void *view);
 void vpy_buffer_release(void *view);
 int vpy_is_exact_bytes(void *obj);
 
+// Handing a native-backed slice to Python as a writable `memoryview`, with no copy.
+//
+// A `@[vc_memoryview]` return passes the slice's `data` and its allocation `owner`
+// (the start of the block, which `owner` may be NULL to free nothing). The exporter
+// object created here implements the buffer protocol over `data` and frees `owner`
+// with `PyObject_Free` when the last memoryview of it is released. `kind` is the
+// element's view format -- 0 unsigned integer, 1 signed integer, 2 float, 3 bool --
+// and `itemsize` picks the width inside it. Returns a new memoryview, or NULL with an
+// exception set.
+PyObject *vpy_buffer_export(void *data, void *owner, Py_ssize_t nbytes,
+	Py_ssize_t itemsize, int kind);
+
+// vpy_buffer_fill_typed fills a `Py_buffer` with a typed view of a native-backed slice,
+// for a class whose first `@[vc_buffer_typed]` field implements the buffer protocol.
+// The default `PyBuffer_FillInfo` only expresses a byte view (itemsize 1, format "B");
+// this sets `itemsize` and `format` from the element so `memoryview(instance)` is typed.
+// Takes its own reference on `exporter`, as `PyBuffer_FillInfo` does. Returns CPython's
+// status (0 on success, -1 with an exception set).
+int vpy_buffer_fill_typed(void *view, void *exporter, void *data, Py_ssize_t nbytes,
+	Py_ssize_t itemsize, int kind, int readonly, int flags);
+
 PyObject *vpy_none(void);
 PyObject *vpy_notimplemented(void);
 PyObject *vpy_bool_type(void);
@@ -167,6 +180,7 @@ PyObject *vpy_exc_overflow_error(void);
 PyObject *vpy_exc_zero_division_error(void);
 PyObject *vpy_exc_arithmetic_error(void);
 PyObject *vpy_exc_buffer_error(void);
+void vpy_set_error_utf8(PyObject *exc, const char *msg, Py_ssize_t len);
 int vpy_is_complex(void *o);
 int vpy_slot_bf_getbuffer(void);
 int vpy_slot_bf_releasebuffer(void);
@@ -186,5 +200,8 @@ Py_ssize_t vpy_seq_fill_i64(PyObject *o, long long *out, Py_ssize_t n);
 // Building a list from a slice of plain numbers in one pass.
 PyObject *vpy_list_from_i64(const long long *items, Py_ssize_t n);
 PyObject *vpy_list_from_f64(const double *items, Py_ssize_t n);
+
+// Calling a Python callable with borrowed positional arguments, as a new reference.
+PyObject *vpy_call(PyObject *callee, PyObject **args, Py_ssize_t nargs);
 
 #endif // VCRAFT_SHIM_H

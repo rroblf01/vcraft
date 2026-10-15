@@ -280,7 +280,9 @@ pub fn parse_attr_names(text string) []string {
 					k++
 					break
 				}
-			} else if depth == 1 && (ch == `,` || ch == `:`) {
+			} else if depth == 1 && (ch == `,` || ch == `:` || ch == `;`) {
+				// `,` and `:` are what the annotations before 1.x used; V writes
+				// several attributes in one block separated by `;`.
 				flush_attr(mut names, mut current)
 				k++
 				continue

@@ -2,12 +2,11 @@ module vcraft
 
 // Python types backed by V structs.
 //
-// An instance is a CPython object whose `tp_basicsize` leaves room for one
-// pointer past the PyObject header. That pointer addresses a block of memory
-// CPython owns, holding a copy of the V struct. Methods copy the value out, call
-// the user's V method, and copy it back.
+// An instance is a CPython object whose `tp_basicsize` is the PyObject header
+// followed by the V struct itself, laid out inside the object. Methods work on
+// that state in place, as PyO3 does with the cell a `#[pyclass]` holds.
 //
-// ## Why the state is a copy, and why it is copied into CPython memory
+// ## Why the state is a copy, and why it lives in CPython memory
 //
 // Two facts about V decide this, and both were established by experiment:
 //
@@ -20,8 +19,8 @@ module vcraft
 //
 // Neither allocator alone works for a struct that CPython holds a pointer to. A
 // Boehm block would be collected while Python still uses it; a PyObject block would
-// hide V's own references from the collector. So the block is allocated and freed
-// with `PyObject_Malloc`, and the V value is copied into it. The V temporary the
+// hide V's own references from the collector. So the struct is copied into the
+// object's own memory, which `PyType_GenericAlloc` zeroes. The V temporary the
 // user's constructor produced stays GC-owned and is reclaimed normally.
 //
 // ## What that costs
@@ -42,10 +41,21 @@ pub:
 	obj PyObj
 }
 
-// instance_basicsize is the `tp_basicsize` for a class: the PyObject header plus
-// room for the storage pointer.
-pub fn instance_basicsize() int {
-	return int(C.vpy_size_PyObject()) + int(sizeof(voidptr))
+// object_header_size is the size of the PyObject header: 16 bytes with the GIL, 32
+// on a free-threaded build, where the header carries an extra word.
+pub fn object_header_size() int {
+	return int(C.vpy_size_PyObject())
+}
+
+// instance_basicsize is the `tp_basicsize` for a class whose state struct is
+// `state_size` bytes: the PyObject header plus the state itself, which lives inside
+// the object rather than behind a pointer.
+//
+// A subclass's state starts with its base's, so its `state_size` is larger and its
+// `tp_basicsize` is larger with it -- which is what CPython's "tp_basicsize ... too
+// small for base" check wants.
+pub fn instance_basicsize(state_size int) int {
+	return object_header_size() + state_size
 }
 
 // type_flags is what a vcraft heap type asks for: CPython's own default set plus
@@ -84,41 +94,40 @@ pub fn no_memory() voidptr {
 	return unsafe { nil }
 }
 
-// instance_alloc reserves the state block for a fresh instance.
-pub fn instance_alloc(size usize) voidptr {
-	return C.vpy_instance_alloc(size)
-}
-
-// instance_free releases it. Called from `tp_dealloc`.
-pub fn instance_free(p voidptr) {
-	if p != unsafe { nil } {
-		C.vpy_instance_free(p)
-	}
-}
-
-// storage_of returns the address of the state pointer that follows the PyObject
-// header of `obj`.
+// storage_of returns the address of the state that follows the PyObject header of
+// `obj`. That memory is part of the object, so it needs no separate allocation and
+// no pointer to reach it.
 pub fn storage_of(obj voidptr) voidptr {
 	unsafe {
 		return voidptr(&u8(obj) + C.vpy_size_PyObject())
 	}
 }
 
-// instance_storage returns the state block of an instance, or the null pointer when
-// the object has none, which is the case for a subclass that was never initialised.
+// instance_storage returns the state of an instance.
+//
+// The state lives inside the object, so the address is always valid: an instance a
+// Python subclass produced without running a vcraft constructor still has its state
+// bytes, zeroed by `PyType_GenericAlloc`. There is no null case to report.
 pub fn instance_storage(obj voidptr) voidptr {
-	unsafe {
-		slot := &voidptr(storage_of(obj))
-		return slot[0]
-	}
+	return storage_of(obj)
 }
 
-// instance_set_storage records the state block on an instance.
-pub fn instance_set_storage(obj voidptr, storage voidptr) {
-	unsafe {
-		slot := &voidptr(storage_of(obj))
-		slot[0] = storage
+// instance_fail releases an instance whose constructor failed, and returns the null
+// pointer a `tp_new` must return.
+//
+// `tp_new` owns the object `tp_alloc` handed it: returning nil without a decref leaks
+// the object, because CPython only propagates the nil. Decref runs the generated
+// `tp_dealloc`, which releases any reference or buffer the constructor had already
+// stored. The state is a valid V value at this point -- `PyType_GenericAlloc` zeroed
+// it and only a fully built state is ever copied in -- so the dealloc is safe even
+// when the failure was a panic before the copy.
+pub fn instance_fail(obj voidptr) voidptr {
+	if obj != unsafe { nil } {
+		unsafe {
+			C.Py_DecRef(obj)
+		}
 	}
+	return unsafe { nil }
 }
 
 // load_state and store_state move a V value between the state block and a local.
@@ -302,7 +311,8 @@ pub fn class_dealloc(self voidptr) voidptr {
 	// objects whether they are still alive, so freeing an instance that is still on it
 	// leaves a dangling pointer for the next collection.
 	C.vpy_gc_untrack(self)
-	instance_free(instance_storage(self))
+	// The state is part of the object, so there is no block to free: `vpy_type_free`
+	// releases the whole object, state included.
 	C.vpy_type_free(self)
 	return unsafe { nil }
 }
@@ -519,10 +529,13 @@ pub fn type_from_spec(name string, basicsize int, slots voidptr) PyObj {
 
 // new_type creates a heap type whose only job is to hold V state.
 //
-// The slots are the whole contract: `tp_new` allocates and stores the state,
-// `tp_init` runs the user's constructor, `tp_dealloc` releases the block, and
-// `tp_repr` prints it. Any other behaviour comes from the method and getset tables
-// the generated code registers.
+// The slots are the whole contract: `tp_new` allocates the object and fills its
+// inline state, `tp_init` runs the user's constructor, `tp_dealloc` releases whatever
+// the state holds, and `tp_repr` prints it. Any other behaviour comes from the method
+// and getset tables the generated code registers.
+//
+// `state_size` is `sizeof` the class's state struct, which the type's `tp_basicsize`
+// is the PyObject header plus: the state is laid out inside the object.
 //
 // `doc` becomes `__doc__` on the type. It may be empty, in which case CPython leaves
 // the attribute absent rather than set to an empty string.
@@ -537,15 +550,16 @@ pub fn type_from_spec(name string, basicsize int, slots voidptr) PyObj {
 // `bases`, `traverse` and `clear` are required rather than defaulting to nil because V
 // allows only a constant as a default value, and `unsafe { nil }` is an expression.
 // Callers that have nothing to pass write `unsafe { nil }`.
-pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voidptr,
-	methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr, hash voidptr,
-	bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr, next_fn voidptr,
-	getbuffer voidptr, releasebuffer voidptr) PyObj {
-	// The instance size is the larger of this class's own header plus its storage
-	// pointer, and whatever its base already needs. A subclass that is smaller than its
-	// base is rejected by CPython with "tp_basicsize ... too small for base", and the
-	// number it compares against is the base's, not a constant.
-	mut basicsize := instance_basicsize()
+pub fn new_type(name string, state_size int, doc string, new_ voidptr, init voidptr,
+	dealloc voidptr, methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr,
+	hash voidptr, bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr,
+	next_fn voidptr, getbuffer voidptr, releasebuffer voidptr, len_fn voidptr,
+	item_fn voidptr, contains_fn voidptr) PyObj {
+	// The instance size is the PyObject header plus this class's state struct. A
+	// subclass's `state_size` includes its base's, so a subclass is never smaller than
+	// its base -- which is what CPython rejects with "tp_basicsize ... too small for
+	// base". The number it compares against is the base's, not a constant.
+	mut basicsize := instance_basicsize(state_size)
 	mut slots := [PyTypeSlot{
 		slot:  slot_new
 		value: new_
@@ -632,6 +646,27 @@ pub fn new_type(name string, doc string, new_ voidptr, init voidptr, dealloc voi
 		slots << PyTypeSlot{
 			slot:  i32(C.vpy_slot_bf_releasebuffer())
 			value: releasebuffer
+		}
+	}
+	// The sequence protocol, each half independent: a class may define any subset of
+	// `__len__`, `__getitem__` and `__contains__`. Unlike `iter`/`iternext`, none of
+	// them needs another to be meaningful.
+	if len_fn != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_sq_length
+			value: len_fn
+		}
+	}
+	if item_fn != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_sq_item
+			value: item_fn
+		}
+	}
+	if contains_fn != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_sq_contains
+			value: contains_fn
 		}
 	}
 	// The base tuple has to outlive this call: CPython reads it and keeps a reference to
@@ -743,6 +778,52 @@ pub fn is_instance_of(obj voidptr, typ voidptr) bool {
 	unsafe {
 		return C.vpy_type_check(obj, typ) != 0
 	}
+}
+
+// from_py_instance reads an argument that must be an instance of `target` and returns a
+// pointer to the start of the target's own struct inside the object's state.
+//
+// `offset` is where that struct sits in the state block: the sum of the sizes of the
+// target's ancestors' structs, computed by the generator from the same layout it emitted.
+// An instance of the target or of any subclass shares that layout, so a `&Base` parameter
+// accepts a subclass instance and reads the same bytes a `Base` method would.
+pub fn from_py_instance(obj voidptr, target voidptr, target_name string, offset usize, func string,
+	name string) voidptr {
+	if obj == unsafe { nil } || !is_instance_of(obj, target) {
+		raise_type_error('${func}() argument ${name} must be a ${target_name}, not ${type_name_of(obj)}')
+		return unsafe { nil }
+	}
+	unsafe {
+		return voidptr(&u8(storage_of(obj)) + offset)
+	}
+}
+
+// instance_ref turns a `&T` result back into the instance that owns the memory it points
+// into.
+//
+// A `&T` is only a pointer; CPython needs the object. The pointer is matched by address
+// against the receiver and the `&T` arguments of the call, which are the only instances a
+// result can legitimately point at, and the match is checked to be an instance of `target`
+// so an unrelated object that merely shares the address cannot be handed back. A result
+// that points anywhere else -- a global, or memory the function allocated -- is reported
+// rather than guessed at, because handing CPython an object it does not own corrupts the
+// interpreter.
+pub fn instance_ref(ptr voidptr, target voidptr, target_name string, offset usize,
+	candidates []voidptr, func string) voidptr {
+	for candidate in candidates {
+		if candidate == unsafe { nil } {
+			continue
+		}
+		if is_instance_of(candidate, target) {
+			unsafe {
+				if voidptr(&u8(storage_of(candidate)) + offset) == ptr {
+					return borrow(candidate).new_ref().ptr
+				}
+			}
+		}
+	}
+	raise(.runtime_error, '${func}() returned a ${target_name} that does not belong to any instance passed to it')
+	return unsafe { nil }
 }
 
 // hash_from_int folds a V integer into `Py_hash_t`.

@@ -31,6 +31,9 @@ int main(void) {
 	printf("slot_getset %d\n", Py_tp_getset);
 	printf("slot_richcompare %d\n", Py_tp_richcompare);
 	printf("slot_hash %d\n", Py_tp_hash);
+	printf("slot_sq_length %d\n", Py_sq_length);
+	printf("slot_sq_item %d\n", Py_sq_item);
+	printf("slot_sq_contains %d\n", Py_sq_contains);
 	printf("slot_str %d\n", Py_tp_str);
 	printf("sizeof_type_spec %zu\n", sizeof(PyType_Spec));
 	printf("sizeof_type_slot %zu\n", sizeof(PyType_Slot));
@@ -58,6 +61,9 @@ slot_traverse 71
 slot_iter 62
 slot_iternext 63
 slot_hash 59
+slot_sq_length 45
+slot_sq_item 44
+slot_sq_contains 41
 slot_str 70
 sizeof_type_spec 32
 sizeof_type_slot 16

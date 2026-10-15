@@ -300,14 +300,6 @@ void vpy_type_free(PyObject *self) {
 
 #endif
 
-void *vpy_instance_alloc(size_t n) {
-	return PyObject_Malloc(n);
-}
-
-void vpy_instance_free(void *p) {
-	PyObject_Free(p);
-}
-
 // vpy_visit calls CPython's visit function on one object.
 //
 // The visit function is a `visitproc`, which V cannot name, so it arrives as a void
@@ -406,11 +398,19 @@ typedef struct {
 // process-scoped, so one stack per OS thread is the whole requirement.
 static __thread vpy_state_stack *vpy_state_tls = NULL;
 
+// exporter_ensure creates the `_BufferExport` heap type once (defined with the exporter
+// below). It runs from `vpy_state_init` at import, under the import lock.
+static int exporter_ensure(void);
+
 // vpy_state_init is kept for the generated module initialiser to call.
 //
 // The stack is created lazily on first use now, so there is nothing to key at import;
 // the hook stays so the generated code needs no conditional.
 void vpy_state_init(void) {
+	// Create the buffer-export type here, while the import lock serialises this, so the
+	// first `@[vc_memoryview]` call from any thread finds it and never creates it
+	// lazily under free-threading.
+	exporter_ensure();
 }
 
 // vpy_stack returns the calling thread's state stack, creating it zeroed on first use.
@@ -708,6 +708,178 @@ int vpy_is_exact_bytes(void *obj) {
 	return Py_TYPE((PyObject *)obj) == &PyBytes_Type;
 }
 
+// vpy_exporter hands a native-backed slice to Python as a writable `memoryview` with no
+// copy. It owns the allocation and frees it in its finalizer.
+//
+// The type is built with `PyType_FromSpec` rather than as a static `PyTypeObject`, so
+// the same code compiles under the stable ABI. The instance is allocated with
+// `PyType_GenericAlloc`, which zeroes it: a nil `owner` is then "nothing to free", the
+// state a finalizer that runs twice, or on an allocation whose fields were never set,
+// finds safely.
+typedef struct {
+	PyObject_HEAD
+	void *data;
+	void *owner;
+	Py_ssize_t nbytes;
+	Py_ssize_t itemsize;
+	int kind;
+} vpy_exporter;
+
+// vpy_format_for is the `memoryview` format character for an element. A mismatch
+// between it and `itemsize` is refused by CPython when the view is consumed, so the two
+// travel together: the kind says signed, unsigned, float or bool (0..3), and the width
+// says how wide.
+static const char *vpy_format_for(int kind, Py_ssize_t itemsize) {
+	switch (kind) {
+	case 3:
+		return "?";
+	case 2:
+		return itemsize == 4 ? "f" : "d";
+	case 1:
+		switch (itemsize) {
+		case 1: return "b";
+		case 2: return "h";
+		case 4: return "i";
+		default: return "q";
+		}
+	default:
+		switch (itemsize) {
+		case 1: return "B";
+		case 2: return "H";
+		case 4: return "I";
+		default: return "Q";
+		}
+	}
+}
+
+static const char *exporter_format(const vpy_exporter *e) {
+	return vpy_format_for(e->kind, e->itemsize);
+}
+
+static int exporter_getbuffer(PyObject *self, Py_buffer *view, int flags) {
+	vpy_exporter *e = (vpy_exporter *)self;
+	(void)flags;
+	if (view == NULL) {
+		PyErr_SetString(PyExc_BufferError, "cannot re-export this buffer");
+		return -1;
+	}
+	// Filled by hand rather than through `PyBuffer_FillInfo`, which only expresses a
+	// byte view (itemsize 1, format "B"). The exporter keeps the object alive through
+	// `view->obj`; `PyBuffer_Release` gives the reference back.
+	view->obj = self;
+	Py_INCREF(self);
+	view->buf = e->data;
+	view->len = e->nbytes;
+	view->readonly = 0;
+	view->itemsize = e->itemsize;
+	view->format = (char *)exporter_format(e);
+	view->ndim = 1;
+	view->shape = NULL;
+	view->strides = NULL;
+	view->suboffsets = NULL;
+	view->internal = NULL;
+	return 0;
+}
+
+static void exporter_releasebuffer(PyObject *self, Py_buffer *view) {
+	// Nothing per-view to release: the count of live views does not matter here,
+	// because an exported buffer is never resized.
+	(void)self;
+	(void)view;
+}
+
+static int exporter_finalize(PyObject *self) {
+	vpy_exporter *e = (vpy_exporter *)self;
+	if (e->owner != NULL) {
+		// The whole allocation, header included; `owner` is its start.
+		PyObject_Free(e->owner);
+		e->owner = NULL;
+	}
+	return 0;
+}
+
+static PyType_Slot exporter_slots[] = {
+	{Py_bf_getbuffer, (void *)exporter_getbuffer},
+	{Py_bf_releasebuffer, (void *)exporter_releasebuffer},
+	{Py_tp_finalize, (void *)exporter_finalize},
+	{0, NULL},
+};
+
+static PyType_Spec exporter_spec = {
+	"vcraft._BufferExport",
+	sizeof(vpy_exporter),
+	0,
+	Py_TPFLAGS_DEFAULT,
+	exporter_slots,
+};
+
+static PyTypeObject *exporter_type = NULL;
+
+// exporter_ensure creates the type on first use. `vpy_state_init` calls it at import, so
+// the usual path finds it already built; the check here covers a caller that did not run
+// the initialiser.
+static int exporter_ensure(void) {
+	if (exporter_type == NULL) {
+		exporter_type = (PyTypeObject *)PyType_FromSpec(&exporter_spec);
+		if (exporter_type == NULL) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+PyObject *vpy_buffer_export(void *data, void *owner, Py_ssize_t nbytes,
+	Py_ssize_t itemsize, int kind) {
+	if (exporter_ensure() < 0) {
+		return NULL;
+	}
+	vpy_exporter *e = (vpy_exporter *)PyType_GenericAlloc(exporter_type, 0);
+	if (e == NULL) {
+		return NULL;
+	}
+	e->data = data;
+	e->owner = owner;
+	e->nbytes = nbytes;
+	e->itemsize = itemsize;
+	e->kind = kind;
+	PyObject *mv = PyMemoryView_FromObject((PyObject *)e);
+	// The memoryview holds its own reference on the exporter, so the one allocation
+	// holds is given back here; the finalizer runs when the last view goes.
+	Py_DECREF(e);
+	return mv;
+}
+
+int vpy_buffer_fill_typed(void *viewp, void *exporter, void *data, Py_ssize_t nbytes,
+	Py_ssize_t itemsize, int kind, int readonly, int flags) {
+	Py_buffer *view = (Py_buffer *)viewp;
+	if (view == NULL) {
+		PyErr_SetString(PyExc_BufferError, "cannot fill this buffer");
+		return -1;
+	}
+	// The same writable check `PyBuffer_FillInfo` makes: a caller that asked
+	// (`PyBUF_WRITABLE`) for a read-only buffer is told no rather than handed one.
+	if ((flags & PyBUF_WRITABLE) == PyBUF_WRITABLE && readonly) {
+		PyErr_SetString(PyExc_BufferError, "Object is not writable.");
+		return -1;
+	}
+	// Filled by hand for the same reason `exporter_getbuffer` is: `PyBuffer_FillInfo`
+	// only expresses a byte view. `view->obj` keeps the exporting instance alive, and
+	// `PyBuffer_Release` gives the reference back.
+	view->obj = (PyObject *)exporter;
+	Py_XINCREF((PyObject *)exporter);
+	view->buf = data;
+	view->len = nbytes;
+	view->readonly = readonly;
+	view->itemsize = itemsize;
+	view->format = (char *)vpy_format_for(kind, itemsize);
+	view->ndim = 1;
+	view->shape = NULL;
+	view->strides = NULL;
+	view->suboffsets = NULL;
+	view->internal = NULL;
+	return 0;
+}
+
 PyObject *vpy_none(void) {
 	return Py_None;
 }
@@ -802,6 +974,25 @@ PyObject *vpy_exc_arithmetic_error(void) {
 
 PyObject *vpy_exc_buffer_error(void) {
 	return PyExc_BufferError;
+}
+
+// vpy_set_error_utf8 raises `exc` with a message that is not NUL-terminated.
+//
+// A V string carries its length and no terminator, so `PyErr_SetString` would need a
+// NUL-terminated copy first. Building the Unicode object from the length instead goes
+// straight to `PyErr_SetObject` and skips that copy, which is one malloc/free pair off
+// every error the runtime reports and one `strlen` off every message. `PyUnicode_FromStringAndSize`
+// and `PyErr_SetObject` are both stable ABI.
+void vpy_set_error_utf8(PyObject *exc, const char *msg, Py_ssize_t len) {
+	if (exc == NULL) {
+		exc = PyExc_RuntimeError;
+	}
+	PyObject *text = PyUnicode_FromStringAndSize(msg, len);
+	if (text == NULL) {
+		return;
+	}
+	PyErr_SetObject(exc, text);
+	Py_DECREF(text);
 }
 
 // vpy_is_complex reports whether an object is a Python complex.
@@ -1010,4 +1201,31 @@ PyObject *vpy_list_from_f64(const double *items, Py_ssize_t n) {
 #endif
 	}
 	return list;
+}
+
+// vpy_call calls `callee` with `args` as positional arguments and returns a new
+// reference to the result, or NULL with an exception set.
+//
+// The arguments are borrowed: the tuple takes its own reference to each, so the caller
+// keeps whatever it had. A tuple rather than the vectorcall path because the argument
+// count is dynamic, and `PyObject_CallObject` is the one stable-ABI entry point for it.
+PyObject *vpy_call(PyObject *callee, PyObject **args, Py_ssize_t nargs) {
+	if (callee == NULL) {
+		PyErr_SetString(PyExc_TypeError, "call: not a callable");
+		return NULL;
+	}
+	PyObject *tuple = PyTuple_New(nargs);
+	if (tuple == NULL) {
+		return NULL;
+	}
+	for (Py_ssize_t i = 0; i < nargs; i++) {
+		Py_INCREF(args[i]);
+		if (PyTuple_SetItem(tuple, i, args[i]) != 0) {
+			Py_DECREF(tuple);
+			return NULL;
+		}
+	}
+	PyObject *result = PyObject_CallObject(callee, tuple);
+	Py_DECREF(tuple);
+	return result;
 }

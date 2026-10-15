@@ -60,10 +60,6 @@ fn C.vpy_size_PyObject() isize
 
 fn C.vpy_tpflags_default() u32
 
-fn C.vpy_instance_alloc(n usize) voidptr
-
-fn C.vpy_instance_free(p voidptr)
-
 fn C.PyType_FromSpec(spec voidptr) voidptr
 
 fn C.PyType_GenericAlloc(typ voidptr, nitems isize) voidptr
@@ -88,6 +84,8 @@ fn C.vpy_buffer_ptr(view voidptr) voidptr
 fn C.vpy_buffer_len(view voidptr) int
 fn C.vpy_buffer_release(view voidptr)
 fn C.vpy_is_exact_bytes(obj voidptr) int
+fn C.vpy_buffer_export(data voidptr, owner voidptr, nbytes isize, itemsize isize, kind int) voidptr
+fn C.vpy_buffer_fill_typed(view voidptr, exporter voidptr, data voidptr, nbytes isize, itemsize isize, kind int, readonly int, flags int) int
 fn C.vpy_state_init()
 fn C.vpy_enter_state(block voidptr) voidptr
 fn C.vpy_leave_state(previous voidptr)
@@ -259,6 +257,11 @@ fn C.vpy_seq_fill_i64(o voidptr, out &i64, n isize) isize
 fn C.vpy_list_from_i64(items &i64, n isize) voidptr
 
 fn C.vpy_list_from_f64(items &f64, n isize) voidptr
+
+// vpy_call calls a Python callable with borrowed positional arguments, returning a new
+// reference or null with an exception set.
+fn C.vpy_call(callee voidptr, args voidptr, nargs isize) voidptr
+
 fn C.vpy_not_implemented() voidptr
 fn C.PyTuple_New(size isize) voidptr
 fn C.PyTuple_SET_ITEM(tuple voidptr, index isize, item voidptr)
@@ -341,6 +344,10 @@ fn C.vpy_exc_zero_division_error() voidptr
 fn C.vpy_exc_arithmetic_error() voidptr
 fn C.vpy_exc_buffer_error() voidptr
 
+// vpy_set_error_utf8 raises an exception with a message given as a pointer and a length,
+// so the runtime does not copy a V string into a NUL-terminated buffer first.
+fn C.vpy_set_error_utf8(exc voidptr, msg voidptr, len isize)
+
 // ----------------------------------------------------------------- capsules
 
 // PyCapsule carries an arbitrary native pointer across the Python boundary, with a
@@ -411,6 +418,10 @@ pub const meth_fastcall_keywords = meth_fastcall | 0x0002
 // receiver, so the trampoline gets no instance. `@[vc_static]` is its only user.
 pub const meth_static = 0x0020
 
+// meth_class is CPython's METH_CLASS: the trampoline is a classmethod, so CPython passes
+// the class (the subclass on a subclass call) rather than NULL.
+pub const meth_class = 0x0010
+
 // Type slot identifiers, from CPython's typeslots.h. A slot id is a macro, so the
 // runtime repeats the numbers and `check_layout` would catch a future change only
 // by name, not by value. They are part of the stable ABI.
@@ -439,6 +450,14 @@ pub const slot_iternext = i32(63)
 pub const slot_hash = i32(59)
 
 pub const slot_richcompare = i32(67)
+
+// The sequence protocol: `__len__`, `__getitem__` and `__contains__` are `sq_*` slots
+// rather than `tp_*`, so `len()`, `obj[i]` and `x in obj` reach them.
+pub const slot_sq_length = i32(45)
+
+pub const slot_sq_item = i32(44)
+
+pub const slot_sq_contains = i32(41)
 
 pub const slot_members = i32(72)
 

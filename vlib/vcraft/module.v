@@ -243,6 +243,18 @@ pub fn add_object_ref_on(module voidptr, name string, value PyObj) {
 	free_cstring(namep)
 }
 
+// add_object_owned installs an attribute on a sealed module, stealing the reference.
+//
+// The counterpart of `add_object_ref_on` for a value built only to be attached, such as a
+// `@[vc_const]`: the caller holds the only reference and does not keep it.
+pub fn add_object_owned(module voidptr, name string, value PyObj) {
+	namep := cstring(name)
+	unsafe {
+		C.PyModule_AddObject(module, namep, value.ptr)
+	}
+	free_cstring(namep)
+}
+
 // add_object_ref installs an attribute without stealing.
 pub fn (m Module) add_object_ref(name string, value PyObj) {
 	namep := cstring(name)

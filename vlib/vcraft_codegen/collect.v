@@ -47,6 +47,7 @@ pub fn collect_file(path string, mut p Project) {
 				collect_fn(path, lines, ast, decl, mut p)
 			}
 			.method { collect_method(path, lines, ast, decl, mut p) }
+			.const { collect_const(path, lines, decl, mut p) }
 			// A `@[vc_error]` struct is collected before the class path, which would
 			// otherwise reject it for not being annotated `@[vc_class]`.
 			.struct {
@@ -147,11 +148,12 @@ fn params_of(ast &flat.FlatAst, id flat.NodeId, is_method bool) []Param {
 fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 	is_method bool) Func {
 	mut f := Func{
-		name:    decl.name
-		doc:     block.doc
-		raw:     attr_raw in block.attrs
-		nogil:   attr_nogil in block.attrs
-		params:  params_of(ast, find_fn_node(ast, decl.name) or {
+		name:          decl.name
+		doc:           block.doc
+		raw:           attr_raw in block.attrs
+		nogil:         attr_nogil in block.attrs
+		export_buffer: attr_memoryview in block.attrs
+		params:        params_of(ast, find_fn_node(ast, decl.name) or {
 			flat.empty_node
 		}, is_method)
 	}
@@ -201,17 +203,75 @@ fn collect_fn(path string, lines []string, ast &flat.FlatAst, decl astquery.Decl
 // It returns true when the annotation was one of the two, whether or not the name
 // matched a class: in the no-match case a diagnostic has been raised, and the
 // declaration must not then also be exported as an ordinary function.
+// operator_kind returns the operator annotation on a block, or '' when it carries none.
+//
+// `@[vc_eq]`, `@[vc_hash]`, `@[vc_lt]`, `@[vc_le]`, `@[vc_gt]` and `@[vc_ge]` all stand
+// in for `@[vc_method]` on one slot, and each is a free function taking two receivers
+// (or, for hash, one), because V allows one receiver per method.
+fn operator_kind(block AttrBlock) string {
+	if attr_eq in block.attrs {
+		return 'eq'
+	}
+	if attr_hash in block.attrs {
+		return 'hash'
+	}
+	if attr_lt in block.attrs {
+		return 'lt'
+	}
+	if attr_le in block.attrs {
+		return 'le'
+	}
+	if attr_gt in block.attrs {
+		return 'gt'
+	}
+	if attr_ge in block.attrs {
+		return 'ge'
+	}
+	return ''
+}
+
+// assign_operator sets the class field an operator kind fills, reporting a second one.
+//
+// The six operators each have one field, and a class with two `@[vc_eq]` functions has no
+// way to choose between them, so the second is a diagnostic rather than a silent
+// override.
+fn assign_operator(mut p Project, owner int, kind string, name string, path string,
+	decl astquery.Declaration) {
+	existing := match kind {
+		'eq' { p.classes[owner].eq_fn }
+		'hash' { p.classes[owner].hash_name }
+		'lt' { p.classes[owner].lt_fn }
+		'le' { p.classes[owner].le_fn }
+		'gt' { p.classes[owner].gt_fn }
+		'ge' { p.classes[owner].ge_fn }
+		else { '' }
+	}
+	if existing.len > 0 {
+		report(mut p, path, decl,
+			'error: a class may have only one @[vc_${kind}]; `${existing}` is already the ${kind} operator')
+		return
+	}
+	match kind {
+		'eq' { p.classes[owner].eq_fn = name }
+		'hash' { p.classes[owner].hash_name = name }
+		'lt' { p.classes[owner].lt_fn = name }
+		'le' { p.classes[owner].le_fn = name }
+		'gt' { p.classes[owner].gt_fn = name }
+		'ge' { p.classes[owner].ge_fn = name }
+		else {}
+	}
+}
+
 fn collect_operator(path string, lines []string, ast &flat.FlatAst,
 	decl astquery.Declaration, mut p Project) bool {
 	block := read_above(lines, decl.line)
-	is_eq := attr_eq in block.attrs
-	is_hash := attr_hash in block.attrs
-	if !is_eq && !is_hash {
+	kind := operator_kind(block)
+	if kind.len == 0 {
 		return false
 	}
 	// The owner is looked up when the function is seen, but a class declared later in
 	// the file is not in `p.classes` yet. `link_classes` fills in anything that was
-	// still unmatched, which is why `eq_fn` can be empty here and correct there.
+	// still unmatched, which is why the field can be empty here and correct there.
 	owner := find_eq_owner(decl.name, p.classes)
 	if owner < 0 {
 		p.operators << Operator{
@@ -219,7 +279,7 @@ fn collect_operator(path string, lines []string, ast &flat.FlatAst,
 			line:   decl.line
 			column: decl.column
 			origin: path
-			kind:   if is_eq { 'eq' } else { 'hash' }
+			kind:   kind
 		}
 		return true
 	}
@@ -227,21 +287,7 @@ fn collect_operator(path string, lines []string, ast &flat.FlatAst,
 		report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
 		return true
 	}
-	if is_eq {
-		if p.classes[owner].eq_fn.len > 0 {
-			report(mut p, path, decl,
-				'error: a class may have only one @[vc_eq]; `${p.classes[owner].eq_fn}` is already the equality')
-			return true
-		}
-		p.classes[owner].eq_fn = decl.name
-		return true
-	}
-	if p.classes[owner].hash_name.len > 0 {
-		report(mut p, path, decl,
-			'error: a class may have only one @[vc_hash]; `${p.classes[owner].hash_name}` is already the hash')
-		return true
-	}
-	p.classes[owner].hash_name = decl.name
+	assign_operator(mut p, owner, kind, decl.name, path, decl)
 	return true
 }
 
@@ -417,6 +463,126 @@ fn link_iterators(mut p Project) {
 	}
 }
 
+// const_kind classifies a `@[vc_const]` literal as `int`, `float`, `bool`, `str`, or `''`
+// when it is not a literal the generator can box itself.
+//
+// A const is read at generation time, not at run time, so only a literal crosses: a
+// reference to another const, an expression, or a call has no value to emit.
+fn const_kind(value string) string {
+	v := value.trim_space()
+	if v.len == 0 {
+		return ''
+	}
+	if v == 'true' || v == 'false' {
+		return 'bool'
+	}
+	if v.len >= 2 && (v[0] == `'` || v[0] == `"`) && v[v.len - 1] == v[0] {
+		return 'str'
+	}
+	mut body := v
+	if body[0] == `-` || body[0] == `+` {
+		body = body[1..]
+	}
+	if body.len == 0 {
+		return ''
+	}
+	mut is_float := false
+	for ch in body {
+		if ch == `.` || ch == `e` || ch == `E` {
+			is_float = true
+			continue
+		}
+		if ch == `+` || ch == `-` || ch == `_` || ch.is_digit() {
+			continue
+		}
+		// Anything else -- a letter, a bracket, a call -- is not a numeric literal.
+		return ''
+	}
+	return if is_float { 'float' } else { 'int' }
+}
+
+// collect_const records a `@[vc_const] pub const NAME = literal`, exposed as a
+// module-level Python attribute of the same name.
+fn collect_const(path string, lines []string, decl astquery.Declaration, mut p Project) {
+	block := read_above(lines, decl.line)
+	if attr_const !in block.attrs {
+		return
+	}
+	if decl.line - 1 >= lines.len || decl.line < 1 {
+		report(mut p, path, decl, 'error: could not read the value of `@[vc_const] ${decl.name}`')
+		return
+	}
+	src := lines[decl.line - 1]
+	eq := src.index('=') or {
+		report(mut p, path, decl, 'error: `@[vc_const] ${decl.name}` has no `= value`')
+		return
+	}
+	mut value := src[eq + 1..].trim_space()
+	if value.contains('//') {
+		value = value.all_before('//').trim_space()
+	}
+	kind := const_kind(value)
+	if kind.len == 0 {
+		report(mut p, path, decl, 'error: `@[vc_const] ${decl.name}` must be an int, a float, a bool or a string literal; `${value}` is not one')
+		return
+	}
+	for existing in p.consts {
+		if existing.name == decl.name {
+			report(mut p, path, decl, 'error: `@[vc_const] ${decl.name}` is declared more than once')
+			return
+		}
+	}
+	p.consts << Const{
+		name:   decl.name
+		value:  value
+		kind:   kind
+		origin: path
+		line:   decl.line
+		column: decl.column
+	}
+}
+
+// link_sequences names the `sq_length`, `sq_item` and `sq_contains` trampolines for the
+// methods that fill them, and reports a class that declares one of them twice.
+//
+// Unlike the iterator pair, each is independent: a class may define `__len__` without
+// `__getitem__`, or `__contains__` alone.
+fn link_sequences(mut p Project) {
+	for i, c in p.classes {
+		mut lens := 0
+		mut items := 0
+		mut contains := 0
+		for m in c.methods {
+			if m.is_len {
+				lens++
+			}
+			if m.is_getitem {
+				items++
+			}
+			if m.is_contains {
+				contains++
+			}
+		}
+		if lens > 1 || items > 1 || contains > 1 {
+			report(mut p, c.origin, astquery.Declaration{
+				name:   c.name
+				line:   c.line
+				column: c.column
+			}, 'error: `${c.name}` declares more than one @[vc_len], @[vc_getitem] or @[vc_contains]; a type has one of each')
+			continue
+		}
+		if lens == 1 {
+			p.classes[i].len_fn = 'vcraft_generated__len_${c.key}'
+		}
+		if items == 1 {
+			p.classes[i].item_fn = 'vcraft_generated__item_${c.key}'
+		}
+		if contains == 1 {
+			p.classes[i].contains_fn = 'vcraft_generated__contains_${c.key}'
+		}
+	}
+}
+
 // sort_classes puts every class after the one it inherits.
 //
 // Not an optimisation but a requirement, and of two separate things:
@@ -562,11 +728,11 @@ fn link_operators(mut p Project) {
 			}, 'error: `${o.name}` is annotated @[vc_${o.kind}] but its name does not start with its class in snake case, so the class it belongs to cannot be told')
 			continue
 		}
-		if o.kind == 'eq' {
-			p.classes[owner].eq_fn = o.name
-		} else {
-			p.classes[owner].hash_name = o.name
-		}
+		assign_operator(mut p, owner, o.kind, o.name, o.origin, astquery.Declaration{
+			name:   o.name
+			line:   o.line
+			column: o.column
+		})
 	}
 	p.operators = []Operator{}
 }
@@ -619,6 +785,60 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	m.property = attr_property in block.attrs
 	m.is_iter = attr_iter in block.attrs
 	m.is_next = attr_next in block.attrs
+	m.is_len = attr_len in block.attrs
+	m.is_getitem = attr_getitem in block.attrs
+	m.is_contains = attr_contains in block.attrs
+	if [m.is_len, m.is_getitem, m.is_contains].filter(it).len > 1 {
+		report(mut p, path, decl,
+			'error: `${decl.name}` carries more than one of @[vc_len], @[vc_getitem] and @[vc_contains]; each fills a different slot')
+		return
+	}
+	if (m.is_len || m.is_getitem || m.is_contains) && (m.property || m.is_iter || m.is_next) {
+		report(mut p, path, decl,
+			'error: `@[vc_len]`, `@[vc_getitem]` and `@[vc_contains]` cannot be combined with @[vc_property], @[vc_iter] or @[vc_next] on `${decl.name}`')
+		return
+	}
+	if m.is_len {
+		if m.params.len > 0 {
+			report(mut p, path, decl,
+				'error: `@[vc_len] ${decl.name}` takes ${m.params.len} argument(s); `__len__` takes none')
+			return
+		}
+		if lookup(m.v_ret) !in [.int, .uint] {
+			report(mut p, path, decl,
+				'error: `@[vc_len] ${decl.name}` returns `${m.v_ret}`; `__len__` returns an integer')
+			return
+		}
+	}
+	if m.is_getitem {
+		if m.params.len != 1 {
+			report(mut p, path, decl,
+				'error: `@[vc_getitem] ${decl.name}` takes ${m.params.len} argument(s); `__getitem__` takes one index')
+			return
+		}
+		if lookup(m.params[0].v_type) !in [.int, .uint] {
+			report(mut p, path, decl,
+				'error: `@[vc_getitem] ${decl.name}` takes a `${m.params[0].v_type}` index; `__getitem__` takes an integer')
+			return
+		}
+		if m.v_ret == 'void' || lookup(m.v_ret) == .unsupported {
+			report(mut p, path, decl,
+				'error: `@[vc_getitem] ${decl.name}` returns `${m.v_ret}`, which has no marshalling rule')
+			return
+		}
+	}
+	if m.is_contains {
+		if m.params.len != 1 {
+			report(mut p, path, decl,
+				'error: `@[vc_contains] ${decl.name}` takes ${m.params.len} argument(s); `__contains__` takes one item')
+			return
+		}
+		if lookup(m.v_ret) != .bool {
+			report(mut p, path, decl,
+				'error: `@[vc_contains] ${decl.name}` returns `${m.v_ret}`; `__contains__` returns a bool')
+			return
+		}
+	}
 	if (m.is_iter || m.is_next) && m.property {
 		report(mut p, path, decl,
 			'error: `@[vc_iter]` and `@[vc_next]` are calls, not properties: `${decl.name}` cannot also be `@[vc_property]`')
@@ -675,9 +895,16 @@ fn collect_static_method(path string, lines []string, ast &flat.FlatAst,
 		return false
 	}
 	block := read_above(lines, decl.line)
-	if attr_static !in block.attrs {
+	is_static := attr_static in block.attrs
+	is_class := attr_classmethod in block.attrs
+	if !is_static && !is_class {
 		// A V static method without the annotation is an ordinary V helper. Take the
 		// declaration so it is not exported under its mangled name.
+		return true
+	}
+	if is_static && is_class {
+		report(mut p, path, decl,
+			'error: `${decl.name}` is annotated both @[vc_static] and @[vc_classmethod]; choose one')
 		return true
 	}
 	parts := decl.name.split('@static@')
@@ -711,8 +938,10 @@ fn collect_static_method(path string, lines []string, ast &flat.FlatAst,
 	mut m := Func{
 		name:            name
 		doc:             block.doc
-		static:          true
+		static:          is_static
+		classmethod:     is_class
 		static_receiver: receiver
+		export_buffer:   attr_memoryview in block.attrs
 		params:          params_of(ast, node, false)
 	}
 	defaults := parse_defaults(block.args[attr_defaults] or { '' })
@@ -883,11 +1112,34 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			exposed << f
 			continue
 		}
-		block := read_inline(lines, field_line(ast, f.name))
-		if attr_field !in block.attrs && attr_ref !in block.attrs && attr_buffer !in block.attrs {
+		line := field_line(ast, f.name)
+		// V also accepts an attribute on the line above a declaration, so people write a
+		// field annotation there and it is silently dropped: a field's own line is the
+		// only place `read_inline` looks. Warn rather than let the field vanish.
+		stray := stray_field_annotation(lines, line)
+		if stray.len > 0 {
+			report(mut p, path, astquery.Declaration{
+				name:      f.name
+				type_name: f.v_type
+				line:      line
+				column:    1
+			}, 'warning: `@[${stray}]` on the line above `${struct_name}.${f.name}` is ignored; a field annotation goes on the field\'s own line')
+		}
+		block := read_inline(lines, line)
+		if attr_field !in block.attrs && attr_ref !in block.attrs && attr_buffer !in block.attrs
+			&& attr_buffer_typed !in block.attrs {
 			continue
 		}
 		f.doc = block.doc
+		if attr_buffer_typed in block.attrs && attr_buffer !in block.attrs {
+			report(mut p, path, astquery.Declaration{
+				name:      f.name
+				type_name: f.v_type
+				line:      field_line(ast, f.name)
+				column:    1
+			}, 'error: `@[vc_buffer_typed] ${struct_name}.${f.name}` needs a `@[vc_buffer]` on the same field: it only chooses how that buffer is reported, and there is no buffer here')
+			continue
+		}
 		if attr_buffer in block.attrs {
 			// A buffer is a slice of scalars. A slice of anything else would be a pointer
 			// V's collector cannot follow into CPython-owned memory, which is the case
@@ -912,6 +1164,7 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 				continue
 			}
 			f.buffer = true
+			f.buffer_typed = attr_buffer_typed in block.attrs
 			exposed << f
 			continue
 		}
@@ -945,6 +1198,61 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 		exposed << f
 	}
 	return exposed
+}
+
+// stray_field_annotation returns the field annotation sitting on the line above a field,
+// when that line holds nothing but annotation blocks.
+//
+// A field annotation belongs on the field's own line -- `@[vc_field] value int` -- which
+// is the only line `read_inline` reads. V accepts an attribute on the line above, so a
+// reader writes it there and the field is quietly left unexposed; this finds that case so
+// the collector can warn. A line that carries a field after its annotation is a previous
+// field, not an annotation block, and returns nothing.
+fn stray_field_annotation(lines []string, line int) string {
+	if line < 2 || line > lines.len {
+		return ''
+	}
+	text := lines[line - 2].trim_space()
+	if !annotation_only(text) {
+		return ''
+	}
+	for name in parse_attr_names(text) {
+		canonical := canonical_attr(name)
+		if canonical in [attr_field, attr_ref, attr_buffer, attr_buffer_typed] {
+			return canonical
+		}
+	}
+	return ''
+}
+
+// annotation_only reports whether a line is one or more `@[...]` blocks and nothing else.
+fn annotation_only(text string) bool {
+	mut i := 0
+	mut seen := false
+	for i < text.len {
+		if text[i] == ` ` || text[i] == `\t` {
+			i++
+			continue
+		}
+		if text[i] != `@` || i + 1 >= text.len || text[i + 1] != `[` {
+			return false
+		}
+		i += 2
+		mut depth := 1
+		for i < text.len && depth > 0 {
+			if text[i] == `[` {
+				depth++
+			} else if text[i] == `]` {
+				depth--
+			}
+			i++
+		}
+		if depth != 0 {
+			return false
+		}
+		seen = true
+	}
+	return seen
 }
 
 // collect_error_type collects a struct annotated `@[vc_error]`.
@@ -1094,6 +1402,7 @@ fn link_classes(mut p Project) {
 	link_bases(mut p)
 	link_refs(mut p)
 	link_iterators(mut p)
+	link_sequences(mut p)
 	mut ctors := []string{}
 	for i, c in p.classes {
 		// A constructor is named after its class, and V snake-cases a multi-word type, so
@@ -1108,25 +1417,38 @@ fn link_classes(mut p Project) {
 			}
 		}
 	}
-	// A constructor may take arguments, but only where there is nothing to forward them
-	// to. A derived class runs its base's constructor with no arguments -- `newstate`
-	// builds the base's half of the state on its own -- so a base constructor that wants
-	// arguments has nowhere to get them from when a subclass is built.
+	// A subclass's state is built base first, so the base's constructor parameters have
+	// to arrive through the subclass's `tp_new` and be forwarded. The subclass's full
+	// parameter list is therefore the base's followed by its own, and `newstate` splits
+	// it again: the leading `base_ctor_count` go to the base's state constructor, the
+	// rest to the class's own. `p.classes` is sorted base first, so the base's list is
+	// already known here.
 	for i, c in p.classes {
-		if c.ctor_params.len == 0 {
-			continue
+		mut params := []Param{}
+		if c.base_index >= 0 {
+			params << p.classes[c.base_index].newstate_params
 		}
-		for base := c.base_index; base >= 0; base = p.classes[base].base_index {
-			if p.classes[base].ctor_params.len > 0 {
+		base_count := params.len
+		// The one Python signature carries the base's parameters and the subclass's, so a
+		// name used on both sides would be two parameters of the same name: untypeable in
+		// the stub and ambiguous for a keyword call. The collision is the user's to fix.
+		for param in c.ctor_params {
+			if param.name in params.map(it.name) {
 				report(mut p, c.origin, astquery.Declaration{
 					name:   c.name
 					line:   c.line
 					column: c.column
-				}, 'error: `${c.name}` takes constructor arguments and its base `${p.classes[base].name}` does too; a base constructor runs with no arguments from a subclass, so arguments are allowed only on a class whose bases are all argument-free')
-				break
+				}, 'error: `${c.name}` and its base `${p.classes[c.base_index].name}` both name a constructor parameter `${param.name}`, and the one Python signature `${c.name}()` binds carries both: give them distinct names')
 			}
 		}
+		params << c.ctor_params
+		p.classes[i].base_ctor_count = base_count
+		p.classes[i].newstate_params = params
 	}
+	// Last, because it needs every class known and sorted: `&T` parameters and results
+	// carry a layout offset computed from `T`'s ancestors, which only exists once
+	// `link_bases` has resolved the chain.
+	link_instances(mut p, ctors)
 	if ctors.len == 0 {
 		return
 	}
@@ -1158,6 +1480,122 @@ fn class_index(p Project, name string) int {
 		}
 	}
 	return -1
+}
+
+// link_instances resolves every `&T` parameter and result to the class it names.
+//
+// A `&T` parameter is an instance reference: the wrapper checks the argument is an
+// instance of `T` and hands the V function a pointer into its state. A `&T` result hands
+// back the instance the pointer points into, matched against the receiver and the
+// instance arguments of the call. Both need `T` to be a class, and the layout offset of
+// `T`'s struct inside the state block, so this runs once every class is known.
+//
+// `ctors` are the `new_*` functions, which `link_classes` will drop from `p.funcs`.
+// Their `&Class` result is not an instance result to resolve -- the constructor's own
+// trampoline handles it -- but their parameters still go through `param_reader`, so a
+// constructor can take an instance of another class.
+fn link_instances(mut p Project, ctors []string) {
+	for i in 0 .. p.funcs.len {
+		mut f := p.funcs[i]
+		link_instance_params(mut p, mut f)
+		link_instance_result(mut p, mut f, false, f.name in ctors)
+		p.funcs[i] = f
+	}
+	for i in 0 .. p.classes.len {
+		c := p.classes[i]
+		for j in 0 .. c.methods.len {
+			mut m := c.methods[j]
+			link_instance_params(mut p, mut m)
+			link_instance_result(mut p, mut m, !m.static, false)
+			p.classes[i].methods[j] = m
+		}
+		p.classes[i].ctor_params = link_instance_param_list(mut p, c.ctor_params, c.name,
+			c.origin, c.line, c.column)
+		p.classes[i].newstate_params = link_instance_param_list(mut p, c.newstate_params,
+			c.name, c.origin, c.line, c.column)
+	}
+}
+
+// link_instance_params resolves the instance references in one function's parameters.
+fn link_instance_params(mut p Project, mut f Func) {
+	f.params = link_instance_param_list(mut p, f.params, f.name, f.origin, f.line, f.column)
+}
+
+// link_instance_param_list resolves a parameter list, reporting each `&T` that does not
+// name a class against the declaration it came from.
+fn link_instance_param_list(mut p Project, params []Param, func_name string, origin string,
+	line int, column int) []Param {
+	mut out := params.clone()
+	for i in 0 .. out.len {
+		target := pointer_target(out[i].v_type)
+		if target.len == 0 {
+			continue
+		}
+		ci := class_index(p, target)
+		if ci < 0 {
+			report(mut p, origin, astquery.Declaration{
+				name:   func_name
+				line:   line
+				column: column
+			}, 'error: cannot expose `${func_name}`: parameter `${out[i].name}` is `${out[i].v_type}`, but `${target}` is not a class')
+			continue
+		}
+		handle, offset := instance_layout(p, ci)
+		out[i].instance_target = target
+		out[i].instance_handle = handle
+		out[i].instance_offset = offset
+	}
+	return out
+}
+
+// link_instance_result resolves a `&T` result. `has_receiver` is true for a method, whose
+// receiver is always a candidate for the pointer; `is_ctor` marks the `new_*` functions,
+// whose `&Class` result the constructor trampoline handles separately.
+fn link_instance_result(mut p Project, mut f Func, has_receiver bool, is_ctor bool) {
+	if is_ctor {
+		return
+	}
+	target := pointer_target(f.v_ret)
+	if target.len == 0 {
+		return
+	}
+	ci := class_index(p, target)
+	if ci < 0 {
+		report(mut p, f.origin, astquery.Declaration{
+			name:   f.name
+			line:   f.line
+			column: f.column
+		}, 'error: cannot expose `${f.name}`: return type `${f.v_ret}` names `${target}`, which is not a class')
+		return
+	}
+	handle, offset := instance_layout(p, ci)
+	f.instance_result = target
+	f.instance_result_handle = handle
+	f.instance_result_offset = offset
+	if !has_receiver && !f.params.any(it.instance_target.len > 0) {
+		report(mut p, f.origin, astquery.Declaration{
+			name:   f.name
+			line:   f.line
+			column: f.column
+		}, 'error: cannot expose `${f.name}`: return type `${f.v_ret}` is an instance reference, but the call receives no instance it could point into; add an instance parameter or make it a method')
+	}
+}
+
+// instance_layout returns the V expression for a class's type object and the expression
+// for where its struct starts inside the state block.
+//
+// The state nests: `SubState` is `{ base <base's state>; self <Sub> }`, so the class's own
+// struct sits exactly one base-state after the start. The offset is therefore the
+// immediate base's size, or zero for a class with no base. It does not matter what class
+// the instance really is: a subclass's `base` field is typed as this class's state, so the
+// struct is at the same offset in every instance this class accepts.
+//
+// The size is the base's generated `sizeof_*` helper, so the offset is arithmetic the
+// compiler emits rather than a read of `tp_basicsize`, which the limited API hides.
+fn instance_layout(p Project, ci int) (string, string) {
+	c := p.classes[ci]
+	offset := if c.base_index >= 0 { p.classes[c.base_index].size_fn + '()' } else { '0' }
+	return 'g_vc_type_${c.key}.ptr', offset
 }
 
 fn report(mut p Project, path string, decl astquery.Declaration, message string) {
@@ -1233,6 +1671,11 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 		if param.default.len == 0 {
 			continue
 		}
+		if pointer_target(param.v_type).len > 0 {
+			report(mut p, path, decl,
+				'error: `@[vc_defaults]` on `${decl.name}` gives `${param.name}` a default, but a `${param.v_type}` instance reference must come from the caller')
+			return
+		}
 		strategy := lookup(param.v_type)
 		if strategy == .optional {
 			report(mut p, path, decl,
@@ -1251,6 +1694,11 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 		}
 	}
 	for param in f.params {
+		// A `&T` is resolved later, once every class is known: whether `T` names a class
+		// cannot be decided here.
+		if pointer_target(param.v_type).len > 0 {
+			continue
+		}
 		if lookup(param.v_type) == .unsupported {
 			report(mut p, path, decl,
 				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule')
@@ -1290,10 +1738,31 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 			'error: `@[vc_nogil]` on `${decl.name}` contradicts `@[vc_raw]`: raw means the function handles `PyObject *` itself, and touching one without the GIL corrupts the interpreter')
 		return
 	}
+	if f.raw && f.export_buffer {
+		report(mut p, path, decl,
+			'error: `@[vc_memoryview]` on `${decl.name}` contradicts `@[vc_raw]`: a raw function returns a `voidptr` the wrapper does not marshal')
+		return
+	}
 	if f.raw {
 		return
 	}
-	if f.v_ret.len > 0 && lookup(f.v_ret) == .unsupported {
+	// A `@[vc_memoryview]` result is a slice of a buffer scalar: it becomes a writable
+	// `memoryview` over native-backed memory, so the element needs a buffer rule and the
+	// result needs to be a slice. Anything else has no view format to carry.
+	if f.export_buffer {
+		strategy := lookup(f.v_ret)
+		if strategy !in [.seq, .bytes] {
+			report(mut p, path, decl,
+				'error: `@[vc_memoryview]` on `${decl.name}` needs a `[]T` result of a buffer scalar, but it returns `${f.v_ret}`')
+			return
+		}
+		if !is_scalar_type(element_type(f.v_ret)) {
+			report(mut p, path, decl,
+				'error: `@[vc_memoryview]` on `${decl.name}`: `${element_type(f.v_ret)}` has no native buffer rule; a buffer holds bool, integers or floats')
+			return
+		}
+	}
+	if f.v_ret.len > 0 && pointer_target(f.v_ret).len == 0 && lookup(f.v_ret) == .unsupported {
 		report(mut p, path, decl,
 			'error: cannot expose `${decl.name}`: return type `${f.v_ret}` has no marshalling rule')
 		return
