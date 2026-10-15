@@ -263,7 +263,10 @@ jobs:
     # The suites on musl libc, inside the published musllinux image, which carries V
     # at the pinned commit, gcc and CPython. Run with `docker run` from the runner
     # rather than as a job container: GitHub's JavaScript actions (checkout, cache)
-    # cannot run inside Alpine. Bump MUSL_IMAGE when the images are re-released.
+    # cannot run inside Alpine. MUSL_IMAGE names the newest *published* image, which is
+    # bumped once `release-images.yml` has pushed it for the new version: naming a
+    # version whose image does not exist yet makes every run here fail with "manifest
+    # unknown" until it does.
     #
     # Split into groups that run on their own runner. The suites were one job, and
     # the container was the critical path of the whole run: every suite compiled the
@@ -289,7 +292,7 @@ jobs:
           - name: project-wheel
             suites: project/check_toml wheel/test_wheel
     env:
-      MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:1.2.0
+      MUSL_IMAGE: ghcr.io/rroblf01/vcraft-musllinux:1.1.1
     steps:
       - uses: actions/checkout@v5
 

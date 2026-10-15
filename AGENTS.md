@@ -77,9 +77,12 @@ Other scripts:
   `oldest_python` (`vlib/vcraft_project/build.v`), the `ci.yml` matrix, `Requires-Python`
   in `scripts/pack-vcraft-wheel.py` and `version` (`vlib/vcraft_project/env.v`) in step.
 - CI also runs the suites on musl inside the published `vcraft-musllinux` image, under
-  ASan/UBSan, and against a free-threaded interpreter. On release, bump the `MUSL_IMAGE`
-  tag in `ci.yml`, the `vcraft-action` default version, and the `images/v<version>` tag;
-  `release-images.yml` checks the tag against `version` in `env.v`.
+  ASan/UBSan, and against a free-threaded interpreter. `MUSL_IMAGE` in `ci.yml` must name
+  a **published** image: push the `images/v<version>` tag (which `release-images.yml`
+  checks against `version` in `env.v`) before bumping `MUSL_IMAGE`, or the musl job fails
+  with "manifest unknown" until the image exists. Then, in order, `vcraft/v<version>`
+  (PyPI and the GitHub release), and `vcraft-action/v<version>` (which moves the action's
+  floating tags and whose default version must already point at the vcraft release).
 
 ## Architecture
 
