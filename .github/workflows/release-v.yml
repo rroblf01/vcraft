@@ -8,15 +8,13 @@ name: release-v
 # The release is a prerelease, so it is a toolchain cache and never the repository's
 # "latest release": that stays the real vcraft release under the `vcraft/v*` tag.
 #
-# Runs when the pin in ci.yml moves, and on demand. It is an optimisation, not a
-# dependency: ci.yml and release-vcraft.yml fall back to building from source when an
-# archive is missing, so a first run or a failed publish only costs time.
+# Run on demand, after the V pin moves. Deliberately not on push: it touches only the V
+# pin, so a push that happens to edit ci.yml -- a version bump, a comment -- would rebuild
+# V for three platforms and publish a release for nothing. It is an optimisation anyway:
+# ci.yml and release-vcraft.yml fall back to building from source when an archive is
+# missing, so a first run or a failed publish only costs time.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - .github/workflows/ci.yml
-      - .github/workflows/release-v.yml
 
 permissions:
   contents: write
