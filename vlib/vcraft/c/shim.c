@@ -810,6 +810,9 @@ PyObject *vpy_exc_buffer_error(void) {
 // `vpy_type_check` was written to sidestep. `PyType_GetName` is stable ABI, so the same
 // code serves an abi3 and a full build.
 int vpy_is_complex(void *o) {
+#ifdef Py_LIMITED_API
+	// Under the limited API `PyComplex_Type` is hidden and `PyComplex_Check` is a macro
+	// that trips the compiler (see `vpy_type_check`), so the type is recognised by name.
 	if (o == NULL) {
 		return 0;
 	}
@@ -823,6 +826,11 @@ int vpy_is_complex(void *o) {
 		return 0;
 	}
 	return strcmp(buf, "complex") == 0;
+#else
+	// A full build can use the macro: two loads against the name probe's allocation and
+	// string comparison, on the hot path of every complex conversion.
+	return o != NULL && PyComplex_Check((PyObject *)o);
+#endif
 }
 
 // The buffer-protocol slot ids, read from the headers.
