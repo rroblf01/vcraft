@@ -99,33 +99,39 @@ call, lower is better:
 
 | workload | pyo3 | vcraft | zig-maturin | python |
 |---|---|---|---|---|
-| `add` | 69 ns | 66 ns | 79 ns | 36 ns |
-| `fib(25)` | 223.5 µs | 113.0 µs | 345.2 µs | 9.36 ms |
-| `count_primes(1e6)` | 1.99 ms | 2.28 ms | 1.86 ms | 93.20 ms |
-| `sum_floats(100k)` | 900.3 µs | 247.4 µs | 1.27 ms | 1.57 ms |
-| `make_range(100k)` | 2.20 ms | 2.37 ms | 2.15 ms | 2.29 ms |
-| `greet` | 131 ns | 119 ns | 220 ns | 69 ns |
-| `checksum(100kB)` | 13.3 µs | 41.6 µs | 40.0 µs | 2.28 ms |
-| `join_strings(10k)` | 477.8 µs | 328.6 µs | 285.0 µs | 73.3 µs |
-| `Counter()` | 95 ns | 107 ns | 76 ns | 92 ns |
-| `c.add(1)` | 66 ns | 79 ns | 89 ns | 55 ns |
-| `c.value` | 45 ns | 53 ns | 32 ns | 12 ns |
-| `Vector(1000)` | 219 ns | 342 ns | 4.2 µs | 2.5 µs |
-| `complex_scale(1+2j, 3)` | 87 ns | 149 ns | — | 62 ns |
+| `add` | 70 ns | 72 ns | 72 ns | 36 ns |
+| `fib(25)` | 226.5 µs | 111.7 µs | 337.0 µs | 9.08 ms |
+| `count_primes(1e6)` | 1.90 ms | 2.10 ms | 1.81 ms | 92.30 ms |
+| `sum_floats(100k)` | 816.6 µs | 226.3 µs | 1.24 ms | 1.53 ms |
+| `make_range(100k)` | 2.13 ms | 2.24 ms | 2.12 ms | 2.10 ms |
+| `greet` | 130 ns | 108 ns | 214 ns | 69 ns |
+| `describe(3)` | 167 ns | 125 ns | 156 ns | 158 ns |
+| `checksum(100kB)` | 13.1 µs | 40.1 µs | 41.8 µs | 2.18 ms |
+| `join_strings(10k)` | 471.9 µs | 291.1 µs | 274.5 µs | 72.7 µs |
+| `Counter()` | 94 ns | 106 ns | 77 ns | 91 ns |
+| `c.add(1)` | 68 ns | 72 ns | 88 ns | 55 ns |
+| `c.value` | 46 ns | 34 ns | 32 ns | 12 ns |
+| `c.increment()` | 55 ns | 50 ns | 64 ns | 52 ns |
+| `Vector(1000)` | 223 ns | 306 ns | 4.1 µs | 2.3 µs |
+| `complex_scale(1+2j, 3)` | 85 ns | 96 ns | — | 61 ns |
 
 What the numbers say:
 
 - **Speed: all three generate comparable native code.** On `fib` vcraft leads PyO3 by
   about 2×, and the differences that remain are at the boundary: per-call cost and
-  conversions. vcraft leads `sum_floats`, `minmax`, `histogram`, `greet` and object
-  construction; PyO3 is more consistent on simple calls and leads `checksum` (the byte
-  loop V's C backend lowers worse, see below). zig-maturin trails on calls by structure.
-- **Method calls.** vcraft's `c.add` and `c.value` are close to PyO3 and faster than
-  zig-maturin. They include the state chain, which one subclass in the module turns on for
-  every trampoline (about 20 ns a call; see *Known limits*).
+  conversions. vcraft leads `sum_floats`, `greet`, `describe` (keyword binding),
+  `minmax`, `histogram` and complex numbers; PyO3 is marginally ahead on a bare `add`
+  and on `c.add`, and leads `checksum` (the byte loop V's C backend lowers worse, see
+  below) and `count_primes`/`make_range` (V's array-write lowering). zig-maturin trails
+  on calls by structure.
+- **Method and attribute calls are now at PyO3's level.** `c.value` (34 vs 46 ns),
+  `c.increment` (50 vs 55) and `c.is_zero` are faster than PyO3; `c.add` is 72 vs 68.
+  The state chain is published only by the trampolines that can observe it — a class
+  with a base — so a base-less class's methods pay nothing for it.
 - **Memory.** PyO3 and zig-maturin stay near pure Python; vcraft keeps its Boehm heap —
-  about 0.7–0.9 MiB more at import, plateauing, not leaking. No scenario leaks on any
-  backend and no reference probe drifts.
+  `count_primes` leaves 19.6 MiB against 9.5, and `make_range` 4.5 against 0.9, all
+  plateauing, not leaking. Import RSS is now the lowest of the three (764 KiB against
+  PyO3's 872). No scenario leaks on any backend and no reference probe drifts.
 - **Size.** vcraft and zig-maturin build the smallest wheels; PyO3's is the same order.
   vcraft's clean release build is the fastest.
 
@@ -137,11 +143,6 @@ What the numbers say:
   that copies one element, which is what puts `count_primes` and `make_range` behind
   PyO3; `@[direct_array_access]` does not remove it on writes, and no compiler flag folds
   it in the large translation unit. It is in V, not in vcraft. Reported upstream.
-- **The state chain.** A module that calls `vcraft.state_at` — one subclass with an
-  inherited field is enough — publishes the chain on every trampoline in the file, and a
-  method or accessor pays a few tens of nanoseconds for it even when it never reads the
-  chain. 1.2.0 made that allocation-free; scoping the publish to the classes that can
-  observe it is the next step.
 - **The byte loop.** `checksum` over `bytes` is 3× PyO3: clang lowers V's widening sum
   to nibble-split sequences where LLVM emits a single `uaddlv` for Rust's identical loop.
 

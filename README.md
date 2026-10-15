@@ -1232,19 +1232,19 @@ Time per call, lower is better:
 
 | workload | PyO3 | vcraft | pure Python |
 |---|---|---|---|
-| `add(1, 2)`: call overhead | 69 ns | **66 ns** | 36 ns |
-| `greet(name)`: str in, new str out | 131 ns | **119 ns** | 69 ns |
-| `fib(25)`: pure compute | 223.5 µs | **113.0 µs** | 9.36 ms |
-| `sum_floats(100k)`: list[float] in | 900.3 µs | **247.4 µs** | 1.57 ms |
-| `Counter()`: object construction | **95 ns** | 107 ns | 92 ns |
-| `c.add(1)`: method call | **66 ns** | 79 ns | 55 ns |
-| `count_primes(1e6)`: compute + native alloc | **1.99 ms** | 2.28 ms | 93.20 ms |
+| `add(1, 2)`: call overhead | 70 ns | 72 ns | 36 ns |
+| `greet(name)`: str in, new str out | 130 ns | **108 ns** | 69 ns |
+| `fib(25)`: pure compute | 226.5 µs | **111.7 µs** | 9.08 ms |
+| `sum_floats(100k)`: list[float] in | 816.6 µs | **226.3 µs** | 1.53 ms |
+| `Counter()`: object construction | **94 ns** | 106 ns | 91 ns |
+| `c.add(1)`: method call | **68 ns** | 72 ns | 55 ns |
+| `count_primes(1e6)`: compute + native alloc | **1.90 ms** | 2.10 ms | 92.30 ms |
 
-Method and attribute calls include vcraft's state chain: a module that uses
-`vcraft.state_at` — one subclass with an inherited field is enough — publishes it
-on every trampoline, which costs a few tens of nanoseconds a call. The vcraft
-wheel is the smallest of the three and its clean release build the fastest.
-Methodology, every workload, memory use and import time are in
+The state chain a subclass uses is published only by the trampolines that can
+observe it, so a class with no base pays nothing for it, and vcraft's attributes
+and no-argument methods are ahead of PyO3's. The vcraft wheel is the smallest of
+the three and its clean release build the fastest. Methodology, every workload,
+memory use and import time are in
 [`benchmark/README.md`](benchmark/README.md) and
 [`benchmark/results-linux.md`](benchmark/results-linux.md).
 

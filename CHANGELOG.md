@@ -48,8 +48,22 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   any class with a base whose methods reach it through `vcraft.state_at` — allocated a
   snapshot of it with `PyMem_Malloc` on every trampoline and freed it after. It is now a
   per-thread stack of frames in native thread-local storage, and the accessors are
-  inlined, so leaving is a decrement. On the benchmark `Counter`: `c.add` 96 → 77 ns,
-  `c.value` 72 → 48, `c.increment` 79 → 63.
+  inlined, so leaving is a decrement.
+- **The chain is published only where it can be observed.** `state_at(level>=1)` reaches
+  an ancestor, so only a subclass's trampolines need to publish; a class with no base
+  now publishes nothing unless the project uses `state_at(0)`. This takes the chain off
+  every method of a base-less class.
+- **Arguments are bound without a per-call allocation.** A call with keywords or a left
+  out parameter built its name and optional arrays, and a left out parameter also built a
+  slot array, on every call. The arrays are module globals, and a positional-only call
+  keeps the raw argument array and checks each parameter's presence, so it builds no
+  slot array either.
+- **Complex numbers are recognised by type, not by name.** `vpy_is_complex` compared the
+  type's name on every conversion; a full build now uses `PyComplex_Check`.
+
+  On the benchmark `Counter` and friends: `c.add` 79 → 72 ns, `c.value` 53 → 34,
+  `c.increment` 65 → 50, `describe(3)` 261 → 125, `complex_scale` 149 → 96. The
+  per-thread state stack is also halved, to 16 frames.
 
 ### Fixed
 
