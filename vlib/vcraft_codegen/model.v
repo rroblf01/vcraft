@@ -415,6 +415,14 @@ pub mut:
 	// of the state chain. Without one, nothing can observe the chain, so the
 	// trampolines skip publishing it.
 	uses_state_at bool
+	// uses_state_at_zero is whether any source file calls `state_at(0)`, the one level a
+	// class with no base has to publish. `state_at(level>=1)` reaches an ancestor, so it
+	// is only meaningful inside a subclass, and every generation above a class is
+	// published by that class's own trampolines. So a class with no base publishes
+	// nothing unless `state_at(0)` is used somewhere, in which case the conservative
+	// fallback is to publish in every class again (a helper called from a base-less
+	// class could reach `state_at(0)` unseen).
+	uses_state_at_zero bool
 }
 
 // Diagnostic is one problem, anchored to a source position.

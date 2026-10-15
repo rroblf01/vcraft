@@ -514,10 +514,18 @@ fn no_state_exit(c Class, value string) string {
 // The chain is saved and restored whole, so a nested call cannot leave the outer
 // trampoline's levels pointing at the inner one's instance.
 //
-// Publishing costs an allocation and two copies of the chain per call, and the only
-// reader is `vcraft.state_at`. A module that never calls it gets nothing emitted.
+// The only reader is `vcraft.state_at`, and what it can observe decides who publishes.
+// `state_at(level>=1)` reaches an ancestor, so it is only meaningful inside a subclass,
+// and every generation above a class is published by that class's own trampolines; a
+// class with no base therefore has nothing to publish unless `state_at(0)` -- its own
+// block -- is used somewhere, in which case every class publishes again (a helper called
+// from a base-less class could reach `state_at(0)` unseen). A module that never calls
+// `state_at` gets nothing emitted.
 fn emit_enter_state(p Project, c Class) string {
 	if !p.uses_state_at {
+		return ''
+	}
+	if c.base_index < 0 && !p.uses_state_at_zero {
 		return ''
 	}
 	mut w := new_builder()

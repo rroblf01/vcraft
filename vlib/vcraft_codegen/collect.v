@@ -13,10 +13,18 @@ import v.token
 // calling it per declaration would turn a build into a quadratic number of parses.
 pub fn collect_file(path string, mut p Project) {
 	lines := read_lines(path)
-	// A textual match is enough: a false positive, such as the name in a comment,
-	// only costs the publishing the trampolines did unconditionally before.
-	if !p.uses_state_at && lines.any(it.contains('state_at(')) {
-		p.uses_state_at = true
+	// Read from the code, not the comments: a comment that mentions `state_at(0)` (an
+	// explanation, say) would otherwise force every class to publish, which is the cost
+	// the scoping below exists to avoid.
+	for line in lines {
+		code := if line.contains('//') { line.all_before('//') } else { line }
+		if !p.uses_state_at && code.contains('state_at(') {
+			p.uses_state_at = true
+		}
+		if !p.uses_state_at_zero && code.contains('state_at(0)') {
+			p.uses_state_at = true
+			p.uses_state_at_zero = true
+		}
 	}
 	ast := astquery.parse(path)
 	for decl in astquery.declarations(ast) {

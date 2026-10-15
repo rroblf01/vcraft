@@ -372,9 +372,6 @@ pub fn (mut p Pair) link(other voidptr) {
 }
 
 // other returns the peer as an object, or None when it was never set.
-//
-// `state_at(0)` is the block the trampoline loaded, which for a class with no base is
-// the class's own struct, so the peer's own struct is one step along.
 @[vc_method]
 pub fn (p &Pair) other() vcraft.PyObj {
 	if vcraft.is_null(p.peer) {

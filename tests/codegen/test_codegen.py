@@ -482,6 +482,17 @@ def main() -> int:
     t.check("one published level per subclass trampoline",
             glue.count("publish_base(1,") == 9,
             f"{glue.count('publish_base(1,')} published")
+    # The chain is published only where `state_at` can observe it. A method of a
+    # base-less class that never calls `state_at` does not enter the chain at all; a
+    # subclass method does, because its generated body reads the base through `state_at`.
+    def trampoline(name: str) -> str:
+        body = glue[glue.index(f"fn {name}("):]
+        return body[:body.index("\n}")]
+
+    t.check("a base-less class does not publish the chain",
+            "enter_state" not in trampoline("vcraft_generated__method_counter_increment"))
+    t.check("a subclass still publishes its base",
+            "publish_base(1," in trampoline("vcraft_generated__method_boundedcounter_bump"))
     t.check("the stub declares the base",
             "class BoundedCounter(Counter):" in stub, stub[-600:])
 
