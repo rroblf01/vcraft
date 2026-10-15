@@ -379,8 +379,10 @@ void vpy_type_clear(void *self) {
 
 // How many trampolines may be nested before publishing falls back to a heap snapshot.
 // A method calling another, a property read inside a method, a slot that re-enters --
-// the depth is small in practice, and 32 is far past any real nesting.
-#define VPY_STATE_FRAMES 32
+// the depth is small in practice, and 16 is past any real nesting. Deeper nesting is
+// still correct: the fallback allocates its own snapshot per level, so a chain past the
+// cap only pays allocator calls.
+#define VPY_STATE_FRAMES 16
 
 // vpy_state_stack is the per-thread state chain stack.
 //
@@ -413,7 +415,7 @@ void vpy_state_init(void) {
 
 // vpy_stack returns the calling thread's state stack, creating it zeroed on first use.
 //
-// The block is never freed, which keeps about 2 KiB per thread that ever ran a
+// The block is never freed, which keeps about 1 KiB per thread that ever ran a
 // trampoline. CPython offers no hook to free native thread-local storage at thread
 // exit, and neither does C, so the alternative would be a global registry with a lock
 // on every call.
