@@ -148,12 +148,18 @@ jobs:
       - name: merge the per-architecture tags into one manifest
         # `imagetools create` only rearranges pointers, so this takes seconds and
         # cannot break a wheel: the bytes it names are the ones the matrix verified.
+        #
+        # Every image gets two tags: the version, which is what `vcraft generate-ci`
+        # writes into a project's workflow, and `latest`, which this repository's own
+        # CI and the benchmark can name without bumping a version on every release.
         run: |
           VERSION="${GITHUB_REF_NAME#images/}"
           VERSION="${VERSION#v}"
           for IMAGE in manylinux musllinux; do
-            docker buildx imagetools create \
-              -t "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${VERSION}" \
-              "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${VERSION}-x86_64" \
-              "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${VERSION}-aarch64"
+            for TAG in "$VERSION" latest; do
+              docker buildx imagetools create \
+                -t "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${TAG}" \
+                "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${VERSION}-x86_64" \
+                "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${VERSION}-aarch64"
+            done
           done
