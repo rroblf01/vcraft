@@ -42,6 +42,15 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   than `Sequence[Any]`.
 - **`ty` configuration** in the scaffold, beside the pyright and mypy hints.
 
+### Changed
+
+- **The state chain no longer allocates per call.** A module that publishes the chain —
+  any class with a base whose methods reach it through `vcraft.state_at` — allocated a
+  snapshot of it with `PyMem_Malloc` on every trampoline and freed it after. It is now a
+  per-thread stack of frames in native thread-local storage, and the accessors are
+  inlined, so leaving is a decrement. On the benchmark `Counter`: `c.add` 96 → 77 ns,
+  `c.value` 72 → 48, `c.increment` 79 → 63.
+
 ### Fixed
 
 - **`pyproject.toml` is merged, not overwritten.** `vcraft build` and `vcraft develop`

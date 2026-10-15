@@ -2,47 +2,59 @@
   "environment": {
     "python": "3.13.16",
     "machine": "x86_64",
-    "platform": "Linux-6.18.56-1-lts-x86_64-with-glibc2.44"
+    "platform": "Linux-6.18.56-1-lts-x86_64-with-glibc2.44",
+    "toolchain": {
+      "vcraft": "1.2.0",
+      "V": "36be926",
+      "PyO3": "0.29.0",
+      "maturin": "1.15.0",
+      "zig-maturin": "1.0.1",
+      "zig": "0.16.0"
+    }
   },
   "backends": {
     "pyo3": {
       "sizes": {
         "wheel_file": "bench_pyo3-0.1.0-cp313-cp313-manylinux_2_34_x86_64.whl",
-        "wheel": 280566,
-        "extension": 689760,
-        "extension_stripped": 510800,
+        "wheel": 285447,
+        "extension": 704352,
+        "extension_stripped": 520096,
         "files_in_wheel": 6
       },
-      "build_s": 9.580285837997508,
+      "build_s": 8.526531105999993,
       "import": {
-        "first_s": 0.0007242529973154888,
-        "warm_s": 0.0005447520015877672,
-        "rss_bytes": 974848
+        "first_s": 0.0008401689999573136,
+        "warm_s": 0.0005798689999210183,
+        "rss_bytes": 860160
       },
       "speed": {
         "speed_ns": {
-          "add": 72.30925689946162,
-          "fib(25)": 222137.4155014928,
-          "count_primes(1e6)": 1797721.5475002595,
-          "sum_floats(100k)": 849154.9940008554,
-          "make_range(100k)": 2214539.405031246,
-          "greet": 135.7570764994307,
-          "describe(3)": 167.213726999762,
-          "maybe_double(21)": 65.2120114005811,
-          "histogram(10k)": 797278.9529958391,
-          "minmax(100k)": 1101885.1975131838,
-          "reverse3([1,2,3])": 202.91465149784926,
-          "checksum(100kB)": 13401.921750119072,
-          "echo_bytes(100kB)": 3650.023959999089,
-          "join_strings(10k)": 491839.7729998105,
-          "expect_positive(err)": 218.63766049864353,
-          "Counter()": 102.32153329998255,
-          "c.increment()": 46.578891899844166,
-          "c.add(1)": 67.17725230046199,
-          "c.value": 46.850919000280555,
-          "c.is_zero": 35.492267749941675,
-          "c == c": 47.16435129957972,
-          "list(Countdown())": 345.2699814988591
+          "add": 68.98100920000161,
+          "fib(25)": 223519.23049996005,
+          "count_primes(1e6)": 1991771.6925004926,
+          "sum_floats(100k)": 900305.5279999899,
+          "make_range(100k)": 2197332.954999638,
+          "greet": 130.85657574998777,
+          "describe(3)": 173.295236499996,
+          "maybe_double(21)": 66.15059839998594,
+          "histogram(10k)": 710013.7910001649,
+          "minmax(100k)": 1070726.3824997426,
+          "reverse3([1,2,3])": 197.92341375000433,
+          "checksum(100kB)": 13347.83560000119,
+          "echo_bytes(100kB)": 3832.8578499999817,
+          "join_strings(10k)": 477845.3569999783,
+          "expect_positive(err)": 215.27510999999322,
+          "Counter()": 95.46320859999469,
+          "c.increment()": 56.17356549998931,
+          "c.add(1)": 65.5402112000047,
+          "c.value": 45.464212199999565,
+          "c.is_zero": 35.37694215000329,
+          "c == c": 48.43889080000281,
+          "list(Countdown())": 343.3069049999631,
+          "Vector(1000)": 218.68340050002644,
+          "vector.total()": 764.5801630001188,
+          "complex_scale(1+2j, 3)": 87.2605614000122,
+          "Counter.zero()": 58.90207820002615
         }
       },
       "correctness": {
@@ -150,7 +162,18 @@
         "expect_positive zero": "ok",
         "expect_positive ok": "ok",
         "expect_positive raises": "ok",
-        "expect_positive str rejected": "ok"
+        "expect_positive str rejected": "ok",
+        "vector total of zeros": "ok",
+        "vector set and total": "ok",
+        "vector get": "ok",
+        "vector out of range ignored": "ok",
+        "vector length rejected": "ok",
+        "vector memoryview writes through": "n/a",
+        "complex round trip": "ok",
+        "complex real coerced": "ok",
+        "complex wrong type": "ok",
+        "static method on the class": "ok",
+        "static method on an instance": "ok"
       },
       "refs": {
         "sum_floats: borrowed list": {
@@ -192,79 +215,84 @@
       },
       "threads": {
         "1": {
-          "seconds": 0.16169636599806836,
+          "seconds": 0.1655833309996524,
           "threads": 1,
           "calls": 64
         },
         "2": {
-          "seconds": 0.18648946000030264,
+          "seconds": 0.1943214339999031,
           "threads": 2,
           "calls": 64
         },
         "4": {
-          "seconds": 0.19013554199773353,
+          "seconds": 0.1987728200001584,
           "threads": 4,
           "calls": 64
         },
         "8": {
-          "seconds": 0.22941648599953623,
+          "seconds": 0.210998778999965,
           "threads": 8,
           "calls": 64
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 33464320,
+          "peak": 35700736,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 38412288,
-          "kept": 925696,
+          "peak": 40693760,
+          "kept": 897024,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 43757568,
-          "kept": 9994240,
+          "peak": 45830144,
+          "kept": 9998336,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 33935360,
+          "peak": 36114432,
           "kept": 487424,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 33591296,
+          "peak": 35581952,
           "kept": 102400,
-          "leak": 4096
+          "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 33792000,
+          "peak": 35696640,
           "kept": 307200,
-          "leak": 4096
+          "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 33259520,
-          "kept": 69632,
-          "leak": 4096
+          "peak": 35692544,
+          "kept": 45056,
+          "leak": 0
         },
         "histogram(new 1k words) x500": {
-          "peak": 34107392,
-          "kept": 212992,
-          "leak": 4096
+          "peak": 35901440,
+          "kept": 204800,
+          "leak": 0
         },
         "Counter() x1M": {
-          "peak": 33484800,
+          "peak": 35688448,
+          "kept": 0,
+          "leak": 0
+        },
+        "Vector(1000) x500": {
+          "peak": 35528704,
           "kept": 0,
           "leak": 0
         },
         "expect_positive(-1) x500k": {
-          "peak": 33103872,
+          "peak": 35340288,
           "kept": 0,
           "leak": 0
         },
         "sum_floats(wrong elem) x200k": {
-          "peak": 33841152,
+          "peak": 35631104,
           "kept": 0,
           "leak": 0
         }
@@ -273,41 +301,45 @@
     "vcraft": {
       "sizes": {
         "wheel_file": "bench_vcraft-0.1.0-cp313-cp313-linux_x86_64.whl",
-        "wheel": 295480,
-        "extension": 562608,
-        "extension_stripped": 496992,
+        "wheel": 308751,
+        "extension": 590320,
+        "extension_stripped": 521616,
         "files_in_wheel": 5
       },
-      "build_s": 11.377923576998,
+      "build_s": 7.084970790999932,
       "import": {
-        "first_s": 0.0007096619956428185,
-        "warm_s": 0.0007147830037865788,
-        "rss_bytes": 888832
+        "first_s": 0.0006652000001849956,
+        "warm_s": 0.0007000900000093679,
+        "rss_bytes": 786432
       },
       "speed": {
         "speed_ns": {
-          "add": 69.73661109950626,
-          "fib(25)": 108873.08600104006,
-          "count_primes(1e6)": 2164436.5300016943,
-          "sum_floats(100k)": 238282.62299866765,
-          "make_range(100k)": 2397578.980016988,
-          "greet": 115.28342124984192,
-          "describe(3)": 206.31775050060241,
-          "maybe_double(21)": 56.3761543999135,
-          "histogram(10k)": 569289.7150001954,
-          "minmax(100k)": 652065.4759951867,
-          "reverse3([1,2,3])": 208.54118949864642,
-          "checksum(100kB)": 40130.71504996333,
-          "echo_bytes(100kB)": 1865.9129299885535,
-          "join_strings(10k)": 290632.6900010754,
-          "expect_positive(err)": 228.45906899965485,
-          "Counter()": 105.2995390000433,
-          "c.increment()": 82.01765589983552,
-          "c.add(1)": 101.21715550121735,
-          "c.value": 71.71844189942931,
-          "c.is_zero": 70.11040249999496,
-          "c == c": 37.94341325010464,
-          "list(Countdown())": 637.5139919982757
+          "add": 66.49669910002558,
+          "fib(25)": 112989.38850006835,
+          "count_primes(1e6)": 2277649.519999159,
+          "sum_floats(100k)": 247435.0280001545,
+          "make_range(100k)": 2367751.6099996865,
+          "greet": 119.22981800000798,
+          "describe(3)": 261.154624000028,
+          "maybe_double(21)": 54.8425626000153,
+          "histogram(10k)": 604103.0989999854,
+          "minmax(100k)": 606322.4150002497,
+          "reverse3([1,2,3])": 192.51024474999667,
+          "checksum(100kB)": 41558.26320002234,
+          "echo_bytes(100kB)": 2124.284024998815,
+          "join_strings(10k)": 328606.5770000732,
+          "expect_positive(err)": 242.34431500008213,
+          "Counter()": 107.233400000041,
+          "c.increment()": 65.35030620002544,
+          "c.add(1)": 79.35624619999544,
+          "c.value": 53.40840610001578,
+          "c.is_zero": 53.49472739999328,
+          "c == c": 37.488662450004995,
+          "list(Countdown())": 541.7344809998212,
+          "Vector(1000)": 342.2740569999405,
+          "vector.total()": 793.241154000043,
+          "complex_scale(1+2j, 3)": 148.69231249997483,
+          "Counter.zero()": 59.395256200014046
         }
       },
       "correctness": {
@@ -415,7 +447,18 @@
         "expect_positive zero": "ok",
         "expect_positive ok": "ok",
         "expect_positive raises": "ok",
-        "expect_positive str rejected": "ok"
+        "expect_positive str rejected": "ok",
+        "vector total of zeros": "ok",
+        "vector set and total": "ok",
+        "vector get": "ok",
+        "vector out of range ignored": "ok",
+        "vector length rejected": "ok",
+        "vector memoryview writes through": "ok",
+        "complex round trip": "ok",
+        "complex real coerced": "ok",
+        "complex wrong type": "ok",
+        "static method on the class": "ok",
+        "static method on an instance": "ok"
       },
       "refs": {
         "sum_floats: borrowed list": {
@@ -463,80 +506,85 @@
       },
       "threads": {
         "1": {
-          "seconds": 0.16005479900195496,
+          "seconds": 0.18773208599986901,
           "threads": 1,
           "calls": 64
         },
         "2": {
-          "seconds": 0.19601540100120474,
+          "seconds": 0.1694708640002318,
           "threads": 2,
           "calls": 64
         },
         "4": {
-          "seconds": 0.20219785200606566,
+          "seconds": 0.17382558999997855,
           "threads": 4,
           "calls": 64
         },
         "8": {
-          "seconds": 0.20497772199450992,
+          "seconds": 0.17717692999985957,
           "threads": 8,
           "calls": 64
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 33443840,
-          "kept": 131072,
+          "peak": 35692544,
+          "kept": 126976,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 41689088,
-          "kept": 4014080,
-          "leak": 499712
-        },
-        "count_primes(10M) x5": {
-          "peak": 53800960,
-          "kept": 10018816,
+          "peak": 42868736,
+          "kept": 3964928,
           "leak": 0
         },
+        "count_primes(10M) x5": {
+          "peak": 75476992,
+          "kept": 30068736,
+          "leak": 131072
+        },
         "sum_floats(new 10k list) x500": {
-          "peak": 34537472,
-          "kept": 1036288,
-          "leak": 24576
+          "peak": 36683776,
+          "kept": 978944,
+          "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 33665024,
-          "kept": 98304,
+          "peak": 35561472,
+          "kept": 102400,
           "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 33660928,
-          "kept": 200704,
+          "peak": 35606528,
+          "kept": 204800,
           "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 33632256,
-          "kept": 299008,
+          "peak": 36020224,
+          "kept": 507904,
           "leak": 0
         },
         "histogram(new 1k words) x500": {
-          "peak": 34668544,
-          "kept": 1101824,
-          "leak": 0
+          "peak": 36945920,
+          "kept": 671744,
+          "leak": 409600
         },
         "Counter() x1M": {
-          "peak": 34029568,
-          "kept": 122880,
+          "peak": 35315712,
+          "kept": 126976,
           "leak": 0
         },
+        "Vector(1000) x500": {
+          "peak": 35463168,
+          "kept": 45056,
+          "leak": 77824
+        },
         "expect_positive(-1) x500k": {
-          "peak": 33685504,
-          "kept": 122880,
+          "peak": 35717120,
+          "kept": 118784,
           "leak": 0
         },
         "sum_floats(wrong elem) x200k": {
-          "peak": 33693696,
-          "kept": 131072,
+          "peak": 35299328,
+          "kept": 126976,
           "leak": 0
         }
       }
@@ -544,41 +592,45 @@
     "zig-maturin": {
       "sizes": {
         "wheel_file": "bench_zig-0.1.0-cp313-cp313-manylinux_2_28_x86_64.whl",
-        "wheel": 1038606,
-        "extension": 3654352,
-        "extension_stripped": 603736,
+        "wheel": 1047661,
+        "extension": 3692576,
+        "extension_stripped": 612048,
         "files_in_wheel": 4
       },
-      "build_s": 18.085330474998045,
+      "build_s": 16.590425276999895,
       "import": {
-        "first_s": 0.00024117100110743195,
-        "warm_s": 0.00022339000133797526,
-        "rss_bytes": 434176
+        "first_s": 0.0002486929997758125,
+        "warm_s": 0.00025468300009379163,
+        "rss_bytes": 364544
       },
       "speed": {
         "speed_ns": {
-          "add": 88.79923119966406,
-          "fib(25)": 383521.4349965099,
-          "count_primes(1e6)": 2132959.4149938202,
-          "sum_floats(100k)": 1185115.0399888866,
-          "make_range(100k)": 2211004.2850181344,
-          "greet": 220.51843699955498,
-          "describe(3)": 136.40257350016327,
-          "maybe_double(21)": 76.94796229989151,
-          "histogram(10k)": 1842466.609996336,
-          "minmax(100k)": 1287704.654987465,
-          "reverse3([1,2,3])": 177.60694324897486,
-          "checksum(100kB)": 39951.403599843616,
-          "echo_bytes(100kB)": 1887.1293749907636,
-          "join_strings(10k)": 295096.026497049,
-          "expect_positive(err)": 227.77766500075813,
-          "Counter()": 75.39391090031131,
-          "c.increment()": 60.1962717002607,
-          "c.add(1)": 74.40313569968566,
-          "c.value": 32.21472224977333,
-          "c.is_zero": 46.61084010003833,
-          "c == c": 48.520015599933686,
-          "list(Countdown())": 267.6808405012707
+          "add": 78.55371929999819,
+          "fib(25)": 345207.07050000963,
+          "count_primes(1e6)": 1857310.550000193,
+          "sum_floats(100k)": 1266212.015000292,
+          "make_range(100k)": 2153946.12999944,
+          "greet": 220.43073200006802,
+          "describe(3)": 153.87926850007716,
+          "maybe_double(21)": 69.72693499997149,
+          "histogram(10k)": 1841942.587500398,
+          "minmax(100k)": 1410576.2625001718,
+          "reverse3([1,2,3])": 184.8144420000608,
+          "checksum(100kB)": 39977.565300000606,
+          "echo_bytes(100kB)": 1914.9821450014313,
+          "join_strings(10k)": 285023.7739999102,
+          "expect_positive(err)": 231.29373450001367,
+          "Counter()": 75.74410170000192,
+          "c.increment()": 60.93301230002907,
+          "c.add(1)": 89.20749799999612,
+          "c.value": 32.26116314999672,
+          "c.is_zero": 42.56847259998722,
+          "c == c": 50.824019899982886,
+          "list(Countdown())": 264.53814249998686,
+          "Vector(1000)": 4153.328120000879,
+          "vector.total()": 788.7492029999521,
+          "complex_scale(1+2j, 3)": null,
+          "Counter.zero()": 71.11539049997191
         }
       },
       "correctness": {
@@ -686,7 +738,18 @@
         "expect_positive zero": "ok",
         "expect_positive ok": "ok",
         "expect_positive raises": "ok",
-        "expect_positive str rejected": "ok"
+        "expect_positive str rejected": "ok",
+        "vector total of zeros": "ok",
+        "vector set and total": "ok",
+        "vector get": "ok",
+        "vector out of range ignored": "ok",
+        "vector length rejected": "ok",
+        "vector memoryview writes through": "ok",
+        "complex round trip": "n/a",
+        "complex real coerced": "n/a",
+        "complex wrong type": "n/a",
+        "static method on the class": "ok",
+        "static method on an instance": "ok"
       },
       "refs": {
         "sum_floats: borrowed list": {
@@ -731,79 +794,84 @@
       },
       "threads": {
         "1": {
-          "seconds": 0.16063235500041628,
+          "seconds": 0.19088500099996963,
           "threads": 1,
           "calls": 64
         },
         "2": {
-          "seconds": 0.1911398510055733,
+          "seconds": 0.18144710299975486,
           "threads": 2,
           "calls": 64
         },
         "4": {
-          "seconds": 0.19260430500435177,
+          "seconds": 0.17778134899981524,
           "threads": 4,
           "calls": 64
         },
         "8": {
-          "seconds": 0.20335101400269195,
+          "seconds": 0.1839751949996753,
           "threads": 8,
           "calls": 64
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 33861632,
+          "peak": 35201024,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 37789696,
-          "kept": 1597440,
+          "peak": 39669760,
+          "kept": 1544192,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 43327488,
-          "kept": 9998336,
+          "peak": 45158400,
+          "kept": 9994240,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 33845248,
-          "kept": 483328,
+          "peak": 35753984,
+          "kept": 495616,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 33570816,
+          "peak": 35491840,
           "kept": 98304,
           "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 33742848,
+          "peak": 35463168,
           "kept": 200704,
           "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 33460224,
-          "kept": 53248,
+          "peak": 35897344,
+          "kept": 61440,
           "leak": 0
         },
         "histogram(new 1k words) x500": {
-          "peak": 33710080,
+          "peak": 35663872,
           "kept": 90112,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 33177600,
+          "peak": 35307520,
+          "kept": 0,
+          "leak": 0
+        },
+        "Vector(1000) x500": {
+          "peak": 35315712,
           "kept": 0,
           "leak": 0
         },
         "expect_positive(-1) x500k": {
-          "peak": 33103872,
+          "peak": 35147776,
           "kept": 0,
           "leak": 0
         },
         "sum_floats(wrong elem) x200k": {
-          "peak": 33464320,
+          "peak": 35450880,
           "kept": 0,
           "leak": 0
         }
@@ -812,34 +880,38 @@
     "python": {
       "sizes": {},
       "import": {
-        "first_s": 0.0020065670032636262,
-        "warm_s": 0.00014117099635768682,
-        "rss_bytes": 24576
+        "first_s": 0.00018737099981080974,
+        "warm_s": 0.00015978100009306218,
+        "rss_bytes": 16384
       },
       "speed": {
         "speed_ns": {
-          "add": 36.21724334989267,
-          "fib(25)": 9113291.639951058,
-          "count_primes(1e6)": 93821060.89979061,
-          "sum_floats(100k)": 1577160.8899922285,
-          "make_range(100k)": 2150561.150010617,
-          "greet": 68.58590580013697,
-          "describe(3)": 156.6155982491182,
-          "maybe_double(21)": 37.4449058999744,
-          "histogram(10k)": 592649.9760025763,
-          "minmax(100k)": 1904068.6349944735,
-          "reverse3([1,2,3])": 122.91305449980428,
-          "checksum(100kB)": 2267980.9799956274,
-          "echo_bytes(100kB)": 1976.7261699962548,
-          "join_strings(10k)": 72811.70209971606,
-          "expect_positive(err)": 230.7721875004063,
-          "Counter()": 93.36574979970464,
-          "c.increment()": 54.62292809970677,
-          "c.add(1)": 54.13601949985605,
-          "c.value": 11.715796525095357,
-          "c.is_zero": 37.336446100016474,
-          "c == c": 71.39441370018176,
-          "list(Countdown())": 565.2913199955947
+          "add": 36.164184350013784,
+          "fib(25)": 9361228.81999836,
+          "count_primes(1e6)": 93199009.29999676,
+          "sum_floats(100k)": 1569180.0075001083,
+          "make_range(100k)": 2293807.9649998145,
+          "greet": 68.61937080002463,
+          "describe(3)": 162.99307374993077,
+          "maybe_double(21)": 38.108923849995335,
+          "histogram(10k)": 605801.2220000819,
+          "minmax(100k)": 1909036.8075001151,
+          "reverse3([1,2,3])": 124.32956949999154,
+          "checksum(100kB)": 2281069.5550015224,
+          "echo_bytes(100kB)": 1921.2692274993512,
+          "join_strings(10k)": 73276.34829998715,
+          "expect_positive(err)": 232.75466500012953,
+          "Counter()": 92.19590509997033,
+          "c.increment()": 52.75430299998334,
+          "c.add(1)": 54.883421200020166,
+          "c.value": 11.856485549992613,
+          "c.is_zero": 37.944610799991096,
+          "c == c": 71.89558550003312,
+          "list(Countdown())": 599.0749469997354,
+          "Vector(1000)": 2450.9234099991772,
+          "vector.total()": 6124.208079995697,
+          "complex_scale(1+2j, 3)": 61.7438416999903,
+          "Counter.zero()": 41.10643629996957
         }
       },
       "correctness": {
@@ -947,7 +1019,18 @@
         "expect_positive zero": "ok",
         "expect_positive ok": "ok",
         "expect_positive raises": "ok",
-        "expect_positive str rejected": "ok"
+        "expect_positive str rejected": "ok",
+        "vector total of zeros": "ok",
+        "vector set and total": "ok",
+        "vector get": "ok",
+        "vector out of range ignored": "ok",
+        "vector length rejected": "n/a",
+        "vector memoryview writes through": "n/a",
+        "complex round trip": "ok",
+        "complex real coerced": "ok",
+        "complex wrong type": "n/a",
+        "static method on the class": "ok",
+        "static method on an instance": "ok"
       },
       "refs": {
         "sum_floats: borrowed list": {
@@ -996,57 +1079,62 @@
       "threads": {},
       "memory": {
         "greet x2M": {
-          "peak": 32681984,
+          "peak": 35000320,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 36843520,
-          "kept": 1581056,
+          "peak": 39104512,
+          "kept": 1531904,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 42512384,
+          "peak": 44351488,
           "kept": 9998336,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 33288192,
-          "kept": 409600,
+          "peak": 35315712,
+          "kept": 413696,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 32833536,
-          "kept": 98304,
+          "peak": 35016704,
+          "kept": 102400,
           "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 33058816,
-          "kept": 200704,
+          "peak": 35000320,
+          "kept": 204800,
           "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 32960512,
-          "kept": 45056,
+          "peak": 35000320,
+          "kept": 49152,
           "leak": 0
         },
         "histogram(new 1k words) x500": {
-          "peak": 32768000,
-          "kept": 69632,
+          "peak": 35024896,
+          "kept": 77824,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 32813056,
+          "peak": 35000320,
+          "kept": 0,
+          "leak": 0
+        },
+        "Vector(1000) x500": {
+          "peak": 35000320,
           "kept": 0,
           "leak": 0
         },
         "expect_positive(-1) x500k": {
-          "peak": 32817152,
+          "peak": 35000320,
           "kept": 0,
           "leak": 0
         },
         "sum_floats(wrong elem) x200k": {
-          "peak": 32894976,
+          "peak": 35000320,
           "kept": 0,
           "leak": 0
         }

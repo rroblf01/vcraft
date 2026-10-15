@@ -1227,22 +1227,26 @@ stable ABI), and `free-threading` on anything older than 3.13.
 ## Performance
 
 The same workloads implemented with PyO3, vcraft and zig-maturin, plus pure
-Python, measured on Python 3.13, macOS arm64. Time per call, lower is better:
+Python, measured on Linux x86_64 (AMD Ryzen 5 3600), CPython 3.13, vcraft 1.2.0.
+Time per call, lower is better:
 
 | workload | PyO3 | vcraft | pure Python |
 |---|---|---|---|
-| `add(1, 2)`: call overhead | 28 ns | **23 ns** | 16 ns |
-| `greet(name)`: str in, new str out | 54 ns | **34 ns** | 33 ns |
-| `fib(25)`: pure compute | 120.2 µs | **119.4 µs** | 5.19 ms |
-| `sum_floats(100k)`: list[float] in | 456.6 µs | **133.9 µs** | 778.0 µs |
-| `Counter()`: object construction | 37 ns | **34 ns** | 38 ns |
-| `c.add(1)`: method call | 28 ns | **22 ns** | 26 ns |
-| `count_primes(1e6)`: compute + native alloc | **2.01 ms** | 3.76 ms | 41.60 ms |
+| `add(1, 2)`: call overhead | 69 ns | **66 ns** | 36 ns |
+| `greet(name)`: str in, new str out | 131 ns | **119 ns** | 69 ns |
+| `fib(25)`: pure compute | 223.5 µs | **113.0 µs** | 9.36 ms |
+| `sum_floats(100k)`: list[float] in | 900.3 µs | **247.4 µs** | 1.57 ms |
+| `Counter()`: object construction | **95 ns** | 107 ns | 92 ns |
+| `c.add(1)`: method call | **66 ns** | 79 ns | 55 ns |
+| `count_primes(1e6)`: compute + native alloc | **1.99 ms** | 2.28 ms | 93.20 ms |
 
-The vcraft wheel is the smallest of the three and its clean release build the
-fastest. Methodology, every workload, memory use and import time are in
+Method and attribute calls include vcraft's state chain: a module that uses
+`vcraft.state_at` — one subclass with an inherited field is enough — publishes it
+on every trampoline, which costs a few tens of nanoseconds a call. The vcraft
+wheel is the smallest of the three and its clean release build the fastest.
+Methodology, every workload, memory use and import time are in
 [`benchmark/README.md`](benchmark/README.md) and
-[`benchmark/results.md`](benchmark/results.md).
+[`benchmark/results-linux.md`](benchmark/results-linux.md).
 
 ---
 

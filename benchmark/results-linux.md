@@ -1,49 +1,55 @@
 Python 3.13.16 · x86_64 · Linux-6.18.56-1-lts-x86_64-with-glibc2.44
 
+Toolchain: vcraft 1.2.0 · V 36be926 · PyO3 0.29.0 · maturin 1.15.0 · zig-maturin 1.0.1 · zig 0.16.0
+
 ### Package size
 
 | | pyo3 | vcraft | zig-maturin |
 |---|---|---|---|
-| wheel | 274 KiB | 289 KiB | 1,014 KiB |
-| extension (as built) | 674 KiB | 549 KiB | 3,569 KiB |
-| extension (strip -x) | 499 KiB | 485 KiB | 590 KiB |
+| wheel | 279 KiB | 302 KiB | 1,023 KiB |
+| extension (as built) | 688 KiB | 576 KiB | 3,606 KiB |
+| extension (strip -x) | 508 KiB | 509 KiB | 598 KiB |
 | files in wheel | 6 | 5 | 4 |
-| clean release build | 9.6 s | 11.4 s | 18.1 s |
+| clean release build | 8.5 s | 7.1 s | 16.6 s |
 
 ### Speed (time per call, lower is better; best of repeats)
 
 | workload | measures | pyo3 | vcraft | zig-maturin | python |
 |---|---|---|---|---|---|
-| add | call overhead | 72 ns (1.04×) | 70 ns **(best)** | 89 ns (1.27×) | 36 ns |
-| fib(25) | pure compute, recursion | 222.1 µs (2.04×) | 108.9 µs **(best)** | 383.5 µs (3.52×) | 9.11 ms |
-| count_primes(1e6) | compute + 1 MB native alloc | 1.80 ms **(best)** | 2.16 ms (1.20×) | 2.13 ms (1.19×) | 93.82 ms |
-| sum_floats(100k) | list[float] -> native | 849.2 µs (3.56×) | 238.3 µs **(best)** | 1.19 ms (4.97×) | 1.58 ms |
-| make_range(100k) | native -> list[int] | 2.21 ms (1.00×) | 2.40 ms (1.08×) | 2.21 ms **(best)** | 2.15 ms |
-| greet | str in, new str out | 136 ns (1.18×) | 115 ns **(best)** | 221 ns (1.91×) | 69 ns |
-| describe(3) | keyword/default binding | 167 ns (1.23×) | 206 ns (1.51×) | 136 ns **(best)** | 157 ns |
-| maybe_double(21) | optional in/out | 65 ns (1.16×) | 56 ns **(best)** | 77 ns (1.36×) | 37 ns |
-| histogram(10k) | list[str] -> dict | 797.3 µs (1.40×) | 569.3 µs **(best)** | 1.84 ms (3.24×) | 592.6 µs |
-| minmax(100k) | list[int] -> tuple | 1.10 ms (1.69×) | 652.1 µs **(best)** | 1.29 ms (1.97×) | 1.90 ms |
-| reverse3([1,2,3]) | fixed array in/out | 203 ns (1.14×) | 209 ns (1.17×) | 178 ns **(best)** | 123 ns |
-| checksum(100kB) | bytes -> native, no copy | 13.4 µs **(best)** | 40.1 µs (2.99×) | 40.0 µs (2.98×) | 2.27 ms |
-| echo_bytes(100kB) | bytes in, fresh copy out | 3.7 µs (1.96×) | 1.9 µs **(best)** | 1.9 µs (1.01×) | 2.0 µs |
-| join_strings(10k) | list[str] -> native -> str | 491.8 µs (1.69×) | 290.6 µs **(best)** | 295.1 µs (1.02×) | 72.8 µs |
-| expect_positive(err) | raise + catch per call | 219 ns **(best)** | 228 ns (1.04×) | 228 ns (1.04×) | 231 ns |
-| Counter() | object construction | 102 ns (1.36×) | 105 ns (1.40×) | 75 ns **(best)** | 93 ns |
-| c.increment() | method call | 47 ns **(best)** | 82 ns (1.76×) | 60 ns (1.29×) | 55 ns |
-| c.add(1) | method call with an argument | 67 ns **(best)** | 101 ns (1.51×) | 74 ns (1.11×) | 54 ns |
-| c.value | attribute read | 47 ns (1.45×) | 72 ns (2.23×) | 32 ns **(best)** | 12 ns |
-| c.is_zero | property read | 35 ns **(best)** | 70 ns (1.98×) | 47 ns (1.31×) | 37 ns |
-| c == c | rich comparison | 47 ns (1.24×) | 38 ns **(best)** | 49 ns (1.28×) | 71 ns |
-| list(Countdown()) | construct and iterate | 345 ns (1.29×) | 638 ns (2.38×) | 268 ns **(best)** | 565 ns |
+| add | call overhead | 69 ns (1.04×) | 66 ns **(best)** | 79 ns (1.18×) | 36 ns |
+| fib(25) | pure compute, recursion | 223.5 µs (1.98×) | 113.0 µs **(best)** | 345.2 µs (3.06×) | 9.36 ms |
+| count_primes(1e6) | compute + 1 MB native alloc | 1.99 ms (1.07×) | 2.28 ms (1.23×) | 1.86 ms **(best)** | 93.20 ms |
+| sum_floats(100k) | list[float] -> native | 900.3 µs (3.64×) | 247.4 µs **(best)** | 1.27 ms (5.12×) | 1.57 ms |
+| make_range(100k) | native -> list[int] | 2.20 ms (1.02×) | 2.37 ms (1.10×) | 2.15 ms **(best)** | 2.29 ms |
+| greet | str in, new str out | 131 ns (1.10×) | 119 ns **(best)** | 220 ns (1.85×) | 69 ns |
+| describe(3) | keyword/default binding | 173 ns (1.13×) | 261 ns (1.70×) | 154 ns **(best)** | 163 ns |
+| maybe_double(21) | optional in/out | 66 ns (1.21×) | 55 ns **(best)** | 70 ns (1.27×) | 38 ns |
+| histogram(10k) | list[str] -> dict | 710.0 µs (1.18×) | 604.1 µs **(best)** | 1.84 ms (3.05×) | 605.8 µs |
+| minmax(100k) | list[int] -> tuple | 1.07 ms (1.77×) | 606.3 µs **(best)** | 1.41 ms (2.33×) | 1.91 ms |
+| reverse3([1,2,3]) | fixed array in/out | 198 ns (1.07×) | 193 ns (1.04×) | 185 ns **(best)** | 124 ns |
+| checksum(100kB) | bytes -> native, no copy | 13.3 µs **(best)** | 41.6 µs (3.11×) | 40.0 µs (3.00×) | 2.28 ms |
+| echo_bytes(100kB) | bytes in, fresh copy out | 3.8 µs (2.00×) | 2.1 µs (1.11×) | 1.9 µs **(best)** | 1.9 µs |
+| join_strings(10k) | list[str] -> native -> str | 477.8 µs (1.68×) | 328.6 µs (1.15×) | 285.0 µs **(best)** | 73.3 µs |
+| expect_positive(err) | raise + catch per call | 215 ns **(best)** | 242 ns (1.13×) | 231 ns (1.07×) | 233 ns |
+| Counter() | object construction | 95 ns (1.26×) | 107 ns (1.42×) | 76 ns **(best)** | 92 ns |
+| c.increment() | method call | 56 ns **(best)** | 65 ns (1.16×) | 61 ns (1.08×) | 53 ns |
+| c.add(1) | method call with an argument | 66 ns **(best)** | 79 ns (1.21×) | 89 ns (1.36×) | 55 ns |
+| c.value | attribute read | 45 ns (1.41×) | 53 ns (1.66×) | 32 ns **(best)** | 12 ns |
+| c.is_zero | property read | 35 ns **(best)** | 53 ns (1.51×) | 43 ns (1.20×) | 38 ns |
+| c == c | rich comparison | 48 ns (1.29×) | 37 ns **(best)** | 51 ns (1.36×) | 72 ns |
+| list(Countdown()) | construct and iterate | 343 ns (1.30×) | 542 ns (2.05×) | 265 ns **(best)** | 599 ns |
+| Vector(1000) | class with a native buffer | 219 ns **(best)** | 342 ns (1.57×) | 4.2 µs (18.99×) | 2.5 µs |
+| vector.total() | native buffer sum in V | 765 ns **(best)** | 793 ns (1.04×) | 789 ns (1.03×) | 6.1 µs |
+| complex_scale(1+2j, 3) | complex in and out | 87 ns **(best)** | 149 ns (1.70×) | — | 62 ns |
+| Counter.zero() | static method | 59 ns **(best)** | 59 ns (1.01×) | 71 ns (1.21×) | 41 ns |
 
 ### Memory
 
 | | pyo3 | vcraft | zig-maturin | python |
 |---|---|---|---|---|
-| RSS added by `import` | 952 KiB | 868 KiB | 424 KiB | 24 KiB |
-| import time (warm, median) | 0.54 ms | 0.71 ms | 0.22 ms | 0.14 ms |
-| import time (first after install) | 0.72 ms | 0.71 ms | 0.24 ms | 2.01 ms |
+| RSS added by `import` | 840 KiB | 768 KiB | 356 KiB | 16 KiB |
+| import time (warm, median) | 0.58 ms | 0.70 ms | 0.25 ms | 0.16 ms |
+| import time (first after install) | 0.84 ms | 0.67 ms | 0.25 ms | 0.19 ms |
 
 Each scenario runs twice in a fresh process. *Peak* is the process's maximum
 RSS; *kept* is what the first batch left resident after `gc.collect()`; *leak*
@@ -52,17 +58,18 @@ has plateaued.
 
 | scenario | pyo3 | vcraft | zig-maturin | python |
 |---|---|---|---|---|
-| greet x2M | 31.9 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 31.9 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 32.3 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 31.2 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
-| make_range(100k) x200 | 36.6 MiB peak · 0.9 MiB kept · 0.0 MiB leak | 39.8 MiB peak · 3.8 MiB kept · 0.5 MiB leak | 36.0 MiB peak · 1.5 MiB kept · 0.0 MiB leak | 35.1 MiB peak · 1.5 MiB kept · 0.0 MiB leak |
-| count_primes(10M) x5 | 41.7 MiB peak · 9.5 MiB kept · 0.0 MiB leak | 51.3 MiB peak · 9.6 MiB kept · 0.0 MiB leak | 41.3 MiB peak · 9.5 MiB kept · 0.0 MiB leak | 40.5 MiB peak · 9.5 MiB kept · 0.0 MiB leak |
-| sum_floats(new 10k list) x500 | 32.4 MiB peak · 0.5 MiB kept · 0.0 MiB leak | 32.9 MiB peak · 1.0 MiB kept · 0.0 MiB leak | 32.3 MiB peak · 0.5 MiB kept · 0.0 MiB leak | 31.7 MiB peak · 0.4 MiB kept · 0.0 MiB leak |
-| checksum(new 100kB) x500 | 32.0 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 32.1 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 32.0 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 31.3 MiB peak · 0.1 MiB kept · 0.0 MiB leak |
-| echo_bytes(new 100kB) x500 | 32.2 MiB peak · 0.3 MiB kept · 0.0 MiB leak | 32.1 MiB peak · 0.2 MiB kept · 0.0 MiB leak | 32.2 MiB peak · 0.2 MiB kept · 0.0 MiB leak | 31.5 MiB peak · 0.2 MiB kept · 0.0 MiB leak |
-| join_strings(new 1k strs) x500 | 31.7 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 32.1 MiB peak · 0.3 MiB kept · 0.0 MiB leak | 31.9 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 31.4 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
-| histogram(new 1k words) x500 | 32.5 MiB peak · 0.2 MiB kept · 0.0 MiB leak | 33.1 MiB peak · 1.1 MiB kept · 0.0 MiB leak | 32.1 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 31.2 MiB peak · 0.1 MiB kept · 0.0 MiB leak |
-| Counter() x1M | 31.9 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 32.5 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 31.6 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 31.3 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
-| expect_positive(-1) x500k | 31.6 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 32.1 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 31.6 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 31.3 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
-| sum_floats(wrong elem) x200k | 32.3 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 32.1 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 31.9 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 31.4 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
+| greet x2M | 34.0 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 34.0 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 33.6 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 33.4 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
+| make_range(100k) x200 | 38.8 MiB peak · 0.9 MiB kept · 0.0 MiB leak | 40.9 MiB peak · 3.8 MiB kept · 0.0 MiB leak | 37.8 MiB peak · 1.5 MiB kept · 0.0 MiB leak | 37.3 MiB peak · 1.5 MiB kept · 0.0 MiB leak |
+| count_primes(10M) x5 | 43.7 MiB peak · 9.5 MiB kept · 0.0 MiB leak | 72.0 MiB peak · 28.7 MiB kept · 0.1 MiB leak | 43.1 MiB peak · 9.5 MiB kept · 0.0 MiB leak | 42.3 MiB peak · 9.5 MiB kept · 0.0 MiB leak |
+| sum_floats(new 10k list) x500 | 34.4 MiB peak · 0.5 MiB kept · 0.0 MiB leak | 35.0 MiB peak · 0.9 MiB kept · 0.0 MiB leak | 34.1 MiB peak · 0.5 MiB kept · 0.0 MiB leak | 33.7 MiB peak · 0.4 MiB kept · 0.0 MiB leak |
+| checksum(new 100kB) x500 | 33.9 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 33.9 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 33.8 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 33.4 MiB peak · 0.1 MiB kept · 0.0 MiB leak |
+| echo_bytes(new 100kB) x500 | 34.0 MiB peak · 0.3 MiB kept · 0.0 MiB leak | 34.0 MiB peak · 0.2 MiB kept · 0.0 MiB leak | 33.8 MiB peak · 0.2 MiB kept · 0.0 MiB leak | 33.4 MiB peak · 0.2 MiB kept · 0.0 MiB leak |
+| join_strings(new 1k strs) x500 | 34.0 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 34.4 MiB peak · 0.5 MiB kept · 0.0 MiB leak | 34.2 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 33.4 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
+| histogram(new 1k words) x500 | 34.2 MiB peak · 0.2 MiB kept · 0.0 MiB leak | 35.2 MiB peak · 0.6 MiB kept · 0.4 MiB leak | 34.0 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 33.4 MiB peak · 0.1 MiB kept · 0.0 MiB leak |
+| Counter() x1M | 34.0 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 33.7 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 33.7 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 33.4 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
+| Vector(1000) x500 | 33.9 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 33.8 MiB peak · 0.0 MiB kept · 0.1 MiB leak | 33.7 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 33.4 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
+| expect_positive(-1) x500k | 33.7 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 34.1 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 33.5 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 33.4 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
+| sum_floats(wrong elem) x200k | 34.0 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 33.7 MiB peak · 0.1 MiB kept · 0.0 MiB leak | 33.8 MiB peak · 0.0 MiB kept · 0.0 MiB leak | 33.4 MiB peak · 0.0 MiB kept · 0.0 MiB leak |
 
 ### Reference retention
 
@@ -90,10 +97,10 @@ not measured here.
 
 | threads | pyo3 | vcraft | zig-maturin | python |
 |---|---|---|---|---|
-| 1 | 0.162 s (1.0×) | 0.160 s (1.0×) | 0.161 s (1.0×) | — |
-| 2 | 0.186 s (1.7×) | 0.196 s (1.6×) | 0.191 s (1.7×) | — |
-| 4 | 0.190 s (3.4×) | 0.202 s (3.2×) | 0.193 s (3.3×) | — |
-| 8 | 0.229 s (5.6×) | 0.205 s (6.2×) | 0.203 s (6.3×) | — |
+| 1 | 0.166 s (1.0×) | 0.188 s (1.0×) | 0.191 s (1.0×) | — |
+| 2 | 0.194 s (1.7×) | 0.169 s (2.2×) | 0.181 s (2.1×) | — |
+| 4 | 0.199 s (3.3×) | 0.174 s (4.3×) | 0.178 s (4.3×) | — |
+| 8 | 0.211 s (6.3×) | 0.177 s (8.5×) | 0.184 s (8.3×) | — |
 
 ### Correctness
 
@@ -204,3 +211,14 @@ not measured here.
 | expect_positive ok | ok | ok | ok | ok |
 | expect_positive raises | ok | ok | ok | ok |
 | expect_positive str rejected | ok | ok | ok | ok |
+| vector total of zeros | ok | ok | ok | ok |
+| vector set and total | ok | ok | ok | ok |
+| vector get | ok | ok | ok | ok |
+| vector out of range ignored | ok | ok | ok | ok |
+| vector length rejected | ok | ok | ok | n/a |
+| vector memoryview writes through | n/a | ok | ok | n/a |
+| complex round trip | ok | ok | n/a | ok |
+| complex real coerced | ok | ok | n/a | ok |
+| complex wrong type | ok | ok | n/a | n/a |
+| static method on the class | ok | ok | ok | ok |
+| static method on an instance | ok | ok | ok | ok |
