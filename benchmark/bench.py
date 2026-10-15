@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import gc
 import importlib
+import importlib.metadata
 import json
 import math
 import platform
@@ -32,6 +33,45 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+
+
+def _regex_version(path: Path, pattern: str) -> str:
+    import re
+
+    try:
+        match = re.search(pattern, path.read_text())
+    except OSError:
+        return "?"
+    return match.group(1) if match else "?"
+
+
+def toolchain_versions() -> dict:
+    """The tools that produced a run, for the results header.
+
+    Read from the manifests where the version is checked in (vcraft's `env.v`, the V
+    pin, PyO3's `Cargo.toml`) and from the installed packages otherwise, so a stored
+    result says which vcraft and which V it measured rather than leaving it to prose.
+    """
+    root = HERE.parent
+    versions = {
+        "vcraft": _regex_version(root / "vlib" / "vcraft_project" / "env.v",
+                                 r"pub const version = '([^']+)'"),
+        "V": _regex_version(root / "vlib" / "vcraft_project" / "toolchain.v",
+                            r"pub const v_commit = '([0-9a-f]+)'")[:7],
+        "PyO3": _regex_version(HERE / "pyo3" / "Cargo.toml",
+                               r'pyo3 = \{ version = "([^"]+)"'),
+    }
+    for name in ("maturin", "zig-maturin"):
+        try:
+            versions[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            versions[name] = "?"
+    if shutil.which("zig"):
+        out = subprocess.run(["zig", "version"], capture_output=True, text=True)
+        versions["zig"] = out.stdout.strip() or "?"
+    else:
+        versions["zig"] = "?"
+    return versions
 
 # name -> (importable module, project directory holding dist/)
 BACKENDS = {
@@ -85,6 +125,11 @@ SPEED = {
     "c.is_zero": ("c.is_zero", "property read"),
     "c == c": ("c == c", "rich comparison"),
     "list(Countdown())": ("list(m.Countdown())", "construct and iterate"),
+    # 1.2.0: a class that owns a native buffer, a static method, and a complex number.
+    "Vector(1000)": ("m.Vector(1000)", "class with a native buffer"),
+    "vector.total()": ("v.total()", "native buffer sum in V"),
+    "complex_scale(1+2j, 3)": ("m.complex_scale(1+2j, 3)", "complex in and out"),
+    "Counter.zero()": ("m.Counter.zero()", "static method"),
 }
 
 # label -> (statement run `loops` times, loops). Each runs in its own process.
@@ -106,6 +151,9 @@ MEMORY = {
     "histogram(new 1k words) x500": (
         "m.histogram(['w%03d' % i for i in range(1000)])", 500),
     "Counter() x1M": ("m.Counter()", 1_000_000),
+    # A class whose backing buffer is native and freed at dealloc: a free that is
+    # skipped, or run twice, shows up as growth over this many.
+    "Vector(1000) x500": ("m.Vector(1000)", 500),
     # The failure path allocates too: a raised exception must not keep the arguments,
     # the exception object, or the traceback. Success-only scenarios cannot see it.
     "expect_positive(-1) x500k": (
@@ -268,6 +316,29 @@ CORRECTNESS = {
     "expect_positive ok": ("m.expect_positive(41)", 41),
     "expect_positive raises": ("m.expect_positive(-1)", "ValueError"),
     "expect_positive str rejected": ("m.expect_positive('x')", "TypeError"),
+    # A class that owns a native buffer: construction from a length, writes, reads and
+    # a native sum. The memoryview write is zero-copy where the backend supports the
+    # buffer protocol, which PyO3's plain `Vec<f64>` field and pure Python do not.
+    "vector total of zeros": ("(lambda v: v.total())(m.Vector(4))", 0.0),
+    "vector set and total": (
+        "(lambda v: (v.set(0, 1.5), v.set(1, 2.5), v.total())[2])(m.Vector(4))", 4.0),
+    "vector get": ("(lambda v: (v.set(2, 9.0), v.get(2))[1])(m.Vector(4))", 9.0),
+    "vector out of range ignored": (
+        "(lambda v: (v.set(99, 1.0), v.get(99))[1])(m.Vector(2))", 0.0),
+    "vector length rejected": (
+        ("m.Vector('x')"), PerBackend({"python": "n/a", "*": "TypeError"})),
+    "vector memoryview writes through": (
+        "(lambda v: (memoryview(v).cast('d').__setitem__(0, 3.0), v.total())[1])(m.Vector(2))",
+        PerBackend({"pyo3": "n/a", "python": "n/a", "*": 3.0})),
+    # A complex number in and out. zig-maturin has no complex conversion.
+    "complex round trip": ("m.complex_scale(1+2j, 3)", PerBackend({"zig-maturin": "n/a", "*": 3 + 6j})),
+    "complex real coerced": ("m.complex_scale(2, 5)", PerBackend({"zig-maturin": "n/a", "*": 10 + 0j})),
+    # The reference is duck-typed: `'x' * 1` is a str, not an error.
+    "complex wrong type": (
+        "m.complex_scale('x', 1)", PerBackend({"zig-maturin": "n/a", "python": "n/a", "*": "TypeError"})),
+    # A static method is callable on the class and on an instance.
+    "static method on the class": ("m.Counter.zero()", 0),
+    "static method on an instance": ("m.Counter().zero()", 0),
 }
 
 # label -> (setup, target expression, call expression, loops). Each runs in its own
@@ -322,17 +393,23 @@ def worker_import(module: str) -> dict:
 def worker_speed(module: str, quick: bool) -> dict:
     m = importlib.import_module(module)
     c = m.Counter()
-    env = {"m": m, "c": c, "FLOATS": FLOATS, "BYTES": BYTES, "STRINGS": STRINGS,
+    v = m.Vector(1000)
+    env = {"m": m, "c": c, "v": v, "FLOATS": FLOATS, "BYTES": BYTES, "STRINGS": STRINGS,
            "INTS": INTS, "WORDS": WORDS}
     repeat = 3 if quick else 7
     speed = {}
     for label, (stmt, _) in SPEED.items():
-        timer = timeit.Timer(stmt, globals=env)
-        number, _ = timer.autorange()
-        if not quick:
-            number *= 2
-        best = min(timer.repeat(repeat=repeat, number=number))
-        speed[label] = best / number * 1e9  # ns per call
+        try:
+            timer = timeit.Timer(stmt, globals=env)
+            number, _ = timer.autorange()
+            if not quick:
+                number *= 2
+            best = min(timer.repeat(repeat=repeat, number=number))
+            speed[label] = best / number * 1e9  # ns per call
+        except (AttributeError, TypeError):
+            # A backend without a workload, such as zig-maturin and complex numbers.
+            # Recorded as nothing, which the table renders as n/a.
+            speed[label] = None
     return {"speed_ns": speed}
 
 
@@ -539,6 +616,9 @@ def render(results: dict) -> str:
     out = []
     env = results["environment"]
     out.append(f"Python {env['python']} · {env['machine']} · {env['platform']}\n")
+    toolchain = env.get("toolchain")
+    if toolchain:
+        out.append("Toolchain: " + " · ".join(f"{k} {v}" for k, v in toolchain.items()) + "\n")
 
     out.append("### Package size\n")
     out.append("| | " + " | ".join(native) + " |")
@@ -685,6 +765,7 @@ def main() -> int:
             "python": platform.python_version(),
             "machine": platform.machine(),
             "platform": platform.platform(),
+            "toolchain": toolchain_versions(),
         },
         "backends": {},
     }

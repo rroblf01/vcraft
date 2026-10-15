@@ -2,11 +2,18 @@ use pyo3::prelude::*;
 
 /// Benchmark workloads written in Rust.
 ///
-/// The same thirteen workloads as the vcraft and zig-maturin projects, with the same
-/// semantics and 64-bit integers throughout.
+/// The same workloads as the vcraft and zig-maturin projects, with the same semantics
+/// and 64-bit integers throughout.
 #[pymodule]
 mod bench_pyo3 {
+    use num_complex::Complex64;
     use pyo3::prelude::*;
+
+    /// A Python complex scaled by a real, in and out.
+    #[pyfunction]
+    fn complex_scale(z: Complex64, k: f64) -> Complex64 {
+        z * k
+    }
 
     /// Call overhead: two ints in, one int out.
     #[pyfunction]
@@ -186,6 +193,12 @@ mod bench_pyo3 {
             self.value == 0
         }
 
+        /// A static method: it belongs to the class but takes no instance.
+        #[staticmethod]
+        fn zero() -> i64 {
+            0
+        }
+
         fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
             other
                 .extract::<PyRef<Counter>>()
@@ -251,6 +264,37 @@ mod bench_pyo3 {
             }
             base.value += by;
             Ok(base.value)
+        }
+    }
+
+    /// A vector that owns a native `Vec<f64>`: a constructor that takes its length,
+    /// element writes, and a native sum.
+    #[pyclass]
+    struct Vector {
+        data: Vec<f64>,
+    }
+
+    #[pymethods]
+    impl Vector {
+        #[new]
+        fn new(n: usize) -> Self {
+            Vector {
+                data: vec![0.0; n],
+            }
+        }
+
+        fn set(&mut self, i: usize, x: f64) {
+            if let Some(slot) = self.data.get_mut(i) {
+                *slot = x;
+            }
+        }
+
+        fn get(&self, i: usize) -> f64 {
+            *self.data.get(i).unwrap_or(&0.0)
+        }
+
+        fn total(&self) -> f64 {
+            self.data.iter().sum()
         }
     }
 }

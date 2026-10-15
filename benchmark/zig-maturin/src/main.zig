@@ -203,10 +203,16 @@ fn counter_is_zero(self: *const Counter) bool {
     return self.value == 0;
 }
 
+// A static method: belongs to the class, takes no instance.
+fn counter_zero() i64 {
+    return 0;
+}
+
 const CounterClass = pz.PyClass(Counter, .{
     .methods = &[_]pz.PyMethodDef{
         pz.wrapMethodNamed(Counter, "increment", counter_increment),
         pz.wrapMethodNamed(Counter, "add", counter_add),
+        pz.staticMethod("zero", counter_zero),
     },
     .properties = &.{
         .{ .name = "is_zero", .get = counter_is_zero },
@@ -260,6 +266,57 @@ const BoundedCounterClass = pz.PyClass(BoundedCounter, .{
     },
 });
 
+// A vector that owns a native f64 buffer: `init(n)` allocates it, `__buffer_mut__`
+// exposes it to memoryview with no copy, and `__deinit__` frees it. The buffer is a
+// pointer and a length rather than a slice: an `extern struct` cannot hold a slice,
+// which has no guaranteed in-memory representation.
+const Vector = extern struct {
+    ptr: ?[*]f64,
+    len: usize,
+
+    pub fn init(n: i64) Vector {
+        const size: usize = if (n > 0) @intCast(n) else 0;
+        if (size == 0) return .{ .ptr = null, .len = 0 };
+        const buf = std.heap.c_allocator.alloc(f64, size) catch @panic("out of memory");
+        @memset(buf, 0);
+        return .{ .ptr = buf.ptr, .len = size };
+    }
+
+    pub fn __deinit__(self: *Vector) void {
+        if (self.ptr) |p| std.heap.c_allocator.free(p[0..self.len]);
+    }
+
+    pub fn __buffer_mut__(self: *Vector) []u8 {
+        const p = self.ptr orelse return &[_]u8{};
+        return std.mem.sliceAsBytes(p[0..self.len]);
+    }
+};
+
+fn vector_set(self: *Vector, i: i64, x: f64) void {
+    if (i >= 0 and @as(usize, @intCast(i)) < self.len) self.ptr.?[@intCast(i)] = x;
+}
+
+fn vector_get(self: *const Vector, i: i64) f64 {
+    if (i >= 0 and @as(usize, @intCast(i)) < self.len) return self.ptr.?[@intCast(i)];
+    return 0.0;
+}
+
+fn vector_total(self: *const Vector) f64 {
+    var sum: f64 = 0;
+    if (self.ptr) |p| {
+        for (p[0..self.len]) |x| sum += x;
+    }
+    return sum;
+}
+
+const VectorClass = pz.PyClass(Vector, .{
+    .methods = &[_]pz.PyMethodDef{
+        pz.wrapMethodNamed(Vector, "set", vector_set),
+        pz.wrapMethodNamed(Vector, "get", vector_get),
+        pz.wrapMethodNamed(Vector, "total", vector_total),
+    },
+});
+
 const Mod = pz.pyModule("bench_zig", .{
     .doc = "Benchmark workloads written in Zig.",
     .functions = &[_]pz.PyMethodDef{
@@ -284,7 +341,7 @@ const Mod = pz.pyModule("bench_zig", .{
         pz.pyFnNamed("join_strings", join_strings),
         pz.pyFnNamed("echo_bytes", echo_bytes),
     },
-    .classes = &[_]type{ CounterClass, CountdownClass, BoundedCounterClass },
+    .classes = &[_]type{ CounterClass, CountdownClass, BoundedCounterClass, VectorClass },
 });
 
 comptime {

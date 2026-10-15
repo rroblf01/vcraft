@@ -103,6 +103,10 @@ def echo_bytes(data):
     return bytes(memoryview(data))
 
 
+def complex_scale(z, k):
+    return z * k
+
+
 class Counter:
     def __init__(self):
         self.value = 0
@@ -118,6 +122,10 @@ class Counter:
     @property
     def is_zero(self):
         return self.value == 0
+
+    @staticmethod
+    def zero():
+        return 0
 
     def __eq__(self, other):
         if isinstance(other, Counter):
@@ -153,3 +161,20 @@ class BoundedCounter(Counter):
             raise ValueError("the counter would pass its limit")
         self.value += by
         return self.value
+
+
+class Vector:
+    def __init__(self, n):
+        self.data = [0.0] * n
+
+    def set(self, i, x):
+        if 0 <= i < len(self.data):
+            self.data[i] = x
+
+    def get(self, i):
+        if 0 <= i < len(self.data):
+            return self.data[i]
+        return 0.0
+
+    def total(self):
+        return sum(self.data)

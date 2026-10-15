@@ -1,9 +1,10 @@
 module bench_vcraft_native
 
+import math.complex
 import vcraft
 
-// The same thirteen workloads as the PyO3 and zig-maturin projects, with the same
-// semantics and 64-bit integers throughout.
+// The same workloads as the PyO3 and zig-maturin projects, with the same semantics and
+// 64-bit integers throughout.
 
 // add is call overhead: two ints in, one int out.
 @[vc_fn]
@@ -258,6 +259,61 @@ pub fn (mut c Countdown) advance() !i64 {
 	}
 	c.current--
 	return c.current + 1
+}
+
+// zero is a static method: it belongs to Counter but takes no instance.
+@[vc_static]
+pub fn Counter.zero() i64 {
+	return 0
+}
+
+// complex_scale multiplies a complex number by a real, both Python complex.
+@[vc_fn]
+pub fn complex_scale(z complex.Complex, k f64) complex.Complex {
+	return complex.complex(z.re * k, z.im * k)
+}
+
+// Vector owns a native f64 buffer: the constructor sizes it, `set`/`total` work on it
+// in place, and it is freed when the object is collected. No per-element crossing.
+@[vc_class]
+pub struct Vector {
+mut:
+	@[vc_buffer] data []f64
+}
+
+// new_vector allocates the buffer; the constructor takes its length.
+@[vc_fn]
+pub fn new_vector(n int) &Vector {
+	return &Vector{
+		data: vcraft.buffer_new_f64(n)
+	}
+}
+
+// set writes one element.
+@[vc_method]
+pub fn (mut v Vector) set(i int, x f64) {
+	if i >= 0 && i < v.data.len {
+		v.data[i] = x
+	}
+}
+
+// get reads one element.
+@[vc_method]
+pub fn (v &Vector) get(i int) f64 {
+	if i >= 0 && i < v.data.len {
+		return v.data[i]
+	}
+	return 0.0
+}
+
+// total sums the buffer in V.
+@[vc_method]
+pub fn (v &Vector) total() f64 {
+	mut sum := 0.0
+	for x in v.data {
+		sum += x
+	}
+	return sum
 }
 
 // BoundedCounter inherits Counter and refuses to pass a limit.
