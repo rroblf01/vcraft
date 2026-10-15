@@ -209,14 +209,24 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_method]` | methods         | Adds the method to the class of its receiver                |
 | `@[vc_field]`   | struct fields   | Exposes the field as an attribute of the instance           |
 | `@[vc_buffer]`  | struct fields   | A persistent native `[]T` of scalars, freed at dealloc      |
+| `@[vc_buffer_typed]` | struct fields | With `@[vc_buffer]`: expose it as a typed `memoryview`  |
 | `@[vc_property]`| methods         | Registers the method as a Python `property`                 |
 | `@[vc_base]`    | `pub struct`    | Makes the class inherit the named one                       |
 | `@[vc_ref]`     | struct fields   | Exposes the field as a strong reference to another instance  |
 | `@[vc_error]`   | `pub struct`    | Makes the struct usable as the error of a `!T` function      |
 | `@[vc_static]`  | methods         | Registers the method as a `staticmethod`                    |
+| `@[vc_classmethod]` | methods      | Registers the method as a `classmethod`                     |
+| `@[vc_len]`     | methods         | The method is `__len__` (`len(instance)`, truthiness)        |
+| `@[vc_getitem]` | methods         | The method is `__getitem__` (`instance[i]`)                  |
+| `@[vc_contains]`| methods         | The method is `__contains__` (`x in instance`)               |
+| `@[vc_eq]`      | `pub fn`        | The function is `__eq__` (`==`, `!=`)                        |
+| `@[vc_lt]`, `@[vc_le]`, `@[vc_gt]`, `@[vc_ge]` | `pub fn` | The function is the matching ordering operator |
+| `@[vc_hash]`    | `pub fn`        | The function is `__hash__`                                  |
+| `@[vc_const]`   | `pub const`     | Exposes the constant as a module attribute                  |
 | `@[vc_defaults]`| `pub fn`, methods | Default values: `@[vc_defaults: 'step=1, name="x"']`     |
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
 | `@[vc_nogil]`     | `pub fn`        | Runs the call with the GIL released                         |
+| `@[vc_memoryview]`| `pub fn`, methods | Returns a native slice as a writable `memoryview` (no copy) |
 | `@[vc_iter]`    | methods         | Makes the instance its own iterator (`__iter__`)            |
 | `@[vc_next]`    | methods         | Produces one item per call (`__next__`)                     |
 
@@ -252,15 +262,16 @@ generic value tree.
 | `(A, B, ...)`, as a result            | `tuple`                      | A multi-value return                               |
 | `voidptr`                             | any object                   | Borrowed; you own the reference                    |
 | `vcraft.PyObj` (result)               | any object                   | Owned; the reference goes to the caller            |
+| `&T`, where `T` is a `@[vc_class]`    | `T`                          | An instance reference; accepts a subclass          |
 | `void`, `!void`                       | `None`                       |                                                    |
 | `!T`                                  | `T`, or raises               | See [Errors and panics](#errors-and-panics)        |
 
 Fields of a `@[vc_class]` struct and method parameters follow the same table.
-Enums, plain structs, V function types, maps with non-string keys, nested
-composites (`?[]int`, `map[string][]int`) and class instances (`&T`) as parameters or
-results of plain functions are not supported yet; they are on the
-[roadmap](ROADMAP.md). A `@[vc_class]` is constructed from Python
-with its class, through `new_<class>` when one is declared.
+Enums, plain structs, V function types, maps with non-string keys and nested
+composites (`?[]int`, `map[string][]int`) are not supported yet; they are on the
+[roadmap](ROADMAP.md). An instance reference (`&T`) is supported; see
+[Instance references](#instance-references). A `@[vc_class]` is constructed from
+Python with its class, through `new_<class>` when one is declared.
 
 Anything not in this table is a compile-time diagnostic pointing at the exact
 file, line and column, not a runtime surprise.
@@ -405,14 +416,24 @@ registering a setter, rather than from a hand-written check per field. An
 `@[vc_property]` method becomes a read-only property, and a plain `@[vc_method]`
 method takes arguments like any other exposed function.
 
+An annotation goes on the field's own line, `@[vc_field] value int`. V also accepts an
+attribute on the line above, but vcraft reads the field's line and nothing else, so an
+`@[vc_field]` written there leaves the field unexposed. Rather than let it vanish, the
+generator warns and names the field, and still builds.
+
 The constructor runs in `tp_new`, and it may take arguments: `new_vector(4)` is called by
 `Vector(4)`. They are read from the tuple and dict Python passes `tp_new` with the same
 marshalling rules a method's parameters use, so keyword arguments and `@[vc_defaults]`
 work, and the signature reaches the `.pyi` stub as `__init__`. An argument-free
-constructor is still a `TypeError` when called with arguments, as before. A subclass runs
-its base's constructor with no arguments, so an argument-taking constructor is allowed
-only on a class whose base chain is argument-free; the generator reports the other case
-rather than guessing how to forward the arguments.
+constructor is still a `TypeError` when called with arguments, as before.
+
+A subclass constructor carries its base's parameters as well, in front of its own:
+`newstate` builds the base's half of the state first, so `tp_new` binds the base's
+parameters too and forwards them on. With `new_root(n int)` and `new_mid(m int)`,
+`Mid(10, 3)` builds `Root` with `10` and `Mid` with `3`, and a subclass with no
+constructor of its own still accepts its base's parameters (so `Mid`'s own `new_mid`
+takes only `m`). Because both sets travel in the one Python signature the subclass binds,
+they need distinct names; a shared name is reported.
 
 Docstrings reach `__doc__` on the type, its methods, its properties and its fields.
 
@@ -464,8 +485,8 @@ generator computes the address and publishes it; a method asks for the level it
 wants. Eight levels is the cap, and a deeper chain is reported as an error rather
 than silently truncated.
 
-The pointer is only valid while the method runs. It points into the state block
-the trampoline holds, which the trampoline writes back when the method returns.
+The pointer is only valid while the method runs. It points into the instance's
+inline state, which the method works on in place.
 There is nowhere to put it on the receiver: `&c` is a copy of the subclass struct
 and does not contain the base's bytes, so a method cannot tell from it whether it
 is holding the whole state or half of it.
@@ -483,6 +504,146 @@ is holding the whole state or half of it.
 'BoundedCounter(value: 5, step: 1, limit: 10)'
 >>> isinstance(b, Counter)
 True
+```
+
+### Instance references
+
+A parameter or result typed `&T`, where `T` is a `@[vc_class]`, is an **instance
+reference**: the wrapper passes the instance itself rather than marshalling a
+pointer across the boundary.
+
+A `&T` parameter accepts an instance of `T` or of a subclass, and the V function
+receives a pointer into that instance's live state, so it reads and writes the
+same bytes a method of `T` would. Passing anything else raises `TypeError`:
+
+<!-- readme-test: continue -->
+```v
+// counter_value reads any counter, including a subclass instance.
+@[vc_fn]
+pub fn counter_value(c &Counter) int {
+	return c.value
+}
+
+// pick returns the instance the pointer came from.
+@[vc_fn]
+pub fn pick(first &Counter, second &Counter) &Counter {
+	return first
+}
+```
+
+A `&T` result is handed back to Python as an instance, not a pointer. The
+returned pointer has to point into an instance the call already has — the
+receiver of a method, or one of its `&T` arguments — so the wrapper can match it
+and give Python the object that owns it:
+
+<!-- readme-test: continue -->
+```v
+// self_ref returns the receiver itself.
+@[vc_method]
+pub fn (c &Counter) self_ref() &Counter {
+	return c
+}
+```
+
+A `&T` result that points anywhere else raises `RuntimeError`: vcraft will not
+guess at an object it does not own. A plain function (no receiver) that returns
+`&T` therefore needs at least one `&T` parameter, and that is a compile-time
+diagnostic rather than a runtime surprise.
+
+### Comparisons, sequence protocols and classmethods
+
+`@[vc_eq]` and `@[vc_hash]` are a value comparison and its hash; `@[vc_lt]`, `@[vc_le]`,
+`@[vc_gt]` and `@[vc_ge]` add ordering, so `<`, `sorted()` and `heapq` work. Each is a
+free function over two state pointers, because V allows one receiver per method and an
+operator needs two operands:
+
+<!-- readme-test: continue -->
+```v
+@[vc_lt]
+pub fn counter_lt(a voidptr, b voidptr) bool {
+	mut x := Counter{}
+	mut y := Counter{}
+	vcraft.load_state(a, voidptr(&x), sizeof(Counter))
+	vcraft.load_state(b, voidptr(&y), sizeof(Counter))
+	return x.value < y.value
+}
+
+@[vc_ge]
+pub fn counter_ge(a voidptr, b voidptr) bool {
+	mut x := Counter{}
+	mut y := Counter{}
+	vcraft.load_state(a, voidptr(&x), sizeof(Counter))
+	vcraft.load_state(b, voidptr(&y), sizeof(Counter))
+	return x.value >= y.value
+}
+```
+
+`@[vc_len]`, `@[vc_getitem]` and `@[vc_contains]` fill the sequence slots, so
+`len(instance)`, `bool(instance)`, `instance[i]` and `x in instance` reach ordinary
+methods. `@[vc_classmethod]` is registered like a static method but CPython passes the
+class, so a subclass calling it sees itself. `@[vc_const]` exposes a `pub const` literal
+as a module attribute:
+
+```v
+@[vc_class]
+pub struct Range {
+mut:
+	@[vc_field] n int
+}
+
+@[vc_fn]
+pub fn new_range(n int) &Range {
+	return &Range{ n: n }
+}
+
+@[vc_method]
+@[vc_len]
+pub fn (r &Range) size() int {
+	return r.n
+}
+
+@[vc_method]
+@[vc_getitem]
+pub fn (r &Range) at(i int) !int {
+	if i < 0 || i >= r.n {
+		return vcraft.raise_domain(.index_error, 'Range index out of range')
+	}
+	return i
+}
+
+@[vc_method]
+@[vc_contains]
+pub fn (r &Range) has(x int) bool {
+	return x >= 0 && x < r.n
+}
+
+@[vc_classmethod]
+pub fn Range.starting_at(n int) int {
+	return n
+}
+
+@[vc_const]
+pub const default_range = 8
+```
+
+A V function can call back into Python with `vcraft.call(callee, args)` (borrowed
+arguments, a new reference back) or `vcraft.call_owned(callee, args)` (it releases the
+arguments), and `vcraft.getattr` / `vcraft.call_method` reach an object's methods. The
+callable usually arrives as a `voidptr` parameter:
+
+<!-- readme-test: continue -->
+```v
+@[vc_fn]
+pub fn apply(f voidptr, x int) !int {
+	args := [vcraft.to_py_int(i64(x))]
+	r := vcraft.call_owned(f, args)
+	if vcraft.error_is_set() {
+		return error('callback failed')
+	}
+	out := vcraft.from_py_int(r, 'result')!
+	r.decref()
+	return out
+}
 ```
 
 ### Reference fields and cycles
@@ -515,7 +676,7 @@ load-bearing and neither is obvious.
 
 `Py_TPFLAGS_HAVE_GC` makes the *type object itself* collectable, so CPython calls
 `tp_traverse` and `tp_clear` on the type as well as on its instances. A type's bytes after
-the header are its dict, not a state block, so both trampolines check whether they were
+the header are its dict, not V state, so both trampolines check whether they were
 handed a type and hand that case to CPython before reading anything.
 
 `PyObject_GC_UnTrack` reads a collector header that only exists on a collectable
@@ -602,7 +763,7 @@ pub fn (mut v Vector) resize(n int) ! {
 BufferError: cannot resize a buffer while a memoryview of it is open
 ```
 
-The backing is allocated with the CPython allocator, not V's, because the state block is
+The backing is allocated with the CPython allocator, not V's, because the state is
 CPython-owned memory that V's collector does not scan: a V-heap pointer kept there would
 look unreachable and be reclaimed while Python still held the object. It is therefore
 owned by hand, and the only values an `@[vc_buffer]` field may hold are the ones the
@@ -612,10 +773,63 @@ a pointer it does not own. The first `@[vc_buffer]` field of a class is the one
 read and written through methods. A class that only inherits a buffer is covered by the
 base's slot.
 
+That `memoryview` is a 1-D *byte* view by default (`format "B"`, `itemsize 1`, length in
+bytes). A `@[vc_buffer_typed]` beside `@[vc_buffer]` opts into a typed view instead: one
+item per element, with the element's own format and width. A `[]f64` then reports
+`format "d"`, `itemsize 8` and a length in elements, so `list(memoryview(x))` and
+`struct.unpack` read the values directly. Both annotations go in one block on the field's
+own line:
+
+```v
+@[vc_class]
+pub struct Samples {
+mut:
+	@[vc_buffer; vc_buffer_typed] samples []f64
+}
+```
+
 A resize refuses with `BufferError` while a `memoryview` is open, because reallocating
 moves the memory a live view still points at. A class that holds both an `@[vc_buffer]` and
 an `@[vc_ref]` is collectable and owns native memory: `tp_dealloc` releases the references
-and frees the buffers before the state block goes.
+and frees the buffers before the object goes.
+
+### Zero-copy results with `@[vc_memoryview]`
+
+`@[vc_buffer]` keeps native state *inside* an object; `@[vc_memoryview]` is its mirror
+image, applied to a function that *returns* a slice. Instead of building a Python list and
+boxing every element, the result crosses as a writable `memoryview` over the same memory,
+and the view owns the backing: it is freed when Python collects the view, through the same
+allocator. The function must therefore return a slice built by `buffer_new_*` or
+`buffer_resize_*`; an ordinary V array lives on V's heap and must never be handed over.
+
+```v
+// A ramp of doubles, returned as a writable memoryview.
+//
+// The backing comes from `buffer_new_f64`, so the memoryview owns it and frees it when
+// the view is collected. A plain `[]f64` returned here would be freed by the wrong
+// allocator and crash.
+@[vc_fn]
+@[vc_memoryview]
+pub fn ramp(n int) []f64 {
+	mut out := vcraft.buffer_new_f64(n)
+	for i in 0 .. n {
+		out[i] = f64(i)
+	}
+	return out
+}
+```
+
+```pycon
+>>> mv = m.ramp(4)
+>>> mv.format, mv.itemsize, mv.readonly
+('d', 8, False)          # writable, so writes go both ways
+>>> del mv               # frees the native backing
+```
+
+The stub says `memoryview`. `@[vc_memoryview]` combines with `@[vc_fn]` or `@[vc_method]`
+exactly as `@[vc_nogil]` does, and is refused on a `@[vc_raw]` function (raw already hands
+you the `PyObject`). The element type must be a buffer scalar -- `bool`, an integer or a
+float -- and the return type a slice or `[]u8`-like sequence of one.
 
 For state that is not a plain slice -- a handle from a C library, a struct full of
 pointers -- `vcraft.new_handle(value, destructor)` wraps a native pointer in an anonymous
@@ -1153,7 +1367,7 @@ runners are refused with a clear error.
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
-    vcraft-version: v1.2.0
+    vcraft-version: v1.3.0
     args: build --release
 ```
 
@@ -1227,24 +1441,25 @@ stable ABI), and `free-threading` on anything older than 3.13.
 ## Performance
 
 The same workloads implemented with PyO3, vcraft and zig-maturin, plus pure
-Python, measured on Linux x86_64 (AMD Ryzen 5 3600), CPython 3.13, vcraft 1.2.0.
+Python, measured on Linux x86_64 (AMD Ryzen 5 3600), CPython 3.13, vcraft 1.3.0.
 Time per call, lower is better:
 
 | workload | PyO3 | vcraft | pure Python |
 |---|---|---|---|
-| `add(1, 2)`: call overhead | 70 ns | 72 ns | 36 ns |
-| `greet(name)`: str in, new str out | 130 ns | **108 ns** | 69 ns |
-| `fib(25)`: pure compute | 226.5 µs | **111.7 µs** | 9.08 ms |
-| `sum_floats(100k)`: list[float] in | 816.6 µs | **226.3 µs** | 1.53 ms |
-| `Counter()`: object construction | **94 ns** | 106 ns | 91 ns |
-| `c.add(1)`: method call | **68 ns** | 72 ns | 55 ns |
-| `count_primes(1e6)`: compute + native alloc | **1.90 ms** | 2.10 ms | 92.30 ms |
+| `add(1, 2)`: call overhead | **71 ns** | 73 ns | 37 ns |
+| `greet(name)`: str in, new str out | 135 ns | **120 ns** | 73 ns |
+| `fib(25)`: pure compute | 237.3 µs | **112.0 µs** | 9.36 ms |
+| `sum_floats(100k)`: list[float] in | 881.1 µs | **223.3 µs** | 1.59 ms |
+| `Counter()`: object construction | 96 ns | **92 ns** | 97 ns |
+| `c.add(1)`: method call | **67 ns** | 68 ns | 59 ns |
+| `count_primes(1e6)`: compute + native alloc | **2.00 ms** | 2.22 ms | 98.07 ms |
 
-The state chain a subclass uses is published only by the trampolines that can
-observe it, so a class with no base pays nothing for it, and vcraft's attributes
-and no-argument methods are ahead of PyO3's. The vcraft wheel is the smallest of
-the three and its clean release build the fastest. Methodology, every workload,
-memory use and import time are in
+The state a subclass inherits is published only by the trampolines that can
+observe it, so a class with no base pays nothing for it; on top of that, the
+instance state now lives inside the object, so vcraft constructs objects faster
+than PyO3 and its attributes and no-argument methods are ahead too. The vcraft
+wheel is the smallest of the three and its clean release build the fastest.
+Methodology, every workload, memory use and import time are in
 [`benchmark/README.md`](benchmark/README.md) and
 [`benchmark/results-linux.md`](benchmark/results-linux.md).
 

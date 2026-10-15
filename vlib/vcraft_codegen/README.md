@@ -88,12 +88,44 @@ place as the stub a type checker reads.
 | `@[vc_fn]`     | `pub fn`        | Exports the function as a module-level callable        |
 | `@[vc_raw]`    | `pub fn`        | No conversion: `voidptr` in, `voidptr` out            |
 | `@[vc_nogil]`    | `pub fn`        | Call with the GIL released                             |
+| `@[vc_memoryview]`| `pub fn`, methods | Return a native slice as a writable `memoryview`     |
 | `@[vc_class]`  | `pub struct`    | Expose the struct as a Python type                     |
 | `@[vc_method]`| methods         | Add the method to its receiver's class                 |
 | `@[vc_field]`  | struct fields   | Expose the field as an instance attribute              |
 | `@[vc_buffer]` | struct fields   | A persistent native `[]T` of scalars, freed at dealloc  |
 | `@[vc_property]` | methods       | Register the method as a Python `property`             |
 | `@[vc_static]` | methods         | Register the method as a `staticmethod`                |
+| `@[vc_classmethod]` | methods    | Register the method as a `classmethod` (`METH_CLASS`)   |
+| `@[vc_len]`    | methods         | Fill `sq_length` (`__len__`)                            |
+| `@[vc_getitem]`| methods         | Fill `sq_item` (`__getitem__`)                          |
+| `@[vc_contains]`| methods        | Fill `sq_contains` (`__contains__`)                     |
+| `@[vc_eq]`     | `pub fn`        | Fill `tp_richcompare`'s `==`/`!=`                       |
+| `@[vc_lt]`, `@[vc_le]`, `@[vc_gt]`, `@[vc_ge]` | `pub fn` | Fill the matching ordering operator in `tp_richcompare` |
+| `@[vc_hash]`   | `pub fn`        | Fill `tp_hash`                                          |
+| `@[vc_const]`  | `pub const`     | Expose the literal as a module attribute                |
+
+## Protocols, classmethods and constants
+
+`@[vc_len]`, `@[vc_getitem]` and `@[vc_contains]` are methods that fill the `sq_*` slots
+(`link_sequences` names the trampolines, `emit_class_sequences` writes them). They are
+independent — a class may define any subset — and unlike `@[vc_iter]`/`@[vc_next]` none
+needs another. `__contains__` is the awkward one to emit: its slot returns an `int`, and
+the argument readers' error paths return a null object, so the work happens in a small
+per-class helper that returns the Python bool and a one-line slot maps it with
+`vcraft.consume_bool` (null is `-1`, `True` is `1`, `False` is `0`).
+
+The four ordering operators share `tp_richcompare` with `@[vc_eq]`. Like `@[vc_eq]` they
+are free functions over two state pointers, so `assign_operator` matches the class by the
+function's name prefix and the emitter dispatches on CPython's operator id; an operator a
+class does not define returns `NotImplemented`, which lets Python try the reflected side.
+
+`@[vc_classmethod]` is collected on V's `.fn` path (V reports `fn Class.name` as
+`Class@static@name`) and differs from `@[vc_static]` only in the method flag:
+`vcraft.meth_class` makes CPython pass the class as `self`.
+
+`@[vc_const]` is a `pub const` whose value is read from the source line at generation
+time, so it has to be a literal (`const_kind` classifies int, float, bool and str); the
+boxed value is attached in `exec` with `add_object_owned`, which steals the reference.
 
 The names carry a `vc_` prefix rather than a namespace because **V rejects two
 annotations that share one**. `@[vc.fn]` and `@[vc.raw]` on the same declaration is
@@ -108,14 +140,68 @@ than a failed build.
 `new_<Class>` is the class's `tp_new`. When it declares parameters, `tp_new` binds the
 positional tuple and the keyword dict CPython passes there with `vcraft.bind_new_args`,
 reads each parameter exactly as a method reads a vectorcall argument, and passes them to
-the constructor. A subclass builds its base's half with no arguments, so a class whose
-base chain has an argument-taking constructor is refused with a diagnostic.
+the constructor.
+
+A subclass's state is built base first, so its `tp_new` binds the base's parameters too
+and `newstate` forwards them: `Class.newstate_params` is the base's list followed by the
+class's own, and `base_ctor_count` says where the split is. `newstate` hands the leading
+`base_ctor_count` to the base's state constructor and the rest to the class's `new_*`
+function, which therefore declares only the class's own parameters. Both sets travel in
+the one Python signature the subclass binds, so a name shared by the base and the
+subclass is a diagnostic.
+
+`tp_new` is written for the common positional call. Its argument slots are a fixed array
+on the stack (`mut bound := unsafe { [N]voidptr{} }`, which V lowers to `void* bound[N]`),
+not a `[]voidptr{len: ...}` slice the collector has to allocate, and the parameter-name
+and optional arrays are module-level globals (`emit_bind_globals`, the same ones a
+function uses) rather than literals rebuilt on every construction. A base-less class's
+`newstate` returns the constructor's value directly, so the state is not zeroed and copied
+twice.
+
+A field annotation is read from the field's own line; V also accepts one on the line
+above, where it would be silently ignored. `collect_fields` warns for a stray
+`@[vc_field]`/`@[vc_ref]`/`@[vc_buffer]` there and names the field.
 
 A `@[vc_buffer]` field is a `[]T` of scalars. The generator emits its free into the same
 `tp_dealloc` that releases the reference fields, installs the buffer protocol over the
 class's first such field (its own, not an inherited one), and prints its length in the
 repr rather than its contents. The backing belongs to the runtime's `buffer_new_*`
 helpers: only their values may be stored in such a field.
+
+`@[vc_buffer_typed]`, written beside `@[vc_buffer]` and only accepted with it, makes that
+buffer's `memoryview(instance)` a typed view (`emit_class_buffer_slots` calls the
+runtime's `buffer_fill_typed` with the element's `buffer_kind` and width) instead of the
+default byte view. The two annotations share one `@[...]` block with a `;`, which
+`parse_attr_names` splits on along with `,` and `:`.
+
+`@[vc_memoryview]` is the return-side counterpart: a modifier on a `@[vc_fn]` or
+`@[vc_method]` whose result is a slice of scalars. The generator emits
+`vcraft.buffer_export_<T>(result)` instead of boxing the elements, so the caller gets a
+`memoryview` over the same memory and the stub and signature say `memoryview`. It is
+refused on `@[vc_raw]`, and on a result that is not a `.seq` or `.bytes` of a buffer
+scalar.
+
+## Instance references
+
+A parameter or result typed `&T`, where `T` is a `@[vc_class]`, is resolved by
+`link_instances`, which runs after `link_bases` has ordered the classes and before the
+`new_*` functions are dropped from `p.funcs` (so a constructor parameter can be a `&T`
+too). `link_instance_params` sets `instance_target`, `instance_handle` and
+`instance_offset` on the `Param`; `link_instance_result` sets the matching fields on the
+`Func`. A `&T` whose `T` is not a class is a diagnostic here, not in `validate`:
+`validate` leaves a `&T` alone because whether it names a class cannot be known until
+every class has been collected.
+
+`instance_layout` gives the offset as the immediate base's generated `sizeof_*`, not the
+sum of every ancestor: the state nests (`CState { base BState; self C }`), so a class's
+own struct sits exactly one base-state into the object, whatever class the instance
+really is.
+
+`param_reader` reads a `&T` with `vcraft.from_py_instance`, keeping the borrowed object
+in `arg<i>_obj` so a result of the same call can be resolved against it;
+`instance_result_expr` builds the candidate list from the receiver and those objects and
+calls `vcraft.instance_ref`. A plain function (no receiver) whose result is `&T` with no
+`&T` parameter has nothing to resolve against and is refused.
 
 ## What the generator refuses
 

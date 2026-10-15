@@ -1,103 +1,95 @@
-# Roadmap to 1.0.0
+# Roadmap
 
-1.0.0 is the next release. It promises stability: from 1.0 on, the annotation
-vocabulary, the `vcraft.toml` keys and the CLI change only with a deprecation
-period, and every claim in the documentation is backed by a test.
+vcraft reached 1.0 and kept the promise that came with it: the annotation vocabulary,
+the `vcraft.toml` keys and the CLI change only with a deprecation period, and every claim
+in the documentation is backed by a test. Every release since (1.1, 1.2, 1.3) has only
+added to that surface. This file tracks what is left.
 
-So the line between 1.0 and 1.x is drawn by what cannot change after the promise: the
-public surface, and the conversions and calling conventions it fixes. Features that
-only add to it can arrive in 1.1, 1.2... without breaking anyone.
+Each item lands with its tests and a changelog entry, and is checked off here when it
+does.
 
-Each item lands with its tests and a changelog entry under `[Unreleased]`, and is
-checked off here when it does.
+## Reaching V's ceiling
 
-## Required for 1.0
+vcraft's per-call cost is close to PyO3's; what remains is V's own output, the collector,
+and a few things vcraft still owns.
 
-### Surface to freeze
-
-- [x] **API review and freeze.** `@[vc_gil]` became `@[vc_nogil]`, `@[vc_methods]`
-      became `@[vc_method]`, build settings moved into `[build]`, classifiers became
-      `classifiers = [...]`; the old forms warn until 2.0. Policy: README, *Stability*.
-- [x] **Keyword arguments and defaults** for every function and method: any
-      parameter by name, `?T` optional, `@[vc_defaults]` for the rest.
-- [x] **`?T`, `map[string]T`, multi-value results and `[N]T`** of scalars and
-      strings, as parameters and results (a tuple only as a result).
-- [x] **Migration guide** from 0.x: [MIGRATING.md](MIGRATING.md).
-
-### Correctness
-
-- [x] **Threads.** Extensions can be called from any thread: every generated entry
-      point registers the calling thread with V's collector, and unregisters it on
-      exit. Covered by the CLI suite and the free-threaded CI job.
-- [x] **The documentation only promises what works**, and every row of the type table
-      is built and round-tripped in the CLI suite.
-- [x] **README examples** are built in CI (`tests/docs/test_readme.py`).
-- [x] **Leak checks in CI** (`tests/memory/test_leaks.py`).
-- [x] **Sanitizers in CI** (`scripts/run-sanitized.sh`, ASan and UBSan).
-- [x] **Fuzzed conversions in CI** (`tests/fuzz/test_fuzz.py`).
-- [x] **Allocation failure raises MemoryError.** Out of reach: an allocation the
-      system grants and cannot back is the OOM killer's, as for pure Python.
-- [x] **Only `PyInit_<module>` is exported** from Linux extensions, on glibc and musl.
-
-### Platforms and toolchain
-
-- [x] **macOS runners on `macos-26`**, off the deprecated `macos-14`.
-- [ ] **Linux aarch64 and musl green in CI.** The cells exist (`ubuntu-24.04-arm`,
-      and the suites inside the musllinux image); checked off once a run is green.
-- [x] **Python 3.15**: into `supported_pythons`, the CI matrix proper, the generated
-      matrix and the classifiers, after its final release.
-- [x] **V in one command.** `vcraft toolchain install`; V pinned to `36be926`.
-- [x] **Windows: decided.** Out of scope for 1.x; see [After 1.0](#after-10).
-
-### Release hygiene
-
-- [x] **Actions off Node 20**, each moved to its first Node 24 major, in our
-      workflows, the action and the workflow `vcraft generate-ci` writes; the CLI suite
-      refuses a Node 20 major anywhere.
-- [x] **The action's V cache keyed per runner image** (`ImageOS`/`ImageVersion`).
-- [x] **`SECURITY.md`**, and PyPI provenance attestations confirmed on every published
-      file.
-- [x] **Benchmark re-run** on Linux: thread registration costs nothing measurable;
-      keywords cost ~5 ns, as in PyO3; a per-call allocation found on the way is gone.
-- [x] **Images re-released** for 1.0 with the new V pin, and the musl CI job moved to
-      them.
+- [x] **Inline instance state.** The state lives inside the object, after the PyObject
+      header, so construction pays one allocation instead of two and a method follows no
+      pointer. Construction is ~13% faster and method and attribute access ~5–8%.
+      Shipped in 1.3.0.
+- [x] **A constructor that fails no longer leaks the object.** `tp_new` releases the
+      half-built instance when the user's constructor raises or panics. Shipped in 1.3.0.
+- [x] **Buffer export.** Returning memory as a `memoryview` without a copy, from a
+      function or a method, not only through `memoryview(instance)` on a class. Shipped in
+      1.3.0 as `@[vc_memoryview]`.
+- [x] **Call-path allocations.** A construction no longer builds the parameter-name and
+      optional arrays as literals or puts the argument slots on the collector's heap, a
+      base-less `newstate` no longer copies twice, `tp_iternext` checks for a pending
+      exception once, and an exception is raised without a NUL-terminated copy of its
+      message. `Vector(1000)` 1.23×→1.17× PyO3, `Vector(1)` 1.47×→~1.10×,
+      `list(Countdown())` 1.27×→1.19×, `expect_positive(err)` now ahead. Shipped in
+      1.3.0.
+- [ ] **Byte loops and array lowering.** `checksum` over `bytes` is ~3× PyO3 and
+      `count_primes`/`make_range` ~1.1–1.2×: V emits `array.get` (non-inline, bounds-checked)
+      for `for x in arr` and `arr[i]`, does not honor `@[direct_array_access]` in `for in`,
+      and does not take the scalar `<<` fast path for a local slice, and gcc does not
+      vectorize the byte-widening sum. All of it is V's C codegen, not vcraft, and none of
+      it is reachable from the runtime. Reported upstream in
+      [`benchmark/V_UPSTREAM.md`](benchmark/V_UPSTREAM.md) with the generated C and the
+      assembly; `@[direct_array_access]` on `count_primes` alone closes that row.
+- [ ] **Boehm retention.** vcraft keeps its collector heap (`count_primes` leaves
+      19.6 MiB against PyO3's 9.5), plateauing, never leaking. `gc-free-space-divisor` and
+      `GC_set_force_unmap_on_gcollect` were measured in 1.3.0 and do not move it: the
+      retained memory is live between batches, or free but not collected because nothing
+      allocates after the batch. Structural until V exposes a knob.
 
 ## In 1.x
 
-Additions that do not change anything 1.0 promises.
+Additions that do not change anything 1.x promises.
 
 - [x] **Persistent native buffers:** a `@[vc_buffer]` field holds a `[]T` of scalars for
       the object's lifetime, freed at dealloc and exposed through the buffer protocol.
 - [x] **Constructors with arguments:** `new_<class>` may take parameters, bound in
       `tp_new` with the same marshalling rules as a method.
-- [ ] **More types:** enums, plain structs, maps with non-string keys, nested
-      composites, and class instances (`&T`) in plain functions.
-- [ ] **Callbacks:** calling a Python callable from V.
-- [ ] **Class protocols:** `__len__`, `__getitem__`, `__contains__`, ordering
-      comparisons, numeric operators, `classmethod`, module-level constants.
-- [ ] **Buffer export:** returning memory as a `memoryview` without a copy.
+- [ ] **More types:** enums, plain structs, maps with non-string keys and nested
+      composites. Class instances (`&T`) as parameters and results shipped in 1.3.0.
+- [x] **Callbacks:** `vcraft.call`, `call_owned`, `getattr` and `call_method` call a
+      Python callable from V. Shipped in 1.3.0.
+- [x] **Class protocols:** `@[vc_len]`, `@[vc_getitem]`, `@[vc_contains]`, the ordering
+      operators `@[vc_lt]`/`vc_le`/`vc_gt`/`vc_ge`, `@[vc_classmethod]` and
+      `@[vc_const]` module constants. Shipped in 1.3.0.
+- [ ] **Numeric operators:** `__add__`, `__mul__` and the rest. They do not fit the
+      `@[vc_eq]`/`@[vc_lt]` shape and need a design: an operator function takes two state
+      pointers, so a mixed operand (`counter * 2`) has no state to hand over, the same
+      slot is called with the operands swapped for the reflected case (`2 * counter`), and
+      a result that is a *new* instance is not one of the operands, which is exactly what
+      an instance-reference result refuses. Not a 1.3.0 item.
+- [x] **Buffer export:** returning memory as a `memoryview` without a copy (see above).
 - [ ] **Subinterpreters:** multi-phase initialisation (PEP 489) for every build.
 - [ ] **V without building it:** a prebuilt V for each supported platform (as
       `ziglang` ships Zig on PyPI), so not even the five-minute build is needed.
 - [x] **Threaded workloads in the benchmark**, against PyO3's `allow_threads`: an
       `lcg` loop from 1 to 8 threads, with the GIL released on all three backends.
-- [ ] **Byte loops:** `checksum` is 3× PyO3; report the array lowering to V upstream
-      and work around it in the runtime where possible.
 - [ ] **Documentation site:** a user guide and a reference split out of the README.
 - [ ] **A real project** published to PyPI with vcraft, as the reference example.
 
+## Platforms and toolchain
+
+- [ ] **Linux aarch64 and musl green in CI.** The cells exist (`ubuntu-24.04-arm`, and
+      the suites inside the musllinux image); checked off once a run is green.
+
 ## Outside our control
 
-- **A real V release.** vcraft pins a V commit because no release is new enough;
-  once V publishes one newer than 0.5.2, vcraft depends on it instead. Not a 1.0
-  blocker: `vcraft toolchain install` already hides the pin from users.
+- **A real V release.** vcraft pins a V commit because no release is new enough; once V
+  publishes one newer than 0.5.2, vcraft depends on it instead. Not a blocker:
+  `vcraft toolchain install` already hides the pin from users.
 
-## After 1.0
+## After 1.x
 
 Decided against for 1.x, written down so the decision can be revisited with its reasons.
 
-- **Windows.** vcraft quotes every compiler argument for a POSIX shell, its build
-  scripts are bash, the action refuses Windows runners, and no Windows wheel has ever
-  been built. Supporting it means a cmd/PowerShell-safe build driver, MSVC or MinGW
-  with V, `.pyd` naming and a CI job, which would delay 1.0 considerably. Until then
-  the README and `vcraft build` say plainly that Windows is not supported.
+- **Windows.** vcraft quotes every compiler argument for a POSIX shell, its build scripts
+  are bash, the action refuses Windows runners, and no Windows wheel has ever been built.
+  Supporting it means a cmd/PowerShell-safe build driver, MSVC or MinGW with V, `.pyd`
+  naming and a CI job. Until then the README and `vcraft build` say plainly that Windows
+  is not supported.

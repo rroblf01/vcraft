@@ -7,6 +7,120 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-15
+
+### Added
+
+- **Instance references: a `&T` parameter or result passes the instance itself.** A
+  parameter typed `&T`, where `T` is a `@[vc_class]`, accepts an instance of `T` or of a
+  subclass and hands the V function a pointer into that instance's live state, so it reads
+  and writes the same bytes a method would; passing anything else raises `TypeError`. A
+  `&T` result is handed back to Python as the instance the pointer belongs to, matched by
+  address against the receiver and the `&T` arguments of the call, and a pointer into
+  anything else raises `RuntimeError` rather than guessing. A plain function returning `&T`
+  therefore needs a `&T` parameter to resolve against, which is a diagnostic; the stub and
+  `__text_signature__` name the class, and a constructor may take instance references too.
+  The offset is the immediate base's state size, computed from the layout the generator
+  emitted rather than read from the type object.
+- **Class protocols: `len()`, `obj[i]`, `in`, ordering and classmethods.** `@[vc_len]`,
+  `@[vc_getitem]` and `@[vc_contains]` fill CPython's `sq_length`, `sq_item` and
+  `sq_contains`, so `len(instance)` and `bool(instance)`, `instance[i]` and
+  `x in instance` reach ordinary methods; unlike the `@[vc_iter]`/`@[vc_next]` pair the
+  three are independent and a class may define any subset. `@[vc_lt]`, `@[vc_le]`,
+  `@[vc_gt]` and `@[vc_ge]` join `@[vc_eq]` in `tp_richcompare`, so `<`, `sorted()` and
+  `heapq` work, and an operator a class does not define still returns `NotImplemented`.
+  `@[vc_classmethod]` registers a `fn Class.name` with `METH_CLASS`, so CPython passes the
+  class and a subclass calling it sees itself. Each is validated at generation time: a
+  `__len__` with arguments, a non-integer index, a `__contains__` that is not a bool, and
+  a second operator of the same kind are diagnostics.
+- **Module-level constants.** `@[vc_const]` on a `pub const` whose value is an int, a
+  float, a bool or a string literal exposes it as a module attribute of the same name,
+  declared in the `.pyi` too. The value is read at generation time, so anything else is a
+  diagnostic rather than glue that does not compile.
+- **Callbacks: calling Python from V.** `vcraft.call(callee, args)` runs a Python callable
+  with borrowed positional arguments and returns a new reference, `vcraft.call_owned`
+  releases arguments built for the call, and `vcraft.getattr` / `vcraft.call_method` reach
+  an object's methods. The callee is a `voidptr` (a `@[vc_raw]` parameter, or a `PyObj`
+  field). Re-entry is safe: the per-thread state chain is restored around each trampoline,
+  and a Python exception from the callback is a pending exception the trampoline returns
+  null for.
+- **`@[vc_memoryview]` returns a slice as a writable `memoryview`.** A `@[vc_fn]` or
+  `@[vc_method]` that returns a slice of buffer scalars (`bool`, an integer or a float)
+  now hands it to Python as a `memoryview` over the same memory instead of a list of boxed
+  elements. The function must return a native-backed slice -- built by `buffer_new_*` or
+  `buffer_resize_*` -- because the view takes ownership and frees the backing through the
+  same allocator when Python collects it; an ordinary V array would be freed by the wrong
+  allocator. The element type sets the view's `format` and `itemsize`, the view is
+  writable, and the `.pyi` stub and `__text_signature__` say `memoryview`.
+- **A base constructor may take arguments, and a subclass forwards them.** A `new_<class>`
+  on a base used to be limited to no parameters, because `newstate` built the base's half
+  with no arguments and a subclass had nowhere to get them. A subclass's `tp_new` now
+  binds the base's parameters too, and `newstate` forwards the leading ones to the base's
+  constructor and hands the rest to the subclass's own: `Mid(10, 3)` builds `Root` with
+  10 and `Mid` with 3, and a subclass with no constructor of its own still accepts its
+  base's parameters. A parameter name shared by the base and the subclass is reported,
+  since both travel in the one Python signature the subclass binds.
+- **A field annotation on the line above the field is reported.** A field annotation
+  belongs on the field's own line (`@[vc_field] value int`). V also accepts an attribute
+  on the line above, where `@[vc_field]`, `@[vc_ref]` and `@[vc_buffer]` are silently
+  dropped and the field is left unexposed; the generator now warns and names the field,
+  and still builds.
+- **`@[vc_buffer_typed]` exposes a native buffer as a typed `memoryview`.** Written beside
+  `@[vc_buffer]` (in one block: `@[vc_buffer; vc_buffer_typed]`), it changes what
+  `memoryview(instance)` reports from the default 1-D byte view (`format "B"`, `itemsize`
+  1) to a typed one: format and itemsize from the element type, one item per element. A
+  `[]f64` reports `format "d"` and `itemsize 8` with a length in elements, so
+  `list(memoryview(x))` and `struct.unpack` read the values directly. The annotations are
+  opt-in and the default is unchanged.
+
+### Changed
+
+- **The instance state lives inside the object.** `tp_basicsize` is now the PyObject
+  header plus the class's state struct, laid out inside the object, instead of a header
+  plus a pointer to a separate `PyObject_Malloc` block. A fresh instance pays one
+  allocation instead of two, a method reaches the state without following a pointer, and
+  a live instance is smaller by the second block's allocator overhead. On the benchmark,
+  `Counter()` drops ~106 → ~100 ns and `Vector(1000)` ~306 → ~290; a controlled
+  before/after finds construction ~13% faster and method and attribute access ~5–8%
+  (`c.value`, `c.increment`, `c.set_step`, a subclass property). `PyType_GenericAlloc`
+  zeroes the state, so an instance a Python subclass produced without running a vcraft
+  constructor still reads as the V zero value, and the per-trampoline "no state" branch
+  is gone. The 16-byte GIL header and the 32-byte free-threaded one are both handled,
+  since the offset comes from the interpreter.
+- **The state is one contiguous region, not a block behind a pointer.** `storage_of`
+  names it, `instance_storage` returns it, and `class_dealloc` no longer frees it
+  separately: `tp_free` releases the whole object. `instance_alloc`, `instance_free` and
+  `instance_set_storage` are gone, along with the shim they wrapped.
+- **A wrapper no longer allocates to report an exception.** `set_error` raised with
+  `PyErr_SetString`, which needs a NUL-terminated C string, so every error copied the V
+  string into a fresh buffer first: one malloc, one copy, one free, and a `strlen` inside
+  CPython, on every failure. The message now goes across as a pointer and its length
+  (`PyUnicode_FromStringAndSize` + `PyErr_SetObject`, a new `vpy_set_error_utf8` shim), and
+  the copy and the free are gone.
+- **A construction allocates nothing for its parameter names or slots.** `tp_new` built
+  the parameter-name and optional arrays as literals -- `new_array_from_c_array` on every
+  `Class(...)` -- and put the argument slots in a heap slice. The names are now a
+  module-level global (as they already were for a function), and the slots are a fixed
+  array on the stack (`unsafe { [N]voidptr{} }`, which V lowers to `void* bound[N]`), so a
+  positional construction allocates neither. Together with the removal of the extra copy in
+  a base-less `newstate`, `Vector(1000)` falls from 1.23× PyO3 to 1.17× and `Vector(1)`
+  from 1.47× to ~1.10× on the benchmark.
+- **`tp_iternext` checks for a pending exception once, not twice.** The `!T` branch and the
+  shared tail each emitted an `error_is_set` after the call, so every item of an iterator
+  paid two `PyErr_Occurred`. `list(Countdown())` falls from ~1.27× PyO3 to ~1.19×.
+
+### Fixed
+
+- **A class whose constructor failed leaked the object.** `tp_new` allocates the object
+  with `tp_alloc` and owns it until it returns it; when the user's constructor raised --
+  a Python exception set through `raise`, or a panic -- vcraft returned nil without
+  releasing it, leaking the object on every failed construction. It now decrefs the
+  half-built instance, which runs the generated `tp_dealloc` and frees whatever the
+  constructor had already stored, and does the same when a panic unwinds through
+  `tp_new`. The state is zeroed before the constructor runs, so the dealloc is safe on
+  the panic path. Covered by a new memory scenario that builds and drops a failing
+  constructor 50,000 times without growth.
+
 ## [1.2.0] - 2026-10-14
 
 ### Added

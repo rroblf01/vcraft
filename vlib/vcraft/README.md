@@ -193,6 +193,13 @@ it work: `raise_from_error` used to overwrite whatever `raise_domain` had set, w
 turned every domain failure back into a RuntimeError and hid the bug the mechanism
 was added to fix.
 
+A message reaches CPython as a pointer and its length. `PyErr_SetString` wants a
+NUL-terminated C string, and a V string has no terminator, so `set_error` used to copy
+the message into a fresh buffer first: a malloc, a copy, a free, and a `strlen` inside
+CPython, on every exception. `vpy_set_error_utf8` builds the `PyUnicode` from the length
+and hands it to `PyErr_SetObject`, so none of that happens. Exception-heavy calls feel it:
+`expect_positive` under a `try` went from behind PyO3 to ahead of it.
+
 ## Classes: three things that cost an afternoon each
 
 A class is a heap type from `PyType_FromSpec` plus a block of memory holding the V
@@ -279,18 +286,21 @@ once identity is added.
 
 ## Class state
 
-The state block is allocated with `PyObject_Malloc` and freed in `tp_dealloc`. Only
-scalars may live in it. A V `string` is a pointer into V's heap, and V's collector
-does not scan memory CPython allocated, so the string would be reclaimed while
-Python still holds it. A class that needs strings marshals them through a method.
+The state lives inside the object, right after the PyObject header, so `tp_basicsize`
+is the header plus the class's state struct and no separate allocation or pointer is
+needed. `PyType_GenericAlloc` zeroes that memory, and `tp_free` releases the whole
+object. Only scalars may live in the state. A V `string` is a pointer into V's heap,
+and V's collector does not scan memory CPython allocated, so the string would be
+reclaimed while Python still holds it. A class that needs strings marshals them
+through a method.
 
 ## Persistent native buffers
 
 A `@[vc_buffer]` field is the exception to "scalars only", and it is a narrow one: a
 `[]T` of scalars whose backing is allocated with the CPython allocator and owned by hand.
-The header of the slice still travels in the state block, where V's collector cannot see
-it; the backing it points at must not be in V's heap, or the pointer would look
-unreachable and be reclaimed while Python held the object.
+The header of the slice still travels in the state, where V's collector cannot see it;
+the backing it points at must not be in V's heap, or the pointer would look unreachable
+and be reclaimed while Python held the object.
 
 `vcraft.buffer_new_*` allocates that backing with a small header of its own: the count of
 open memoryviews, then the capacity in bytes. The slice it returns is the only kind of
@@ -300,12 +310,36 @@ about the header and is a no-op on a nil pointer. Because the count is in the he
 the memory a live `Py_buffer` still points at.
 
 The buffer protocol itself is two type slots, `Py_bf_getbuffer` and `Py_bf_releasebuffer`,
-which `PyType_FromSpec` routes into `tp_as_buffer`. `bf_getbuffer` fills the `Py_buffer`
-with `PyBuffer_FillInfo`, which takes a reference on the exporter and records it in the
-view; that reference, given back when the memoryview is collected, is the whole reason
-`memoryview(instance)` is sound where `PyMemoryView_FromMemory` is not -- the latter does
-not keep the owner alive. Only the class's first own buffer gets the slots; a class that
-merely inherits one is covered by the base through the type hierarchy.
+which `PyType_FromSpec` routes into `tp_as_buffer`. `bf_getbuffer` takes a reference on the
+exporter and records it in the view; that reference, given back when the memoryview is
+collected, is the whole reason `memoryview(instance)` is sound where
+`PyMemoryView_FromMemory` is not -- the latter does not keep the owner alive. Only the
+class's first own buffer gets the slots; a class that merely inherits one is covered by the
+base through the type hierarchy.
+
+By default the view is filled with `PyBuffer_FillInfo`, a 1-D byte view (`format "B"`,
+`itemsize 1`). A `@[vc_buffer_typed]` field calls `buffer_fill_typed` instead, which fills
+the `Py_buffer` by hand the way the exporter below does -- `itemsize` and `format` from the
+element, one item per element -- through `vpy_buffer_fill_typed` in `c/shim.c`. Both take
+the same reference on the exporter and are written to `view->obj` the same way.
+
+### Exporting a buffer as a memoryview
+
+`buffer_export_*` is the other direction, for a function that returns a slice rather than
+storing one. It wraps a native-backed slice in a heap type, `vcraft._BufferExport`, whose
+`bf_getbuffer` fills the view and whose finalizer frees the backing. The type is built once
+with `PyType_FromSpec` in `c/shim.c` rather than as a static `PyTypeObject`, so it compiles
+under the limited API, and the instance carries the data, the owner base and the element
+kind as plain fields. `bf_getbuffer` fills the `Py_buffer` by hand instead of with
+`PyBuffer_FillInfo`, because the format has to follow the element size (`b/h/i/q`, `f/d`,
+`?`); the view is writable and takes a reference on the exporter.
+
+There is no count of open views here, unlike the `@[vc_buffer]` path: the backing is owned
+outright by the exporter, not shared with a V object, so the finalizer frees it once
+through the same CPython allocator that `buffer_new_*` used. `buffer_export_owner` recovers
+the base from the data pointer and the shim frees with `PyObject_Free`. The generator turns
+`@[vc_memoryview]` on a slice-returning function into a call to
+`buffer_export_<T>(result)`, whose `.ptr` is the `PyObject *` the trampoline returns.
 
 ## Capsules
 
@@ -318,13 +352,14 @@ with the capsule object rather than the stored pointer, so the destructor has to
 
 ## Inherited state is published, not reachable from the receiver
 
-A subclass's state block is the base's state followed by the subclass's own struct. V
-copies a receiver in before a method call and out after it, so a method of a subclass is
-handed a copy of the subclass struct, and the base's bytes are not in it. `&c` is
-therefore not the address of the instance's state, and there is no way for a method to
-tell from the receiver whether it holds the whole state or half of it.
+A subclass's state is the base's state followed by the subclass's own struct, all in
+the one object. V copies a receiver in before a method call and out after it, so a
+method of a subclass is handed a copy of the subclass struct, and the base's bytes are
+not in it. `&c` is therefore not the address of the instance's state, and there is no
+way for a method to tell from the receiver whether it holds the whole state or half of
+it.
 
-So every generated trampoline publishes the block it loaded, plus one pointer per
+So every generated trampoline publishes the state it loaded, plus one pointer per
 generation above the class it belongs to, and a method asks for the level it wants:
 
 ```v
@@ -356,6 +391,28 @@ that publishes the chain at all.
 module, for constraint 4 above: no forward declaration is emitted for a generic. The cast
 is what is left, and it costs the reader one `unsafe`.
 
+## Instance references
+
+A `&T` parameter and a `&T` result both cross the boundary as the instance
+itself, and both lean on the layout above: the class's own struct sits exactly one
+base-state into the object, so the offset is the immediate base's `sizeof_*`
+helper, which the generator sums into the call rather than reading `tp_basicsize`
+(which the limited API hides).
+
+`from_py_instance` checks `is_instance_of` and returns `storage_of(obj)` plus that
+offset, so a `&Base` parameter accepts a subclass instance and lands on the base
+half of its state.
+
+`instance_ref` is the harder direction. The V function returns a bare pointer and
+CPython needs the object that owns it, so the pointer is matched by address
+against the receiver and the `&T` arguments of the call -- the only instances a
+result can legitimately point at -- and the one that matches is returned with a
+new reference. A pointer that matches nothing raises `RuntimeError` rather than
+being guessed at, because handing CPython an object it does not own corrupts the
+interpreter. The match is an equality of `storage_of(candidate) + offset` against
+the pointer, which is why the offset has to be right: one base too far would match
+a different object, or nothing.
+
 ## Cycle collection
 
 A type holding references to other objects needs three things from CPython: the
@@ -364,7 +421,7 @@ that lets it go. Two of them have a trap that costs an afternoon each.
 
 **The type object is collectable too.** The flag marks the type, not just its instances,
 so CPython calls `tp_traverse` and `tp_clear` on the type itself. The bytes after a type's
-header are its dict, not a state block, so a trampoline that reads them as one sends the
+header are its dict, not V state, so a trampoline that reads them as one sends the
 collector into whatever the dict points at. `is_type_object` tells the two apart and
 hands the type case to CPython's own implementation of `type`.
 
@@ -453,6 +510,27 @@ which is the one field a slice exposes for exactly this.
 side effects; `@[vc_next]` produces one item per call and a V error ends it. The two
 are required together, because each half alone compiles and then fails at the call
 with nothing pointing at the missing annotation.
+
+## The sequence slots are independent
+
+`tp_iter`/`tp_iternext` are a pair, but `sq_length`, `sq_item` and `sq_contains` are not:
+a class may fill any subset, and none of them needs another. `sq_length` returns a
+`Py_ssize_t` (CPython raises the ValueError for a negative one itself), `sq_item` boxes a
+method result like any other, and `sq_contains` returns `1`/`0`/`-1`. The last is the
+awkward one: its argument readers signal failure by returning a null object, which an
+`int`-returning function cannot do, so the read and the call happen in a per-class helper
+that returns the Python bool and `consume_bool` maps it (`-1` for null, after releasing
+the object).
+
+## Calling back into Python
+
+`vcraft.call(callee, args)` and `vcraft.call_method(obj, name, args)` run a Python
+callable from inside a V function. The arguments are borrowed and the result is a new
+reference the caller owns; `call_owned` releases arguments the caller built for the call.
+`vpy_call` builds a tuple and calls `PyObject_CallObject`, the one stable-ABI entry point
+whose argument count is dynamic. Re-entry is safe: the state chain is a per-thread stack a
+trampoline restores on the way out, and a Python exception from the callback is just a
+pending exception the trampoline returns null for.
 
 ## Tests
 
