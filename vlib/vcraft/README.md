@@ -342,11 +342,15 @@ at `state.base`, and the immediate base of a class whose base has a base of its 
 `state.base.self`. The generator computes those addresses, which is the only place that
 knows the layout.
 
-The chain is a fixed array of eight and is saved and restored whole around each call. One
-chain is enough because an extension module's Python calls hold the GIL, and restoring it
-is what keeps a nested call -- a method reaching another instance, or a property read
-from inside a method -- from leaving the outer trampoline pointing at the inner one's
-state.
+The chain is a fixed array of eight, and a per-thread stack of frames saves and restores
+it around each call: entering writes the new chain into the next frame and leaves the
+parent frame below it untouched, so leaving is a decrement rather than a copy. A nested
+call -- a method reaching another instance, or a property read from inside a method --
+therefore leaves the outer trampoline pointing at its own state. The frame stack is in
+native thread-local storage (`__thread`, not a `Py_tss_t` key, because there are two
+lookups per trampoline), and the earlier version allocated a snapshot of the chain with
+`PyMem_Malloc` on every call, which cost two allocator calls on every method of a module
+that publishes the chain at all.
 
 `fn inherited[T]() &T` would be the tidier spelling and does not compile from a user's
 module, for constraint 4 above: no forward declaration is emitted for a generic. The cast

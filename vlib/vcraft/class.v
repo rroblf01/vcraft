@@ -190,6 +190,7 @@ pub fn init_state() {
 // outer trampoline's levels pointing at the inner one's instance. There is no
 // thread-local storage here beyond the chain itself, and an extension module's Python
 // calls hold the GIL, so one chain per thread is enough.
+@[inline]
 pub fn enter_state(block voidptr) voidptr {
 	unsafe {
 		return C.vpy_enter_state(block)
@@ -201,6 +202,7 @@ pub fn enter_state(block voidptr) voidptr {
 // Level 1 is the immediate base, level 2 the one above it, and so on. The generator emits
 // one call per generation with the address it computes from the state struct, so nothing
 // here has to know the layout.
+@[inline]
 pub fn publish_base(level int, ptr voidptr) {
 	unsafe {
 		C.vpy_publish_state(level, ptr)
@@ -208,6 +210,7 @@ pub fn publish_base(level int, ptr voidptr) {
 }
 
 // leave_state restores the chain saved by `enter_state`.
+@[inline]
 pub fn leave_state(previous voidptr) {
 	unsafe {
 		C.vpy_leave_state(previous)

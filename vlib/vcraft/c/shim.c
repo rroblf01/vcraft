@@ -375,94 +375,141 @@ void vpy_type_clear(void *self) {
 	fn((PyObject *)self);
 }
 
-// The state chain key. Created once at module import, which runs under the import
-// lock, so there is no race to create it: by the time any trampoline runs, the key
-// exists.
-static Py_tss_t *vpy_state_key = NULL;
-
 #define VPY_STATE_LEVELS 8
 
-// vpy_state_init creates the thread-local key for the state chain.
+// How many trampolines may be nested before publishing falls back to a heap snapshot.
+// A method calling another, a property read inside a method, a slot that re-enters --
+// the depth is small in practice, and 32 is far past any real nesting.
+#define VPY_STATE_FRAMES 32
+
+// vpy_state_stack is the per-thread state chain stack.
 //
-// Called from the generated module initialiser, which runs once per import under the
-// import lock. A second call is a no-op rather than a second key, because re-creating
-// it would orphan every thread's chain.
+// `frames[i]` is the chain while nesting level `i` runs, and `depth` is how many levels
+// are active. Entering writes the new chain into the next frame and leaves the parent
+// frame below it untouched, so leaving is a decrement rather than a copy back. That is
+// what takes the per-call `PyMem_Malloc` off every trampoline: it used to allocate a
+// snapshot of the chain on entry and free it on exit, which cost two allocator calls on
+// every method, accessor and property of a module that publishes the chain at all.
+typedef struct {
+	int depth;
+	void *frames[VPY_STATE_FRAMES][VPY_STATE_LEVELS];
+} vpy_state_stack;
+
+// The calling thread's state stack, in native thread-local storage.
+//
+// A `__thread` pointer rather than a `Py_tss_t` key: the key costs a
+// `PyThread_tss_get` on every `vpy_stack` call, and there are two per trampoline
+// (enter and leave), which is most of what the stack was meant to save. Native TLS
+// reads the same per-thread value with no function call. The extension is
+// process-scoped, so one stack per OS thread is the whole requirement.
+static __thread vpy_state_stack *vpy_state_tls = NULL;
+
+// vpy_state_init is kept for the generated module initialiser to call.
+//
+// The stack is created lazily on first use now, so there is nothing to key at import;
+// the hook stays so the generated code needs no conditional.
 void vpy_state_init(void) {
-	if (vpy_state_key != NULL) {
-		return;
-	}
-	vpy_state_key = PyThread_tss_alloc();
-	if (vpy_state_key == NULL) {
-		return;
-	}
-	if (PyThread_tss_create(vpy_state_key) != 0) {
-		PyThread_tss_free(vpy_state_key);
-		vpy_state_key = NULL;
-	}
 }
 
-// vpy_chain returns the calling thread's eight state slots, creating them zeroed on
-// first use.
+// vpy_stack returns the calling thread's state stack, creating it zeroed on first use.
 //
-// The array is never freed, which leaks eight pointers per thread that ever ran a
-// trampoline. Sixty-four bytes per thread is what thread-local storage costs here, and
-// CPython offers no hook to free a TSS value at thread exit, so the alternative would
-// be a global registry with a lock on every call.
-static void **vpy_chain(void) {
-	void *slots;
-	if (vpy_state_key == NULL) {
+// The block is never freed, which keeps about 2 KiB per thread that ever ran a
+// trampoline. CPython offers no hook to free native thread-local storage at thread
+// exit, and neither does C, so the alternative would be a global registry with a lock
+// on every call.
+static vpy_state_stack *vpy_stack(void) {
+	if (vpy_state_tls == NULL) {
+		vpy_state_tls = (vpy_state_stack *)PyMem_Calloc(1, sizeof(vpy_state_stack));
+	}
+	return vpy_state_tls;
+}
+
+// vpy_active_chain returns the chain of the trampoline that is running, or NULL outside
+// one. `vpy_publish_state` and `vpy_state_at` report nothing when it is NULL.
+static void **vpy_active_chain(vpy_state_stack *stack) {
+	if (stack == NULL || stack->depth <= 0) {
 		return NULL;
 	}
-	slots = PyThread_tss_get(vpy_state_key);
-	if (slots == NULL) {
-		slots = PyMem_Calloc(VPY_STATE_LEVELS, sizeof(void *));
-		if (slots == NULL) {
-			return NULL;
-		}
-		if (PyThread_tss_set(vpy_state_key, slots) != 0) {
-			PyMem_Free(slots);
-			return NULL;
-		}
-	}
-	return (void **)slots;
+	return stack->frames[stack->depth - 1];
 }
 
-// vpy_enter_state publishes `block` as level 0 of the calling thread's chain and
-// returns the chain it replaced, so the caller can put it back.
+// vpy_enter_state publishes `block` as level 0 of the calling thread's chain and returns
+// a token for `vpy_leave_state`. The token is the frame it filled, which is how a leave
+// tells a frame from the heap fallback below.
 //
-// The previous chain is a fresh copy the caller owns: it is written back verbatim by
-// `vpy_leave_state`, which frees it. A trampoline that never calls back into Python
-// between the two sees exactly what it published, whatever other threads do.
+// The parent frame is not copied: it sits below the new one and is restored simply by
+// dropping the depth on leave. A trampoline that never calls back into Python between
+// the two sees exactly what it published, whatever other threads do.
 void *vpy_enter_state(void *block) {
-	void **chain = vpy_chain();
-	void *previous = PyMem_Malloc(VPY_STATE_LEVELS * sizeof(void *));
-	if (previous == NULL) {
+	vpy_state_stack *stack = vpy_stack();
+	void **chain;
+	void *previous;
+	int level;
+	if (stack == NULL) {
 		return NULL;
 	}
-	if (chain != NULL) {
-		memcpy(previous, chain, VPY_STATE_LEVELS * sizeof(void *));
-		memset(chain, 0, VPY_STATE_LEVELS * sizeof(void *));
-		chain[0] = block;
-	} else {
-		memset(previous, 0, VPY_STATE_LEVELS * sizeof(void *));
+	if (stack->depth >= VPY_STATE_FRAMES) {
+		// Deeper than the fixed stack: fall back to the heap snapshot the frames
+		// replaced, so an unusually deep nesting still works. The pointer is outside
+		// the frames array, which is how `vpy_leave_state` tells the two apart. Nesting
+		// two levels past the cap would alias, which 32-deep re-entry does not reach.
+		chain = vpy_active_chain(stack);
+		previous = PyMem_Malloc(VPY_STATE_LEVELS * sizeof(void *));
+		if (previous == NULL) {
+			return NULL;
+		}
+		if (chain != NULL) {
+			memcpy(previous, chain, VPY_STATE_LEVELS * sizeof(void *));
+			memset(chain, 0, VPY_STATE_LEVELS * sizeof(void *));
+			chain[0] = block;
+		} else {
+			memset(previous, 0, VPY_STATE_LEVELS * sizeof(void *));
+		}
+		return previous;
 	}
+	chain = stack->frames[stack->depth];
+	chain[0] = block;
+	for (level = 1; level < VPY_STATE_LEVELS; level++) {
+		chain[level] = NULL;
+	}
+	previous = (void *)chain;
+	stack->depth++;
 	return previous;
 }
 
-// vpy_leave_state restores the chain `vpy_enter_state` returned and frees it.
+// vpy_leave_state restores the chain `vpy_enter_state` returned.
+//
+// A frame token is inside the stack, so leaving is the decrement: the parent frame is
+// still there. A token outside it is the heap fallback and is copied back and freed.
 void vpy_leave_state(void *previous) {
-	void **chain = vpy_chain();
-	if (chain != NULL && previous != NULL) {
-		memcpy(chain, previous, VPY_STATE_LEVELS * sizeof(void *));
+	vpy_state_stack *stack = vpy_stack();
+	void *begin;
+	void *end;
+	if (previous == NULL || stack == NULL) {
+		return;
 	}
-	PyMem_Free(previous);
+	begin = (void *)&stack->frames[0][0];
+	end = (void *)&stack->frames[VPY_STATE_FRAMES][0];
+	if ((uintptr_t)previous >= (uintptr_t)begin && (uintptr_t)previous < (uintptr_t)end) {
+		if (stack->depth > 0) {
+			stack->depth--;
+		}
+		return;
+	}
+	{
+		void **chain = vpy_active_chain(stack);
+		if (chain != NULL) {
+			memcpy(chain, previous, VPY_STATE_LEVELS * sizeof(void *));
+		}
+		PyMem_Free(previous);
+	}
 }
 
 // vpy_publish_state records one generation of the chain: level 1 is the immediate
 // base, level 2 the one above it, and so on. Out-of-range levels are ignored rather
 // than reported, because the generator emits exactly the levels the chain has.
 void vpy_publish_state(int level, void *ptr) {
-	void **chain = vpy_chain();
+	void **chain = vpy_active_chain(vpy_stack());
 	if (chain == NULL || level < 1 || level >= VPY_STATE_LEVELS) {
 		return;
 	}
@@ -474,7 +521,7 @@ void vpy_publish_state(int level, void *ptr) {
 // so a method asking for a generation above its own gets null rather than a pointer
 // into another thread's call.
 void *vpy_state_at(int level) {
-	void **chain = vpy_chain();
+	void **chain = vpy_active_chain(vpy_stack());
 	if (chain == NULL || level < 0 || level >= VPY_STATE_LEVELS) {
 		return NULL;
 	}
