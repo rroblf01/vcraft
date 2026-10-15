@@ -117,6 +117,27 @@ pub fn unexpected_kwarg(name string, keyword string) {
 	raise(.type_error, "${name}() got an unexpected keyword argument '${keyword}'")
 }
 
+// arg_present reports whether the value for parameter `i` was passed.
+//
+// With keywords, `argv` is the slot array `bind_args` filled and a parameter left out is
+// a null slot. A positional-only call has no slot array: `argv` is the argument pointer
+// array itself and the parameter is present when `i` is before the count. This is what
+// lets a call that omits trailing parameters read each one without a slot array.
+pub fn arg_present(argv voidptr, nargs isize, kwnames voidptr, i int) bool {
+	if kwnames != unsafe { nil } {
+		return !arg_at(argv, i).is_null()
+	}
+	return i < int(nargs)
+}
+
+// missing_arg raises the TypeError for a required parameter that was not passed.
+//
+// The generated glue calls this on the positional path, where `bind_args` -- which raises
+// the same message for the keyword path -- has not run.
+pub fn missing_arg(func string, name string) {
+	raise(.type_error, "${func}() missing required argument: '${name}'")
+}
+
 // bind_new_args places the arguments of a `tp_new` call in one slot per parameter, in
 // declaration order, so the constructor's readers can take them by index exactly as a
 // method's readers take a METH_FASTCALL call's.

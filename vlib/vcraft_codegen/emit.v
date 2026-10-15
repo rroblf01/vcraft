@@ -47,6 +47,7 @@ pub fn emit_glue(p Project) string {
 	w.write_string(glue_module_body(p))
 	for f in p.funcs {
 		w.write_string('\n')
+		w.write_string(emit_bind_globals(f))
 		w.write_string(emit_trampoline(f))
 	}
 	for e in p.errors {
@@ -64,6 +65,7 @@ pub fn emit_glue(p Project) string {
 				continue
 			}
 			w.write_string('\n')
+			w.write_string(emit_bind_globals(m))
 			if m.property {
 				w.write_string(emit_property_trampoline(p, c, m))
 			} else if m.static {
@@ -392,43 +394,65 @@ fn emit_nogil_failure(inner string) string {
 		'\t\t' + inner + '\n'
 }
 
+// emit_bind_globals renders the parameter-name and optional arrays a keyword call binds
+// against, once per function, at module level.
+//
+// As literals in the call they were a fresh heap array on every keyword or left-out-
+// parameter call -- `new_array_from_c_array` in the generated C. A global is built once
+// and passed as a slice, so the call allocates nothing for them.
+fn emit_bind_globals(f Func) string {
+	if f.params.len == 0 {
+		return ''
+	}
+	names := f.params.map(vstring_literal(it.name)).join(', ')
+	optional := f.params.map(if it.optional() { 'true' } else { 'false' }).join(', ')
+	return '__global (\n' +
+		'\tg_vc_names_${f.trampoline} = [${names}]\n' +
+		'\tg_vc_optional_${f.trampoline} = [${optional}]\n' +
+		')\n\n'
+}
+
 // emit_bind renders the argument binding at the top of a trampoline with parameters.
 //
 // Every parameter can be passed by position or by name, and an optional one can be left
-// out. A call that passes every parameter by position, the common case, takes the raw
-// array as it is: one comparison, as before keywords. Anything else is bound into one
-// slot per parameter, and `args` points at the slots from then on, so the readers below
-// take every parameter by index either way.
+// out. A call with keywords is bound into one slot per parameter. A positional-only call
+// is not: `args` stays the raw pointer array and the readers below ask `arg_present`
+// whether each index was passed, so a call that leaves out trailing parameters no longer
+// builds a slot array either.
 fn emit_bind(f Func) string {
 	n := f.params.len
-	names := f.params.map(vstring_literal(it.name)).join(', ')
-	optional := f.params.map(if it.optional() { 'true' } else { 'false' }).join(', ')
-	// The slots exist only on the slow path. Declared up front, the array had its
-	// address taken, so V put it on the collector's heap: one allocation on every call,
-	// positional ones included, which cost a plain `add(1, 2)` about 7 ns. Here only a
-	// call with keywords or left-out parameters allocates. The buffer stays alive while
-	// `args` points into it: V's collector scans the stack, where `args` is.
 	return '\tmut args := raw_args\n' +
-		'\tif kwnames != unsafe { nil } || nargs != ${n} {\n' +
+		'\tif kwnames != unsafe { nil } {\n' +
 		'\t\tbound := []voidptr{len: ${n}, init: unsafe { nil }}\n' +
-		'\t\tif !vcraft.bind_args(raw_args, nargs, kwnames, bound.data, [${names}], [${optional}], ${vstring_literal(f.name)}) {\n' +
-		'\t\t\treturn unsafe { nil }\n\t\t}\n' + '\t\targs = bound.data\n\t}\n'
+		'\t\tif !vcraft.bind_args(raw_args, nargs, kwnames, bound.data, g_vc_names_${f.trampoline}, g_vc_optional_${f.trampoline}, ${vstring_literal(f.name)}) {\n' +
+		'\t\t\treturn unsafe { nil }\n\t\t}\n' + '\t\targs = bound.data\n' +
+		'\t} else if int(nargs) > ${n} {\n' +
+		'\t\tvcraft.reject_extra_args(${vstring_literal(f.name)}, ${n}, int(nargs))\n' +
+		'\t\treturn unsafe { nil }\n\t}\n'
 }
 
 // param_reader reads one parameter, applying its default when the caller left it out.
 //
-// A `?T` parameter's reader already turns a missing slot into `none`. A parameter with an
-// `@[vc_defaults]` value starts as that value and is only read when it was passed; its
-// reader runs inside the `if`, which is why defaults are refused for the readers that
-// pin a buffer until the end of the call.
+// A `?T` parameter's reader already turns an absent value into `none`. A parameter with
+// an `@[vc_defaults]` value starts as that value and is only read when the caller passed
+// it; its reader runs inside the `if`, which is why defaults are refused for the readers
+// that pin a buffer until the end of the call. A required parameter is checked present
+// first, so a positional-only call that stops short is a missing-argument error rather
+// than a read past the argument array.
 fn param_reader(param Param, local string, index int, func string) string {
 	strategy := lookup(param.v_type)
 	if param.default.len == 0 {
-		return reader_expr(strategy, local, index, func, param.name, param.v_type)
+		if param.optional() {
+			return reader_expr(strategy, local, index, func, param.name, param.v_type)
+		}
+		return 'if !vcraft.arg_present(args, nargs, kwnames, ${index}) {\n' +
+			'\t\tvcraft.missing_arg(${vstring_literal(func)}, ${vstring_literal(param.name)})\n' +
+			'\t\treturn unsafe { nil }\n\t}\n' +
+			'\t' + reader_expr(strategy, local, index, func, param.name, param.v_type)
 	}
 	given := '${local}_given'
 	return 'mut ${local} := ${v_default(param)}\n' +
-		'\tif !vcraft.arg_at(args, ${index}).is_null() {\n' +
+		'\tif vcraft.arg_present(args, nargs, kwnames, ${index}) {\n' +
 		'\t\t${reader_expr(strategy, given, index, func, param.name, param.v_type)}\n' +
 		'\t\t${local} = ${given}\n\t}'
 }
@@ -1326,7 +1350,10 @@ fn composite_reader(strategy Strategy, local string, index int, func string, par
 		// Left out or None is `none`; anything else must convert like the plain
 		// parameter would.
 		.optional {
-			'${obj} := vcraft.arg_at(args, ${index})\n\tmut ${local} := ${t}(none)\n' +
+			// A `?T` parameter may be left out, so the read is guarded: a positional-only
+			// call has no slot array and index `i` may be past the argument array.
+			'${obj} := if vcraft.arg_present(args, nargs, kwnames, ${index}) { vcraft.arg_at(args, ${index}) } else { vcraft.PyObj{} }\n' +
+				'\tmut ${local} := ${t}(none)\n' +
 				'\tif !${obj}.is_null() && !vcraft.is_none_ptr(${obj}.ptr) {\n\t\t${local} = ${value_from_obj(t[1..], obj, param)}\n\t}'
 		}
 		.dict {

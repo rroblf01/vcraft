@@ -429,7 +429,13 @@ fn emit_class_new(c Class) string {
 			vstring_literal(c.name) + ') {\n')
 		w.write_string('\t\treturn unsafe { nil }\n\t}\n')
 		// `args` from here on is the slot array, which is what the readers below index.
+		// `bind_new_args` filled one slot per parameter, so a left-out optional is a null
+		// slot -- the shape the keyword path of a trampoline has. Declaring `nargs` and a
+		// non-null `kwnames` lets the same `param_reader` be used, which checks presence
+		// through `arg_present`.
 		w.write_string('\targs := bound.data\n')
+		w.write_string('\tnargs := isize(bound.len)\n')
+		w.write_string('\tkwnames := args\n')
 		for i, param in c.ctor_params {
 			name := local_name(i)
 			call_args << name
