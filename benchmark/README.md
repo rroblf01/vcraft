@@ -94,26 +94,26 @@ three keep bounds checks.
 ## Results
 
 The current run is [`results-linux.md`](results-linux.md): Linux x86_64 (AMD Ryzen 5
-3600), CPython 3.13, vcraft 1.2.0, V 36be926, PyO3 0.29, zig-maturin 1.0.1. Time per
+3600), CPython 3.13, vcraft 1.3.0, V 36be926, PyO3 0.29, zig-maturin 1.0.1. Time per
 call, lower is better:
 
 | workload | pyo3 | vcraft | zig-maturin | python |
 |---|---|---|---|---|
-| `add` | 70 ns | 72 ns | 72 ns | 36 ns |
-| `fib(25)` | 226.5 µs | 111.7 µs | 337.0 µs | 9.08 ms |
-| `count_primes(1e6)` | 1.90 ms | 2.10 ms | 1.81 ms | 92.30 ms |
-| `sum_floats(100k)` | 816.6 µs | 226.3 µs | 1.24 ms | 1.53 ms |
-| `make_range(100k)` | 2.13 ms | 2.24 ms | 2.12 ms | 2.10 ms |
-| `greet` | 130 ns | 108 ns | 214 ns | 69 ns |
-| `describe(3)` | 167 ns | 125 ns | 156 ns | 158 ns |
-| `checksum(100kB)` | 13.1 µs | 40.1 µs | 41.8 µs | 2.18 ms |
-| `join_strings(10k)` | 471.9 µs | 291.1 µs | 274.5 µs | 72.7 µs |
-| `Counter()` | 94 ns | 106 ns | 77 ns | 91 ns |
-| `c.add(1)` | 68 ns | 72 ns | 88 ns | 55 ns |
-| `c.value` | 46 ns | 34 ns | 32 ns | 12 ns |
-| `c.increment()` | 55 ns | 50 ns | 64 ns | 52 ns |
-| `Vector(1000)` | 223 ns | 306 ns | 4.1 µs | 2.3 µs |
-| `complex_scale(1+2j, 3)` | 85 ns | 96 ns | — | 61 ns |
+| `add` | 71 ns | 73 ns | 77 ns | 37 ns |
+| `fib(25)` | 237.3 µs | 112.0 µs | 359.9 µs | 9.36 ms |
+| `count_primes(1e6)` | 2.00 ms | 2.22 ms | 2.03 ms | 98.07 ms |
+| `sum_floats(100k)` | 881.1 µs | 223.3 µs | 1.37 ms | 1.59 ms |
+| `make_range(100k)` | 2.29 ms | 2.45 ms | 2.46 ms | 2.37 ms |
+| `greet` | 135 ns | 120 ns | 235 ns | 73 ns |
+| `describe(3)` | 174 ns | 123 ns | 157 ns | 169 ns |
+| `checksum(100kB)` | 14.9 µs | 39.6 µs | 41.0 µs | 2.28 ms |
+| `join_strings(10k)` | 506.4 µs | 266.0 µs | 265.1 µs | 75.4 µs |
+| `Counter()` | 96 ns | 92 ns | 78 ns | 97 ns |
+| `c.add(1)` | 67 ns | 68 ns | 90 ns | 59 ns |
+| `c.value` | 48 ns | 37 ns | 32 ns | 13 ns |
+| `c.increment()` | 58 ns | 52 ns | 64 ns | 57 ns |
+| `Vector(1000)` | 252 ns | 310 ns | 4.2 µs | 2.4 µs |
+| `complex_scale(1+2j, 3)` | 94 ns | 97 ns | — | 65 ns |
 
 What the numbers say:
 
@@ -124,14 +124,18 @@ What the numbers say:
   and on `c.add`, and leads `checksum` (the byte loop V's C backend lowers worse, see
   below) and `count_primes`/`make_range` (V's array-write lowering). zig-maturin trails
   on calls by structure.
-- **Method and attribute calls are now at PyO3's level.** `c.value` (34 vs 46 ns),
-  `c.increment` (50 vs 55) and `c.is_zero` are faster than PyO3; `c.add` is 72 vs 68.
-  The state chain is published only by the trampolines that can observe it — a class
-  with a base — so a base-less class's methods pay nothing for it.
+- **Method and attribute calls are at PyO3's level.** `c.value` (37 vs 48 ns),
+  `c.increment` (52 vs 58) and `c.is_zero` are faster than PyO3; `c.add` is level (68 vs
+  67). The nanosecond rows carry ±10% run-to-run noise (PyO3's own `c.value` moved
+  46 → 48 ns between the 1.2.0 and 1.3.0 runs), so read them against [HISTORY.md](HISTORY.md),
+  which has a controlled measurement; the clean benchmark signal is `Counter()`, 106 → 92 ns
+  against a flat PyO3. The benchmark's subclass publishes a state chain, and its own
+  trampolines pay for it; a class with no base does not.
 - **Memory.** PyO3 and zig-maturin stay near pure Python; vcraft keeps its Boehm heap —
-  `count_primes` leaves 19.6 MiB against 9.5, and `make_range` 4.5 against 0.9, all
-  plateauing, not leaking. Import RSS is now the lowest of the three (764 KiB against
-  PyO3's 872). No scenario leaks on any backend and no reference probe drifts.
+  `count_primes` leaves 28.9 MiB against 9.5 (19.6 MiB in the 1.2.0 run; the retained
+  figure is noisy between runs), and `make_range` 4.6 against 0.9, all plateauing, not
+  leaking. Import RSS is the lowest of the three (760 KiB against PyO3's 788). No scenario
+  leaks on any backend and no reference probe drifts.
 - **Size.** vcraft and zig-maturin build the smallest wheels; PyO3's is the same order.
   vcraft's clean release build is the fastest.
 
@@ -139,12 +143,16 @@ What the numbers say:
 
 ### vcraft
 
-- **V's array lowering.** V's compiler turns every `a[i] = x` and `a << x` into a call
-  that copies one element, which is what puts `count_primes` and `make_range` behind
-  PyO3; `@[direct_array_access]` does not remove it on writes, and no compiler flag folds
-  it in the large translation unit. It is in V, not in vcraft. Reported upstream.
-- **The byte loop.** `checksum` over `bytes` is 3× PyO3: clang lowers V's widening sum
-  to nibble-split sequences where LLVM emits a single `uaddlv` for Rust's identical loop.
+- **V's array lowering.** `count_primes` and `make_range` sit ~1.1–1.2× PyO3 because
+  `array.get` is a non-inline bounds-checked call behind `for x in arr` and `arr[i]`,
+  `@[direct_array_access]` is not honored by `for in`, and the scalar `<<` fast path added
+  in V's `#29736` does not fire for a local slice. It is in V's C codegen, not vcraft: the
+  runtime's own cost — the call, the arguments, class access, boxing — is at or ahead of
+  PyO3. Written up for the V project in [`V_UPSTREAM.md`](V_UPSTREAM.md).
+- **The byte loop.** `checksum` over `bytes` is ~3× PyO3: the V loop reads through the
+  non-inline `array.get`, whose `panic` branch keeps gcc from vectorizing the byte-widening
+  sum, where LLVM emits a single `psadbw` for Rust's identical loop. Also in V; see
+  [`V_UPSTREAM.md`](V_UPSTREAM.md).
 
 ### zig-maturin
 

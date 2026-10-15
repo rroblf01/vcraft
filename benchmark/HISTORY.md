@@ -377,3 +377,80 @@ subclass turns it on for every trampoline in the file. Scoping the publish to th
 classes that can observe it — one with a base, or a method whose body mentions
 `state_at` — would take it off the common paths.
 
+## vcraft 1.3.0 on Linux
+
+Same machine, CPython 3.13.16. The state now lives inside the object instead of in a
+separate `PyObject_Malloc` block behind a pointer, so a fresh instance pays one
+allocation instead of two and a method reaches its state without following a pointer;
+the per-trampoline "no state" branch is gone too. A class whose constructor failed also
+stops leaking its object (a `tp_new` fix, not a speed one).
+
+The clean signal is construction, where the extra allocation was paid every call and the
+machine's noise cancels between the two backends:
+
+| workload | 1.2.0 | 1.3.0 |
+|---|---|---|
+| `Counter()` | 106 ns | 92 ns |
+| `Vector(1000)` | 306 ns | 310 ns |
+
+PyO3's `Counter()` held at 94 → 96 ns across the two runs, so vcraft's −13% is the change,
+not the machine; a controlled A/B over the class surface (many repeats, one process) put
+construction at ~13% and attribute and method access at ~5–8% (`c.value`, `c.increment`,
+`c.set_step`, a subclass property). The benchmark's nanosecond rows cannot resolve that
+5–8% against its own ±10% run-to-run jitter — PyO3's `c.value` moved 46 → 48 ns and
+`c.increment` 55 → 58 ns between the two runs, same code — so those rows move either way
+here and are not evidence. The larger workloads (`fib`, `sum_floats`, `checksum`,
+`count_primes`) do not touch class state at all and are unchanged within noise.
+
+The 1.2.0 section's worry — the chain published on every trampoline of a file with a
+subclass — is unchanged by this: 1.3.0 removed the extra object allocation and the
+null-state branch, not the chain. Scoping the publish to the classes that can observe it
+is still open.
+
+Memory stays at the same floor: ~760 KiB added at import and no leak on any scenario.
+Boehm's retained heap is as before and as noisy as before — `count_primes(10M)` kept
+19.6 MiB in the 1.2.0 run and 28.9 MiB here (PyO3 and pure Python hold at 9.5 MiB) with a
+0.5 MiB second-batch round-off, `GC_set_force_unmap_on_gcollect` and the free-space
+divisor measured against it and neither moves it. It plateaus, never leaks.
+
+
+## Call-path allocations (still 1.3.0)
+
+Four per-call costs in the glue, none of them a change in what crosses the boundary:
+
+- **The parameter-name and optional arrays were literals in `tp_new`.** Every
+  `Class(...)` built `[]string{...}` and `[]bool{...}` with `new_array_from_c_array`.
+  They are now module-level globals, the same ones a function trampoline already used.
+- **The argument slots were a heap slice.** `mut bound := []voidptr{len: n}` asked the
+  collector for a block on every construction. It is now a fixed array on the stack
+  (`unsafe { [n]voidptr{} }` → `void* bound[n]`), so a positional construction allocates
+  nothing for the slots.
+- **A base-less `newstate` zeroed and copied the state twice.** `mut state := T{};
+  state = *ctor()` is now `return *ctor()`.
+- **`set_error` copied the message into a C string.** A V string has no terminator, so
+  `PyErr_SetString` needed one built first: a malloc, a copy, a free and a `strlen` inside
+  CPython, per exception. The message now goes across as a pointer and a length
+  (`PyUnicode_FromStringAndSize` + `PyErr_SetObject`).
+- **`tp_iternext` checked for a pending exception twice**, once in the `!T` branch and
+  again in the shared tail.
+
+A controlled A/B, many repeats in one process on the same machine:
+
+| row | before | after | PyO3 |
+|---|---|---|---|
+| `Vector(1)` | 202 ns | **154 ns** | 140 ns |
+| `Vector(1000)` | 296 ns | **278 ns** | 233 ns |
+| `list(Countdown())` | 464 ns | **428 ns** | 370 ns |
+| `expect_positive(err)` | 285 ns | **224 ns** | 237 ns |
+
+`expect_positive` is now ahead of PyO3; the benchmark's `Vector(1000)` moves 1.23× → 1.17×
+and `list(Countdown())` 1.27× → 1.19× (both ratios vcraft/PyO3, from the full run). The
+nanosecond rows carry the benchmark's ±10% jitter, so only the controlled figures above
+are the evidence.
+
+What is left on `checksum` (~3×), `count_primes` and `make_range` (~1.1–1.2×) is V's C
+codegen — `array.get` is a non-inline bounds-checked call, `for x in arr` ignores
+`@[direct_array_access]`, the scalar `<<` fast path does not fire for a local slice, and
+the byte-widening sum is not vectorized. It is written up for the V project in
+[`V_UPSTREAM.md`](V_UPSTREAM.md); `@[direct_array_access]` on `count_primes` alone takes
+it from 2.34 ms to 1.75 ms, ahead of PyO3's 1.96 ms.
