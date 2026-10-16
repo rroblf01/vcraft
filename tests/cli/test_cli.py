@@ -920,9 +920,12 @@ pub fn apply(f voidptr, x int) !int {
         t.check("the install is marked editable",
                 '"editable":true' in (dist_info / "direct_url.json").read_text().replace(" ", ""),
                 (dist_info / "direct_url.json").read_text())
+        # The pointer mixes separators on Windows (`...\mypkg/dist/build`), so compare
+        # on forward slashes rather than on a spelling the platform happens to pick.
+        pointer_text = pth.read_text()
         t.check("the pointer names the build output",
-                str(project / "dist" / "build") in pth.read_text(),
-                pth.read_text())
+                (project / "dist" / "build").as_posix() in pointer_text.replace("\\", "/"),
+                pointer_text)
         proc = subprocess.run([str(venv_python(target)), "-c", script],
                               capture_output=True, text=True, cwd=tmp)
         t.check("the developed extension works", proc.returncode == 0,
@@ -1807,8 +1810,9 @@ print("ok" if not bad else bad)
                 (proc.stderr or "").strip()[-300:])
         if proc.returncode == 0:
             lines = proc.stdout.splitlines()
+            stable = (project / ".vcraft" / "editable" / "build").as_posix()
             t.check("the editable extension resolves to stable build output",
-                    lines[0].startswith(str(project / ".vcraft" / "editable" / "build")),
+                    lines[0].replace("\\", "/").startswith(stable),
                     proc.stdout)
             t.check("editable metadata marks the source tree",
                     lines[1:] == ["True", project.as_uri()], proc.stdout)

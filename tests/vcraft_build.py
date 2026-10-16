@@ -108,9 +108,11 @@ def host_target() -> str:
     machine = platform.machine().lower()
     if sys.platform == "darwin":
         return "macos-arm64" if machine == "arm64" else "macos-x86_64"
-    arch = "aarch64" if machine in ("aarch64", "arm64") else "x86_64"
     if WINDOWS:
+        # `platform.machine()` says `AMD64`, and the target is `windows-amd64`.
+        arch = "aarch64" if machine in ("aarch64", "arm64") else "amd64"
         return f"windows-{arch}"
+    arch = "aarch64" if machine in ("aarch64", "arm64") else "x86_64"
     # musl on Alpine, glibc elsewhere: the libc is part of the target.
     libc = "musl" if "musl" in (sysconfig.get_config_var("HOST_GNU_TYPE") or "") else "gnu"
     return f"linux-{arch}-{libc}"
