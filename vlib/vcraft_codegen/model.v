@@ -75,6 +75,68 @@ pub const attr_gt = 'vc_gt'
 
 pub const attr_ge = 'vc_ge'
 
+// The numeric operators. Like `@[vc_eq]`, each is a free function whose name starts
+// with the class's snake_case name, because V allows one receiver per method and a
+// binary operator has two operands. The forward annotation fills the `nb_*` slot the
+// runtime names; `@[vc_radd]` and the rest are the reflected forms CPython reaches when
+// the instance is the *right* operand (`2 + counter`), and the four unary ones take no
+// second operand.
+pub const attr_add = 'vc_add'
+
+pub const attr_radd = 'vc_radd'
+
+pub const attr_sub = 'vc_sub'
+
+pub const attr_rsub = 'vc_rsub'
+
+pub const attr_mul = 'vc_mul'
+
+pub const attr_rmul = 'vc_rmul'
+
+pub const attr_truediv = 'vc_truediv'
+
+pub const attr_rtruediv = 'vc_rtruediv'
+
+pub const attr_floordiv = 'vc_floordiv'
+
+pub const attr_rfloordiv = 'vc_rfloordiv'
+
+pub const attr_mod = 'vc_mod'
+
+pub const attr_rmod = 'vc_rmod'
+
+pub const attr_pow = 'vc_pow'
+
+pub const attr_rpow = 'vc_rpow'
+
+pub const attr_lshift = 'vc_lshift'
+
+pub const attr_rlshift = 'vc_rlshift'
+
+pub const attr_rshift = 'vc_rshift'
+
+pub const attr_rrshift = 'vc_rrshift'
+
+pub const attr_and = 'vc_and'
+
+pub const attr_rand = 'vc_rand'
+
+pub const attr_or = 'vc_or'
+
+pub const attr_ror = 'vc_ror'
+
+pub const attr_xor = 'vc_xor'
+
+pub const attr_rxor = 'vc_rxor'
+
+pub const attr_neg = 'vc_neg'
+
+pub const attr_pos = 'vc_pos'
+
+pub const attr_abs = 'vc_abs'
+
+pub const attr_invert = 'vc_invert'
+
 // attr_len marks a method as `__len__`: no parameters, an integer result, installed as
 // `sq_length`. It makes `len(instance)` and `bool(instance)` work.
 pub const attr_len = 'vc_len'
@@ -131,6 +193,34 @@ pub const known_attrs = [
 	attr_le,
 	attr_gt,
 	attr_ge,
+	attr_add,
+	attr_radd,
+	attr_sub,
+	attr_rsub,
+	attr_mul,
+	attr_rmul,
+	attr_truediv,
+	attr_rtruediv,
+	attr_floordiv,
+	attr_rfloordiv,
+	attr_mod,
+	attr_rmod,
+	attr_pow,
+	attr_rpow,
+	attr_lshift,
+	attr_rlshift,
+	attr_rshift,
+	attr_rrshift,
+	attr_and,
+	attr_rand,
+	attr_or,
+	attr_ror,
+	attr_xor,
+	attr_rxor,
+	attr_neg,
+	attr_pos,
+	attr_abs,
+	attr_invert,
 	attr_len,
 	attr_getitem,
 	attr_contains,
@@ -331,6 +421,10 @@ pub mut:
 	len_fn string
 	item_fn string
 	contains_fn string
+	// numeric maps a numeric operator's key (see numeric_slots, e.g. `add` or `radd`) to
+	// the user's function, so the trampoline knows the name to call and the operand and
+	// result types to marshal.
+	numeric map[string]Func
 	// key is the class name folded to snake_case, because V rejects an identifier
 	// with uppercase letters in it.
 	key string
@@ -493,6 +587,50 @@ pub mut:
 	raiser string
 }
 
+// NumericSlot is one numeric operator: the annotation suffix and the map key, the
+// runtime `slot_nb_*` constant the trampoline is installed under, the operand count, and
+// whether a commutative operator can answer the reflected call with its forward
+// function.
+pub struct NumericSlot {
+pub:
+	name        string
+	nb          string
+	arity       int
+	commutative bool
+}
+
+// numeric_slots is every numeric operator, in the order the trampolines are emitted so
+// the generated file does not depend on map iteration order.
+pub const numeric_slots = [
+	NumericSlot{ name: 'add', nb: 'slot_nb_add', arity: 2, commutative: true },
+	NumericSlot{ name: 'sub', nb: 'slot_nb_subtract', arity: 2, commutative: false },
+	NumericSlot{ name: 'mul', nb: 'slot_nb_multiply', arity: 2, commutative: true },
+	NumericSlot{ name: 'truediv', nb: 'slot_nb_true_divide', arity: 2, commutative: false },
+	NumericSlot{ name: 'floordiv', nb: 'slot_nb_floor_divide', arity: 2, commutative: false },
+	NumericSlot{ name: 'mod', nb: 'slot_nb_remainder', arity: 2, commutative: false },
+	NumericSlot{ name: 'pow', nb: 'slot_nb_power', arity: 2, commutative: false },
+	NumericSlot{ name: 'lshift', nb: 'slot_nb_lshift', arity: 2, commutative: false },
+	NumericSlot{ name: 'rshift', nb: 'slot_nb_rshift', arity: 2, commutative: false },
+	NumericSlot{ name: 'and', nb: 'slot_nb_and', arity: 2, commutative: true },
+	NumericSlot{ name: 'or', nb: 'slot_nb_or', arity: 2, commutative: true },
+	NumericSlot{ name: 'xor', nb: 'slot_nb_xor', arity: 2, commutative: true },
+	NumericSlot{ name: 'neg', nb: 'slot_nb_negative', arity: 1, commutative: false },
+	NumericSlot{ name: 'pos', nb: 'slot_nb_positive', arity: 1, commutative: false },
+	NumericSlot{ name: 'abs', nb: 'slot_nb_absolute', arity: 1, commutative: false },
+	NumericSlot{ name: 'invert', nb: 'slot_nb_invert', arity: 1, commutative: false },
+]
+
+// numeric_slot returns the table entry for an annotation suffix, or none when the suffix
+// is not a numeric operator.
+pub fn numeric_slot(name string) ?NumericSlot {
+	for s in numeric_slots {
+		if s.name == name {
+			return s
+		}
+	}
+	return none
+}
+
 // Project is everything the generator found.
 // Operator is a `vc_eq` or `vc_hash` function seen before the class it belongs to.
 //
@@ -501,11 +639,15 @@ pub mut:
 pub struct Operator {
 pub mut:
 	name   string
-	// kind is `eq` or `hash`.
+	// kind is `eq` or `hash`, an ordering name, or a numeric slot key.
 	kind   string
 	origin string
 	line   int
 	column int
+	// handler is the built function, kept for the numeric operators so their operand and
+	// result types are known when the trampoline is emitted. Empty for the others, whose
+	// calling convention is fixed.
+	handler Func
 }
 
 // Const is a `pub const NAME = value` annotated `@[vc_const]`, exposed as a module-level
