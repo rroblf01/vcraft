@@ -19,9 +19,10 @@ concurrency:
 
 # The platforms no developer machine in this project can cover. Linux x86_64 is
 # verified locally in containers; macOS and Windows run here, on hosted runners.
-# Windows gets its own job (below) because it links extensions against the
-# interpreter's import library and builds V with `makev.bat` when the prebuilt
-# archive or the cache is missing, neither of which fits the POSIX matrices.
+# Windows gets its own compiler job and suites matrix (below) because it links
+# extensions against the interpreter's import library and builds V with `makev.bat`
+# when the prebuilt archive or the cache is missing, neither of which fits the
+# POSIX matrices.
 # aarch64 Linux is covered by the matrices and the published images.
 
 # V comes from source at a pinned commit, not from a release: no V release is
@@ -259,23 +260,14 @@ jobs:
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/cli/test_cli.py
 
-  windows:
-    # Windows is its own job rather than a column in the matrices above. V is built
-    # there with `makev.bat`, not `make`, and release-v.yml publishes no Windows
-    # archive to download; and the suites link extensions against the interpreter's
-    # import library, because a PE image cannot leave `Py*` unresolved the way a
-    # `.so` can. One CPython to start with: the platform is what is new here, not
-    # the interpreter version.
-    name: windows (windows-latest, 3.14)
+  # The V compiler on Windows, once, before the suites matrix starts. Kept out of
+  # `v-compiler` above because nothing is shared with the POSIX build: V is built
+  # with `makev.bat`, and the archive and the cache live under RUNNER_TEMP\v-src
+  # rather than /tmp. The suites matrix below restores what this writes.
+  v-compiler-windows:
+    name: V compiler (windows-latest)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
-
-      - name: set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-
       # The compiler released by release-v.yml, downloaded in seconds rather than
       # built in minutes. Anything missing falls back to the cache below and then to
       # a source build, so the first run after a pin moves still works.
@@ -291,15 +283,15 @@ jobs:
           tar -xzf "$env:RUNNER_TEMP\v-dl\v-$env:V_COMMIT-win-amd64.tar.gz" -C $v
           & "$v\v.exe" version
 
-      # Restored here and saved by its own step below, never by a job-level
-      # post-save: that save is skipped when the job fails, and the suites fail
-      # often enough that the compiler would then be rebuilt on every run.
-      - name: restore the V compiler cache
+      # Looked up, not restored: on a hit the compiler is already the one the
+      # suites restore, and there is nothing to do here but leave the cache.
+      - name: look for a cached compiler
         id: v-cache
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/v-src
           key: v-slim1-windows-latest-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          lookup-only: true
 
       # Built here only when the download and the cache both came up empty: native
       # PowerShell and `makev.bat`, no emulated shell.
@@ -308,6 +300,7 @@ jobs:
         shell: pwsh
         run: |
           $v = "$env:RUNNER_TEMP\v-src"
+          Remove-Item -Recurse -Force $v -ErrorAction SilentlyContinue
           git init -q $v
           git -C $v remote add origin https://github.com/vlang/v.git
           git -C $v fetch -q --depth 1 origin $env:V_COMMIT
@@ -320,14 +313,46 @@ jobs:
           & "$v\makev.bat" --local
           & "$v\v.exe" version
 
-      # Before the suites, and not gated on their success: the compiler is worth
-      # caching whether or not they pass.
-      - name: save the V compiler
+      # The cache the suites restore. A download fills it too, so a run that used the
+      # release still hands the compiler to the suites.
+      - name: save the compiler
         if: steps.v-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/v-src
           key: v-slim1-windows-latest-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+
+  # Windows is its own job rather than a column in the matrices above: the suites
+  # link extensions against the interpreter's import library, because a PE image
+  # cannot leave `Py*` unresolved the way a `.so` can. The matrix still covers every
+  # supported CPython, so no version is one nobody has compiled for on this platform.
+  windows:
+    needs: v-compiler-windows
+    name: windows (windows-latest, ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every supported CPython, the same list as `suites`. Keep it in step with
+        # `supported_pythons` in vlib/vcraft_project/build.v.
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
+
+      # Built once by v-compiler-windows, which this job waits for, so this only
+      # ever restores it.
+      - name: restore the V compiler
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/v-src
+          key: v-slim1-windows-latest-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          fail-on-cache-miss: true
 
       - name: put V on PATH
         run: echo "$env:RUNNER_TEMP\v-src" >> $env:GITHUB_PATH
@@ -348,14 +373,6 @@ jobs:
 
       - name: "suite: fuzzed conversions"
         run: python tests/fuzz/test_fuzz.py 4 20000
-
-      # TEMPORARY: names the dependency a `.pyd` cannot find, by reading its import
-      # table. Remove once the Windows extension loads.
-      - name: diagnose the Windows extension
-        if: always()
-        run: |
-          python -m pip install -q pefile
-          python -c "import glob, pefile; pe = pefile.PE(glob.glob('build/vcraft_runtime_check*.pyd')[0]); print('IMPORTS:', [e.dll.decode() for e in pe.DIRECTORY_ENTRY_IMPORT])"
 
   musl:
     # The suites on musl libc, inside the published musllinux image, which carries V
