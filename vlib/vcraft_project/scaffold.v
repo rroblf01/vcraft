@@ -287,8 +287,8 @@ fn readme(p Project) string {
 pub fn write_scaffold(root string, p Project) ![]string {
 	mut written := []string{}
 	for f in scaffold(p) {
-		target := root.trim_right('/') + '/' + f.path
-		dir := target.all_before_last('/')
+		target := os.join_path(root, f.path)
+		dir := os.dir(target)
 		if dir != '' && !os.exists(dir) {
 			os.mkdir_all(dir) or {
 				return error('cannot create ${dir}')

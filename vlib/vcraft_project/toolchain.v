@@ -20,12 +20,12 @@ pub const vc_commit = '6851aaf3f9e696b30b26e406f16095b0002acaab'
 // `$XDG_CACHE_HOME/vcraft`, else `~/.cache/vcraft`.
 pub fn toolchain_root() string {
 	if os.getenv('VCRAFT_HOME') != '' {
-		return os.getenv('VCRAFT_HOME').trim_right('/')
+		return os.getenv('VCRAFT_HOME')
 	}
 	if os.getenv('XDG_CACHE_HOME') != '' {
-		return os.getenv('XDG_CACHE_HOME').trim_right('/') + '/vcraft'
+		return os.join_path(os.getenv('XDG_CACHE_HOME'), 'vcraft')
 	}
-	return os.home_dir().trim_right('/') + '/.cache/vcraft'
+	return os.join_path(os.home_dir(), '.cache', 'vcraft')
 }
 
 // toolchain_dir is the checkout the pinned compiler is built in.
@@ -35,7 +35,7 @@ pub fn toolchain_dir() string {
 
 // installed_v returns the pinned compiler if `vcraft toolchain install` built it, or ''.
 pub fn installed_v() string {
-	candidate := toolchain_dir() + '/v'
+	candidate := os.join_path(toolchain_dir(), executable_name('v'))
 	if os.is_executable(candidate) {
 		return candidate
 	}
@@ -119,6 +119,7 @@ fn install_into(dir string, jobs int) ! {
 	// VEXE pinned to the checkout's own `./v`: V's Makefile writes the compiler it builds
 	// to $VEXE, and an inherited one is somebody else's compiler.
 	os.unsetenv('VEXE')
+	built_v := os.join_path(dir, executable_name('v'))
 	build := ['make', '-C', dir, 'local=1', '-j${jobs}', 'VEXE=./v']
 	println('+ ${build.join(' ')}')
 	if os.system_args(build) != 0 {
@@ -126,14 +127,14 @@ fn install_into(dir string, jobs int) ! {
 		// compiler is built, and on musl that step fails to link at the pinned commit
 		// (the cached `builtin` object exports `backtrace`, which calls a function that
 		// is static in another object). A compiler that reports the pin is complete.
-		if !v_matches_pin(dir + '/v') {
+		if !v_matches_pin(built_v) {
 			return error('`${build.join(' ')}` failed; nothing was installed')
 		}
 		eprintln('warning: `${build.join(' ')}` failed after building V; the compiler itself works')
 	}
-	os.rmdir_all(dir + '/vc') or {}
-	if !v_matches_pin(dir + '/v') {
-		reported := os.exec([dir + '/v', 'version']).output.trim_space()
+	os.rmdir_all(os.join_path(dir, 'vc')) or {}
+	if !v_matches_pin(built_v) {
+		reported := os.exec([built_v, 'version']).output.trim_space()
 		return error('the compiler built in ${dir} does not report commit ${v_commit[..7]}; `v version` said: ${reported}')
 	}
 	println('installed V ${v_commit[..7]} in ${dir}')

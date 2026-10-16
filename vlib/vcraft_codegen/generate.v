@@ -81,8 +81,8 @@ pub fn (g Generated) write() ! {
 
 // ensure_dir_of creates the directory a path lives in, if it is missing.
 fn ensure_dir_of(path string) {
-	dir := path.all_before_last('/')
-	if dir == '' || os.exists(dir) {
+	dir := os.dir(path)
+	if dir == '' || dir == '.' || os.exists(dir) {
 		return
 	}
 	os.mkdir_all(dir) or { return }

@@ -14,6 +14,40 @@ import vcraft_wheel
 // version is vcraft's own version, and the version it stamps into a wheel's `WHEEL`.
 pub const version = '1.3.0'
 
+// executable_name is the file name an executable has on this platform.
+//
+// Windows appends `.exe`; every other platform does not. A path built by hand as `'/v'`
+// names no file there, so the pieces below ask rather than assume.
+pub fn executable_name(stem string) string {
+	$if windows {
+		return stem + '.exe'
+	} $else {
+		return stem
+	}
+}
+
+// python_binary_name is the interpreter's file name on this platform.
+//
+// Windows ships `python.exe`, not `python3.exe`; POSIX has no `python.exe` and may have
+// no `python` at all, so each names its own.
+pub fn python_binary_name() string {
+	$if windows {
+		return 'python.exe'
+	} $else {
+		return 'python3'
+	}
+}
+
+// venv_scripts_dir is the directory a virtualenv keeps its executables in: `Scripts` on
+// Windows, `bin` everywhere else.
+pub fn venv_scripts_dir() string {
+	$if windows {
+		return 'Scripts'
+	} $else {
+		return 'bin'
+	}
+}
+
 // vlib_path returns the `-path` value for the V compiler.
 //
 // It is the `vlib` directory beside this binary: `<dir>/../vlib`. The binary is built
@@ -21,8 +55,8 @@ pub const version = '1.3.0'
 // sits in the same place.
 pub fn vlib_path() string {
 	exe := os.executable()
-	dir := exe.all_before_last('/')
-	return dir.all_before_last('/') + '/vlib'
+	dir := os.dir(exe)
+	return os.join_path(os.dir(dir), 'vlib')
 }
 
 // v_compiler returns the V compiler to use.
@@ -35,7 +69,7 @@ pub fn v_compiler() string {
 	if os.getenv('VCRAFT_V') != '' {
 		return os.getenv('VCRAFT_V')
 	}
-	beside := os.executable().all_before_last('/') + '/v'
+	beside := os.join_path(os.dir(os.executable()), executable_name('v'))
 	if os.exists(beside) {
 		return beside
 	}
@@ -43,7 +77,7 @@ pub fn v_compiler() string {
 	if installed != '' {
 		return installed
 	}
-	return 'v'
+	return executable_name('v')
 }
 
 // active_environment returns the virtualenv the build should install into, or an empty
@@ -61,13 +95,13 @@ pub fn active_environment() string {
 pub fn python_in_environment() string {
 	venv := active_environment()
 	if venv.len == 0 {
-		return 'python3'
+		return python_binary_name()
 	}
-	candidate := venv.trim_right('/') + '/bin/python'
+	candidate := os.join_path(venv, venv_scripts_dir(), python_binary_name())
 	if os.exists(candidate) {
 		return candidate
 	}
-	return 'python3'
+	return python_binary_name()
 }
 
 // develop installs a freshly built extension into the active environment.

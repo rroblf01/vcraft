@@ -363,7 +363,7 @@ pub fn check_versions(interpreter string, abi3 string, free_threading bool) ! {
 
 // build compiles the project and writes a wheel.
 pub fn build(p Project, opt BuildOptions) !BuildResult {
-	python := if opt.interpreter.len > 0 { opt.interpreter } else { 'python3' }
+	python := if opt.interpreter.len > 0 { opt.interpreter } else { python_binary_name() }
 	interp_version := interpreter_version(python)
 	if interp_version.len == 0 {
 		return error('cannot run ${python}; is it on PATH?')
