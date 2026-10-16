@@ -66,7 +66,7 @@ Additions that do not change anything 1.x promises.
       a result that is a *new* instance is not one of the operands, which is exactly what
       an instance-reference result refuses. Not a 1.3.0 item.
 - [x] **Buffer export:** returning memory as a `memoryview` without a copy (see above).
-- [ ] **Subinterpreters:** multi-phase initialisation (PEP 489) for every build.
+
 - [ ] **V without building it:** a prebuilt V for each supported platform (as
       `ziglang` ships Zig on PyPI), so not even the five-minute build is needed.
 - [x] **Threaded workloads in the benchmark**, against PyO3's `allow_threads`: an
@@ -99,3 +99,13 @@ Decided against for 1.x, written down so the decision can be revisited with its 
 - **arm64 Windows and MSVC.** 1.4 brings `win_amd64` linked with the toolchain V ships
   (MinGW-w64). MSVC links differently, and `win_arm64` needs its own import library and
   runner; both wait until the x64 path has real users.
+- **Subinterpreters, deferred.** Multi-phase initialisation (PEP 489) is in place for the
+  abi3 builds, so the remaining work is the state model, not the entry point. A heap type
+  is per-interpreter from CPython 3.12, and the runtime keeps the type objects and the
+  state-chain key in process-wide globals because V has no per-interpreter globals. Real
+  support means moving that state into per-interpreter storage and proving that Boehm,
+  which is process-wide, never lets a V object escape its interpreter -- and it cannot
+  make Boehm itself per-interpreter. In the meantime, V code run directly (or in a
+  subprocess) already gives stronger parallelism and isolation than a subinterpreter does:
+  a subinterpreter only earns its keep for many isolated Python tenants in one process.
+  Revisit when that is wanted and the state move looks tractable.
