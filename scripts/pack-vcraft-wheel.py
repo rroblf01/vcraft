@@ -130,9 +130,15 @@ import sys
 
 def _binary() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    exe = os.path.join(here, "bin", "vcraft")
+    name = "vcraft.exe" if os.name == "nt" else "vcraft"
+    exe = os.path.join(here, "bin", name)
     if not os.path.isfile(exe):
-        raise SystemExit(f"vcraft binary not found at {exe}")
+        # Fall back to the other spelling, so a wheel packed with the wrong
+        # platform tag still runs rather than failing to find its binary.
+        other = os.path.join(here, "bin", "vcraft" if name == "vcraft.exe" else "vcraft.exe")
+        if not os.path.isfile(other):
+            raise SystemExit(f"vcraft binary not found at {exe}")
+        exe = other
     return exe
 
 
@@ -187,7 +193,10 @@ def build_wheel(version: str, platform: str, binary: Path, vlib: Path,
         put("vcraft_tool/__init__.py", INIT_PY.format(version=version).encode())
         put("vcraft_tool/__main__.py", MAIN_PY.encode())
         put("vcraft_tool/_launch.py", LAUNCH_PY.encode())
-        put("vcraft_tool/bin/vcraft", binary.read_bytes(), executable=True)
+        # Windows wheels carry `vcraft.exe`, which is the file name the launcher
+        # looks for there; every other platform's binary has no suffix.
+        bin_name = "vcraft.exe" if platform.startswith("win") else "vcraft"
+        put(f"vcraft_tool/bin/{bin_name}", binary.read_bytes(), executable=True)
         for path in sorted(vlib.rglob("*")):
             if path.is_dir():
                 continue

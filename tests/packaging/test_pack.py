@@ -182,6 +182,22 @@ def main() -> int:
             t.check("the entry is a regular file",
                     stat.S_ISREG(mode), oct(mode))
 
+        print("a Windows wheel")
+        win_wheel = out / "win.whl"
+        win_wheel.write_bytes(packer.build_wheel("0.1.0", "win_amd64", binary, vlib))
+        with zipfile.ZipFile(win_wheel) as z:
+            names = z.namelist()
+            # Windows loads `vcraft.exe`; a wheel that shipped the bare name would
+            # install and then fail to find its own binary.
+            t.check("the Windows binary is vcraft.exe",
+                    "vcraft_tool/bin/vcraft.exe" in names
+                    and "vcraft_tool/bin/vcraft" not in names,
+                    str([n for n in names if "/bin/" in n]))
+            t.check("the Windows wheel tag names win_amd64",
+                    "Tag: py3-none-win_amd64" in z.read(
+                        "vcraft-0.1.0.dist-info/WHEEL").decode(),
+                    z.read("vcraft-0.1.0.dist-info/WHEEL").decode())
+
         print("record")
         rows = record_map(wheel)
         with zipfile.ZipFile(wheel) as z:
