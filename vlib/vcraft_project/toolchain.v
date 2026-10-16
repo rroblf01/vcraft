@@ -65,11 +65,57 @@ pub fn v_reported_commit(v string) string {
 	return ''
 }
 
+// host_os is the operating system this build runs on. A compile-time `$if` through
+// `default_target`, because nothing at runtime reliably describes the host.
+fn host_os() string {
+	return default_target().os
+}
+
+// toolchain_tools lists the programs `vcraft toolchain install` needs on PATH.
+//
+// POSIX builds V with its `make`; Windows drives the same build through the checkout's
+// own `makev.bat`, which ships with the sources, so only `git` has to be present there.
+pub fn toolchain_tools() []string {
+	if host_os() == 'windows' {
+		return ['git']
+	}
+	return ['git', 'make']
+}
+
+// fetch_tcc_command fetches V's bundled TCC, the fast C compiler V reaches for by
+// default. Optional everywhere: without it V falls back to the system C compiler. On
+// POSIX the Makefile knows where TCC lives; on Windows there is no make, so the same
+// repository `makev.bat` would clone is cloned here.
+fn fetch_tcc_command(dir string) []string {
+	if host_os() == 'windows' {
+		// Windows is amd64 only for now, so the 64-bit branch of `makev.bat` is the one
+		// to match.
+		return ['git', 'clone', '--filter=blob:none', '-q', '--branch',
+			'thirdparty-windows-amd64', 'https://github.com/vlang/tccbin', os.join_path(dir,
+			'thirdparty', 'tcc')]
+	}
+	return ['make', '-C', dir, 'fresh_tcc']
+}
+
+// toolchain_build_command builds the pinned V inside dir.
+//
+// On POSIX `local=1` keeps the Makefile off the network and `VEXE=./v` keeps the compiler
+// it writes inside the checkout. On Windows `makev.bat` does the same build; `--local`
+// stops it re-syncing the `vc` and TCC checkouts already in place, and it changes into
+// its own directory, so the full path is enough to run it from anywhere.
+fn toolchain_build_command(dir string, jobs int) []string {
+	if host_os() == 'windows' {
+		return ['cmd', '/c', os.join_path(dir, 'makev.bat'), '--local']
+	}
+	return ['make', '-C', dir, 'local=1', '-j${jobs}', 'VEXE=./v']
+}
+
 // install_toolchain builds the pinned V into `toolchain_dir()`, printing what it runs.
 //
-// git, make and a C compiler are what it needs; it downloads nothing else. A checkout
-// left by an interrupted run is removed first, because a half-built V is worse than none.
-// The C bootstrap sources are deleted afterwards, as CI does: they are only read while
+// git and a build tool -- `make` on POSIX, the checkout's own `makev.bat` on Windows --
+// are what it needs; the C compiler is fetched with the sources. A checkout left by an
+// interrupted run is removed first, because a half-built V is worse than none. The C
+// bootstrap sources are deleted afterwards, as CI does: they are only read while
 // building the compiler, and they are most of its size.
 pub fn install_toolchain(jobs int) ! {
 	dir := toolchain_dir()
@@ -86,7 +132,7 @@ fn install_into(dir string, jobs int) ! {
 		println('V ${v_commit[..7]} is already installed in ${dir}')
 		return
 	}
-	for tool in ['git', 'make'] {
+	for tool in toolchain_tools() {
 		if os.find_abs_path_of_executable(tool) or { '' } == '' {
 			return error('`${tool}` is needed to build V; install it and run this again')
 		}
@@ -111,22 +157,23 @@ fn install_into(dir string, jobs int) ! {
 	}
 	// V's own fast compiler for non-release builds, fetched before V is built as CI
 	// does. Optional: without it V compiles with the system's cc, more slowly.
-	tcc := ['make', '-C', dir, 'fresh_tcc']
+	tcc := fetch_tcc_command(dir)
 	println('+ ${tcc.join(' ')}')
 	if os.system_args(tcc) != 0 {
 		eprintln('warning: tcc could not be fetched; V will use the system C compiler')
 	}
-	// VEXE pinned to the checkout's own `./v`: V's Makefile writes the compiler it builds
-	// to $VEXE, and an inherited one is somebody else's compiler.
+	// VEXE pinned to the checkout's own `./v`: the build writes the compiler it makes to
+	// $VEXE, and an inherited one is somebody else's compiler.
 	os.unsetenv('VEXE')
 	built_v := os.join_path(dir, executable_name('v'))
-	build := ['make', '-C', dir, 'local=1', '-j${jobs}', 'VEXE=./v']
+	build := toolchain_build_command(dir, jobs)
 	println('+ ${build.join(' ')}')
 	if os.system_args(build) != 0 {
-		// The Makefile's last step compiles and runs a script for V's own CI after the
-		// compiler is built, and on musl that step fails to link at the pinned commit
-		// (the cached `builtin` object exports `backtrace`, which calls a function that
-		// is static in another object). A compiler that reports the pin is complete.
+		// The build's last step runs a script for V's own CI after the compiler is built:
+		// the Makefile's on POSIX, `makev.bat`'s on Windows. On musl that step fails to
+		// link at the pinned commit (the cached `builtin` object exports `backtrace`,
+		// which calls a function that is static in another object). A compiler that
+		// reports the pin is complete.
 		if !v_matches_pin(built_v) {
 			return error('`${build.join(' ')}` failed; nothing was installed')
 		}
