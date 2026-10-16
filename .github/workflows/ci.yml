@@ -291,11 +291,12 @@ jobs:
           tar -xzf "$env:RUNNER_TEMP\v-dl\v-$env:V_COMMIT-win-amd64.tar.gz" -C $v
           & "$v\v.exe" version
 
-      # Restored, then saved at the end of the job whether it held a download or a
-      # build, so a run that used the release still hands the compiler to the next.
-      - name: cache the V compiler
+      # Restored here and saved by its own step below, never by a job-level
+      # post-save: that save is skipped when the job fails, and the suites fail
+      # often enough that the compiler would then be rebuilt on every run.
+      - name: restore the V compiler cache
         id: v-cache
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/v-src
           key: v-slim1-windows-latest-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
@@ -318,6 +319,15 @@ jobs:
           git clone --filter=blob:none -q --branch thirdparty-windows-amd64 https://github.com/vlang/tccbin "$v\thirdparty\tcc"
           & "$v\makev.bat" --local
           & "$v\v.exe" version
+
+      # Before the suites, and not gated on their success: the compiler is worth
+      # caching whether or not they pass.
+      - name: save the V compiler
+        if: steps.v-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/v-src
+          key: v-slim1-windows-latest-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
 
       - name: put V on PATH
         run: echo "$env:RUNNER_TEMP\v-src" >> $env:GITHUB_PATH

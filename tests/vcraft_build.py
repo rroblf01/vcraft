@@ -98,10 +98,10 @@ def link_flags(module: str) -> list[str]:
     a version script keeps V's runtime out of the dynamic symbol table.
 
     On Windows V's C compiler is MinGW gcc (the bundled TCC cannot link the MS import
-    library), and a gcc-built DLL pulls in the MinGW runtime -- `libgcc_s_seh-1.dll` and
-    friends -- which nothing puts on the loader's path when a user imports the wheel.
-    `-static-libgcc` folds that runtime into the extension instead, so the only import
-    left is the interpreter's own DLL.
+    library), and a gcc-built DLL imports the MinGW runtime that nothing puts on the
+    loader's path when a user imports the wheel: `libgcc_s_seh-1.dll` and
+    `libwinpthread-1.dll`. `-static-libgcc` and a static `libwinpthread` fold both into
+    the extension, so the interpreter's own DLL is its only non-system import.
     """
     if DARWIN:
         return ["-ldflags", "-undefined dynamic_lookup"]
@@ -112,7 +112,8 @@ def link_flags(module: str) -> list[str]:
             libdir = str(Path(base) / "libs")
         ldlib = sysconfig.get_config_var("LDLIBRARY") or "python3.dll"
         stem = os.path.splitext(ldlib)[0]
-        return ["-ldflags", f"-L{libdir} -l{stem} -static-libgcc"]
+        return ["-ldflags",
+                f"-L{libdir} -l{stem} -static-libgcc -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic"]
     if LINUX:
         BUILD.mkdir(exist_ok=True)
         exports = BUILD / f"{module}.exports"
