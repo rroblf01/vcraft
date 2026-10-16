@@ -312,6 +312,21 @@ jobs:
       - name: "suite: fuzzed conversions"
         run: python tests/fuzz/test_fuzz.py 4 20000
 
+      # TEMPORARY: names the dependency a `.pyd` cannot find. Remove once the
+      # Windows extension loads.
+      - name: diagnose the Windows extension
+        if: always()
+        shell: pwsh
+        run: |
+          python -c "import sysconfig as s; print({k: s.get_config_var(k) for k in ('LIBDIR','LDLIBRARY','EXT_SUFFIX','Py_ENABLE_SHARED','installed_base','base_prefix')})"
+          $inc = python -c "import sysconfig; print(sysconfig.get_paths()['include'])"
+          Get-ChildItem build -ErrorAction SilentlyContinue | Format-Table Name,Length
+          Write-Host '=== cc command ==='
+          v -new-compiler -no-parallel -shared -showcc -o build\dbg.pyd -cflags "-I$inc" -path "vlib|@vlib" tests\runtime 2>&1 | Select-Object -Last 40
+          Write-Host '=== dependents ==='
+          $db = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($db) { & $db.FullName /dependents (Get-ChildItem build\vcraft_runtime_check*.pyd).FullName } else { Write-Host 'no dumpbin found' }
+
   musl:
     # The suites on musl libc, inside the published musllinux image, which carries V
     # at the pinned commit, gcc and CPython. Run with `docker run` from the runner
