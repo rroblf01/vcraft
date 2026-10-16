@@ -7,6 +7,16 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+### Added
+
+- **Windows (`win_amd64`).** `vcraft build` links the `.pyd` against the interpreter's own
+  import library and folds the MinGW runtime in with `-static`, so the wheel imports on a
+  machine that has no compiler on `PATH`; the CLI, `vcraft toolchain install` (through
+  `makev.bat`), `vcraft generate-ci` and the action run on `windows-latest`, and the suites
+  that were POSIX-only — packaging, wheel, docs and the CLI — run there as well. An abi3
+  extension is named `.pyd` on Windows, the only suffix the loader will import there.
+  `release-v` publishes a prebuilt Windows V and `release-vcraft` a `win_amd64` wheel.
+
 ## [1.3.0] - 2026-10-15
 
 ### Added
