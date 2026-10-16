@@ -51,8 +51,9 @@ Additions that do not change anything 1.x promises.
       the object's lifetime, freed at dealloc and exposed through the buffer protocol.
 - [x] **Constructors with arguments:** `new_<class>` may take parameters, bound in
       `tp_new` with the same marshalling rules as a method.
-- [ ] **More types:** enums, plain structs, maps with non-string keys and nested
-      composites. Class instances (`&T`) as parameters and results shipped in 1.3.0.
+- [x] **More types:** enums (a generated `enum.IntEnum`), plain structs (a `dict`), maps
+      with non-string keys and nested composites, all as parameters and results. Class
+      instances (`&T`) as parameters and results shipped in 1.3.0; the rest ships in 1.4.0.
 - [x] **Callbacks:** `vcraft.call`, `call_owned`, `getattr` and `call_method` call a
       Python callable from V. Shipped in 1.3.0.
 - [x] **Class protocols:** `@[vc_len]`, `@[vc_getitem]`, `@[vc_contains]`, the ordering
