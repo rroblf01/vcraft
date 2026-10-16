@@ -1004,9 +1004,9 @@ fn composite_boxed_expr(strategy Strategy, value string, v_type string) string {
 			'(if opt_value := ${value} { ${boxed_expr(lookup(inner), 'opt_value')} } else { vcraft.to_py_none() })'
 		}
 		.dict {
-			element := t['map[string]'.len..]
+			key, val := map_parts(t)
 			'fn (m ${t}) vcraft.PyObj {\n\t\td := vcraft.new_dict()\n' +
-				'\t\tfor k, v in m {\n\t\t\tvcraft.dict_set_owned(d, vcraft.to_py_string(k), ${boxed_expr(lookup(element), 'v')})\n\t\t}\n' +
+				'\t\tfor k, v in m {\n\t\t\tvcraft.dict_set_owned(d, ${boxed_expr(lookup(key), 'k')}, ${boxed_expr(lookup(val), 'v')})\n\t\t}\n' +
 				'\t\treturn d\n\t}(${value})'
 		}
 		.fixed { seq_boxed_expr(fixed_element(t), '${value}[..]') }
@@ -1489,13 +1489,13 @@ fn composite_reader(strategy Strategy, local string, index int, func string, par
 				'\tif !${obj}.is_null() && !vcraft.is_none_ptr(${obj}.ptr) {\n\t\t${local} = ${value_from_obj(t[1..], obj, param)}\n\t}'
 		}
 		.dict {
-			element := t['map[string]'.len..]
+			key, val := map_parts(t)
 			items := '${local}_items'
 			'${fetch}\n\t${items} := vcraft.dict_items(${obj}, ${vstring_literal(param)}) or { return unsafe { nil } }\n' +
 				'\tmut ${local} := ${t}{}\n' +
 				'\tfor ${local}_k := 0; ${local}_k < ${items}.len; ${local}_k += 2 {\n' +
-				'\t\t${local}[${value_from_obj('string', '${items}[${local}_k]', param)}] = ' +
-				'${value_from_obj(element, '${items}[${local}_k + 1]', param)}\n\t}'
+				'\t\t${local}[${value_from_obj(key, '${items}[${local}_k]', param)}] = ' +
+				'${value_from_obj(val, '${items}[${local}_k + 1]', param)}\n\t}'
 		}
 		// Read as the slice of the same element, then held to exactly N items.
 		.fixed {

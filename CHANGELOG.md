@@ -18,6 +18,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   result is a number or a new `T` that vcraft allocates and fills. A scalar on the left
   (`2 + counter`) reaches the reflected `@[vc_radd]`-style function, or the forward one for
   a commutative operator; an operand the function does not accept returns `NotImplemented`.
+- **Maps with non-string keys.** `map[K]T` marshals to a `dict` when `K` is a scalar or a
+  string (`bool`, an integer, a float or `str`), not only `str`, both as a parameter and
+  as a result.
 - **Windows (`win_amd64`).** `vcraft build` links the `.pyd` against the interpreter's own
   import library and folds the MinGW runtime in with `-static`, so the wheel imports on a
   machine that has no compiler on `PATH`; the CLI, `vcraft toolchain install` (through

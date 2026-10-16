@@ -33,8 +33,8 @@ pub enum Strategy {
 	seq
 	// Optional is `?T` of a scalar or a string: `none` in V is `None` in Python, both ways.
 	optional
-	// Dict is `map[string]T` of a scalar or a string: a `dict` with `str` keys in, a new
-	// `dict` out.
+	// Dict is `map[K]T` where K is a scalar or a string and T a plain value: a `dict` in,
+	// a new `dict` out.
 	dict
 	// Tuple is a multi-value return, `(A, B)`, which Python receives as a `tuple`. V has
 	// no tuple type for a parameter, so it exists only as a result.
@@ -79,7 +79,11 @@ pub fn lookup(v_type string) Strategy {
 		return if is_plain_value(base[1..]) { Strategy.optional } else { Strategy.unsupported }
 	}
 	if base.starts_with('map[') {
-		if base.starts_with('map[string]') && is_plain_value(base['map[string]'.len..]) {
+		key, value := map_parts(base)
+		// A dict key has to be hashable and comparable in Python, which a scalar is; the
+		// value may be any plain value. `lookup(key)` on the key type is the same check:
+		// a composite or an unknown name is refused.
+		if lookup(key) in [.bool, .int, .uint, .float, .str] && is_plain_value(value) {
 			return .dict
 		}
 		return .unsupported
@@ -164,7 +168,10 @@ pub fn describe(v_type string) string {
 		// does not lose the element type at every call. `[]u8` is `.bytes` above.
 		.seq { 'Sequence[' + describe(element_type(v_type)) + ']' }
 		.optional { describe(v_type.trim_space()[1..]) + ' | None' }
-		.dict { 'dict[str, ' + describe(v_type.trim_space()['map[string]'.len..]) + ']' }
+		.dict {
+			key, value := map_parts(v_type)
+			'dict[' + describe(key) + ', ' + describe(value) + ']'
+		}
 		.tuple { 'tuple[' + tuple_parts(v_type.trim_space()).map(describe(it)).join(', ') + ']' }
 		.fixed { 'list[' + describe(fixed_element(v_type)) + ']' }
 		.complex { 'complex' }
@@ -220,6 +227,17 @@ pub fn fixed_parts(v_type string) (int, string) {
 		return 0, ''
 	}
 	return size.int(), t[close + 1..]
+}
+
+// map_parts splits a map type, `map[K]V`, into its key and value types, or two empty
+// strings when the text is not a map.
+pub fn map_parts(v_type string) (string, string) {
+	t := v_type.trim_space()
+	if !t.starts_with('map[') {
+		return '', ''
+	}
+	close := t.index(']') or { return '', '' }
+	return t['map['.len..close], t[close + 1..]
 }
 
 // fixed_element is the element type of a fixed-size array.

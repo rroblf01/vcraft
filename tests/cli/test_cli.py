@@ -1534,6 +1534,14 @@ pub fn t_dict(m map[string]int) map[string]int {
 	return out
 }
 @[vc_fn]
+pub fn t_idict(m map[int]int) map[int]int {
+	mut out := map[int]int{}
+	for k, v in m {
+		out[k * 2] = v * 2
+	}
+	return out
+}
+@[vc_fn]
 pub fn t_pair(x int) (int, string) {
 	return x + 1, 'n=${x}'
 }
@@ -1613,6 +1621,8 @@ cases = [
     ("optional result", lambda: m.t_opt_out(2), repr("n2")), ("optional result None", lambda: m.t_opt_out(-1), "None"),
     ("dict", lambda: m.t_dict({"a": 1, "b": 2}), repr({"a": 2, "b": 4})),
     ("dict not a dict", lambda: m.t_dict([1]), "TypeError"), ("dict int key", lambda: m.t_dict({1: 1}), "TypeError"),
+    ("int-keyed dict", lambda: m.t_idict({1: 2, 3: 4}), repr({2: 4, 6: 8})),
+    ("int-keyed dict string key", lambda: m.t_idict({"a": 1}), "TypeError"),
     ("tuple result", lambda: m.t_pair(1), repr((2, "n=1"))),
     ("fixed array", lambda: m.t_fixed((1.0, 2.0, 3.0)), repr([3.0, 2.0, 1.0])),
     ("fixed array length", lambda: m.t_fixed([1.0]), "ValueError"),
@@ -1647,7 +1657,7 @@ bad = [(label, got, want) for label, f, want in cases if (got := outcome(f)) != 
 import gc, tracemalloc
 def churn():
     for _ in range(20_000):
-        m.t_dict({"a": 1, "b": 2}); m.t_pair(3); m.t_opt_out(1); m.t_fixed([1.0, 2.0, 3.0])
+        m.t_dict({"a": 1, "b": 2}); m.t_idict({1: 1, 2: 2}); m.t_pair(3); m.t_opt_out(1); m.t_fixed([1.0, 2.0, 3.0])
     gc.collect()
 churn(); tracemalloc.start(); churn()
 first = tracemalloc.get_traced_memory()[0]; churn()
@@ -1716,7 +1726,7 @@ print("ok" if not bad else bad)
         print("composite types the generator refuses")
         for label, decl, needle in [
             ("a tuple parameter", "pub fn t_tp(p (int, int)) int { return 0 }", "only allows as a result"),
-            ("a map with non-string keys", "pub fn t_mk(m map[int]int) int { return 0 }", "no marshalling rule"),
+            ("a map with a composite value", "pub fn t_mk(m map[string][]int) int { return 0 }", "no marshalling rule"),
             ("an optional slice", "pub fn t_os(x ?[]int) int { return 0 }", "no marshalling rule"),
         ]:
             native.write_text(saved + "\n@[vc_fn]\n" + decl + "\n")

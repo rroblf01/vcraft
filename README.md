@@ -262,7 +262,7 @@ generic value tree.
 | `[]T` of the types above, or `string` | `list`                       | Any sequence in (a list, a tuple); a list out      |
 | `[N]T` of the types above             | `list`                       | Any sequence of exactly N items in; a list out     |
 | `?T` of the types above               | `T` or `None`                | `none` is `None`, both ways                        |
-| `map[string]T` of the types above     | `dict`                       | `str` keys; a new dict out                         |
+| `map[K]T`, `K` a scalar or `string`   | `dict`                       | Scalar or `str` keys; a new dict out               |
 | `(A, B, ...)`, as a result            | `tuple`                      | A multi-value return                               |
 | `voidptr`                             | any object                   | Borrowed; you own the reference                    |
 | `vcraft.PyObj` (result)               | any object                   | Owned; the reference goes to the caller            |
@@ -271,8 +271,8 @@ generic value tree.
 | `!T`                                  | `T`, or raises               | See [Errors and panics](#errors-and-panics)        |
 
 Fields of a `@[vc_class]` struct and method parameters follow the same table.
-Enums, plain structs, V function types, maps with non-string keys and nested
-composites (`?[]int`, `map[string][]int`) are not supported yet; they are on the
+Enums, plain structs, V function types and nested composites (`?[]int`,
+`map[string][]int`) are not supported yet; they are on the
 [roadmap](ROADMAP.md). An instance reference (`&T`) is supported; see
 [Instance references](#instance-references). A `@[vc_class]` is constructed from
 Python with its class, through `new_<class>` when one is declared.
