@@ -141,11 +141,18 @@ def batch():
 
 batch()                       # warm up: first-call caches are not the scenario
 tracemalloc.start()
-batch()
-first_py, first_rss = tracemalloc.get_traced_memory()[0], peak()
-batch()
-second_py, second_rss = tracemalloc.get_traced_memory()[0], peak()
-print(json.dumps({"py": second_py - first_py, "rss": second_rss - first_rss}))
+points = []
+for _ in range(3):
+    batch()
+    points.append((tracemalloc.get_traced_memory()[0], peak()))
+# Judge the smallest step between consecutive batches. CPython charges a one-time
+# cost to the first traced batch on Windows -- a flat ~700 KiB in every scenario,
+# whatever the call count -- which a single step would read as growth. A leak adds
+# to every batch; a one-time cost does not, so the smallest step tells them apart.
+py_steps = [points[i + 1][0] - points[i][0] for i in range(len(points) - 1)]
+rss_steps = [points[i + 1][1] - points[i][1] for i in range(len(points) - 1)]
+print(json.dumps({"py": min(py_steps), "rss": min(rss_steps),
+                  "py_steps": py_steps, "rss_steps": rss_steps}))
 """
 
 REFCOUNT = r"""
@@ -209,9 +216,9 @@ def main() -> int:
             t.check(label, False, r["error"])
             continue
         t.check(f"{label}: Python objects", r["py"] < PY_GROWTH_LIMIT,
-                f"{kib(r['py'])} more after {calls:,} calls")
+                f"{kib(r['py'])} more after {calls:,} calls, steps {r.get('py_steps')}")
         t.check(f"{label}: peak RSS", r["rss"] < RSS_GROWTH_LIMIT,
-                f"{kib(r['rss'])} more after {calls:,} calls")
+                f"{kib(r['rss'])} more after {calls:,} calls, steps {r.get('rss_steps')}")
 
     print("borrowed arguments keep their reference count")
     for label, payload in BORROWED.items():
