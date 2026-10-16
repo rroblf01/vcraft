@@ -39,6 +39,15 @@ print(hello_native.greet("world"))  # Hello, world!
 - [The command line](guide/cli.md) and [Wheels](guide/wheels.md) — build, develop,
   publish, abi3 and free-threading.
 
+## Built with vcraft
+
+[vqubit](https://pypi.org/project/vqubit/) is a dependency-free quantum computing framework
+for Python in the spirit of [Cirq](https://quantumai.google/cirq): its linear algebra, gate
+matrices and simulators are written in V. It ships as a single abi3 wheel per platform,
+CPython 3.11 and newer, and pulls in nothing else — a good, complete example of a project
+built on vcraft ([source](https://github.com/rroblf01/vqubit),
+[docs](https://rroblf01.github.io/vqubit/)).
+
 ## Status
 
 1.4.0. The annotation vocabulary, the `vcraft.toml` keys and the CLI change only with a

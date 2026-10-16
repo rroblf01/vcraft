@@ -74,7 +74,9 @@ Additions that do not change anything 1.x promises.
 - [x] **Documentation site:** a guide and a reference in English and Spanish under `docs/`,
       built with MkDocs Material and published to GitHub Pages. The README stays the source
       of truth and keeps every V example tested. Ships in 1.4.0.
-- [ ] **A real project** published to PyPI with vcraft, as the reference example.
+- [x] **A real project** published to PyPI with vcraft: [`vqubit`](https://pypi.org/project/vqubit/),
+      a dependency-free quantum computing framework whose linear algebra, gate matrices and
+      simulators are written in V, shipped as one abi3 wheel per platform. Ships in 1.4.0.
 
 ## Platforms and toolchain
 

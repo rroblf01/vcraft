@@ -40,6 +40,15 @@ print(hello_native.greet("world"))  # Hello, world!
 - [La línea de comandos](guide/cli.md) y [Wheels](guide/wheels.md) — build, develop,
   publish, abi3 y free-threading.
 
+## Hecho con vcraft
+
+[vqubit](https://pypi.org/project/vqubit/) es un framework de computación cuántica para
+Python, sin dependencias y al estilo de [Cirq](https://quantumai.google/cirq): su álgebra
+lineal, las matrices de las puertas y los simuladores están escritos en V. Se publica como
+un único wheel abi3 por plataforma, para CPython 3.11 y posteriores, y no arrastra nada más
+— un buen ejemplo completo de un proyecto hecho con vcraft
+([fuente](https://github.com/rroblf01/vqubit), [docs](https://rroblf01.github.io/vqubit/)).
+
 ## Estado
 
 1.4.0. El vocabulario de anotaciones, las claves de `vcraft.toml` y la CLI sólo cambian

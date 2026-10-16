@@ -122,6 +122,7 @@ to publish to PyPI. See [Continuous integration](#continuous-integration).
 - [Configuration](#configuration)
 - [Performance](#performance)
 - [Project status](#project-status)
+- [Built with vcraft](#built-with-vcraft)
 - [Stability](#stability)
 - [Development](#development)
 - [Design notes](#design-notes)
@@ -1548,6 +1549,15 @@ Known limitations:
   of the per-commit test matrix.
 - Extensions use single-phase initialisation, so a module is shared by all
   subinterpreters.
+
+## Built with vcraft
+
+[vqubit](https://pypi.org/project/vqubit/) is a dependency-free quantum computing framework
+for Python in the spirit of [Cirq](https://quantumai.google/cirq): its linear algebra, gate
+matrices and simulators are written in V. It ships as a single abi3 wheel per platform,
+CPython 3.11 and newer, and pulls in nothing else. It is the reference for what a vcraft
+project looks like end to end — [source](https://github.com/rroblf01/vqubit),
+[docs](https://rroblf01.github.io/vqubit/).
 
 ## Stability
 
