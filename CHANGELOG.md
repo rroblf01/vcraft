@@ -5,7 +5,7 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
-## [Unreleased]
+## [1.4.0] - 2026-10-16
 
 ### Added
 
@@ -42,6 +42,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   that were POSIX-only — packaging, wheel, docs and the CLI — run there as well. An abi3
   extension is named `.pyd` on Windows, the only suffix the loader will import there.
   `release-v` publishes a prebuilt Windows V and `release-vcraft` a `win_amd64` wheel.
+- **Documentation site.** A guide and a reference in English and Spanish, built with MkDocs
+  Material and published to GitHub Pages, covering everything needed to use vcraft. The
+  README stays the source of truth and keeps every V example tested.
 
 ## [1.3.0] - 2026-10-15
 
