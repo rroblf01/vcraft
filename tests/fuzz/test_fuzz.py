@@ -32,15 +32,20 @@ ROUNDS = int(sys.argv[1]) if len(sys.argv) > 1 else 8
 CALLS = int(sys.argv[2]) if len(sys.argv) > 2 else 20_000
 
 WORKER = r'''
-import math, random, resource, sys
+import math, random, sys
+try:
+    import resource
+except ImportError:
+    resource = None
 
 # A ceiling on this worker's own address space, so a draw that makes the extension
 # allocate gigabytes fails this seed instead of exhausting the machine. Linux only:
-# macOS does not enforce RLIMIT_AS. Not under AddressSanitizer, whose shadow memory
-# reserves terabytes of address space up front: a sanitized run is bounded by its
-# cgroup instead (scripts/run-sanitized.sh in CI, `systemd-run -p MemoryMax` locally).
+# macOS does not enforce RLIMIT_AS, and Windows has no `resource` module. Not under
+# AddressSanitizer, whose shadow memory reserves terabytes of address space up front: a
+# sanitized run is bounded by its cgroup instead (scripts/run-sanitized.sh in CI,
+# `systemd-run -p MemoryMax` locally).
 import os
-if sys.platform.startswith("linux") and not os.environ.get("VCRAFT_SANITIZE"):
+if resource is not None and sys.platform.startswith("linux") and not os.environ.get("VCRAFT_SANITIZE"):
     limit = 3 * 1024 ** 3
     resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 sys.path.insert(0, sys.argv[1])

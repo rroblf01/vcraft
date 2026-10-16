@@ -92,10 +92,15 @@ BORROWED = {
 }
 
 WORKER = r"""
-import gc, json, resource, sys, tracemalloc
+import gc, json, sys, tracemalloc
+try:
+    import resource
+except ImportError:
+    resource = None
 # A ceiling on the worker's address space, so a scenario that runs away fails here
-# instead of exhausting the machine. Linux only: macOS does not enforce RLIMIT_AS.
-if sys.platform.startswith("linux"):
+# instead of exhausting the machine. Linux only: macOS does not enforce RLIMIT_AS,
+# and Windows has no `resource` module at all.
+if resource is not None and sys.platform.startswith("linux"):
     resource.setrlimit(resource.RLIMIT_AS, (3 * 1024 ** 3, 3 * 1024 ** 3))
 sys.path.insert(0, sys.argv[1])
 import hello_native as m
@@ -105,8 +110,29 @@ exec(setup, env)
 code = compile(stmt, "<scenario>", "exec")
 
 def peak():
-    value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    return value if sys.platform == "darwin" else value * 1024
+    if resource is not None:
+        value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return value if sys.platform == "darwin" else value * 1024
+    # Windows has no `resource`: read the process's peak working set through PSAPI.
+    import ctypes
+    from ctypes import wintypes
+
+    class Counters(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t)]
+
+    counters = Counters()
+    counters.cb = ctypes.sizeof(counters)
+    ctypes.windll.psapi.GetProcessMemoryInfo(ctypes.windll.kernel32.GetCurrentProcess(),
+                                             ctypes.byref(counters), counters.cb)
+    return counters.PeakWorkingSetSize
 
 def batch():
     for _ in range(calls):
