@@ -39,12 +39,15 @@ jobs:
             asset: linux-aarch64
           - os: macos-26
             asset: macos-arm64
+          - os: windows-latest
+            asset: win-amd64
     runs-on: ${{ matrix.os }}
     steps:
       - name: build the V compiler from source
+        if: runner.os != 'Windows'
         run: |
-          git init -q /tmp/v-src
-          cd /tmp/v-src
+          git init -q "$RUNNER_TEMP/v-src"
+          cd "$RUNNER_TEMP/v-src"
           git remote add origin https://github.com/vlang/v.git
           git fetch -q --depth 1 origin "$V_COMMIT"
           git checkout -q FETCH_HEAD
@@ -54,12 +57,32 @@ jobs:
           make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
           ./v version
 
+      # Native Windows: `makev.bat`, not `make`, with the bundled TCC it wants. The
+      # tccbin clone is what `makev.bat --local` expects to find already in place.
+      - name: build the V compiler from source (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = "$env:RUNNER_TEMP\v-src"
+          git init -q $v
+          git -C $v remote add origin https://github.com/vlang/v.git
+          git -C $v fetch -q --depth 1 origin $env:V_COMMIT
+          git -C $v checkout -q FETCH_HEAD
+          git clone -q https://github.com/vlang/vc.git "$v\vc"
+          git -C "$v\vc" checkout -q $env:VC_COMMIT
+          git clone --filter=blob:none -q --branch thirdparty-windows-amd64 https://github.com/vlang/tccbin "$v\thirdparty\tcc"
+          & "$v\makev.bat" --local
+          & "$v\v.exe" version
+
       - name: package it
         # The compiler finds `vlib` and `thirdparty` beside its own binary, so the
         # archive is the whole checkout minus the two directories a build only needs
-        # once: the bootstrap C sources and the git history.
+        # once: the bootstrap C sources and the git history. The bundled TCC stays in
+        # on Windows: it is what V links with there. Git Bash provides `tar` on the
+        # Windows runner, so one body packages every platform.
+        shell: bash
         run: |
-          cd /tmp/v-src
+          cd "$RUNNER_TEMP/v-src"
           rm -rf vc .git
           tar -czf "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz" .
           ls -l "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz"

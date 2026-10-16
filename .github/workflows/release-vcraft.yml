@@ -18,12 +18,14 @@ permissions:
   # Read the image build cache in ghcr.io.
   packages: read
 
-# The V compiler is built from source at a pinned commit on every POSIX runner:
-# no V release is newer than the flags vcraft passes, so a release binary fails
-# every build with "Unknown argument". On Windows it is built with V's own
-# `makev.bat` and its bundled TCC, because release-v.yml publishes no Windows
-# archive and the runner has no `make`. Same pins as docker/* and the
-# vcraft-action; when V cuts a newer release these steps go back to downloading it.
+# The V compiler comes from the release published by release-v.yml, one archive
+# per runner platform (Windows included). A missing archive falls back to the
+# cache, and then to a source build at this pinned commit -- no V release is
+# newer than the flags vcraft passes, so a release binary fails every build with
+# "Unknown argument". On Windows the fallback is V's own `makev.bat` and its
+# bundled TCC, because the runner has no `make`. Same pins as docker/* and the
+# vcraft-action; when V cuts a newer release these steps go back to a plain
+# release download.
 env:
   V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
   VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
@@ -60,7 +62,7 @@ jobs:
       # The compiler published by release-v.yml, downloaded in seconds rather than
       # built in minutes. A missing archive falls back to the cache ci.yml fills,
       # and then to a source build, so a tag can always be cut even on the first run
-      # after a pin moves. POSIX only: there is no Windows archive to download.
+      # after a pin moves.
       - name: download the prebuilt compiler
         id: v-prebuilt
         if: runner.os != 'Windows'
@@ -75,12 +77,34 @@ jobs:
           tar -xzf "/tmp/v-dl/v-$V_COMMIT-${{ matrix.asset }}.tar.gz" -C /tmp/v-src
           /tmp/v-src/v version
 
+      - name: download the prebuilt compiler (Windows)
+        id: v-prebuilt-win
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "$env:RUNNER_TEMP\v-src"
+          gh release download "v/$env:V_COMMIT" --pattern "v-$env:V_COMMIT-win-amd64.tar.gz" --dir "$env:RUNNER_TEMP\v-dl" --clobber
+          New-Item -ItemType Directory -Force $v | Out-Null
+          tar -xzf "$env:RUNNER_TEMP\v-dl\v-$env:V_COMMIT-win-amd64.tar.gz" -C $v
+          & "$v\v.exe" version
+
       - name: restore the V compiler cache
         if: runner.os != 'Windows' && steps.v-prebuilt.outcome != 'success'
         id: v-cache
         uses: actions/cache@v5
         with:
           path: /tmp/v-src
+          key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+
+      - name: cache the V compiler (Windows)
+        if: runner.os == 'Windows'
+        id: v-cache-win
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/v-src
           key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
 
       - name: build the V compiler from source
@@ -97,11 +121,10 @@ jobs:
           make fresh_tcc
           make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
 
-      # Windows builds V itself, with the tools V ships for the platform: no
-      # prebuilt archive exists (release-v.yml is POSIX only), so there is nothing
-      # to download and no `make`.
+      # Windows builds V with the tools V ships for the platform, when the download
+      # and the cache both came up empty: `makev.bat`, and no `make`.
       - name: build the V compiler (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.v-prebuilt-win.outcome != 'success' && steps.v-cache-win.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $v = "$env:RUNNER_TEMP\v-src"
@@ -114,11 +137,16 @@ jobs:
           git clone --filter=blob:none -q --branch thirdparty-windows-amd64 https://github.com/vlang/tccbin "$v\thirdparty\tcc"
           & "$v\makev.bat" --local
           & "$v\v.exe" version
-          echo $v >> $env:GITHUB_PATH
 
       - name: put V on PATH
         if: runner.os != 'Windows'
         run: echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      - name: put V on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: echo "$env:RUNNER_TEMP\v-src" >> $env:GITHUB_PATH
+
 
       - name: run the test suites
         if: runner.os != 'Windows'

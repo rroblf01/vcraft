@@ -19,9 +19,10 @@ concurrency:
 
 # The platforms no developer machine in this project can cover. Linux x86_64 is
 # verified locally in containers; macOS and Windows run here, on hosted runners.
-# Windows gets its own job (below) because it builds V with `makev.bat` and links
-# extensions against the interpreter's import library, neither of which fits the
-# POSIX matrices. aarch64 Linux is covered by the matrices and the published images.
+# Windows gets its own job (below) because it links extensions against the
+# interpreter's import library and builds V with `makev.bat` when the prebuilt
+# archive or the cache is missing, neither of which fits the POSIX matrices.
+# aarch64 Linux is covered by the matrices and the published images.
 
 # V comes from source at a pinned commit, not from a release: no V release is
 # newer than the flags vcraft passes, so a release binary fails every build.
@@ -275,10 +276,34 @@ jobs:
         with:
           python-version: "3.14"
 
-      # Built here rather than downloaded: release-v.yml publishes archives for the
-      # POSIX runners only, so there is nothing to fetch. Native PowerShell and
-      # `makev.bat`, no emulated shell.
-      - name: build the V compiler
+      # The compiler released by release-v.yml, downloaded in seconds rather than
+      # built in minutes. Anything missing falls back to the cache below and then to
+      # a source build, so the first run after a pin moves still works.
+      - name: download the prebuilt compiler
+        id: v-prebuilt
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "$env:RUNNER_TEMP\v-src"
+          gh release download "v/$env:V_COMMIT" --pattern "v-$env:V_COMMIT-win-amd64.tar.gz" --dir "$env:RUNNER_TEMP\v-dl" --clobber
+          New-Item -ItemType Directory -Force $v | Out-Null
+          tar -xzf "$env:RUNNER_TEMP\v-dl\v-$env:V_COMMIT-win-amd64.tar.gz" -C $v
+          & "$v\v.exe" version
+
+      # Restored, then saved at the end of the job whether it held a download or a
+      # build, so a run that used the release still hands the compiler to the next.
+      - name: cache the V compiler
+        id: v-cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/v-src
+          key: v-slim1-windows-latest-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+
+      # Built here only when the download and the cache both came up empty: native
+      # PowerShell and `makev.bat`, no emulated shell.
+      - name: build the V compiler (Windows)
+        if: steps.v-prebuilt.outcome != 'success' && steps.v-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $v = "$env:RUNNER_TEMP\v-src"
@@ -293,7 +318,9 @@ jobs:
           git clone --filter=blob:none -q --branch thirdparty-windows-amd64 https://github.com/vlang/tccbin "$v\thirdparty\tcc"
           & "$v\makev.bat" --local
           & "$v\v.exe" version
-          echo $v >> $env:GITHUB_PATH
+
+      - name: put V on PATH
+        run: echo "$env:RUNNER_TEMP\v-src" >> $env:GITHUB_PATH
 
       # The suites build their prerequisites through tests/vcraft_build.py, which is
       # Python on Windows: `run_v` passes -new-compiler and -no-parallel itself.
