@@ -1361,8 +1361,7 @@ how the images are built.
 
 The build step uses the vcraft action, which mirrors `maturin-action`. On a runner
 it installs vcraft from PyPI and a cached V compiler; with `container:` it runs
-inside one of the images instead. Linux and macOS runners are supported; Windows
-runners are refused with a clear error.
+inside one of the images instead. Linux, macOS and Windows runners are supported.
 
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
@@ -1481,8 +1480,10 @@ What is tested on every commit:
 
 Known limitations:
 
-- **Windows is not supported.** vcraft quotes its compiler arguments for a POSIX
-  shell, and the action refuses Windows runners.
+- **Windows is supported for `win_amd64`, and is new.** `vcraft build` links a
+  `win_amd64` `.pyd` against the interpreter's own import library, the action and
+  `vcraft generate-ci` run on `windows-latest`, and the core suites pass there. arm64
+  Windows and MSVC are not supported yet.
 - **V has to be built from source** at the pinned commit until V publishes a release
   newer than 0.5.2.
 - **aarch64 Linux** wheels and images are built on native runners but are not part

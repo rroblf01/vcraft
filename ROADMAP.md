@@ -75,6 +75,12 @@ Additions that do not change anything 1.x promises.
 
 ## Platforms and toolchain
 
+- [ ] **Windows (`win_amd64`).** Committed: `vcraft build` links the `.pyd` against the
+      interpreter's own import library, the CLI and `vcraft toolchain install`
+      (`makev.bat`) work on Windows, the action and `vcraft generate-ci` run on
+      `windows-latest`, and the core suites pass there. Open: a `win_amd64` wheel from
+      `release-vcraft.yml`, the POSIX-only suites (packaging, cli, docs, wheel), and a
+      green CI run.
 - [ ] **Linux aarch64 and musl green in CI.** The cells exist (`ubuntu-24.04-arm`, and
       the suites inside the musllinux image); checked off once a run is green.
 
@@ -88,8 +94,6 @@ Additions that do not change anything 1.x promises.
 
 Decided against for 1.x, written down so the decision can be revisited with its reasons.
 
-- **Windows.** vcraft quotes every compiler argument for a POSIX shell, its build scripts
-  are bash, the action refuses Windows runners, and no Windows wheel has ever been built.
-  Supporting it means a cmd/PowerShell-safe build driver, MSVC or MinGW with V, `.pyd`
-  naming and a CI job. Until then the README and `vcraft build` say plainly that Windows
-  is not supported.
+- **arm64 Windows and MSVC.** 1.4 brings `win_amd64` linked with the toolchain V ships
+  (MinGW-w64). MSVC links differently, and `win_arm64` needs its own import library and
+  runner; both wait until the x64 path has real users.
