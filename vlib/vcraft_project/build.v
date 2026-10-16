@@ -254,6 +254,12 @@ pub fn extension_ldflags(target_os string, extra string) string {
 	if target_os == 'macos' {
 		flags << '-undefined dynamic_lookup'
 	}
+	if target_os == 'windows' {
+		// GNU ld stamps a PE image's header with the link time, so two builds of the
+		// same source differ byte for byte and a wheel cannot be shown reproducible.
+		// Zeroing it is what every reproducible MinGW build does.
+		flags << '-Wl,--no-insert-timestamp'
+	}
 	if extra.len > 0 {
 		flags << extra
 	}
