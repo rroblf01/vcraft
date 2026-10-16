@@ -96,6 +96,12 @@ def link_flags(module: str) -> list[str]:
     cannot resolve them at all -- a PE image's imports are fixed at link time -- so the
     interpreter's import library has to be linked in. ELF leaves them to the import, and
     a version script keeps V's runtime out of the dynamic symbol table.
+
+    On Windows V's C compiler is MinGW gcc (the bundled TCC cannot link the MS import
+    library), and a gcc-built DLL pulls in the MinGW runtime -- `libgcc_s_seh-1.dll` and
+    friends -- which nothing puts on the loader's path when a user imports the wheel.
+    `-static-libgcc` folds that runtime into the extension instead, so the only import
+    left is the interpreter's own DLL.
     """
     if DARWIN:
         return ["-ldflags", "-undefined dynamic_lookup"]
@@ -106,7 +112,7 @@ def link_flags(module: str) -> list[str]:
             libdir = str(Path(base) / "libs")
         ldlib = sysconfig.get_config_var("LDLIBRARY") or "python3.dll"
         stem = os.path.splitext(ldlib)[0]
-        return ["-ldflags", f"-L{libdir} -l{stem}"]
+        return ["-ldflags", f"-L{libdir} -l{stem} -static-libgcc"]
     if LINUX:
         BUILD.mkdir(exist_ok=True)
         exports = BUILD / f"{module}.exports"
