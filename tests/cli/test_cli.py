@@ -2017,10 +2017,10 @@ print("ok" if not bad else bad)
         text = workflow.read_text()
         # One wheel covers every interpreter from the floor up, so one cell per platform
         # is the whole matrix rather than one per interpreter.
-        t.check("the abi3 matrix covers linux and macos, not windows",
-                text.count("- target:") == 5, str(text.count("- target:")))
-        t.check("no windows cell is emitted",
-                "windows-latest" not in text, text[:600])
+        t.check("the abi3 matrix covers linux, macos and windows",
+                text.count("- target:") == 6, str(text.count("- target:")))
+        t.check("a windows cell is emitted",
+                "windows-latest" in text and "cp312-abi3-win_amd64" in text, text[:600])
         t.check("macOS is tagged with the architecture actually built",
                 "macosx-arm64" in text and "universal2" not in text, text[:600])
         t.check("the abi3 matrix names the abi3 tag", "cp312-abi3-" in text, text[:600])
@@ -2046,12 +2046,15 @@ print("ok" if not bad else bad)
         t.check("generate-ci succeeds with free-threading", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-300:])
         text = workflow.read_text()
-        # 3.13t, 3.14t and 3.15t, each on Linux and macOS.
+        # 3.13t, 3.14t and 3.15t, each on Linux, macOS and Windows.
         t.check("the free-threaded matrix is one cell per version and platform",
-                text.count("- target:") == 6, str(text.count("- target:")))
+                text.count("- target:") == 9, str(text.count("- target:")))
         t.check("macOS cells name a free-threaded interpreter",
                 'python: "3.13t"' in text and 'python: "3.14t"' in text
                 and 'python: "3.15t"' in text, text[:1200])
+        t.check("windows free-threaded cells are tagged win_amd64",
+                "cp313t-win_amd64" in text and "cp314t-win_amd64" in text
+                and "cp315t-win_amd64" in text, text[:1500])
         t.check("and pass setup-python's exact interpreter to the build",
                 "steps.python.outputs.python-path" in text, text[-1500:])
         t.check("linux free-threaded cells build in the manylinux image",

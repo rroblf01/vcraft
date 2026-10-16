@@ -120,8 +120,11 @@ pub fn workflow(p vcraft_project.Project, vcraft_action string, free_threading b
 	w.write_string('          path: dist/*.whl\n\n')
 	// The wheel is installed where it was built for. A manylinux wheel for cp313 does
 	// not install on the runner's own Python, and a musllinux wheel never installs on a
-	// glibc runner at all, so container cells check inside their image.
-	w.write_string('      - name: test\n')
+	// glibc runner at all, so container cells check inside their image. Windows cells
+	// never use a container, so they get their own step with Windows' venv layout
+	// (`Scripts\python.exe`, not `bin/python`).
+	w.write_string('      - name: test (POSIX)\n')
+	w.write_string('        if: ' + gha("runner.os != 'Windows'") + '\n')
 	w.write_string('        env:\n')
 	w.write_string('          CONTAINER: ' + gha('matrix.container') + '\n')
 	w.write_string('          CHECK: ' + gha('matrix.check || steps.python.outputs.python-path') + '\n')
@@ -132,6 +135,15 @@ pub fn workflow(p vcraft_project.Project, vcraft_action string, free_threading b
 	w.write_string('          else\n')
 	w.write_string('            sh -c "$script"\n')
 	w.write_string('          fi\n')
+	w.write_string('      - name: test (Windows)\n')
+	w.write_string('        if: ' + gha("runner.os == 'Windows'") + '\n')
+	w.write_string('        shell: pwsh\n')
+	w.write_string('        env:\n')
+	w.write_string('          CHECK: ' + gha('steps.python.outputs.python-path') + '\n')
+	w.write_string('        run: |\n')
+	w.write_string('          & "$env:CHECK" -m venv "$env:RUNNER_TEMP\\check"\n')
+	w.write_string('          & "$env:RUNNER_TEMP\\check\\Scripts\\python.exe" -m pip install (Get-ChildItem dist/*.whl).FullName\n')
+	w.write_string('          & "$env:RUNNER_TEMP\\check\\Scripts\\python.exe" -c "import ' + p.module + '; print(' + p.module + '.__name__)"\n')
 	return w.str()
 }
 
@@ -161,8 +173,9 @@ fn image_names(kind string) string {
 //
 // Two combinations that look plausible are deliberately absent: an abi3 build and a
 // free-threaded build are mutually exclusive, because the free-threaded runtime has no
-// stable ABI; and there is no Windows cell at all, because `vcraft build` quotes its
-// compiler arguments for a POSIX shell and has never compiled on one.
+// stable ABI; and there is no Windows `manylinux`-style container cell, because `vcraft
+// build` links a Windows extension against the interpreter's own import library on the
+// runner rather than inside a POSIX image.
 //
 // macOS cells are tagged with the architecture actually built, `arm64` on today's
 // runners, and not `universal2`: a fat binary needs two architectures linked together
@@ -202,6 +215,13 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 				os:             'macos-26'
 				python:         version + 't'
 				target:         'cp' + floor + 't-macosx-arm64'
+				free_threading: true
+				args:           'build --release --free-threading'
+			}
+			out << Target{
+				os:             'windows-latest'
+				python:         version + 't'
+				target:         'cp' + floor + 't-win_amd64'
 				free_threading: true
 				args:           'build --release --free-threading'
 			}
@@ -258,6 +278,13 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 			target: 'cp' + compact(p.abi3) + '-abi3-macosx-arm64'
 			args:   'build --release --abi3 ' + p.abi3
 		}
+		out << Target{
+			os:     'windows-latest'
+			python: p.abi3
+			abi3:   p.abi3
+			target: 'cp' + compact(p.abi3) + '-abi3-win_amd64'
+			args:   'build --release --abi3 ' + p.abi3
+		}
 		return out
 	}
 	// Without abi3 every interpreter needs its own wheel, so the matrix is
@@ -289,6 +316,12 @@ pub fn targets(p vcraft_project.Project, free_threading bool) []Target {
 			os:     'macos-26'
 			python: version
 			target: 'cp' + floor + '-macosx-arm64'
+			args:   'build --release'
+		}
+		out << Target{
+			os:     'windows-latest'
+			python: version
+			target: 'cp' + floor + '-win_amd64'
 			args:   'build --release'
 		}
 	}

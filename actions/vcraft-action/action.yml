@@ -28,23 +28,13 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: refuse Windows explicitly
-      # Nothing below works there: the V release has no Windows binary in this
-      # shape, `ln -sf` has nowhere to land, and vcraft quotes its compiler
-      # arguments for a POSIX shell. Failing here names the limitation instead
-      # of failing ten steps later inside a C compiler error.
-      if: ${{ runner.os == 'Windows' }}
-      shell: bash
-      run: |
-        echo "error: vcraft-action does not support Windows runners yet" >&2
-        exit 1
-
     # The compiler only changes with the pins, so it is built once per runner
     # image and restored afterwards: a cold build is several minutes per cell.
     # The runner image, not just the OS: a compiler built on one macOS image must not
     # be restored on another, whose SDK and libc it was not built against. GitHub's
     # hosted runners set ImageOS and ImageVersion; the expression context cannot read
-    # the runner's environment, so a shell step hands them over.
+    # the runner's environment, so a shell step hands them over. Git Bash is on every
+    # Windows runner too, so this runs everywhere.
     - name: identify the runner image
       id: image
       if: ${{ inputs.container == '' }}
@@ -56,23 +46,23 @@ runs:
       if: ${{ inputs.container == '' }}
       uses: actions/cache@v5
       with:
-        path: /tmp/v-src
+        path: ${{ runner.temp }}/v-src
         key: vcraft-v-${{ steps.image.outputs.name }}-${{ runner.arch }}-36be92642c49a8fe9213ea4b96c6bf56b67b668c-6851aaf3f9e696b30b26e406f16095b0002acaab
 
-    - name: install the V compiler
-      if: ${{ inputs.container == '' && steps.v-cache.outputs.cache-hit != 'true' }}
+    # Built from source at a pinned commit, because no V release is newer
+    # than the flags vcraft passes: the 0.5.2 release predates `-new-compiler`
+    # and fails every build with "Unknown argument". Same pins as docker/* and
+    # .github/workflows/ci.yml; when a newer V release exists this goes back
+    # to downloading it.
+    - name: install the V compiler (POSIX)
+      if: ${{ inputs.container == '' && runner.os != 'Windows' && steps.v-cache.outputs.cache-hit != 'true' }}
       shell: bash
-      # Built from source at a pinned commit, because no V release is newer
-      # than the flags vcraft passes: the 0.5.2 release predates `-new-compiler`
-      # and fails every build with "Unknown argument". Same pins as docker/* and
-      # .github/workflows/ci.yml; when a newer V release exists this goes back
-      # to downloading it.
       env:
         V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
         VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
       run: |
-        git init -q /tmp/v-src
-        cd /tmp/v-src
+        git init -q "$RUNNER_TEMP/v-src"
+        cd "$RUNNER_TEMP/v-src"
         git remote add origin https://github.com/vlang/v.git
         git fetch -q --depth 1 origin "$V_COMMIT"
         git checkout -q FETCH_HEAD
@@ -81,30 +71,66 @@ runs:
         make fresh_tcc
         make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
 
-    - name: put V on PATH
-      if: ${{ inputs.container == '' }}
-      shell: bash
-      run: echo "/tmp/v-src" >> "$GITHUB_PATH"
+    # The Windows build is native: `makev.bat` instead of `make`, and the bundled TCC
+    # it wants is cloned at the branch `makev.bat` itself would use. `--local` keeps it
+    # from also re-syncing the vc checkout already at the pin.
+    - name: install the V compiler (Windows)
+      if: ${{ inputs.container == '' && runner.os == 'Windows' && steps.v-cache.outputs.cache-hit != 'true' }}
+      shell: pwsh
+      env:
+        V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
+        VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
+      run: |
+        $v = "$env:RUNNER_TEMP\v-src"
+        git init -q $v
+        git -C $v remote add origin https://github.com/vlang/v.git
+        git -C $v fetch -q --depth 1 origin $env:V_COMMIT
+        git -C $v checkout -q FETCH_HEAD
+        git clone -q https://github.com/vlang/vc.git "$v\vc"
+        git -C "$v\vc" checkout -q $env:VC_COMMIT
+        git clone --filter=blob:none -q --branch thirdparty-windows-amd64 https://github.com/vlang/tccbin "$v\thirdparty\tcc"
+        & "$v\makev.bat" --local
 
-    - name: install vcraft
-      if: ${{ inputs.container == '' }}
+    - name: put V on PATH (POSIX)
+      if: ${{ inputs.container == '' && runner.os != 'Windows' }}
+      shell: bash
+      run: echo "$RUNNER_TEMP/v-src" >> "$GITHUB_PATH"
+
+    - name: put V on PATH (Windows)
+      if: ${{ inputs.container == '' && runner.os == 'Windows' }}
+      shell: pwsh
+      run: echo "$env:RUNNER_TEMP\v-src" >> $env:GITHUB_PATH
+
+    # From PyPI rather than the GitHub release: the tarballs no longer exist,
+    # and the wheel carries the same binary plus the V modules it was built
+    # with. The leading v comes off the version because tags read
+    # `vcraft/v0.1.0` and PyPI reads `0.1.0`.
+    #
+    # Into a venv of its own: a runner's system Python is externally managed
+    # (PEP 668) and refuses a plain `pip install` outright. Only the `vcraft`
+    # entry point goes on PATH, never the venv's `python3`, so the interpreter
+    # a build defaults to is still the one the workflow set up.
+    - name: install vcraft (POSIX)
+      if: ${{ inputs.container == '' && runner.os != 'Windows' }}
       shell: bash
       run: |
-        # From PyPI rather than the GitHub release: the tarballs no longer exist,
-        # and the wheel carries the same binary plus the V modules it was built
-        # with. The leading v comes off the version because tags read
-        # `vcraft/v0.1.0` and PyPI reads `0.1.0`.
-        #
-        # Into a venv of its own: a runner's system Python is externally managed
-        # (PEP 668) and refuses a plain `pip install` outright. Only the `vcraft`
-        # entry point goes on PATH, never the venv's `python3`, so the interpreter
-        # a build defaults to is still the one the workflow set up.
         VERSION="${{ inputs.vcraft-version }}"
         python3 -m venv "$RUNNER_TEMP/vcraft-tool"
         "$RUNNER_TEMP/vcraft-tool/bin/python" -m pip install -q "vcraft==${VERSION#v}"
         mkdir -p "$RUNNER_TEMP/vcraft-bin"
-        ln -sf "$RUNNER_TEMP/vcraft-tool/bin/vcraft" "$RUNNER_TEMP/vcraft-bin/vcraft"
+        cp "$RUNNER_TEMP/vcraft-tool/bin/vcraft" "$RUNNER_TEMP/vcraft-bin/vcraft"
         echo "$RUNNER_TEMP/vcraft-bin" >> "$GITHUB_PATH"
+
+    - name: install vcraft (Windows)
+      if: ${{ inputs.container == '' && runner.os == 'Windows' }}
+      shell: pwsh
+      run: |
+        $version = "${{ inputs.vcraft-version }}".TrimStart('v')
+        python -m venv "$env:RUNNER_TEMP\vcraft-tool"
+        & "$env:RUNNER_TEMP\vcraft-tool\Scripts\python.exe" -m pip install -q "vcraft==$version"
+        New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\vcraft-bin" | Out-Null
+        Copy-Item "$env:RUNNER_TEMP\vcraft-tool\Scripts\vcraft.exe" "$env:RUNNER_TEMP\vcraft-bin\vcraft.exe"
+        echo "$env:RUNNER_TEMP\vcraft-bin" >> $env:GITHUB_PATH
 
     - name: run vcraft
       shell: bash
