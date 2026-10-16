@@ -212,7 +212,7 @@ pub fn is_plain_value(v_type string) bool {
 // bytes, a complex, or another composite. It is recursive, so `map[string][]?int` is a
 // valid shape. A multi-value type, a bare object and a void are not elements.
 pub fn is_element_type(v_type string) bool {
-	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str, .bytes, .complex, .seq, .optional, .dict, .fixed]
+	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str, .bytes, .seq, .optional, .dict]
 }
 
 // tuple_parts splits a multi-value type, `(int, string)`, into its element types.

@@ -328,6 +328,26 @@ fn seq_elements(argv voidptr, i int, func string, name string) ?PyObj {
 	return obj
 }
 
+// seq_arg reads positional argument `i` as a validated sequence, handing the object to a
+// caller that converts the elements itself. It is what a nested `[]T` parameter needs:
+// the per-type readers below convert as they read, which only works for a scalar element.
+pub fn seq_arg(argv voidptr, i int, func string, name string) !PyObj {
+	obj := seq_elements(argv, i, func, name) or { return error(name) }
+	return obj
+}
+
+// require_sequence raises TypeError unless `obj` is a list or a tuple.
+//
+// A nested reader calls it before it reads a length: `PyObject_Length` on, say, an int
+// returns -1 with an error set, and building a slice with that length is a negative
+// capacity, which panics V rather than raising.
+pub fn require_sequence(obj PyObj, name string) ! {
+	if !obj.type_is(list_type()) && !obj.type_is(tuple_type()) {
+		raise(.type_error, '${name}: expected a sequence, got ${obj.type_name()}')
+		return error('${name}')
+	}
+}
+
 // from_py_int_seq_arg reads positional argument `i` as a sequence of ints.
 //
 // The leading items that are exact ints are converted in one pass in C; whatever is

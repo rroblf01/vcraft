@@ -270,11 +270,10 @@ generic value tree.
 | `void`, `!void`                       | `None`                       |                                                    |
 | `!T`                                  | `T`, or raises               | See [Errors and panics](#errors-and-panics)        |
 
-Fields of a `@[vc_class]` struct and method parameters follow the same table. A
-returned composite is boxed element by element, so a nested one (`?[]int`,
-`[][]int`, `map[string][]int`) comes back as nested `list`/`dict`/`None`; passing
-one *in* is still a generation-time diagnostic. Enums, plain structs and V
-function types are not supported yet; they are on the
+Fields of a `@[vc_class]` struct and method parameters follow the same table.
+Composites nest, so `?[]int`, `[][]int` and `map[string][]int` cross both ways as
+nested `list`/`dict`/`None`. Enums, plain structs and V function types are not
+supported yet; they are on the
 [roadmap](ROADMAP.md). An instance reference (`&T`) is supported; see
 [Instance references](#instance-references). A `@[vc_class]` is constructed from
 Python with its class, through `new_<class>` when one is declared.

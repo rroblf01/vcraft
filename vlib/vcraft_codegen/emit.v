@@ -44,6 +44,9 @@ pub fn emit_glue(p Project) string {
 	w.write_string(generated_header)
 	w.write_string('module ${p.module}\n\n')
 	w.write_string('import vcraft\n\n')
+	if p.needs_converters {
+		w.write_string(nested_reader_helpers())
+	}
 	w.write_string(glue_module_body(p))
 	for f in p.funcs {
 		w.write_string('\n')
@@ -1012,6 +1015,75 @@ fn composite_boxed_expr(strategy Strategy, value string, v_type string) string {
 	}
 }
 
+// nested_reader_helpers are the generic converters a nested composite parameter reads
+// through. They live in the generated file, not the runtime, because V emits no forward
+// declaration for a generic called from another module (AGENTS constraint 4): a
+// `vcraft.convert_seq` would not compile from generated code.
+//
+// The names avoid the `vcraft_generated__` prefix: `enter_collector` injects a
+// `gc_enter()` into every function that carries it, and a pure conversion is not a
+// trampoline that needs the thread registered.
+fn nested_reader_helpers() string {
+	return 'fn vcraft_convert_seq[T](obj vcraft.PyObj, name string, convert fn (vcraft.PyObj, string) !T) ![]T {\n' +
+		'\tvcraft.require_sequence(obj, name)!\n' +
+		'\tmut out := []T{cap: int(obj.len())}\n' +
+		'\tfor i in 0 .. int(obj.len()) {\n' +
+		'\t\tout << convert(obj.item(i), name)!\n' +
+		'\t}\n' +
+		'\treturn out\n' +
+		'}\n\n' +
+		'fn vcraft_convert_dict[K, V](obj vcraft.PyObj, name string, key_convert fn (vcraft.PyObj, string) !K, val_convert fn (vcraft.PyObj, string) !V) !map[K]V {\n' +
+		'\titems := vcraft.dict_items(obj, name)!\n' +
+		'\tmut out := map[K]V{}\n' +
+		'\tfor i := 0; i < items.len; i += 2 {\n' +
+		'\t\tout[key_convert(items[i], name)!] = val_convert(items[i + 1], name)!\n' +
+		'\t}\n' +
+		'\treturn out\n' +
+		'}\n\n'
+}
+
+// reader_fn renders a function literal `fn (o PyObj, name string) !T` that converts one
+// Python object into the declared type, recursively. A container's converter builds the
+// container by calling `convert_seq`/`convert_dict` with a converter for its elements, so
+// `map[string][]int` reads as a map of slices and each slice's elements one by one.
+pub fn reader_fn(v_type string) string {
+	t := v_type.trim_space()
+	return match lookup(t) {
+		.seq {
+			'fn (o vcraft.PyObj, name string) !${t} { return vcraft_convert_seq(o, name, ${reader_fn(element_type(t))}) }'
+		}
+		.optional {
+			inner := t[1..]
+			'fn (o vcraft.PyObj, name string) !${t} { if vcraft.is_none_ptr(o.ptr) { return ${t}(none) } return ${t}(${reader_fn(inner)}(o, name)!) }'
+		}
+		.dict {
+			key, val := map_parts(t)
+			'fn (o vcraft.PyObj, name string) !${t} { return vcraft_convert_dict(o, name, ${reader_fn(key)}, ${reader_fn(val)}) }'
+		}
+		.bytes { 'fn (o vcraft.PyObj, name string) !${t} { return vcraft.from_py_bytes(o, name) }' }
+		.str { 'fn (o vcraft.PyObj, name string) !${t} { return vcraft.from_py_string(o, name) }' }
+		.int { 'fn (o vcraft.PyObj, name string) !${t} { return ${t}(vcraft.from_py_int(o, name)!) }' }
+		.uint { 'fn (o vcraft.PyObj, name string) !${t} { return ${t}(vcraft.from_py_uint(o, name)!) }' }
+		.float { 'fn (o vcraft.PyObj, name string) !${t} { return ${t}(vcraft.from_py_f64(o, name)!) }' }
+		.bool { 'fn (o vcraft.PyObj, name string) !${t} { return vcraft.from_py_bool(o) }' }
+		else { 'fn (o vcraft.PyObj, name string) !${t} { return ${t}(none) }' }
+	}
+}
+
+// param_needs_helpers reports whether reading a parameter of this type needs the generic
+// converter helpers: a map always, and any container whose elements are themselves
+// composites.
+pub fn param_needs_helpers(v_type string) bool {
+	t := v_type.trim_space()
+	return match lookup(t) {
+		.dict { true }
+		.seq { lookup(element_type(t)) !in [.int, .uint, .float, .str, .bool] }
+		.optional { lookup(t[1..]) !in [.int, .uint, .float, .str, .bool] }
+		.fixed { lookup(fixed_element(t)) !in [.int, .uint, .float, .str, .bool] }
+		else { false }
+	}
+}
+
 // box_value_expr boxes a V value of the declared type as a Python object expression.
 //
 // It is the recursive entry point: a container boxes each element by calling it again, so
@@ -1125,7 +1197,7 @@ pub fn element_is_readable(element string) bool {
 	if element == 'u8' {
 		return false
 	}
-	return lookup(element) in [.int, .uint, .float, .str, .bool]
+	return is_element_type(element)
 }
 
 // zero_value is the initial value of a result local. It has to be valid V for the
@@ -1244,7 +1316,9 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 				}
 				.str { "vcraft.from_py_str_seq_arg(args, ${index}, '${func}', '${param}')" }
 				.bool { "vcraft.from_py_bool_seq_arg(args, ${index}, '${func}', '${param}')" }
-				else { "vcraft.from_py_int_seq_arg(args, ${index}, '${func}', '${param}')" }
+				// A composite element reads through the recursive converter, which the
+				// per-type readers above cannot do: they build a slice of scalars.
+				else { "vcraft_convert_seq(vcraft.seq_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }, ${vstring_literal(param)}, ${reader_fn(element)})" }
 			}
 		}
 		.pyobj {
@@ -1488,26 +1562,6 @@ pub fn element_type(v_type string) string {
 	return if base.starts_with('[]') { base[2..] } else { base }
 }
 
-// value_from_obj converts one borrowed object to a plain V value of `v_type`, as an
-// expression that returns from the trampoline when the conversion raises.
-fn value_from_obj(v_type string, obj string, param string) string {
-	t := v_type.trim_space()
-	name := vstring_literal(param)
-	fail := ' or { return unsafe { nil } }'
-	narrower := scalar_narrower(t)
-	if narrower.len > 0 {
-		return 'vcraft.${narrower}(${obj}, ${name})${fail}'
-	}
-	return match lookup(t) {
-		.bool { 'vcraft.from_py_bool(${obj})' }
-		.int { '${t}(vcraft.from_py_int(${obj}, ${name})${fail})' }
-		.uint { '${t}(vcraft.from_py_uint(${obj}, ${name})${fail})' }
-		.float { '${t}(vcraft.from_py_f64(${obj}, ${name})${fail})' }
-		.str { 'vcraft.from_py_string(${obj}, ${name})${fail}' }
-		else { 'unsafe { nil }' }
-	}
-}
-
 // composite_reader reads an optional, a map or a fixed-size array parameter.
 fn composite_reader(strategy Strategy, local string, index int, func string, param string,
 	param_type string) string {
@@ -1522,16 +1576,11 @@ fn composite_reader(strategy Strategy, local string, index int, func string, par
 			// call has no slot array and index `i` may be past the argument array.
 			'${obj} := if vcraft.arg_present(args, nargs, kwnames, ${index}) { vcraft.arg_at(args, ${index}) } else { vcraft.PyObj{} }\n' +
 				'\tmut ${local} := ${t}(none)\n' +
-				'\tif !${obj}.is_null() && !vcraft.is_none_ptr(${obj}.ptr) {\n\t\t${local} = ${value_from_obj(t[1..], obj, param)}\n\t}'
+				'\tif !${obj}.is_null() && !vcraft.is_none_ptr(${obj}.ptr) {\n\t\t${local} = ${reader_fn(t[1..])}(${obj}, ${vstring_literal(param)}) or { return unsafe { nil } }\n\t}'
 		}
 		.dict {
 			key, val := map_parts(t)
-			items := '${local}_items'
-			'${fetch}\n\t${items} := vcraft.dict_items(${obj}, ${vstring_literal(param)}) or { return unsafe { nil } }\n' +
-				'\tmut ${local} := ${t}{}\n' +
-				'\tfor ${local}_k := 0; ${local}_k < ${items}.len; ${local}_k += 2 {\n' +
-				'\t\t${local}[${value_from_obj(key, '${items}[${local}_k]', param)}] = ' +
-				'${value_from_obj(val, '${items}[${local}_k + 1]', param)}\n\t}'
+			'${fetch}\n\t${local} := vcraft_convert_dict(${obj}, ${vstring_literal(param)}, ${reader_fn(key)}, ${reader_fn(val)}) or { return unsafe { nil } }'
 		}
 		// Read as the slice of the same element, then held to exactly N items.
 		.fixed {

@@ -696,6 +696,12 @@ pub mut:
 	// of the state chain. Without one, nothing can observe the chain, so the
 	// trampolines skip publishing it.
 	uses_state_at bool
+	// needs_converters is set when a parameter is a map or a nested composite, which
+	// needs the recursive converter helpers. They are emitted into the generated file
+	// rather than the runtime because V gives a generic called from another module no
+	// forward declaration, so `convert_seq`/`convert_dict` have to live in the same
+	// module as their caller.
+	needs_converters bool
 	// uses_state_at_zero is whether any source file calls `state_at(0)`, the one level a
 	// class with no base has to publish. `state_at(level>=1)` reaches an ancestor, so it
 	// is only meaningful inside a subclass, and every generation above a class is

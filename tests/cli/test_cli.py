@@ -1571,6 +1571,21 @@ pub fn t_nest3(x int) ?[]int {
 pub fn t_nest4() []?int {
 	return [?int(1), none, ?int(3)]
 }
+@[vc_fn]
+pub fn t_take_map(m map[string][]int) int {
+	return m['a'].len
+}
+@[vc_fn]
+pub fn t_take_seq(xs [][]int) int {
+	return xs[0][1]
+}
+@[vc_fn]
+pub fn t_take_opt(x ?[]int) int {
+	if x == none {
+		return -1
+	}
+	return x.len
+}
 
 @[vc_fn]
 @[vc_defaults: 'step=1, label="item", loud=false']
@@ -1653,6 +1668,11 @@ cases = [
     ("optional list result", lambda: m.t_nest3(5), repr([5, 6])),
     ("optional list result None", lambda: m.t_nest3(-1), "None"),
     ("list of optionals", lambda: m.t_nest4(), repr([1, None, 3])),
+    ("nested map parameter", lambda: m.t_take_map({"a": [1, 2, 3]}), "3"),
+    ("nested seq parameter", lambda: m.t_take_seq([[1, 2], [3]]), "2"),
+    ("optional seq parameter", lambda: m.t_take_opt([5, 6, 7]), "3"),
+    ("optional seq parameter None", lambda: m.t_take_opt(None), "-1"),
+    ("nested parameter wrong item", lambda: m.t_take_seq([1, 2]), "TypeError"),
     ("defaults", lambda: m.t_kw(3), repr("item:3:1")),
     ("keywords in any order", lambda: m.t_kw(loud=True, count=2), repr("ITEM:2:1")),
     ("positional and keyword", lambda: m.t_kw(3, label="z"), repr("z:3:1")),
@@ -1686,6 +1706,7 @@ def churn():
     for _ in range(20_000):
         m.t_dict({"a": 1, "b": 2}); m.t_idict({1: 1, 2: 2}); m.t_pair(3); m.t_opt_out(1); m.t_fixed([1.0, 2.0, 3.0])
         m.t_nest(2); m.t_nest2(); m.t_nest4()
+        m.t_take_map({"a": [1, 2]}); m.t_take_seq([[1, 2]]); m.t_take_opt([1, 2])
     gc.collect()
 churn(); tracemalloc.start(); churn()
 first = tracemalloc.get_traced_memory()[0]; churn()
@@ -1754,11 +1775,6 @@ print("ok" if not bad else bad)
         print("composite types the generator refuses")
         for label, decl, needle in [
             ("a tuple parameter", "pub fn t_tp(p (int, int)) int { return 0 }", "only allows as a result"),
-            ("a map parameter with a composite value",
-             "pub fn t_mk(m map[string][]int) int { return 0 }",
-             "cannot be read from an argument yet"),
-            ("an optional composite parameter", "pub fn t_oc(x ?[]int) int { return 0 }",
-             "cannot be read from an argument yet"),
         ]:
             native.write_text(saved + "\n@[vc_fn]\n" + decl + "\n")
             proc = vcraft("build", cwd=project)

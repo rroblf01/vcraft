@@ -1839,23 +1839,10 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds `${element_type(param.v_type)}`, which has no sequence reader; a sequence holds bool, integers, floats or strings')
 			return
 		}
-		// A `?T` or `map[..]T` parameter whose inner value is itself a composite has no
-		// reader yet: the argument side reads one value at a time. Refused here, so it is
-		// a diagnostic rather than glue that does not compile. The result side boxes
-		// recursively, so returning one of these is already supported.
-		if lookup(param.v_type) == .optional &&
-			lookup(param.v_type.trim_space()[1..]) !in [.bool, .int, .uint, .float, .str] {
-			report(mut p, path, decl,
-				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds a composite, which cannot be read from an argument yet')
-			return
-		}
-		if lookup(param.v_type) == .dict {
-			_, val := map_parts(param.v_type)
-			if lookup(val) !in [.bool, .int, .uint, .float, .str] {
-				report(mut p, path, decl,
-					'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds a composite value, which cannot be read from an argument yet')
-				return
-			}
+		// A map or a nested composite reads through the generic converter helpers, which
+		// are emitted into the generated file on demand.
+		if param_needs_helpers(param.v_type) {
+			p.needs_converters = true
 		}
 	}
 	// `@[vc_nogil]` promises the call touches no Python, and `@[vc_raw]` promises the
