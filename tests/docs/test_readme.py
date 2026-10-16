@@ -22,7 +22,10 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-VCRAFT = ROOT / "bin" / "vcraft"
+sys.path.insert(0, str(ROOT / "tests"))
+import vcraft_build  # noqa: E402
+
+VCRAFT = vcraft_build.VCRAFT
 BLOCK = re.compile(r"(?:<!-- readme-test: (\w+) -->\n)?```v\n(.*?)```", re.S)
 
 
@@ -62,10 +65,7 @@ def examples() -> list[tuple[str, str]]:
 
 
 def main() -> int:
-    proc = subprocess.run([str(ROOT / "scripts" / "build-vcraft.sh")],
-                          capture_output=True, text=True)
-    if proc.returncode != 0 or not VCRAFT.exists():
-        raise SystemExit(f"cannot build {VCRAFT}:\n{proc.stdout}\n{proc.stderr}")
+    vcraft_build.build_vcraft()
 
     t = Suite()
     found = examples()

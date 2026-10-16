@@ -36,6 +36,14 @@ STAMPED = re.search(r"pub const version = '([^']+)'",
 
 PLATFORM = sysconfig.get_platform().replace("-", "_").replace(".", "_")
 
+sys.path.insert(0, str(ROOT / "tests"))
+import vcraft_build  # noqa: E402
+
+WINDOWS = vcraft_build.WINDOWS
+# The name the packer gives the binary for this host's platform tag: `vcraft.exe`
+# on Windows, the bare name everywhere else.
+BIN_NAME = "vcraft.exe" if PLATFORM.startswith("win") else "vcraft"
+
 
 class _Abort(Exception):
     """Stops the suite after a failure the remaining checks depend on."""
@@ -111,7 +119,7 @@ def main() -> int:
                         "vcraft_tool/_launch.py",
                     ]), str(names[:6]))
             t.check("the binary ships",
-                    "vcraft_tool/bin/vcraft" in names, str(names[:6]))
+                    f"vcraft_tool/bin/{BIN_NAME}" in names, str(names[:6]))
             t.check("vlib ships",
                     "vcraft_tool/vlib/vcraft/env.v" in names
                     and "vcraft_tool/vlib/vcraft_project/env.v" in names,
@@ -170,7 +178,7 @@ def main() -> int:
             init = z.read("vcraft_tool/__init__.py").decode()
             t.check("the version is stamped",
                     '__version__ = "0.1.0"' in init, init)
-            info = z.getinfo("vcraft_tool/bin/vcraft")
+            info = z.getinfo(f"vcraft_tool/bin/{BIN_NAME}")
             # The full mode, file-type bits included: the 0o7777 mask most
             # examples use drops exactly the bits this check is about.
             mode = info.external_attr >> 16
@@ -226,7 +234,7 @@ def main() -> int:
         # real installer proves the installed binary executes.
         venv_dir = tmp / "venv"
         venv.EnvBuilder(with_pip=True, clear=True).create(venv_dir)
-        vpython = venv_dir / "bin" / "python"
+        vpython = vcraft_build.venv_python(venv_dir)
         named = out / f"vcraft-0.1.0-py3-none-{PLATFORM}.whl"
         wheel.rename(named)
         wheel = named
@@ -241,22 +249,32 @@ def main() -> int:
             # Everything below runs the installed launcher; without it each
             # step would crash rather than report.
             raise _Abort
-        proc = subprocess.run(
-            [str(venv_dir / "bin" / "vcraft"), "new", "demo"],
-            capture_output=True, text=True)
-        t.check("the console script reaches the binary", proc.returncode == 0
-                and proc.stdout.strip() == "vcraft-stub new demo",
-                (proc.stderr or proc.stdout).strip()[-200:])
-        proc = subprocess.run(
-            [str(vpython), "-m", "vcraft_tool", "new", "demo"],
-            capture_output=True, text=True)
-        t.check("python -m reaches the binary too", proc.returncode == 0
-                and proc.stdout.strip() == "vcraft-stub new demo",
-                (proc.stderr or proc.stdout).strip()[-200:])
+        if WINDOWS:
+            # The stub is a POSIX shell script, which Windows cannot exec, and there
+            # is no shell-script spelling of it to use: the installed-launcher path
+            # is checked against the real binary below instead.
+            print("  skip the stub launcher needs a shell to run")
+        else:
+            proc = subprocess.run(
+                [str(vcraft_build.venv_scripts(venv_dir) / BIN_NAME), "new", "demo"],
+                capture_output=True, text=True)
+            t.check("the console script reaches the binary", proc.returncode == 0
+                    and proc.stdout.strip() == "vcraft-stub new demo",
+                    (proc.stderr or proc.stdout).strip()[-200:])
+            proc = subprocess.run(
+                [str(vpython), "-m", "vcraft_tool", "new", "demo"],
+                capture_output=True, text=True)
+            t.check("python -m reaches the binary too", proc.returncode == 0
+                    and proc.stdout.strip() == "vcraft-stub new demo",
+                    (proc.stderr or proc.stdout).strip()[-200:])
 
         print("the real payload")
-        real_bin = ROOT / "bin" / "vcraft"
+        real_bin = vcraft_build.VCRAFT
         real_vlib = ROOT / "vlib"
+        if WINDOWS:
+            # The stub above could not run, so build the real binary and let this
+            # section exercise the installed launcher on Windows too.
+            vcraft_build.build_vcraft()
         if real_bin.exists():
             real = packer.build_wheel("0.1.0", PLATFORM,
                                       real_bin, real_vlib)
@@ -268,7 +286,7 @@ def main() -> int:
                         "vcraft_tool/vlib/vcraft_codegen/collect.v" in names
                         and "vcraft_tool/vlib/vcraft_wheel/build.v" in names)
                 t.check("the real binary ships",
-                        "vcraft_tool/bin/vcraft" in names)
+                        f"vcraft_tool/bin/{BIN_NAME}" in names)
             proc = subprocess.run(
                 [str(vpython), "-m", "pip", "install", "--no-index",
                  "--no-deps", "--force-reinstall", str(real_wheel)],
@@ -276,7 +294,7 @@ def main() -> int:
             t.check("pip installs the real wheel", proc.returncode == 0,
                     (proc.stderr or proc.stdout).strip()[-300:])
             proc = subprocess.run(
-                [str(venv_dir / "bin" / "vcraft"), "version"],
+                [str(vcraft_build.venv_scripts(venv_dir) / BIN_NAME), "version"],
                 capture_output=True, text=True)
             t.check("the installed console script runs the real binary",
                     proc.returncode == 0 and proc.stdout.strip() == STAMPED,

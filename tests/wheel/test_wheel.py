@@ -26,7 +26,12 @@ WHEEL_GLOB = "vcraft_demo-*.whl"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from wheel_tag import tag as _tag  # noqa: E402
 
+sys.path.insert(0, str(ROOT / "tests"))
+import vcraft_build  # noqa: E402
+
 TAG = _tag()
+# `.pyd` on Windows, `.so` elsewhere: the wheel holds whichever this host builds.
+EXT = vcraft_build.ext_suffix()
 
 
 def check(label: str, condition: bool, detail: str = "") -> bool:
@@ -49,8 +54,7 @@ def find_wheel() -> Path:
 
 
 def build_archive() -> None:
-    subprocess.run([str(ROOT / "scripts" / "build-wheel-test.sh")],
-                   check=True, capture_output=True)
+    vcraft_build.build_wheel_test()
 
 
 def main() -> int:
@@ -72,7 +76,7 @@ def main() -> int:
         t("every entry decompresses", z.testzip() is None, str(z.testzip()))
         names = z.namelist()
         t("carries the extension",
-          any(n.endswith(".so") for n in names), str(names))
+          any(n.endswith(EXT) for n in names), str(names))
         t("carries METADATA",
           any(n.endswith(".dist-info/METADATA") for n in names), str(names))
         t("carries WHEEL",
@@ -80,13 +84,13 @@ def main() -> int:
         t("carries RECORD",
           any(n.endswith(".dist-info/RECORD") for n in names), str(names))
         t("the extension is at the root, not in a package directory",
-          all("/" not in n for n in names if n.endswith(".so")), str(names))
+          all("/" not in n for n in names if n.endswith(EXT)), str(names))
 
         print("compression")
         # A wheel that stores its payload is installable but doubles the download,
         # and the directory's `compress_type` says which one was written.
         for info in z.infolist():
-            if info.filename.endswith(".so"):
+            if info.filename.endswith(EXT):
                 t("the extension is deflated", info.compress_type == 8,
                   f"method {info.compress_type}")
                 t("compression actually shrinks it",
@@ -132,7 +136,7 @@ def main() -> int:
         print("decompression")
         # Read the deflate stream directly: `zipfile` would hide whether the bytes are
         # a real DEFLATE stream or just something that happens to round-trip.
-        so_name = [n for n in names if n.endswith(".so")][0]
+        so_name = [n for n in names if n.endswith(EXT)][0]
         with zipfile.ZipFile(wheel) as z:
             info = z.getinfo(so_name)
             expected = z.read(so_name)
@@ -154,7 +158,7 @@ def main() -> int:
         venv = tmp / "venv"
         subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True,
                        capture_output=True)
-        python = venv / "bin" / "python"
+        python = vcraft_build.venv_python(venv)
         proc = subprocess.run(
             [str(python), "-m", "pip", "install", "--no-index", "--no-deps",
              str(wheel)],

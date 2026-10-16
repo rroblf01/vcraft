@@ -14,6 +14,7 @@ already runs, and gives Windows a path that does not go through an emulated shel
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -79,6 +80,40 @@ def python_include() -> str:
 
 def ext_suffix() -> str:
     return sysconfig.get_config_var("EXT_SUFFIX") or (".pyd" if WINDOWS else ".so")
+
+
+def venv_python(venv_dir: Path) -> Path:
+    """The interpreter inside a venv, in the layout the platform uses."""
+    return venv_dir / ("Scripts/python.exe" if WINDOWS else "bin/python")
+
+
+def venv_scripts(venv_dir: Path) -> Path:
+    """The directory a venv puts console scripts in."""
+    return venv_dir / ("Scripts" if WINDOWS else "bin")
+
+
+def venv_platlib(venv_dir: Path) -> Path:
+    """The venv's platform-specific site-packages directory.
+
+    POSIX nests it under `lib/python<X.Y>/site-packages`; Windows puts it at
+    `Lib/site-packages` with no version directory.
+    """
+    if WINDOWS:
+        return venv_dir / "Lib" / "site-packages"
+    return next((venv_dir / "lib").glob("python*/site-packages"))
+
+
+def host_target() -> str:
+    """The canonical `--target` name of the machine running the suite."""
+    machine = platform.machine().lower()
+    if sys.platform == "darwin":
+        return "macos-arm64" if machine == "arm64" else "macos-x86_64"
+    arch = "aarch64" if machine in ("aarch64", "arm64") else "x86_64"
+    if WINDOWS:
+        return f"windows-{arch}"
+    # musl on Alpine, glibc elsewhere: the libc is part of the target.
+    libc = "musl" if "musl" in (sysconfig.get_config_var("HOST_GNU_TYPE") or "") else "gnu"
+    return f"linux-{arch}-{libc}"
 
 
 def _sanitize() -> tuple[list[str], str]:

@@ -362,6 +362,12 @@ jobs:
       - name: "suite: vcraft.toml parser"
         run: python tests/project/check_toml.py
 
+      - name: "suite: tool wheel packer"
+        run: python tests/packaging/test_pack.py
+
+      - name: "suite: wheel writer"
+        run: python tests/wheel/test_wheel.py
+
       - name: "suite: runtime"
         run: python tests/runtime/test_runtime.py
 
@@ -373,6 +379,9 @@ jobs:
 
       - name: "suite: fuzzed conversions"
         run: python tests/fuzz/test_fuzz.py 4 20000
+
+      - name: "suite: README examples"
+        run: python tests/docs/test_readme.py
 
   musl:
     # The suites on musl libc, inside the published musllinux image, which carries V
