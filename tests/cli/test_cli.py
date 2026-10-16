@@ -1978,7 +1978,7 @@ print("ok" if not bad else bad)
             t.check("the release builds per platform",
                     set(cell.get("asset", "") for cell in
                         release["jobs"]["build"]["strategy"]["matrix"]["include"])
-                    == {"linux-x86_64", "macos-arm64"})
+                    == {"linux-x86_64", "macos-arm64", "win-amd64"})
             publish = release["jobs"]["publish-pypi"]
             release_text = (ROOT / ".github" / "workflows" / "release-vcraft.yml").read_text()
             t.check("PyPI publish waits for every platform",
@@ -1997,6 +1997,10 @@ print("ok" if not bad else bad)
                     "PyPI rejects linux_x86_64 wheels")
             t.check("the macOS binary honours its tag's macOS version",
                     'MACOSX_DEPLOYMENT_TARGET: "11.0"' in release_text)
+            t.check("the Windows tool wheel carries `vcraft.exe`",
+                    "--platform win_amd64" in release_text
+                    and "vcraft-dist-win-amd64/bin/vcraft.exe" in release_text,
+                    "a Windows wheel's launcher is vcraft.exe, not vcraft")
             t.check("the release uploads wheels, not tarballs",
                     "gh-action-pypi-publish" in release_text
                     and "tar -czf" not in release_text, release_text[-300:])

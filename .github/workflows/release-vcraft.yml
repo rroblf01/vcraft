@@ -18,10 +18,12 @@ permissions:
   # Read the image build cache in ghcr.io.
   packages: read
 
-# The V compiler is built from source at a pinned commit on every runner: no V
-# release is newer than the flags vcraft passes, so a release binary fails every
-# build with "Unknown argument". Same pins as docker/* and the vcraft-action;
-# when V cuts a newer release these steps go back to downloading it.
+# The V compiler is built from source at a pinned commit on every POSIX runner:
+# no V release is newer than the flags vcraft passes, so a release binary fails
+# every build with "Unknown argument". On Windows it is built with V's own
+# `makev.bat` and its bundled TCC, because release-v.yml publishes no Windows
+# archive and the runner has no `make`. Same pins as docker/* and the
+# vcraft-action; when V cuts a newer release these steps go back to downloading it.
 env:
   V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
   VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
@@ -36,7 +38,15 @@ jobs:
             asset: linux-x86_64
           - os: macos-26
             asset: macos-arm64
+          - os: windows-latest
+            asset: win-amd64
     runs-on: ${{ matrix.os }}
+    # Git Bash on the Windows runner too, so the platform-neutral steps are one
+    # body. The V build step below overrides this with pwsh, because `makev.bat`
+    # is a batch file and building V is not what a POSIX shell is for.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v5
 
@@ -50,9 +60,10 @@ jobs:
       # The compiler published by release-v.yml, downloaded in seconds rather than
       # built in minutes. A missing archive falls back to the cache ci.yml fills,
       # and then to a source build, so a tag can always be cut even on the first run
-      # after a pin moves.
+      # after a pin moves. POSIX only: there is no Windows archive to download.
       - name: download the prebuilt compiler
         id: v-prebuilt
+        if: runner.os != 'Windows'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -65,7 +76,7 @@ jobs:
           /tmp/v-src/v version
 
       - name: restore the V compiler cache
-        if: steps.v-prebuilt.outcome != 'success'
+        if: runner.os != 'Windows' && steps.v-prebuilt.outcome != 'success'
         id: v-cache
         uses: actions/cache@v5
         with:
@@ -73,7 +84,7 @@ jobs:
           key: v-slim1-${{ matrix.os }}-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
 
       - name: build the V compiler from source
-        if: steps.v-prebuilt.outcome != 'success' && steps.v-cache.outputs.cache-hit != 'true'
+        if: runner.os != 'Windows' && steps.v-prebuilt.outcome != 'success' && steps.v-cache.outputs.cache-hit != 'true'
         run: |
           rm -rf /tmp/v-src
           git init -q /tmp/v-src
@@ -86,10 +97,31 @@ jobs:
           make fresh_tcc
           make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
 
+      # Windows builds V itself, with the tools V ships for the platform: no
+      # prebuilt archive exists (release-v.yml is POSIX only), so there is nothing
+      # to download and no `make`.
+      - name: build the V compiler (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = "$env:RUNNER_TEMP\v-src"
+          git init -q $v
+          git -C $v remote add origin https://github.com/vlang/v.git
+          git -C $v fetch -q --depth 1 origin $env:V_COMMIT
+          git -C $v checkout -q FETCH_HEAD
+          git clone -q https://github.com/vlang/vc.git "$v\vc"
+          git -C "$v\vc" checkout -q $env:VC_COMMIT
+          git clone --filter=blob:none -q --branch thirdparty-windows-amd64 https://github.com/vlang/tccbin "$v\thirdparty\tcc"
+          & "$v\makev.bat" --local
+          & "$v\v.exe" version
+          echo $v >> $env:GITHUB_PATH
+
       - name: put V on PATH
+        if: runner.os != 'Windows'
         run: echo "/tmp/v-src" >> "$GITHUB_PATH"
 
       - name: run the test suites
+        if: runner.os != 'Windows'
         run: |
           python3 tests/codegen/test_codegen.py
           python3 tests/runtime/test_runtime.py
@@ -98,6 +130,17 @@ jobs:
           python3 tests/packaging/test_pack.py
           python3 tests/cli/test_cli.py
 
+      # The Windows-portable suites only. packaging, cli, docs and wheel are still
+      # POSIX-shaped (bash stubs, `bin/`, `.so`), so they are not run here.
+      - name: run the test suites (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          python tests/project/check_toml.py
+          python tests/runtime/test_runtime.py
+          python tests/codegen/test_codegen.py
+          python tests/memory/test_leaks.py
+          python tests/fuzz/test_fuzz.py 4 20000
+
       - name: build the shipped vcraft
         # After the suites, not before: the CLI suite rebuilds bin/vcraft itself
         # without a deployment target, and an earlier build would be overwritten
@@ -105,7 +148,9 @@ jobs:
         # a deployment target the binary would require the runner's own macOS.
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
-        run: ./scripts/build-vcraft.sh && bin/vcraft version
+        run: |
+          ./scripts/build-vcraft.sh
+          if [ "$RUNNER_OS" = "Windows" ]; then bin/vcraft.exe version; else bin/vcraft version; fi
 
       # The suites above ran against a binary linked to the runner's glibc, which
       # would make the wheel need that glibc too. The shipped Linux binary is built
@@ -159,8 +204,10 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: vcraft-dist-${{ matrix.asset }}
+          # `bin/vcraft*` picks up `vcraft.exe` on Windows; the glob matches the
+          # one file that exists on each platform.
           path: |
-            bin/vcraft
+            bin/vcraft*
             vlib/
 
   publish-pypi:
@@ -219,6 +266,11 @@ jobs:
             --platform macosx_11_0_arm64 \
             --bin dists/vcraft-dist-macos-arm64/bin/vcraft \
             --vlib dists/vcraft-dist-macos-arm64/vlib \
+            --out-dir dist
+          python3 scripts/pack-vcraft-wheel.py --version "$VERSION" \
+            --platform win_amd64 \
+            --bin dists/vcraft-dist-win-amd64/bin/vcraft.exe \
+            --vlib dists/vcraft-dist-win-amd64/vlib \
             --out-dir dist
           ls dist/
 
