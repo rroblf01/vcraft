@@ -1839,6 +1839,24 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds `${element_type(param.v_type)}`, which has no sequence reader; a sequence holds bool, integers, floats or strings')
 			return
 		}
+		// A `?T` or `map[..]T` parameter whose inner value is itself a composite has no
+		// reader yet: the argument side reads one value at a time. Refused here, so it is
+		// a diagnostic rather than glue that does not compile. The result side boxes
+		// recursively, so returning one of these is already supported.
+		if lookup(param.v_type) == .optional &&
+			lookup(param.v_type.trim_space()[1..]) !in [.bool, .int, .uint, .float, .str] {
+			report(mut p, path, decl,
+				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds a composite, which cannot be read from an argument yet')
+			return
+		}
+		if lookup(param.v_type) == .dict {
+			_, val := map_parts(param.v_type)
+			if lookup(val) !in [.bool, .int, .uint, .float, .str] {
+				report(mut p, path, decl,
+					'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds a composite value, which cannot be read from an argument yet')
+				return
+			}
+		}
 	}
 	// `@[vc_nogil]` promises the call touches no Python, and `@[vc_raw]` promises the
 	// opposite: the function handles `PyObject *` itself. Both together would release
@@ -1874,17 +1892,12 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 			return
 		}
 	}
-	if f.v_ret.len > 0 && pointer_target(f.v_ret).len == 0 && lookup(f.v_ret) == .unsupported {
+	// A result is boxed, which is recursive: `map[string][]int` and `[][]int` are boxed
+	// element by element. Any type the table does not know, at any depth, has no rule.
+	if f.v_ret.len > 0 && pointer_target(f.v_ret).len == 0 && !is_boxable_type(f.v_ret) {
 		report(mut p, path, decl,
 			'error: cannot expose `${decl.name}`: return type `${f.v_ret}` has no marshalling rule')
 		return
-	}
-	// A returned `[]T` boxes each element, so the element needs a rule of its own. A
-	// slice of structs or of slices would otherwise generate glue that does not
-	// compile, and the error would point at the generated file instead of here.
-	if lookup(f.v_ret) == .seq && !element_is_boxable(element_type(f.v_ret)) {
-		report(mut p, path, decl,
-			'error: cannot expose `${decl.name}`: return type `${f.v_ret}` has elements of type `${element_type(f.v_ret)}`, which have no marshalling rule; a returned list holds bool, integers, floats or strings')
 	}
 }
 

@@ -76,14 +76,14 @@ pub fn lookup(v_type string) Strategy {
 	// only over element types that are themselves plain values: anything else stays
 	// unsupported, so it is a diagnostic rather than glue that does not compile.
 	if base.starts_with('?') {
-		return if is_plain_value(base[1..]) { Strategy.optional } else { Strategy.unsupported }
+		return if is_element_type(base[1..]) { Strategy.optional } else { Strategy.unsupported }
 	}
 	if base.starts_with('map[') {
 		key, value := map_parts(base)
 		// A dict key has to be hashable and comparable in Python, which a scalar is; the
 		// value may be any plain value. `lookup(key)` on the key type is the same check:
 		// a composite or an unknown name is refused.
-		if lookup(key) in [.bool, .int, .uint, .float, .str] && is_plain_value(value) {
+		if lookup(key) in [.bool, .int, .uint, .float, .str] && is_element_type(value) {
 			return .dict
 		}
 		return .unsupported
@@ -98,7 +98,7 @@ pub fn lookup(v_type string) Strategy {
 	}
 	if base.starts_with('[') && !base.starts_with('[]') {
 		n, element := fixed_parts(base)
-		return if n > 0 && is_plain_value(element) { Strategy.fixed } else { Strategy.unsupported }
+		return if n > 0 && is_element_type(element) { Strategy.fixed } else { Strategy.unsupported }
 	}
 	return match base {
 		'bool' { Strategy.bool }
@@ -206,6 +206,13 @@ pub fn split_result(declared string) (string, bool) {
 // composite strategies accept.
 pub fn is_plain_value(v_type string) bool {
 	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str]
+}
+
+// is_element_type reports whether a type may sit inside a composite: a scalar, a string,
+// bytes, a complex, or another composite. It is recursive, so `map[string][]?int` is a
+// valid shape. A multi-value type, a bare object and a void are not elements.
+pub fn is_element_type(v_type string) bool {
+	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str, .bytes, .complex, .seq, .optional, .dict, .fixed]
 }
 
 // tuple_parts splits a multi-value type, `(int, string)`, into its element types.

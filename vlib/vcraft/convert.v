@@ -370,6 +370,36 @@ pub fn to_py_list[T](items []T, box fn (T) PyObj) PyObj {
 	return list
 }
 
+// to_py_dict boxes a map as a new `dict`, with one boxing rule for the keys and one for
+// the values, so a value that is itself a composite boxes through the same call.
+//
+// The map is a parameter here rather than the parameter of an immediately called
+// function literal, which is how this used to be emitted: V mis-parses a function
+// literal whose parameter type is `map[K][]V`, reading the value's slice as the whole
+// parameter, and the generated file failed to compile. Passing the map to a generic
+// helper sidesteps it.
+pub fn to_py_dict[K, V](m map[K]V, key_box fn (K) PyObj, val_box fn (V) PyObj) PyObj {
+	d := new_dict()
+	if d.is_null() {
+		return d
+	}
+	for k, v in m {
+		key := key_box(k)
+		if key.is_null() {
+			d.decref()
+			return steal(unsafe { nil })
+		}
+		value := val_box(v)
+		if value.is_null() {
+			key.decref()
+			d.decref()
+			return steal(unsafe { nil })
+		}
+		dict_set_owned(d, key, value)
+	}
+	return d
+}
+
 // to_py_i64_list, to_py_int_list and to_py_f64_list box a slice of plain numbers as a
 // list in one pass in C, with no function call per element. The generated glue uses
 // them for those element types and `to_py_list` for the rest.

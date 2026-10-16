@@ -1549,6 +1549,28 @@ pub fn t_pair(x int) (int, string) {
 pub fn t_fixed(a [3]f64) [3]f64 {
 	return [a[2], a[1], a[0]]!
 }
+@[vc_fn]
+pub fn t_nest(x int) map[string][]int {
+	return {
+		'evens': [x, x + 2]
+		'odds':  [x + 1]
+	}
+}
+@[vc_fn]
+pub fn t_nest2() [][]int {
+	return [[1, 2], [3]]
+}
+@[vc_fn]
+pub fn t_nest3(x int) ?[]int {
+	if x < 0 {
+		return none
+	}
+	return [x, x + 1]
+}
+@[vc_fn]
+pub fn t_nest4() []?int {
+	return [?int(1), none, ?int(3)]
+}
 
 @[vc_fn]
 @[vc_defaults: 'step=1, label="item", loud=false']
@@ -1626,6 +1648,11 @@ cases = [
     ("tuple result", lambda: m.t_pair(1), repr((2, "n=1"))),
     ("fixed array", lambda: m.t_fixed((1.0, 2.0, 3.0)), repr([3.0, 2.0, 1.0])),
     ("fixed array length", lambda: m.t_fixed([1.0]), "ValueError"),
+    ("nested map result", lambda: m.t_nest(2), repr({"evens": [2, 4], "odds": [3]})),
+    ("nested list result", lambda: m.t_nest2(), repr([[1, 2], [3]])),
+    ("optional list result", lambda: m.t_nest3(5), repr([5, 6])),
+    ("optional list result None", lambda: m.t_nest3(-1), "None"),
+    ("list of optionals", lambda: m.t_nest4(), repr([1, None, 3])),
     ("defaults", lambda: m.t_kw(3), repr("item:3:1")),
     ("keywords in any order", lambda: m.t_kw(loud=True, count=2), repr("ITEM:2:1")),
     ("positional and keyword", lambda: m.t_kw(3, label="z"), repr("z:3:1")),
@@ -1658,6 +1685,7 @@ import gc, tracemalloc
 def churn():
     for _ in range(20_000):
         m.t_dict({"a": 1, "b": 2}); m.t_idict({1: 1, 2: 2}); m.t_pair(3); m.t_opt_out(1); m.t_fixed([1.0, 2.0, 3.0])
+        m.t_nest(2); m.t_nest2(); m.t_nest4()
     gc.collect()
 churn(); tracemalloc.start(); churn()
 first = tracemalloc.get_traced_memory()[0]; churn()
@@ -1726,8 +1754,11 @@ print("ok" if not bad else bad)
         print("composite types the generator refuses")
         for label, decl, needle in [
             ("a tuple parameter", "pub fn t_tp(p (int, int)) int { return 0 }", "only allows as a result"),
-            ("a map with a composite value", "pub fn t_mk(m map[string][]int) int { return 0 }", "no marshalling rule"),
-            ("an optional slice", "pub fn t_os(x ?[]int) int { return 0 }", "no marshalling rule"),
+            ("a map parameter with a composite value",
+             "pub fn t_mk(m map[string][]int) int { return 0 }",
+             "cannot be read from an argument yet"),
+            ("an optional composite parameter", "pub fn t_oc(x ?[]int) int { return 0 }",
+             "cannot be read from an argument yet"),
         ]:
             native.write_text(saved + "\n@[vc_fn]\n" + decl + "\n")
             proc = vcraft("build", cwd=project)

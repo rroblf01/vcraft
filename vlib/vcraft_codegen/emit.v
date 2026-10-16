@@ -1001,16 +1001,27 @@ fn composite_boxed_expr(strategy Strategy, value string, v_type string) string {
 	return match strategy {
 		.optional {
 			inner := t[1..]
-			'(if opt_value := ${value} { ${boxed_expr(lookup(inner), 'opt_value')} } else { vcraft.to_py_none() })'
+			'(if opt_value := ${value} { ${box_value_expr('opt_value', inner)} } else { vcraft.to_py_none() })'
 		}
 		.dict {
 			key, val := map_parts(t)
-			'fn (m ${t}) vcraft.PyObj {\n\t\td := vcraft.new_dict()\n' +
-				'\t\tfor k, v in m {\n\t\t\tvcraft.dict_set_owned(d, ${boxed_expr(lookup(key), 'k')}, ${boxed_expr(lookup(val), 'v')})\n\t\t}\n' +
-				'\t\treturn d\n\t}(${value})'
+			'vcraft.to_py_dict(${value}, fn (k ${key}) vcraft.PyObj { return ${box_value_expr('k', key)} }, fn (v ${val}) vcraft.PyObj { return ${box_value_expr('v', val)} })'
 		}
 		.fixed { seq_boxed_expr(fixed_element(t), '${value}[..]') }
 		else { boxed_expr(strategy, value) }
+	}
+}
+
+// box_value_expr boxes a V value of the declared type as a Python object expression.
+//
+// It is the recursive entry point: a container boxes each element by calling it again, so
+// `map[string][]int` and `[][]int` work. `boxed_expr` is the leaf for the scalar types and
+// is what every non-composite case still calls.
+pub fn box_value_expr(value string, v_type string) string {
+	return match lookup(v_type) {
+		.seq { seq_boxed_expr(element_type(v_type), value) }
+		.optional, .dict, .fixed { composite_boxed_expr(lookup(v_type), value, v_type) }
+		else { boxed_expr(lookup(v_type), value) }
 	}
 }
 
@@ -1071,6 +1082,10 @@ pub fn element_box_fn(element string) string {
 		.float { 'vcraft.to_py_f64(f64(x))' }
 		.str { 'vcraft.to_py_string(x)' }
 		.bool { 'vcraft.to_py_bool(x)' }
+		.complex { 'vcraft.to_py_complex(x)' }
+		.bytes { 'vcraft.to_py_bytes_slice(x)' }
+		.seq { seq_boxed_expr(element_type(element), 'x') }
+		.optional, .dict, .fixed { composite_boxed_expr(lookup(element), 'x', element) }
 		else { 'vcraft.to_py_none()' }
 	}
 	return 'fn (x ${element}) vcraft.PyObj { return ${boxed} }'
@@ -1078,7 +1093,28 @@ pub fn element_box_fn(element string) string {
 
 // element_is_boxable reports whether a returned `[]T` has an element rule.
 pub fn element_is_boxable(element string) bool {
-	return lookup(element) in [.int, .uint, .float, .str, .bool]
+	return is_element_type(element)
+}
+
+// is_boxable_type reports whether a declared type can be boxed, recursively: a scalar, a
+// container whose elements are boxable, or nothing. A multi-value type is boxable when
+// each part is; a bare object and a void are not.
+pub fn is_boxable_type(v_type string) bool {
+	t := v_type.trim_space()
+	return match lookup(t) {
+		.seq { is_boxable_type(element_type(t)) }
+		.optional { is_boxable_type(t[1..]) }
+		.dict {
+			key, val := map_parts(t)
+			lookup(key) in [.bool, .int, .uint, .float, .str] && is_boxable_type(val)
+		}
+		.fixed { is_boxable_type(fixed_element(t)) }
+		.tuple { tuple_parts(t).all(is_boxable_type(it)) }
+		// A void result and a bare object are boxed by `return_expr`; anything the type
+		// table does not know has no rule.
+		.unsupported { false }
+		else { true }
+	}
 }
 
 // element_is_readable reports whether a `[]T` parameter has an element reader.

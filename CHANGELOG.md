@@ -21,6 +21,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **Maps with non-string keys.** `map[K]T` marshals to a `dict` when `K` is a scalar or a
   string (`bool`, an integer, a float or `str`), not only `str`, both as a parameter and
   as a result.
+- **Nested composite results.** A returned container is boxed element by element, so
+  `?[]int`, `[][]int` and `map[string][]int` come back as nested `list`, `dict` and
+  `None`. Passing one *in* is still a generation-time diagnostic.
 - **Windows (`win_amd64`).** `vcraft build` links the `.pyd` against the interpreter's own
   import library and folds the MinGW runtime in with `-static`, so the wheel imports on a
   machine that has no compiler on `PATH`; the CLI, `vcraft toolchain install` (through
