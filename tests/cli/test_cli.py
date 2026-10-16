@@ -18,14 +18,26 @@ import re
 import shutil
 import subprocess
 import sys
-import sysconfig
 import tempfile
 import venv
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-VCRAFT = ROOT / "bin" / "vcraft"
+sys.path.insert(0, str(ROOT / "tests"))
+import vcraft_build
+
+VCRAFT = vcraft_build.VCRAFT
+WINDOWS = vcraft_build.WINDOWS
+# `.pyd` on Windows, `.so` elsewhere: enough to find a built extension without pinning
+# the exact suffix the interpreter that built it reports.
+LIB_EXT = ".pyd" if WINDOWS else ".so"
+# An abi3 extension is `.abi3.so` on Unix, but plain `.pyd` on Windows, where the
+# loader's suffix list has no `.abi3` entry.
+ABI3_EXT = ".pyd" if WINDOWS else ".abi3.so"
+venv_python = vcraft_build.venv_python
+venv_scripts = vcraft_build.venv_scripts
+venv_platlib = vcraft_build.venv_platlib
 
 # The oldest CPython vcraft supports, and so the lowest stable-ABI floor it accepts.
 # The abi3 checks build at this floor so the wheel the suite installs on the running
@@ -51,10 +63,7 @@ class Suite:
 
 
 def build_binary() -> None:
-    proc = subprocess.run([str(ROOT / "scripts" / "build-vcraft.sh")],
-                          capture_output=True, text=True)
-    if proc.returncode != 0 or not VCRAFT.exists():
-        raise SystemExit(f"cannot build {VCRAFT}:\n{proc.stdout}\n{proc.stderr}")
+    vcraft_build.build_vcraft()
 
 
 def vcraft(*args: str, cwd: Path) -> subprocess.CompletedProcess:
@@ -63,13 +72,7 @@ def vcraft(*args: str, cwd: Path) -> subprocess.CompletedProcess:
 
 def host_target() -> str:
     """The canonical `--target` name of the machine running the suite."""
-    machine = platform.machine().lower()
-    if sys.platform == "darwin":
-        return "macos-arm64" if machine == "arm64" else "macos-x86_64"
-    arch = "aarch64" if machine in ("aarch64", "arm64") else "x86_64"
-    # musl on Alpine, glibc elsewhere: the libc is part of the target.
-    libc = "musl" if "musl" in (sysconfig.get_config_var("HOST_GNU_TYPE") or "") else "gnu"
-    return f"linux-{arch}-{libc}"
+    return vcraft_build.host_target()
 
 
 def foreign_target() -> tuple[str, str, str]:
@@ -239,7 +242,7 @@ def main() -> int:
         t.check("a chain declared subclass-first builds", proc.returncode == 0,
                 proc.stderr.strip()[-500:])
         if proc.returncode == 0:
-            built = sorted(inh.glob("dist/build/*.so"))
+            built = sorted(inh.glob(f"dist/build/*{LIB_EXT}"))
             t.check("the extension is written", len(built) == 1, built)
             if built:
                 probe = subprocess.run(
@@ -335,7 +338,7 @@ def main() -> int:
         t.check("a base constructor with arguments builds", out.returncode == 0,
                 out.stderr.strip()[-400:])
         if out.returncode == 0:
-            built = sorted(inh.glob("dist/build/*.so"))
+            built = sorted(inh.glob(f"dist/build/*{LIB_EXT}"))
             probe = subprocess.run(
                 [sys.executable, "-c",
                  "import sys\n"
@@ -444,7 +447,7 @@ pub fn apply(f voidptr, x int) !int {
         t.check("protocols and callbacks build", out.returncode == 0,
                 out.stderr.strip()[-500:])
         if out.returncode == 0:
-            built = sorted(proto.glob("dist/build/*.so"))
+            built = sorted(proto.glob(f"dist/build/*{LIB_EXT}"))
             probe = subprocess.run(
                 [sys.executable, "-c",
                  "import sys\n"
@@ -539,7 +542,7 @@ pub fn apply(f voidptr, x int) !int {
                 info.get("python", "").strip().startswith("3."),
                 proc.stdout)
         t.check("info reports the extension suffix",
-                ".so" in info.get("extension", ""), proc.stdout)
+                LIB_EXT in info.get("extension", ""), proc.stdout)
         t.check("info reports where vlib is",
                 info.get("vlib", "").strip() == str(ROOT / "vlib"), proc.stdout)
 
@@ -638,7 +641,7 @@ pub fn apply(f voidptr, x int) !int {
             t.check("the wheel is a valid archive", z.testzip() is None)
             entries = z.namelist()
             t.check("the extension is at the root",
-                    any(n.endswith(".so") and "/" not in n for n in entries),
+                    any(n.endswith(LIB_EXT) and "/" not in n for n in entries),
                     str(entries))
             t.check("the re-export package is packaged",
                     "mypkg/__init__.py" in entries, str(entries))
@@ -705,13 +708,13 @@ pub fn apply(f voidptr, x int) !int {
                 source_target = tmp / "venv-source"
                 make_venv(source_target, with_pip=True)
                 proc = subprocess.run(
-                    [str(source_target / "bin" / "python"), "-m", "pip", "install",
+                    [str(venv_python(source_target)), "-m", "pip", "install",
                      "--no-index", "--no-deps", str(source_wheels[0])],
                     capture_output=True, text=True)
                 t.check("pip installs source Python", proc.returncode == 0,
                         (proc.stderr or proc.stdout).strip()[-300:])
                 proc = subprocess.run(
-                    [str(source_target / "bin" / "python"), "-c",
+                    [str(venv_python(source_target)), "-c",
                      "import mypkg_helper\nprint(mypkg_helper.marker())"],
                     capture_output=True, text=True, cwd=tmp)
                 t.check("packaged source imports", proc.returncode == 0
@@ -742,13 +745,13 @@ pub fn apply(f voidptr, x int) !int {
                 pyc_target = tmp / "venv-pyc"
                 make_venv(pyc_target, with_pip=True)
                 proc = subprocess.run(
-                    [str(pyc_target / "bin" / "python"), "-m", "pip", "install",
+                    [str(venv_python(pyc_target)), "-m", "pip", "install",
                      "--no-index", "--no-deps", str(pyc_wheels[0])],
                     capture_output=True, text=True)
                 t.check("pip installs sourceless Python", proc.returncode == 0,
                         (proc.stderr or proc.stdout).strip()[-300:])
                 proc = subprocess.run(
-                    [str(pyc_target / "bin" / "python"), "-c",
+                    [str(venv_python(pyc_target)), "-c",
                      "import mypkg_helper\n"
                      "print(mypkg_helper.marker())\n"
                      "print(mypkg_helper.__file__)"],
@@ -836,7 +839,7 @@ pub fn apply(f voidptr, x int) !int {
         target = tmp / "venv-wheel"
         make_venv(target, with_pip=True)
         proc = subprocess.run(
-            [str(target / "bin" / "python"), "-m", "pip", "install", "--no-index",
+            [str(venv_python(target)), "-m", "pip", "install", "--no-index",
              "--no-deps", str(wheel)],
             capture_output=True, text=True)
         t.check("pip installs the wheel", proc.returncode == 0,
@@ -848,7 +851,7 @@ pub fn apply(f voidptr, x int) !int {
             "print(repr(m.Counter()))\n"
             "print(m.parse_int('1234'))\n"
         )
-        proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+        proc = subprocess.run([str(venv_python(target)), "-c", script],
                               capture_output=True, text=True, cwd=tmp)
         t.check("the installed wheel works", proc.returncode == 0,
                 (proc.stderr or "").strip()[-300:])
@@ -861,7 +864,7 @@ pub fn apply(f voidptr, x int) !int {
             t.check("parse_int", "1234" in lines, proc.stdout)
 
         proc = subprocess.run(
-            [str(target / "bin" / "python"), "-c",
+            [str(venv_python(target)), "-c",
              "import mypkg as pkg; print(pkg.greet('pkg'), pkg.add(1, 2))"],
             capture_output=True, text=True, cwd=tmp)
         t.check("the installed package re-exports the extension",
@@ -901,13 +904,13 @@ pub fn apply(f voidptr, x int) !int {
                     dev_manifest.read_text())
         finally:
             dev_manifest.write_text(dev_saved)
-        platlib = next((target / "lib").glob("python*/site-packages"))
+        platlib = venv_platlib(target)
         pth = platlib / "_mypkg_editable.pth"
         t.check("an editable pointer is installed", pth.exists(),
                 str(list(platlib.glob("*.pth"))))
-        installed = list((target / "lib").rglob("mypkg_native*.so"))
+        installed = list(venv_platlib(target).rglob(f"mypkg_native*{LIB_EXT}"))
         t.check("no copied extension shadows the editable build", not installed,
-                str([str(p) for p in (target / "lib").rglob("*.so")]))
+                str([str(p) for p in venv_platlib(target).rglob(f"*{LIB_EXT}")]))
         dist_info = next(platlib.glob("mypkg-0.1.0.dist-info"))
         t.check("editable metadata is installed", dist_info.is_dir(),
                 str(list(platlib.glob("mypkg*"))))
@@ -920,7 +923,7 @@ pub fn apply(f voidptr, x int) !int {
         t.check("the pointer names the build output",
                 str(project / "dist" / "build") in pth.read_text(),
                 pth.read_text())
-        proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+        proc = subprocess.run([str(venv_python(target)), "-c", script],
                               capture_output=True, text=True, cwd=tmp)
         t.check("the developed extension works", proc.returncode == 0,
                 (proc.stderr or "").strip()[-300:])
@@ -932,14 +935,14 @@ pub fn apply(f voidptr, x int) !int {
         # That is the difference between a constructor that ran and one that did not,
         # and it is invisible in the build log.
         proc = subprocess.run(
-            [str(target / "bin" / "python"), "-c",
+            [str(venv_python(target)), "-c",
              "import mypkg_native as m;c=m.Counter();print(c.is_zero,c.increment())"],
             capture_output=True, text=True, cwd=tmp)
         t.check("the constructor runs", proc.stdout.strip() == "True 1",
                 proc.stdout.strip() or proc.stderr.strip()[-200:])
 
         proc = subprocess.run(
-            [str(target / "bin" / "python"), "-c",
+            [str(venv_python(target)), "-c",
              "import mypkg as pkg; print(pkg.greet('pkg'))"],
             capture_output=True, text=True, cwd=tmp)
         t.check("the developed package re-exports the extension",
@@ -948,13 +951,13 @@ pub fn apply(f voidptr, x int) !int {
 
         # The scaffold advertises a demo and a test, so running them in the develop
         # environment is the last check that they actually work there.
-        proc = subprocess.run([str(target / "bin" / "python"), "main.py"],
+        proc = subprocess.run([str(venv_python(target)), "main.py"],
                               capture_output=True, text=True, cwd=project)
         t.check("the scaffolded demo runs", proc.returncode == 0,
                 (proc.stderr or "").strip()[-300:])
         t.check("the demo prints the greeting", "Hello, world!" in proc.stdout,
                 proc.stdout)
-        proc = subprocess.run([str(target / "bin" / "python"), "-m", "unittest"],
+        proc = subprocess.run([str(venv_python(target)), "-m", "unittest"],
                               capture_output=True, text=True, cwd=project)
         t.check("the scaffolded tests pass", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-400:])
@@ -970,14 +973,14 @@ pub fn apply(f voidptr, x int) !int {
         t.check("a copy install says where it installed",
                 "installed into" in proc.stdout and "(editable)" not in proc.stdout,
                 proc.stdout)
-        copy_platlib = next((copy_target / "lib").glob("python*/site-packages"))
+        copy_platlib = venv_platlib(copy_target)
         t.check("a copy installs the extension",
-                len(list(copy_platlib.glob("mypkg_native*.so"))) == 1,
-                str(list(copy_platlib.glob("*.so"))))
+                len(list(copy_platlib.glob(f"mypkg_native*{LIB_EXT}"))) == 1,
+                str(list(copy_platlib.glob(f"*{LIB_EXT}"))))
         t.check("a copy removes the editable pointer",
                 not list(copy_platlib.glob("*_editable.pth")),
                 str(list(copy_platlib.glob("*.pth"))))
-        proc = subprocess.run([str(copy_target / "bin" / "python"), "-c", script],
+        proc = subprocess.run([str(venv_python(copy_target)), "-c", script],
                               capture_output=True, text=True, cwd=tmp)
         t.check("the copied extension works", proc.returncode == 0,
                 (proc.stderr or "").strip()[-300:])
@@ -1005,8 +1008,8 @@ pub fn apply(f voidptr, x int) !int {
             t.check("the tag names the floor",
                     parts[2] == "cp" + ABI3_FLOOR.replace(".", ""), abi.name)
             with zipfile.ZipFile(abi) as z:
-                t.check("the extension is named .abi3.so",
-                        any(n.endswith(".abi3.so") for n in z.namelist()),
+                t.check(f"the extension is named {ABI3_EXT}",
+                        any(n.endswith(ABI3_EXT) for n in z.namelist()),
                         str(z.namelist()))
                 t.check("the abi3 wheel is a valid archive", z.testzip() is None)
                 # The floor is hex, not decimal: `Py_LIMITED_API` for 3.11 is
@@ -1030,12 +1033,12 @@ pub fn apply(f voidptr, x int) !int {
             target = tmp / "venv-abi3"
             make_venv(target, with_pip=True)
             proc = subprocess.run(
-                [str(target / "bin" / "python"), "-m", "pip", "install", "--no-index",
+                [str(venv_python(target)), "-m", "pip", "install", "--no-index",
                  "--no-deps", str(abi)],
                 capture_output=True, text=True)
             t.check("pip installs the abi3 wheel", proc.returncode == 0,
                     (proc.stderr or proc.stdout).strip()[-300:])
-            proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+            proc = subprocess.run([str(venv_python(target)), "-c", script],
                                   capture_output=True, text=True, cwd=tmp)
             t.check("the abi3 wheel works", proc.returncode == 0,
                     (proc.stderr or "").strip()[-300:])
@@ -1052,12 +1055,12 @@ pub fn apply(f voidptr, x int) !int {
                       if "abi3" not in w.name]
             t.check("the normal wheel is written again", len(normal) == 1)
             proc = subprocess.run(
-                [str(target / "bin" / "python"), "-m", "pip", "install", "--no-index",
+                [str(venv_python(target)), "-m", "pip", "install", "--no-index",
                  "--no-deps", "--force-reinstall", str(normal[0])],
                 capture_output=True, text=True)
             t.check("and installs over the abi3 one", proc.returncode == 0,
                     (proc.stderr or proc.stdout).strip()[-300:])
-            proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+            proc = subprocess.run([str(venv_python(target)), "-c", script],
                                   capture_output=True, text=True, cwd=tmp)
             t.check("the normal build still has its classes", proc.returncode == 0
                     and "Counter(value: 0, step: 1)" in proc.stdout,
@@ -1144,7 +1147,7 @@ pub fn parse(text string) !int {
         t.check("an error type builds", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-400:])
         if proc.returncode == 0:
-            built = sorted(err.glob("dist/build/*.so"))
+            built = sorted(err.glob(f"dist/build/*{LIB_EXT}"))
             t.check("the extension is written", len(built) == 1, built)
             if built:
                 probe = subprocess.run(
@@ -1282,7 +1285,7 @@ pub fn (mut n Node) link(other voidptr) {
                 target2 = tmp / "venv-abi3-cycles"
                 make_venv(target2, with_pip=True)
                 proc = subprocess.run(
-                    [str(target2 / "bin" / "python"), "-m", "pip", "install",
+                    [str(venv_python(target2)), "-m", "pip", "install",
                      "--no-index", "--no-deps", str(abi_cycles[0])],
                     capture_output=True, text=True)
                 t.check("pip installs it", proc.returncode == 0,
@@ -1303,7 +1306,7 @@ pub fn (mut n Node) link(other voidptr) {
                     "del a, b\n"
                     "print(gc.collect())\n"
                 )
-                proc = subprocess.run([str(target2 / "bin" / "python"), "-c", probe],
+                proc = subprocess.run([str(venv_python(target2)), "-c", probe],
                                       capture_output=True, text=True, cwd=tmp)
                 t.check("it runs", proc.returncode == 0,
                         (proc.stderr or "").strip()[-400:])
@@ -1348,7 +1351,7 @@ pub fn build_csv(rows int) int {
             if proc.returncode == 0 and threaded:
                 target3 = tmp / "venv-threads"
                 make_venv(target3, with_pip=True)
-                subprocess.run([str(target3 / "bin" / "python"), "-m", "pip", "install",
+                subprocess.run([str(venv_python(target3)), "-m", "pip", "install",
                                 "--no-index", "--no-deps", "--force-reinstall",
                                 str(threaded[0])], capture_output=True, text=True)
                 expect = len(",".join(f"row-{i}" for i in range(5000)))
@@ -1385,7 +1388,7 @@ pub fn build_csv(rows int) int {
                         "print('ok')\n",
                 }
                 for label, code in probes.items():
-                    proc = subprocess.run([str(target3 / "bin" / "python"), "-c", code],
+                    proc = subprocess.run([str(venv_python(target3)), "-c", code],
                                           capture_output=True, text=True, cwd=tmp, timeout=600)
                     t.check(label, proc.returncode == 0 and proc.stdout.strip() == "ok",
                             f"exit {proc.returncode}: {(proc.stderr or proc.stdout).strip()[-300:]}")
@@ -1512,7 +1515,7 @@ pub fn (mut n Narrow) scale(by f32) f32 {
             if proc.returncode == 0 and built:
                 target4 = tmp / "venv-types"
                 make_venv(target4, with_pip=True)
-                subprocess.run([str(target4 / "bin" / "python"), "-m", "pip", "install",
+                subprocess.run([str(venv_python(target4)), "-m", "pip", "install",
                                 "--no-index", "--no-deps", "--force-reinstall", str(built[0])],
                                capture_output=True, text=True)
                 probe = """
@@ -1591,7 +1594,7 @@ if grew > 64 * 1024:
     bad.append(("composite types leak", grew, 0))
 print("ok" if not bad else bad)
 """
-                proc = subprocess.run([str(target4 / "bin" / "python"), "-c", probe],
+                proc = subprocess.run([str(venv_python(target4)), "-c", probe],
                                       capture_output=True, text=True, cwd=tmp, timeout=300)
                 t.check("every documented conversion round-trips, with range checks",
                         proc.stdout.strip() == "ok",
@@ -1762,12 +1765,12 @@ print("ok" if not bad else bad)
         make_venv(target, with_pip=True)
         env = dict(os.environ, VCRAFT_BIN=str(VCRAFT))
         proc = subprocess.run(
-            [str(target / "bin" / "python"), "-m", "pip", "install", "--no-index",
+            [str(venv_python(target)), "-m", "pip", "install", "--no-index",
              "--no-build-isolation", "--no-deps", "."],
             cwd=project, env=env, capture_output=True, text=True)
         t.check("pip install . succeeds", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-400:])
-        proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+        proc = subprocess.run([str(venv_python(target)), "-c", script],
                               capture_output=True, text=True, cwd=tmp)
         t.check("the project built by pip works", proc.returncode == 0,
                 (proc.stderr or "").strip()[-300:])
@@ -1781,17 +1784,17 @@ print("ok" if not bad else bad)
         editable_target = tmp / "venv-editable"
         make_venv(editable_target, with_pip=True)
         proc = subprocess.run(
-            [str(editable_target / "bin" / "python"), "-m", "pip", "install",
+            [str(venv_python(editable_target)), "-m", "pip", "install",
              "--no-index", "--no-build-isolation", "--no-deps", "-e", "."],
             cwd=project, env=env, capture_output=True, text=True)
         t.check("pip install -e . succeeds", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-400:])
-        proc = subprocess.run([str(editable_target / "bin" / "python"), "-c", script],
+        proc = subprocess.run([str(venv_python(editable_target)), "-c", script],
                               capture_output=True, text=True, cwd=tmp)
         t.check("the editable project works", proc.returncode == 0,
                 (proc.stderr or "").strip()[-300:])
         proc = subprocess.run(
-            [str(editable_target / "bin" / "python"), "-c",
+            [str(venv_python(editable_target)), "-c",
              "import importlib.metadata\n"
              "import json\n"
              "import mypkg_native as m\n"
@@ -1844,12 +1847,12 @@ print("ok" if not bad else bad)
             make_venv(target, with_pip=True)
             env = dict(os.environ, VCRAFT_BIN=str(VCRAFT))
             proc = subprocess.run(
-                [str(target / "bin" / "python"), "-m", "pip", "install", "--no-index",
+                [str(venv_python(target)), "-m", "pip", "install", "--no-index",
                  "--no-build-isolation", "--no-deps", str(sdists[0])],
                 env=env, capture_output=True, text=True)
             t.check("pip installs an sdist", proc.returncode == 0,
                     (proc.stderr or proc.stdout).strip()[-400:])
-            proc = subprocess.run([str(target / "bin" / "python"), "-c", script],
+            proc = subprocess.run([str(venv_python(target)), "-c", script],
                                   capture_output=True, text=True, cwd=tmp)
             t.check("the sdist-built extension works", proc.returncode == 0,
                     (proc.stderr or "").strip()[-300:])
@@ -2146,7 +2149,18 @@ print("ok" if not bad else bad)
                     f"expected {pin_v[:7]} and {pin_vc[:7]}")
         no_v = {k: v for k, v in os.environ.items() if k not in ("VCRAFT_V",)}
         no_v["VCRAFT_HOME"] = str(tmp / "no-toolchain")
-        no_v["PATH"] = "/usr/bin:/bin"
+        if WINDOWS:
+            # Hide the compiler by dropping the directory it lives in from PATH, keeping
+            # the rest: clearing PATH outright stops `vcraft` itself from starting there,
+            # because it loads the MinGW runtime that lives elsewhere on PATH.
+            v_seen = shutil.which("v") or shutil.which("v.exe")
+            if v_seen:
+                v_dir = Path(v_seen).resolve().parent
+                no_v["PATH"] = os.pathsep.join(
+                    e for e in no_v.get("PATH", "").split(os.pathsep)
+                    if not e or Path(e).resolve() != v_dir)
+        else:
+            no_v["PATH"] = "/usr/bin:/bin"
         proc = subprocess.run([str(VCRAFT), "toolchain"], cwd=project, env=no_v,
                               capture_output=True, text=True)
         t.check("toolchain reports a missing compiler",
@@ -2157,33 +2171,38 @@ print("ok" if not bad else bad)
         t.check("build without a compiler says how to get one",
                 proc.returncode != 0 and "vcraft toolchain install" in proc.stderr,
                 proc.stderr.strip()[-300:])
-        # An installed toolchain is found without PATH or VCRAFT_V. A stand-in that
-        # answers `version` like the pinned V keeps this check off the network.
-        fake_home = tmp / "toolchain-home"
-        fake_dir = fake_home / f"v-{pin_v[:12]}"
-        fake_dir.mkdir(parents=True)
-        fake_v = fake_dir / "v"
-        fake_v.write_text(f"#!/bin/sh\necho 'V 0.5.2 {pin_v[:7]}'\n")
-        fake_v.chmod(0o755)
-        found = dict(no_v, VCRAFT_HOME=str(fake_home))
-        proc = subprocess.run([str(VCRAFT), "toolchain"], cwd=project, env=found,
-                              capture_output=True, text=True)
-        # A binary V compiles sets VEXE to the compiler that built it, and V trusts VEXE
-        # to find its own vlib: vcraft must not hand that to the compilers it runs, or a
-        # pip-installed vcraft points the user's V at a path that does not exist.
-        seen = tmp / "vexe-seen.txt"
-        probe_v = tmp / "probe-v"
-        probe_v.write_text(f"#!/bin/sh\necho 'V 0.5.2 {pin_v[:7]}'\necho \"[$VEXE]\" > {seen}\n")
-        probe_v.chmod(0o755)
-        subprocess.run([str(VCRAFT), "toolchain"], cwd=project,
-                       env=dict(found, VCRAFT_V=str(probe_v), VEXE="/nonexistent/v"),
-                       capture_output=True, text=True)
-        t.check("the compilers vcraft runs do not inherit VEXE",
-                seen.exists() and seen.read_text().strip() == "[]",
-                seen.read_text() if seen.exists() else "probe never ran")
-        t.check("an installed toolchain is found and recognised as the pin",
-                proc.returncode == 0 and str(fake_v) in proc.stdout
-                and "the pinned commit" in proc.stdout, proc.stdout + proc.stderr)
+        # The stand-in toolchain below is a POSIX shell script, and so is the probe that
+        # checks VEXE is not leaked; neither has a Windows spelling.
+        if not WINDOWS:
+            # An installed toolchain is found without PATH or VCRAFT_V. A stand-in that
+            # answers `version` like the pinned V keeps this check off the network.
+            fake_home = tmp / "toolchain-home"
+            fake_dir = fake_home / f"v-{pin_v[:12]}"
+            fake_dir.mkdir(parents=True)
+            fake_v = fake_dir / "v"
+            fake_v.write_text(f"#!/bin/sh\necho 'V 0.5.2 {pin_v[:7]}'\n")
+            fake_v.chmod(0o755)
+            found = dict(no_v, VCRAFT_HOME=str(fake_home))
+            proc = subprocess.run([str(VCRAFT), "toolchain"], cwd=project, env=found,
+                                  capture_output=True, text=True)
+            # A binary V compiles sets VEXE to the compiler that built it, and V trusts
+            # VEXE to find its own vlib: vcraft must not hand that to the compilers it
+            # runs, or a pip-installed vcraft points the user's V at a path that does
+            # not exist.
+            seen = tmp / "vexe-seen.txt"
+            probe_v = tmp / "probe-v"
+            probe_v.write_text(
+                f"#!/bin/sh\necho 'V 0.5.2 {pin_v[:7]}'\necho \"[$VEXE]\" > {seen}\n")
+            probe_v.chmod(0o755)
+            subprocess.run([str(VCRAFT), "toolchain"], cwd=project,
+                           env=dict(found, VCRAFT_V=str(probe_v), VEXE="/nonexistent/v"),
+                           capture_output=True, text=True)
+            t.check("the compilers vcraft runs do not inherit VEXE",
+                    seen.exists() and seen.read_text().strip() == "[]",
+                    seen.read_text() if seen.exists() else "probe never ran")
+            t.check("an installed toolchain is found and recognised as the pin",
+                    proc.returncode == 0 and str(fake_v) in proc.stdout
+                    and "the pinned commit" in proc.stdout, proc.stdout + proc.stderr)
 
         print("a Windows target plans a .pyd")
         proc = vcraft("build", "--target", "windows-amd64", "--dry-run", cwd=project)

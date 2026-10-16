@@ -383,6 +383,9 @@ jobs:
       - name: "suite: README examples"
         run: python tests/docs/test_readme.py
 
+      - name: "suite: CLI"
+        run: python tests/cli/test_cli.py
+
   musl:
     # The suites on musl libc, inside the published musllinux image, which carries V
     # at the pinned commit, gcc and CPython. Run with `docker run` from the runner
