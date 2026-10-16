@@ -71,7 +71,9 @@ Additions that do not change anything 1.x promises.
       `ziglang` ships Zig on PyPI), so not even the five-minute build is needed.
 - [x] **Threaded workloads in the benchmark**, against PyO3's `allow_threads`: an
       `lcg` loop from 1 to 8 threads, with the GIL released on all three backends.
-- [ ] **Documentation site:** a user guide and a reference split out of the README.
+- [x] **Documentation site:** a guide and a reference in English and Spanish under `docs/`,
+      built with MkDocs Material and published to GitHub Pages. The README stays the source
+      of truth and keeps every V example tested. Ships in 1.4.0.
 - [ ] **A real project** published to PyPI with vcraft, as the reference example.
 
 ## Platforms and toolchain

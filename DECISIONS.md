@@ -68,9 +68,18 @@ that is worth revisiting only if the per-interpreter state move proves tractable
 Deferred. V run directly already covers the parallelism and isolation cases more strongly,
 and the one thing subinterpreters add is not worth the state-model rewrite today.
 
-## Documentation site: deferred
+## Documentation site: MkDocs Material, English and Spanish
 
-The long-form guide and reference stay in `README.md` for now; no site generator or Pages
-workflow is added. If a site is built later, the plan is a `docs/` tree (guide + reference)
-with `README.md` reduced to a quickstart, and `tests/docs/test_readme.py` extended to
-compile the ` ```v ` blocks of every page so every claim stays backed by a test.
+Built 2026-10-16. A guide and a reference live under `docs/`, one `.<lang>.md` file per
+language (English at `/`, Spanish at `/es/`), built with MkDocs Material and localized
+with `mkdocs-static-i18n`, and deployed to GitHub Pages by `.github/workflows/docs.yml`.
+`README.md` stays the source of truth and keeps every V example tested; the site mirrors
+it.
+
+Caveat recorded at the time: MkDocs upstream is in transition (the MkDocs 2.0 / Zensical
+work) and `mkdocs-static-i18n` is frozen as-is. If that stops being maintained, the content
+is plain Markdown and moves to another generator with little more than a config change.
+
+Left open: `tests/docs/test_readme.py` still compiles only `README.md`. Extending it to
+compile the ` ```v ` blocks of the `docs/` pages, so every claim on the site is backed by a
+test the way the README's are, is a follow-up.

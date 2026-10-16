@@ -2,6 +2,10 @@
 
 **Native Python extensions written in V.**
 
+> **Documentation:** a guide and a reference, in English and Spanish, are at
+> <https://rroblf01.github.io/vcraft/> (<https://rroblf01.github.io/vcraft/es/>). This
+> README stays the source of truth and every V example in it is built by the test suite.
+
 [![PyPI](https://img.shields.io/pypi/v/vcraft.svg)](https://pypi.org/project/vcraft/)
 [![Python versions](https://img.shields.io/pypi/pyversions/vcraft.svg)](https://pypi.org/project/vcraft/)
 [![CI](https://github.com/rroblf01/vcraft/actions/workflows/ci.yml/badge.svg)](https://github.com/rroblf01/vcraft/actions/workflows/ci.yml)

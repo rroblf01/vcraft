@@ -35,6 +35,9 @@ __pycache__/
 venv/
 env/
 
+# MkDocs site output
+/site/
+
 # packaging / tooling caches
 .vcraft/
 /.cache/

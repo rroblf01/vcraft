@@ -1,0 +1,6 @@
+# Documentation site dependencies.
+#
+# Development-only: nothing here is part of the wheel or of `vcraft` itself. The site is
+# built by `.github/workflows/docs.yml`.
+mkdocs-material>=9.5
+mkdocs-static-i18n>=1.2

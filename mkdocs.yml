@@ -1,0 +1,89 @@
+site_name: vcraft
+site_description: CPython bindings written in V — a code generator and a wheel writer, no Rust, C++ or zlib.
+site_url: https://rroblf01.github.io/vcraft/
+repo_url: https://github.com/rroblf01/vcraft
+repo_name: rroblf01/vcraft
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.sections
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  # Bilingual site: the default language lives at `/`, Spanish at `/es/`. Files carry a
+  # `.<lang>.md` suffix; the plugin maps the `nav` entries, which use the base names.
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: es
+          name: Español
+          build: true
+          nav_translations:
+            Home: Inicio
+            Getting started: Primeros pasos
+            Guide: Guía
+            Reference: Referencia
+            Annotations: Anotaciones
+            Types: Tipos
+            Classes: Clases
+            Errors: Errores
+            CLI: CLI
+            Wheels: Wheels
+            Continuous integration: Integración continua
+            Configuration: Configuración
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guide:
+      - Annotations: guide/annotations.md
+      - Types: guide/types.md
+      - Classes: guide/classes.md
+      - Errors: guide/errors.md
+      - CLI: guide/cli.md
+      - Wheels: guide/wheels.md
+      - Continuous integration: guide/ci.md
+      - Configuration: guide/config.md
+  - Reference:
+      - Annotations: reference/annotations.md
+      - Types: reference/types.md
