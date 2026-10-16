@@ -17,13 +17,18 @@ ROOT = HERE.parents[1]
 BUILD = ROOT / "build"
 MODULE = "vcraft_runtime_check"
 
+sys.path.insert(0, str(ROOT / "tests"))
+import vcraft_build  # noqa: E402
+
 
 def find_extension() -> Path | None:
     """Locate the built module, accepting either a plain or a tagged name."""
-    preferred = BUILD / f"{MODULE}{sysconfig.get_config_var('EXT_SUFFIX') or '.so'}"
+    preferred = BUILD / f"{MODULE}{vcraft_build.ext_suffix()}"
     if preferred.exists():
         return preferred
-    candidates = sorted(BUILD.glob(f"{MODULE}*.so"))
+    # `.pyd` on Windows, `.so` everywhere else: the suffix `sysconfig` reports is a
+    # starting point, not a guarantee, so a glob catches a module V named another way.
+    candidates = sorted(BUILD.glob(f"{MODULE}*.so")) + sorted(BUILD.glob(f"{MODULE}*.pyd"))
     return candidates[0] if candidates else None
 
 
@@ -57,17 +62,14 @@ class Suite:
 def build() -> None:
     """Rebuild every time: a stale module would test yesterday's runtime."""
     print("building the runtime test extension")
-    proc = subprocess.run([str(ROOT / "scripts" / "build-runtime-tests.sh")],
-                          capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise SystemExit(f"build failed:\n{proc.stdout}\n{proc.stderr}")
+    vcraft_build.build_runtime()
 
 
 def main() -> int:
     build()
     extension = find_extension()
     if extension is None:
-        print(f"missing {BUILD}/{MODULE}*.so after a successful build")
+        print(f"missing {BUILD}/{MODULE}*.so (or *.pyd) after a successful build")
         return 1
 
     sys.path.insert(0, str(BUILD))
@@ -80,7 +82,7 @@ def main() -> int:
     t.check("module __doc__", "vcraft runtime" in (m.__doc__ or ""))
     t.check(
         "extension suffix",
-        m.__file__.endswith(sysconfig.get_config_var("EXT_SUFFIX") or ".so"),
+        m.__file__.endswith(vcraft_build.ext_suffix()),
         f"got {m.__file__}",
     )
     t.check("function docstring", m.answer.__doc__ == "Return the answer.")

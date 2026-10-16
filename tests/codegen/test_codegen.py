@@ -23,6 +23,9 @@ GLUE = PROJECT / "src" / "_vcraft_generated.v"
 STUBS = PYTHON_DIR / "hello_native.pyi"
 PACKAGE = "hello_native"
 
+sys.path.insert(0, str(ROOT / "tests"))
+import vcraft_build  # noqa: E402
+
 
 class Suite:
     def __init__(self) -> None:
@@ -53,14 +56,7 @@ class Suite:
 
 def build() -> None:
     print("building the example")
-    result = subprocess.run(
-        [str(ROOT / "scripts" / "build-example.sh"), "hello", PACKAGE],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        print(result.stdout[-3000:])
-        print(result.stderr[-3000:])
-        raise SystemExit("build failed")
+    vcraft_build.build_example("hello", PACKAGE)
 
 
 def main() -> int:
@@ -934,8 +930,7 @@ def main() -> int:
     t.check("released without a leak", h.Counter().value == 0)
 
     print("slot ids")
-    slots = subprocess.run([str(ROOT / "scripts" / "check-slot-ids.sh")],
-                           capture_output=True, text=True)
+    slots = vcraft_build.check_slot_ids()
     t.check("slot ids match the headers", slots.returncode == 0, slots.stdout.strip())
 
     print("struct mirrors")
@@ -954,33 +949,33 @@ def main() -> int:
             "module main\n\nimport vcraft\n\n"
             "fn main() {\n\tunsafe { println(sizeof(vcraft.PyModuleDef)) }\n}\n")
         sizes = {}
-        include = sysconfig.get_paths()["include"]
-        libdir = sysconfig.get_config_var("LIBDIR") or "/usr/lib"
-        # LDVERSION carries the ABI flags: `3.13t` names `libpython3.13t` on a
-        # free-threaded interpreter, where `3.13` would link the wrong library.
-        pylib = "python" + (sysconfig.get_config_var("LDVERSION")
-                            or f"{sys.version_info[0]}.{sys.version_info[1]}")
+        include = vcraft_build.python_include()
+        if vcraft_build.WINDOWS:
+            # A probe is an executable, but it still has to link the interpreter:
+            # the runtime's C file references it throughout.
+            link = vcraft_build.link_flags("mirrorcheck")
+        else:
+            libdir = sysconfig.get_config_var("LIBDIR") or "/usr/lib"
+            # LDVERSION carries the ABI flags: `3.13t` names `libpython3.13t` on a
+            # free-threaded interpreter, where `3.13` would link the wrong library.
+            pylib = "python" + (sysconfig.get_config_var("LDVERSION")
+                                or f"{sys.version_info[0]}.{sys.version_info[1]}")
+            # The rpath because a libpython outside the loader's default paths (a uv
+            # or setup-python interpreter) otherwise stops the probe from starting,
+            # and it prints nothing at all.
+            link = ["-ldflags", f"-L{libdir} -l{pylib} -Wl,-rpath,{libdir}"]
         for label, extra in (("gil", []), ("free-threaded", ["-d", "vcraft_free_threaded"])):
             out = mirror_tmp / f"mirror-{label}"
-            # Linked against libpython: the probe only prints a `sizeof`, but the
-            # runtime's C file references the interpreter throughout, and an
-            # executable resolves everything at link time while an extension
-            # leaves it to the import.
-            proc = subprocess.run(
-                [str(ROOT / "scripts" / "vcraft-v.sh"),
-                 "-enable-globals", "-o", str(out),
+            proc = vcraft_build.run_v(
+                ["-enable-globals", "-o", out,
                  "-path", f"{ROOT}/vlib|@vlib",
                  "-cflags", f"-I{include}",
-                 # The rpath because a libpython outside the loader's default
-                 # paths (a uv or setup-python interpreter) otherwise stops the
-                 # probe from starting, and it prints nothing at all.
-                 "-ldflags", f"-L{libdir} -l{pylib} -Wl,-rpath,{libdir}",
-                 *extra, str(mirror_tmp)],
-                capture_output=True, text=True)
+                 *link, *extra, mirror_tmp])
             t.check(f"the {label} mirror compiles", proc.returncode == 0,
                     (proc.stderr or proc.stdout).strip()[-300:])
             if proc.returncode == 0:
-                probe = subprocess.run([str(out)], capture_output=True, text=True)
+                probe = subprocess.run([str(out) + vcraft_build.EXE],
+                                       capture_output=True, text=True)
                 t.check(f"the {label} mirror probe runs",
                         probe.returncode == 0 and probe.stdout.strip().isdigit(),
                         (probe.stderr or probe.stdout).strip()[-300:])

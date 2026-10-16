@@ -25,6 +25,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 PYTHON_DIR = ROOT / "examples" / "hello" / "python"
 
+sys.path.insert(0, str(ROOT / "tests"))
+import vcraft_build  # noqa: E402
+
 ROUNDS = int(sys.argv[1]) if len(sys.argv) > 1 else 8
 CALLS = int(sys.argv[2]) if len(sys.argv) > 2 else 20_000
 
@@ -179,11 +182,10 @@ class Suite:
 
 def build() -> None:
     print("building the example")
-    proc = subprocess.run([str(ROOT / "scripts" / "build-example.sh"), "hello", "hello_native"],
-                          capture_output=True, text=True)
-    suffix = sysconfig.get_config_var("EXT_SUFFIX")
-    if proc.returncode != 0 or not (PYTHON_DIR / f"hello_native{suffix}").exists():
-        raise SystemExit(f"build failed:\n{proc.stdout}\n{proc.stderr}")
+    vcraft_build.build_example("hello", "hello_native")
+    suffix = vcraft_build.ext_suffix()
+    if not (PYTHON_DIR / f"hello_native{suffix}").exists():
+        raise SystemExit("build failed: no extension was produced")
 
 
 def main() -> int:

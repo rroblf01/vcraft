@@ -16,6 +16,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
+sys.path.insert(0, str(ROOT / "tests"))
+import vcraft_build  # noqa: E402
+
 
 def build_driver(tmp: Path) -> Path:
     """Build a small program that prints one configuration lookup."""
@@ -50,14 +53,11 @@ def build_driver(tmp: Path) -> Path:
         "\t}\n"
     )
     out = tmp / "driver"
-    proc = subprocess.run(
-        [str(ROOT / "scripts" / "vcraft-v.sh"), "-enable-globals", "-o", str(out),
-         "-path", f"{ROOT}/vlib|@vlib", str(tmp)],
-        capture_output=True, text=True,
-    )
+    proc = vcraft_build.run_v(
+        ["-enable-globals", "-o", out, "-path", f"{ROOT}/vlib|@vlib", tmp])
     if proc.returncode != 0:
         raise SystemExit(f"cannot build the driver:\n{proc.stdout}\n{proc.stderr}")
-    return out
+    return Path(str(out) + vcraft_build.EXE)
 
 
 class Suite:
