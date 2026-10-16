@@ -35,6 +35,22 @@ int main(void) {
 	printf("slot_sq_item %d\n", Py_sq_item);
 	printf("slot_sq_contains %d\n", Py_sq_contains);
 	printf("slot_str %d\n", Py_tp_str);
+	printf("slot_nb_add %d\n", Py_nb_add);
+	printf("slot_nb_subtract %d\n", Py_nb_subtract);
+	printf("slot_nb_multiply %d\n", Py_nb_multiply);
+	printf("slot_nb_remainder %d\n", Py_nb_remainder);
+	printf("slot_nb_power %d\n", Py_nb_power);
+	printf("slot_nb_negative %d\n", Py_nb_negative);
+	printf("slot_nb_positive %d\n", Py_nb_positive);
+	printf("slot_nb_absolute %d\n", Py_nb_absolute);
+	printf("slot_nb_invert %d\n", Py_nb_invert);
+	printf("slot_nb_lshift %d\n", Py_nb_lshift);
+	printf("slot_nb_rshift %d\n", Py_nb_rshift);
+	printf("slot_nb_and %d\n", Py_nb_and);
+	printf("slot_nb_xor %d\n", Py_nb_xor);
+	printf("slot_nb_or %d\n", Py_nb_or);
+	printf("slot_nb_floor_divide %d\n", Py_nb_floor_divide);
+	printf("slot_nb_true_divide %d\n", Py_nb_true_divide);
 	printf("sizeof_type_spec %zu\n", sizeof(PyType_Spec));
 	printf("sizeof_type_slot %zu\n", sizeof(PyType_Slot));
 	return 0;
@@ -65,6 +81,22 @@ slot_sq_length 45
 slot_sq_item 44
 slot_sq_contains 41
 slot_str 70
+slot_nb_add 7
+slot_nb_subtract 36
+slot_nb_multiply 29
+slot_nb_remainder 34
+slot_nb_power 33
+slot_nb_negative 30
+slot_nb_positive 32
+slot_nb_absolute 6
+slot_nb_invert 27
+slot_nb_lshift 28
+slot_nb_rshift 35
+slot_nb_and 8
+slot_nb_xor 38
+slot_nb_or 31
+slot_nb_floor_divide 12
+slot_nb_true_divide 37
 sizeof_type_spec 32
 sizeof_type_slot 16
 SRC

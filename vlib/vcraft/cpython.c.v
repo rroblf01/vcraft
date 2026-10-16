@@ -459,6 +459,42 @@ pub const slot_sq_item = i32(44)
 
 pub const slot_sq_contains = i32(41)
 
+// The number protocol. `nb_*` slots are what `+`, `-`, `*`, `&`, `|` and the unary
+// operators reach; the ids are the `PyType_Slot` ones, which sit below the `Py_sq_*`
+// and `Py_tp_*` ranges. They have not moved across 3.11-3.15 and the codegen suite
+// compares them with the installed headers through scripts/check-slot-ids.sh.
+pub const slot_nb_add = i32(7)
+
+pub const slot_nb_subtract = i32(36)
+
+pub const slot_nb_multiply = i32(29)
+
+pub const slot_nb_remainder = i32(34)
+
+pub const slot_nb_power = i32(33)
+
+pub const slot_nb_negative = i32(30)
+
+pub const slot_nb_positive = i32(32)
+
+pub const slot_nb_absolute = i32(6)
+
+pub const slot_nb_invert = i32(27)
+
+pub const slot_nb_lshift = i32(28)
+
+pub const slot_nb_rshift = i32(35)
+
+pub const slot_nb_and = i32(8)
+
+pub const slot_nb_xor = i32(38)
+
+pub const slot_nb_or = i32(31)
+
+pub const slot_nb_floor_divide = i32(12)
+
+pub const slot_nb_true_divide = i32(37)
+
 pub const slot_members = i32(72)
 
 pub const slot_getset = i32(73)

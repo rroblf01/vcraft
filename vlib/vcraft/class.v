@@ -554,7 +554,7 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 	dealloc voidptr, methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr,
 	hash voidptr, bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr,
 	next_fn voidptr, getbuffer voidptr, releasebuffer voidptr, len_fn voidptr,
-	item_fn voidptr, contains_fn voidptr) PyObj {
+	item_fn voidptr, contains_fn voidptr, number_slots []PyTypeSlot) PyObj {
 	// The instance size is the PyObject header plus this class's state struct. A
 	// subclass's `state_size` includes its base's, so a subclass is never smaller than
 	// its base -- which is what CPython rejects with "tp_basicsize ... too small for
@@ -672,6 +672,10 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 	// The base tuple has to outlive this call: CPython reads it and keeps a reference to
 	// the base types, and the tuple itself is only borrowed for the call. The caller
 	// makes it a module global for exactly this reason.
+	// The number protocol: `+`, `-`, `*`, the bitwise operators and the unary ones. Each
+	// is independent, so the generator passes only the ones the class declares, already
+	// paired with their slot id.
+	slots << number_slots
 	if bases != unsafe { nil } {
 		slots << PyTypeSlot{
 			slot:  slot_bases
@@ -777,6 +781,24 @@ fn bool_object(value bool) voidptr {
 pub fn is_instance_of(obj voidptr, typ voidptr) bool {
 	unsafe {
 		return C.vpy_type_check(obj, typ) != 0
+	}
+}
+
+// is_none reports whether an object is the `None` singleton.
+//
+// The ternary `nb_power` slot receives the optional third argument of `pow(a, b, m)`
+// as `None` when it was not given, which is the only case a numeric operator handles;
+// a real modulus is left to CPython's own error.
+pub fn is_none(obj voidptr) bool {
+	return obj == C.vpy_none()
+}
+
+// number_slot builds one `PyType_Slot` for the number protocol, so generated code can
+// assemble the `nb_*` slots a class needs without naming the CPython struct.
+pub fn number_slot(id i32, f voidptr) PyTypeSlot {
+	return PyTypeSlot{
+		slot:  id
+		value: f
 	}
 }
 
