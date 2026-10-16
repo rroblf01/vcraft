@@ -2178,10 +2178,11 @@ print("ok" if not bad else bad)
                 proc.returncode == 0 and str(fake_v) in proc.stdout
                 and "the pinned commit" in proc.stdout, proc.stdout + proc.stderr)
 
-        print("windows is refused by name")
+        print("a Windows target plans a .pyd")
         proc = vcraft("build", "--target", "windows-amd64", "--dry-run", cwd=project)
-        t.check("a Windows target is refused with a reason",
-                proc.returncode != 0 and "Windows is not supported" in proc.stderr,
+        t.check("a Windows target plans a win_amd64 .pyd",
+                proc.returncode == 0 and "win_amd64" in proc.stdout
+                and "mypkg_native" in proc.stdout and ".pyd" in proc.stdout,
                 (proc.stderr or proc.stdout).strip()[-300:])
 
         print("errors")

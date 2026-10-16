@@ -202,6 +202,39 @@ pub fn export_script(module string) string {
 	return '{\n\tglobal: PyInit_${module};\n\tlocal: *;\n};\n'
 }
 
+// windows_import_library returns the linker flags that resolve the CPython symbols a
+// native Windows extension leaves undefined.
+//
+// A PE DLL cannot carry unresolved imports the way an ELF or Mach-O image can: the
+// loader binds every import by name against a module already in the process, so the
+// linker has to resolve each `Py*` call against the interpreter's import library before
+// the image is written. It lives in `<base_prefix>/libs`, named after the DLL: a full-API
+// build links `python3XX.lib`, and any abi3 build links the stable ABI's `python3.lib`.
+//
+// Skipped for a cross target: a Linux interpreter's `sysconfig` describes no Windows
+// import library, so a cross build passes one through `--ldflags` instead.
+fn windows_import_library(python string, abi3 string) string {
+	mut name := 'python3'
+	if abi3.len == 0 {
+		raw := python_line(python, "sysconfig.get_config_var('LDLIBRARY') or ''")
+		mut base := raw.all_after_last('/').all_after_last('\\')
+		if base.ends_with('.dll') {
+			base = base[..base.len - 4]
+		}
+		if base.starts_with('lib') {
+			base = base[3..]
+		}
+		if base.len > 0 {
+			name = base
+		}
+	}
+	dir := python_line(python, "sysconfig.get_config_var('LIBDIR') or os.path.join(sys.base_prefix, 'libs')")
+	if dir.len > 0 {
+		return '-L${dir} -l${name}'
+	}
+	return '-l${name}'
+}
+
 // extension_ldflags returns the linker flags for an extension on `target_os`.
 //
 // An extension leaves every `Py*` symbol undefined for the interpreter that loads it to
@@ -353,12 +386,6 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		// claims the policy the image was made for. Refused when the host cannot
 		// satisfy it, e.g. a musl policy on a glibc machine.
 		target = target.with_policy(opt.manylinux, opt.musllinux)!
-	}
-	// Windows is out of scope for 1.x (ROADMAP.md, "After 1.0"): the build quotes for a
-	// POSIX shell and no Windows wheel has ever been built or tested. Refused here, by
-	// name, rather than producing a `.pyd` nobody has loaded.
-	if target.os == 'windows' {
-		return error('Windows is not supported by vcraft 1.x; build on Linux or macOS (see ROADMAP.md)')
 	}
 	// The free-threaded build is whatever interpreter the caller named, and this is
 	// the check: a GIL interpreter produces a `cp314t`-tagged wheel full of GIL code,
@@ -517,6 +544,18 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		}
 		link_extra = ('-Wl,--version-script=' + script + ' ' + link_extra).trim_space()
 	}
+	if target.os == 'windows' && target.is_host() {
+		// A PE DLL cannot leave `Py*` undefined the way an ELF or Mach-O image does:
+		// the loader resolves imports by name against a module already in the process,
+		// so the linker has to bind every CPython call against the interpreter's import
+		// library before the image is written. It ships in `<base_prefix>/libs`, beside
+		// the DLL. A cross build reaches no Windows interpreter from here, so it has to
+		// pass the import library through `--ldflags`.
+		import_lib := windows_import_library(python, p.abi3)
+		if import_lib.len > 0 {
+			link_extra = (import_lib + ' ' + link_extra).trim_space()
+		}
+	}
 	ldflags := extension_ldflags(target.os, link_extra)
 	if ldflags.len > 0 {
 		args << '-ldflags'
@@ -589,13 +628,14 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	} else if !target.is_host() {
 		return error('target `${target.name}` is not this machine; pass --cc for the cross compiler to use')
 	}
-	// For macOS V names the shared object itself: an `-o` that does not end in `.dylib`
-	// gets `.dylib` appended, so `x.cpython-311-darwin.so` is written as
-	// `x.cpython-311-darwin.so.dylib` and CPython, which only imports its EXT_SUFFIX,
-	// never finds it. The file is moved back after the build. Both names are cleared
-	// first, so a leftover from an earlier build can never be read as this one.
-	dylib := output + '.dylib'
-	for stale in [output, dylib] {
+	// V names the shared object itself when the `-o` does not already carry the
+	// platform's own suffix: macOS appends `.dylib` and MinGW/llvm-mingw append `.dll`,
+	// so `x.cpython-311-darwin.so` is written as `x.cpython-311-darwin.so.dylib` and
+	// `x.cp314-win_amd64.pyd` as `x.cp314-win_amd64.pyd.dll`. CPython only imports its
+	// EXT_SUFFIX, so the suffixed file is moved back after the build. Both names are
+	// cleared first, so a leftover from an earlier build can never be read as this one.
+	suffixed := if target.os == 'windows' { output + '.dll' } else { output + '.dylib' }
+	for stale in [output, suffixed] {
 		if os.exists(stale) {
 			os.rm(stale) or { return error('cannot remove ${stale}') }
 		}
@@ -604,8 +644,8 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	if result.exit_code != 0 {
 		return error('the V compiler failed:\n${result.output}')
 	}
-	if !os.exists(output) && os.exists(dylib) {
-		os.mv(dylib, output) or { return error('cannot move ${dylib} to ${output}') }
+	if !os.exists(output) && os.exists(suffixed) {
+		os.mv(suffixed, output) or { return error('cannot move ${suffixed} to ${output}') }
 	}
 	binary := os.read_file(output) or { return error('cannot read ${output}') }
 

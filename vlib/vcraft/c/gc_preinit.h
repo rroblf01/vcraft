@@ -168,9 +168,10 @@ __attribute__((constructor)) static void vpy_gc_preinit_linux(void) {
 // server is enough to get there.
 //
 // After the first call a thread pays one thread-local load. Registration is undone
-// when the thread exits, through a pthread key destructor, which runs on the exiting
-// thread itself as GC_unregister_my_thread requires: a thread left registered after
-// it is gone would be signalled by the next collection.
+// when the thread exits, on the exiting thread itself as GC_unregister_my_thread
+// requires: a thread left registered after it is gone would be signalled by the next
+// collection. POSIX uses a pthread key destructor; Windows has no per-thread TLS
+// destructor, so it uses a fiber-local slot's.
 #if defined(GC_THREADS) && (defined(__APPLE__) || defined(__linux__))
 #include <pthread.h>
 
@@ -203,6 +204,48 @@ static inline void vpy_gc_enter(void) {
 	pthread_once(&vpy_gc_thread_key_once, vpy_gc_thread_key_init);
 	if (GC_register_my_thread(&base) == GC_SUCCESS) {
 		pthread_setspecific(vpy_gc_thread_key, (void *)1);
+	}
+}
+#elif defined(GC_THREADS) && defined(_WIN32)
+#include <windows.h>
+
+// The Windows shape of the same registration. The destructor is bound to a fiber-local
+// slot rather than a pthread key, because Windows TLS has no destructor of its own; the
+// slot is created once, through the run-once initialiser Windows has in place of
+// `pthread_once`.
+static __thread int vpy_gc_thread_known = 0;
+static DWORD vpy_gc_thread_fls = FLS_OUT_OF_INDEXES;
+static INIT_ONCE vpy_gc_thread_fls_once = INIT_ONCE_STATIC_INIT;
+
+static void NTAPI vpy_gc_thread_exit(PVOID unused) {
+	(void)unused;
+	GC_unregister_my_thread();
+}
+
+static BOOL CALLBACK vpy_gc_thread_fls_init(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+	(void)once;
+	(void)param;
+	(void)ctx;
+	vpy_gc_thread_fls = FlsAlloc(vpy_gc_thread_exit);
+	return TRUE;
+}
+
+static inline void vpy_gc_enter(void) {
+	if (vpy_gc_thread_known) {
+		return;
+	}
+	vpy_gc_thread_known = 1;
+	// The importing thread, and any thread V started itself, is already known.
+	if (GC_thread_is_registered()) {
+		return;
+	}
+	struct GC_stack_base base;
+	if (GC_get_stack_base(&base) != GC_SUCCESS) {
+		return;
+	}
+	InitOnceExecuteOnce(&vpy_gc_thread_fls_once, vpy_gc_thread_fls_init, NULL, NULL);
+	if (GC_register_my_thread(&base) == GC_SUCCESS && vpy_gc_thread_fls != FLS_OUT_OF_INDEXES) {
+		FlsSetValue(vpy_gc_thread_fls, (void *)1);
 	}
 }
 #else
