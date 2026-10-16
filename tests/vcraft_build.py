@@ -164,7 +164,10 @@ def link_flags(module: str) -> list[str]:
 def _generator() -> Path:
     out = BUILD / "vc-generate"
     BUILD.mkdir(exist_ok=True)
-    proc = run_v(["-o", out, "-path", f"{VLIB}|@vlib", ROOT / "cmd" / "vc-generate"])
+    # `-enable-globals` because the code generator keeps the enum registry in a module
+    # global.
+    proc = run_v(["-enable-globals", "-o", out, "-path", f"{VLIB}|@vlib",
+                  ROOT / "cmd" / "vc-generate"])
     if proc.returncode != 0:
         raise SystemExit(f"cannot build the generator:\n{proc.stdout}\n{proc.stderr}")
     return Path(str(out) + EXE)

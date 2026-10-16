@@ -670,6 +670,48 @@ pub mut:
 	column int
 }
 
+// EnumMember is one member of a V `enum`: its name and integer value.
+pub struct EnumMember {
+pub:
+	name  string
+	value i64
+}
+
+// EnumInfo is a V `enum` a project declares. It crosses as a generated `enum.IntEnum`
+// subclass attached to the module under `name`.
+pub struct EnumInfo {
+pub:
+	name    string
+	key     string
+	members []EnumMember
+}
+
+// known_enums is every enum the current project declares, keyed by the name as written in
+// a signature. `lookup` consults it, so an enum name classifies as `.enum_type` rather
+// than as an unknown struct. Cleared at the start of a run.
+__global (
+	known_enums map[string]EnumInfo = map[string]EnumInfo{}
+)
+
+// reset_enums clears the registry before a project is collected.
+pub fn reset_enums() {
+	known_enums = map[string]EnumInfo{}
+}
+
+// is_enum reports whether `v_type` names an enum the project declares.
+pub fn is_enum(v_type string) bool {
+	return v_type.trim_space() in known_enums
+}
+
+// enum_info returns the registry entry for an enum type name.
+pub fn enum_info(v_type string) ?EnumInfo {
+	t := v_type.trim_space()
+	if t in known_enums {
+		return known_enums[t]
+	}
+	return none
+}
+
 pub struct Project {
 pub mut:
 	// errors are the `@[vc_error]` types found, in declaration order.
@@ -688,6 +730,9 @@ pub mut:
 	operators []Operator
 	// consts are the `@[vc_const]` module-level constants, in declaration order.
 	consts []Const
+	// enums are the V `enum` declarations, in declaration order, each exposed as an
+	// `enum.IntEnum` subclass.
+	enums []EnumInfo
 	// diagnostics are problems found while scanning. They do not stop generation;
 	// the emitter reports them all at once so a project with five mistakes takes
 	// one build to fix rather than five.

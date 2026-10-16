@@ -155,6 +155,7 @@ int vpy_buffer_fill_typed(void *view, void *exporter, void *data, Py_ssize_t nby
 
 PyObject *vpy_none(void);
 PyObject *vpy_notimplemented(void);
+PyObject *vpy_import(const char *name);
 PyObject *vpy_bool_type(void);
 PyObject *vpy_long_type(void);
 PyObject *vpy_float_type(void);

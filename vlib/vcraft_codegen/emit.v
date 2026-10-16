@@ -124,6 +124,11 @@ pub fn glue_module_body(p Project) string {
 		}
 		w.write_string('\tg_vc_bases_' + c.key + ' = vcraft.PyObj{}\n')
 	}
+	// The enum classes are globals because the numeric and conversion trampolines name
+	// them to box and read values, and those run after `exec` has returned.
+	for e in p.enums {
+		w.write_string('\tg_vc_enum_' + e.key + ' = vcraft.PyObj{}\n')
+	}
 	w.write_string(')\n\n')
 	w.write_string("@[export: 'PyInit_${p.package}']\n")
 	w.write_string('fn vcraft_generated__pyinit() voidptr {\n')
@@ -191,6 +196,15 @@ pub fn glue_module_body(p Project) string {
 	for cn in p.consts {
 		w.write_string('\tvcraft.add_object_owned(module, ' + vstring_literal(cn.name) +
 			', ' + const_value_expr(cn) + ')\n')
+	}
+	// Each enum becomes an `enum.IntEnum` subclass, attached under the enum's own name and
+	// kept in a global the trampolines box and read through. `add_object_ref_on` keeps a
+	// reference while the global holds the original, so the class outlives the call.
+	for e in p.enums {
+		w.write_string('\tg_vc_enum_' + e.key + ' = vcraft.int_enum(' +
+			vstring_literal(e.name) + ', ' + enum_members_expr(e) + ')\n')
+		w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(e.name) +
+			', g_vc_enum_' + e.key + ')\n')
 	}
 	w.write_string('\t_ = module\n')
 	w.write_string('\treturn 0\n}\n')
@@ -957,7 +971,7 @@ pub fn return_expr(strategy Strategy, value string, raw bool, v_type string, exp
 			'vcraft.tuple_of([${items.join(', ')}]).ptr'
 		}
 		.optional, .dict, .fixed { '${composite_boxed_expr(strategy, value, v_type)}.ptr' }
-		else { '${boxed_expr(strategy, value)}.ptr' }
+		else { '${box_value_expr(value, v_type)}.ptr' }
 	}
 }
 
@@ -1048,6 +1062,13 @@ fn nested_reader_helpers() string {
 // `map[string][]int` reads as a map of slices and each slice's elements one by one.
 pub fn reader_fn(v_type string) string {
 	t := v_type.trim_space()
+	if is_enum(t) {
+		info := enum_info(t) or { return '' }
+		return 'fn (o vcraft.PyObj, name string) !${t} {\n' +
+			'\t\tv := vcraft.enum_value(g_vc_enum_${info.key}.ptr, o, name) or { return error(name) }\n' +
+			'\t\treturn unsafe { ${t}(v) }\n' +
+			'\t}'
+	}
 	return match lookup(t) {
 		.seq {
 			'fn (o vcraft.PyObj, name string) !${t} { return vcraft_convert_seq(o, name, ${reader_fn(element_type(t))}) }'
@@ -1093,9 +1114,27 @@ pub fn box_value_expr(value string, v_type string) string {
 	return match lookup(v_type) {
 		.seq { seq_boxed_expr(element_type(v_type), value) }
 		.optional, .dict, .fixed { composite_boxed_expr(lookup(v_type), value, v_type) }
+		.enum_type { enum_member_expr(value, v_type) }
 		else { boxed_expr(lookup(v_type), value) }
 	}
 }
+
+// enum_members_expr renders the `{name: value}` table an enum's `IntEnum` is built from.
+fn enum_members_expr(e EnumInfo) string {
+	mut parts := []string{}
+	for m in e.members {
+		parts << '${vstring_literal(m.name)}: i64(${m.value})'
+	}
+	return 'map[string]i64{' + parts.join(', ') + '}'
+}
+
+// enum_member_expr boxes a V enum value as its `enum.IntEnum` member.
+pub fn enum_member_expr(value string, v_type string) string {
+	info := enum_info(v_type) or { return 'vcraft.to_py_none()' }
+	return 'vcraft.enum_member(g_vc_enum_${info.key}.ptr, i64(${value}))'
+}
+
+
 
 // result_decl_of declares the local a trampoline assigns the call's result to, with the
 // pointer type a `&T` result needs: an instance reference is a typed pointer, not the
@@ -1158,6 +1197,7 @@ pub fn element_box_fn(element string) string {
 		.bytes { 'vcraft.to_py_bytes_slice(x)' }
 		.seq { seq_boxed_expr(element_type(element), 'x') }
 		.optional, .dict, .fixed { composite_boxed_expr(lookup(element), 'x', element) }
+		.enum_type { enum_member_expr('x', element) }
 		else { 'vcraft.to_py_none()' }
 	}
 	return 'fn (x ${element}) vcraft.PyObj { return ${boxed} }'
@@ -1222,6 +1262,9 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 		// A call rather than a literal, so generated code never has to name
 		// `complex.Complex` and the glue needs no `math.complex` import.
 		.complex { 'vcraft.zero_complex()' }
+		// The first member; any value the function returns replaces it. V makes a numeric
+		// cast to an enum an unsafe operation.
+		.enum_type { 'unsafe { ${v_type.trim_space()}(0) }' }
 		// Never declared as one local: `result_decl` declares one per element.
 		.tuple { 'unsafe { nil }' }
 		.pyobj, .unsupported { 'unsafe { nil }' }
@@ -1258,6 +1301,12 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 	// narrower their sequences use, so an out-of-range value raises OverflowError.
 	if strategy in [.optional, .dict, .fixed, .tuple] {
 		return composite_reader(strategy, local, index, func, param, param_type)
+	}
+	if strategy == .enum_type {
+		info := enum_info(param_type) or { return '' }
+		return '${local}_enum := vcraft.enum_value(g_vc_enum_${info.key}.ptr, vcraft.required_arg(args, ${index}, ' +
+			"'${func}', '${param}') or { return unsafe { nil } }, ${vstring_literal(param)}) or { return unsafe { nil } }\n" +
+			'\t${local} := unsafe { ${param_type.trim_space()}(${local}_enum) }'
 	}
 	narrower := scalar_narrower(param_type.trim_space())
 	call := match strategy {
@@ -1391,6 +1440,9 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 		// The V value owns a reference and CPython steals the one a getter returns, so
 		// the ownership moves rather than being copied. `steal` is the spelling of that.
 		.pyref { 'vcraft.steal(' + value + '.ptr)' }
+		// An enum boxes through `box_value_expr`, which has the declared type to name the
+		// class. This arm is unreachable; it exists because the match is exhaustive.
+		.enum_type { 'vcraft.to_py_none()' }
 		.unsupported { 'unsafe { nil }' }
 	}
 }

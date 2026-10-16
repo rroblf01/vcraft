@@ -13,9 +13,10 @@ suffix="$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFF
 project="$here/examples/$example"
 
 # The generator. Rebuilt every time, because a cached one silently keeps stale
-# annotation names and produces an empty module rather than an error.
+# annotation names and produces an empty module rather than an error. `-enable-globals`
+# because the code generator keeps the enum registry in a module global.
 mkdir -p "$here/build"
-"$here/scripts/vcraft-v.sh" -o "$here/build/vc-generate" \
+"$here/scripts/vcraft-v.sh" -enable-globals -o "$here/build/vc-generate" \
 	-path "$here/vlib|@vlib" "$here/cmd/vc-generate"
 
 "$here/build/vc-generate" "$project" "$module" "$module"

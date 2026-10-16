@@ -21,6 +21,11 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **Maps with non-string keys.** `map[K]T` marshals to a `dict` when `K` is a scalar or a
   string (`bool`, an integer, a float or `str`), not only `str`, both as a parameter and
   as a result.
+- **Enums.** A V `enum` the project declares crosses as a generated `enum.IntEnum` of the
+  same name, attached to the module, so `Color.red` is the V `Color.red` and a value reads
+  back as the member rather than as a bare int. An integer that is not a member is refused
+  on the way in with `ValueError`. Member values are read from the source, so an explicit
+  `= n` is honoured; a value that is not an integer literal is a diagnostic.
 - **Nested composites, both ways.** A composite nests: `?[]int`, `[][]int` and
   `map[string][]int` cross as nested `list`, `dict` and `None`, as a parameter and as a
   result. A parameter reads through generated generic converters (V gives a generic called

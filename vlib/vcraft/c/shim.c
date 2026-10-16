@@ -884,6 +884,12 @@ PyObject *vpy_none(void) {
 	return Py_None;
 }
 
+// vpy_import imports a module by name and returns a new reference, or NULL with an
+// exception set. Used to reach `enum.IntEnum` when a V enum's Python class is built.
+PyObject *vpy_import(const char *name) {
+	return PyImport_ImportModule(name);
+}
+
 PyObject *vpy_notimplemented(void) {
 	return Py_NotImplemented;
 }

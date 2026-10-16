@@ -117,6 +117,8 @@ $if vcraft_limited_api ? {
 
 fn C.vpy_none() voidptr
 
+fn C.vpy_import(name voidptr) voidptr
+
 fn C.vpy_notimplemented() voidptr
 
 fn C.Py_Is(a voidptr, b voidptr) int

@@ -1587,6 +1587,25 @@ pub fn t_take_opt(x ?[]int) int {
 	return x.len
 }
 
+enum Color {
+	red
+	green
+	blue = 5
+}
+
+@[vc_fn]
+pub fn t_color(c Color) Color {
+	return c
+}
+@[vc_fn]
+pub fn t_color_str(c Color) string {
+	return c.str()
+}
+@[vc_fn]
+pub fn t_color_list() []Color {
+	return [Color.red, Color.blue]
+}
+
 @[vc_fn]
 @[vc_defaults: 'step=1, label="item", loud=false']
 pub fn t_kw(count int, step int, label string, loud bool) string {
@@ -1673,6 +1692,12 @@ cases = [
     ("optional seq parameter", lambda: m.t_take_opt([5, 6, 7]), "3"),
     ("optional seq parameter None", lambda: m.t_take_opt(None), "-1"),
     ("nested parameter wrong item", lambda: m.t_take_seq([1, 2]), "TypeError"),
+    ("enum member identity", lambda: m.t_color(m.Color.green) is m.Color.green, "True"),
+    ("enum explicit value", lambda: int(m.Color.blue), "5"),
+    ("enum reads back as int", lambda: isinstance(m.Color.green, int), "True"),
+    ("enum name", lambda: m.t_color_str(m.Color.blue), repr("blue")),
+    ("enum not a member", lambda: m.t_color(2), "ValueError"),
+    ("enum in a list", lambda: m.t_color_list(), repr([m.Color.red, m.Color.blue])),
     ("defaults", lambda: m.t_kw(3), repr("item:3:1")),
     ("keywords in any order", lambda: m.t_kw(loud=True, count=2), repr("ITEM:2:1")),
     ("positional and keyword", lambda: m.t_kw(3, label="z"), repr("z:3:1")),
@@ -1707,6 +1732,7 @@ def churn():
         m.t_dict({"a": 1, "b": 2}); m.t_idict({1: 1, 2: 2}); m.t_pair(3); m.t_opt_out(1); m.t_fixed([1.0, 2.0, 3.0])
         m.t_nest(2); m.t_nest2(); m.t_nest4()
         m.t_take_map({"a": [1, 2]}); m.t_take_seq([[1, 2]]); m.t_take_opt([1, 2])
+        m.t_color(m.Color.green); m.t_color_list()
     gc.collect()
 churn(); tracemalloc.start(); churn()
 first = tracemalloc.get_traced_memory()[0]; churn()
@@ -1780,6 +1806,14 @@ print("ok" if not bad else bad)
             proc = vcraft("build", cwd=project)
             t.check(f"{label} is a diagnostic", proc.returncode != 0 and needle in proc.stderr,
                     (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved)
+
+        print("enum diagnostics")
+        native.write_text(saved + "\nenum Bad {\n\ta = 1 + 1\n}\n")
+        proc = vcraft("build", cwd=project)
+        t.check("an enum member that is not an integer literal is a diagnostic",
+                proc.returncode != 0 and "only an integer literal" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
         native.write_text(saved)
 
         print("buffer and constructor diagnostics")

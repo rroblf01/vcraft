@@ -44,6 +44,10 @@ pub enum Strategy {
 	fixed
 	// Complex is `math.complex.Complex`, which becomes a Python `complex`.
 	complex
+	// EnumType is a V `enum` the project declares. It crosses as a generated
+	// `enum.IntEnum` subclass exposed under the enum's own name, and a value reads back as
+	// the member rather than as a bare int.
+	enum_type
 	// Unsupported means the generator refuses to emit code for it.
 	unsupported
 }
@@ -71,6 +75,11 @@ pub fn lookup(v_type string) Strategy {
 	// may import `math.complex` under either name.
 	if base == 'complex.Complex' || base == 'math.complex.Complex' {
 		return .complex
+	}
+	// A project's own `enum` is a bare name, like a struct, so it is recognised before the
+	// composite shapes and the scalar names.
+	if base in known_enums {
+		return .enum_type
 	}
 	// The composite types are recognised by their shape before the scalar names, and
 	// only over element types that are themselves plain values: anything else stays
@@ -175,6 +184,8 @@ pub fn describe(v_type string) string {
 		.tuple { 'tuple[' + tuple_parts(v_type.trim_space()).map(describe(it)).join(', ') + ']' }
 		.fixed { 'list[' + describe(fixed_element(v_type)) + ']' }
 		.complex { 'complex' }
+		// The enum's own name is its Python class name.
+		.enum_type { v_type.trim_space() }
 		.unsupported { 'Any' }
 	}
 }
@@ -212,7 +223,7 @@ pub fn is_plain_value(v_type string) bool {
 // bytes, a complex, or another composite. It is recursive, so `map[string][]?int` is a
 // valid shape. A multi-value type, a bare object and a void are not elements.
 pub fn is_element_type(v_type string) bool {
-	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str, .bytes, .seq, .optional, .dict]
+	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str, .bytes, .seq, .optional, .dict, .enum_type]
 }
 
 // tuple_parts splits a multi-value type, `(int, string)`, into its element types.

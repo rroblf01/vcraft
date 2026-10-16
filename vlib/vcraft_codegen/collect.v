@@ -55,6 +55,7 @@ pub fn collect_file(path string, mut p Project) {
 					collect_struct(path, lines, ast, decl, mut p)
 				}
 			}
+			.enum { collect_enum(path, lines, decl, mut p) }
 			else {}
 		}
 	}
@@ -610,6 +611,59 @@ fn const_kind(value string) string {
 
 // collect_const records a `@[vc_const] pub const NAME = literal`, exposed as a
 // module-level Python attribute of the same name.
+// collect_enum records a V `enum`, which crosses as a generated `enum.IntEnum`.
+//
+// The members are read from the source text between the declaration's lines: astquery
+// gives the member names but not their values, and an explicit `= n` is common enough to
+// matter. A value that is not an integer literal is a diagnostic rather than a guess.
+fn collect_enum(path string, lines []string, decl astquery.Declaration, mut p Project) {
+	name := decl.name
+	mut members := []EnumMember{}
+	mut next := i64(0)
+	// The member lines run from the declaration to the enum's closing brace. astquery
+	// does not carry an enum's end line, so the brace ends the scan.
+	for li := decl.line + 1; li <= lines.len; li++ {
+		text := lines[li - 1].all_before('//').trim_space()
+		if text.starts_with('}') {
+			break
+		}
+		if text.len == 0 || text.starts_with('@[') {
+			continue
+		}
+		part := text.trim_right(',').trim_space()
+		mut mname := part
+		mut value := next
+		if eq := part.index('=') {
+			mname = part[..eq].trim_space()
+			rhs := part[eq + 1..].trim_space()
+			digits := if rhs.starts_with('-') { rhs[1..] } else { rhs }
+			if digits.len == 0 || !digits.bytes().all(it.is_digit()) {
+				report(mut p, path, astquery.Declaration{
+					name:   name
+					line:   li
+					column: 1
+				}, 'error: enum `${name}` member `${mname}` has the value `${rhs}`; only an integer literal is supported')
+				return
+			}
+			value = i64(rhs.int())
+		}
+		if mname.len > 0 {
+			members << EnumMember{
+				name:  mname
+				value: value
+			}
+			next = value + 1
+		}
+	}
+	info := EnumInfo{
+		name:    name
+		key:     name.to_lower()
+		members: members
+	}
+	known_enums[name] = info
+	p.enums << info
+}
+
 fn collect_const(path string, lines []string, decl astquery.Declaration, mut p Project) {
 	block := read_above(lines, decl.line)
 	if attr_const !in block.attrs {
