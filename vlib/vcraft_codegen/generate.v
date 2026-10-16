@@ -48,6 +48,9 @@ pub fn generate(opt Options) Generated {
 	// cleared before a project is scanned.
 	reset_type_registry()
 	src := os.join_path(opt.project_root, opt.src_dir)
+	// Enums and plain structs first, so a signature that names one declared in a file that
+	// sorts later still resolves when the signature is validated.
+	register_types(src, mut p)
 	collect_dir(src, mut p)
 	for path in v_files_under(src) {
 		report_unknown_attrs(read_lines(path), path, mut p)

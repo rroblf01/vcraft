@@ -141,6 +141,13 @@ fn main() {
 		eprint(usage)
 		exit(2)
 	}
+	// `vcraft <command> --help` asks for help, not for the command to run. Without this,
+	// `--help` was parsed as an ordinary flag the command ignored, and `vcraft build --help`
+	// built the project.
+	if args.command != '' && (args.flags['help'] || args.flags['h']) {
+		print(usage)
+		exit(0)
+	}
 	match args.command {
 		'' {
 			print(usage)

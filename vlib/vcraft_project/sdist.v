@@ -28,13 +28,23 @@ pub fn sdist(p Project, root string) ![]u8 {
 	// reads `pyproject.toml`, and finds nothing, so the install fails before any of the
 	// V sources are looked at.
 	for name in ['v.mod', 'vcraft.toml', 'pyproject.toml', backend_py(), 'README.md',
-		'main.py', 'src/' + p.module + '.v'] {
+		'main.py'] {
 		path := root.trim_right('/') + '/' + name
 		if !os.exists(path) {
 			continue
 		}
 		data := os.read_file(path) or { return error('cannot read ${path}') }
 		tar.add_file('${base_name(p)}/' + name, data.bytes()) or { return err }
+	}
+	// Every V source under `src`, not just the module's own file. A project splits its V
+	// code across files (`linalg.v`, `state.v`, ...), and an sdist that carried only
+	// `src/<module>.v` rebuilt into a module missing most of its API -- silently, because
+	// the generator simply does not see the files it was not given. The generated glue is
+	// left out: it is rewritten on every build.
+	for rel in v_sources(root) {
+		path := root.trim_right('/') + '/src/' + rel
+		data := os.read_file(path) or { return error('cannot read ${path}') }
+		tar.add_file('${base_name(p)}/src/' + rel, data.bytes()) or { return err }
 	}
 	// The licence file travels too, so a build from the sdist still carries it.
 	if license_path := find_license_file(root) {
@@ -70,6 +80,15 @@ pub fn sdist(p Project, root string) ![]u8 {
 	// pip's sdist handling expects. A stored tar under that name is rejected by the
 	// first read.
 	return vcraft_wheel.gzip(tar.bytes())
+}
+
+// v_sources lists the project's V sources relative to `src`, excluding the generated
+// glue, which is rewritten on every build.
+fn v_sources(root string) []string {
+	mut out := []string{}
+	collect_files_with_suffixes(root.trim_right('/') + '/src', '', mut out, ['.v'])
+	return out.filter(it != '_vcraft_generated.v' &&
+		!it.ends_with('/_vcraft_generated.v'))
 }
 
 // base_name is the directory the archive unpacks into, which is `name-version`.

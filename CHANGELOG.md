@@ -5,6 +5,31 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [1.4.1] - 2026-10-16
+
+### Fixed
+
+- **`--strip` (and `[build] strip`) actually strips.** The flag was parsed and written to
+  the manifest but never acted on, so the extension kept its symbol table. It is applied as
+  a linker flag (`-Wl,-s`, or `-Wl,-x` on macOS) when the extension is linked, so it shows
+  up in `--dry-run` and needs no `strip` binary on `PATH`. The dynamic symbol table is
+  kept, so `PyInit_` is still exported.
+- **`vcraft sdist` no longer drops source files.** It carried only `src/<module>.v`, so a
+  project that splits its V code across files (`linalg.v`, `state.v`, ...) rebuilt from its
+  sdist into a module missing most of its API — silently, because the generator only sees
+  the files it is given. The sdist now carries every `.v` under `src/`, except the
+  generated glue.
+- **An enum or plain struct declared in a file that sorts after its use now resolves.** The
+  types were registered as their file was read while the signature that named them was
+  validated in the same pass, so file order decided whether the project built; the registry
+  is now filled before any signature is validated.
+- **Enums are declared in the `.pyi`.** They were attached to the module at runtime but a
+  type checker could not see them; each enum is now a generated `enum.IntEnum` subclass in
+  the stub.
+- **`vcraft <command> --help` prints help and does not run the command.** `--help` was
+  parsed as an ordinary flag the command ignored, so `vcraft build --help` ran a build.
+- The README's Requirements section lists Windows.
+
 ## [1.4.0] - 2026-10-16
 
 ### Added

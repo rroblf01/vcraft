@@ -1,0 +1,45 @@
+name: smoke-release
+
+# After a release is published, install the *published* wheel from PyPI and run
+# `scripts/release-smoke.py`, which exercises the features a release advertises. It is the
+# gate that would have caught the 1.4.0 packaging and enum regressions before users did.
+# On `workflow_dispatch` it takes a version, so a release can be re-checked on demand.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The vcraft version to smoke test (defaults to the tag)
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: resolve the version
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${GITHUB_REF_NAME#vcraft/}"
+            VERSION="${VERSION#v}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: install the published vcraft
+        run: pip install "vcraft==$VERSION"
+
+      - name: install the V toolchain
+        run: vcraft toolchain install
+
+      - name: smoke test the published release
+        run: python scripts/release-smoke.py

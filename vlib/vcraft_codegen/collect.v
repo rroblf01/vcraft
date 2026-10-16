@@ -56,12 +56,37 @@ pub fn collect_file(path string, mut p Project) {
 					collect_struct(path, lines, ast, decl, mut p)
 				} else if attr_error in block.attrs {
 					_ := collect_error_type(path, lines, ast, decl, mut p)
-				} else {
-					collect_plain_struct(path, lines, decl, mut p)
 				}
+				// A plain struct is registered by `register_types`, before any signature
+				// is validated, so a struct declared in a later file still resolves.
 			}
-			.enum { collect_enum(path, lines, decl, mut p) }
 			else {}
+		}
+	}
+}
+
+// register_types records every enum and plain struct before any signature is validated.
+//
+// A signature is validated as its file is collected, so an enum or plain struct declared
+// in a file that sorts later would not be in the registry yet, and a parameter of that
+// type would be refused with "no marshalling rule" purely because of file order. Classes
+// do not have this problem -- `link_classes` resolves them after every file is read -- and
+// this is the same idea for the types `lookup` classifies by name.
+fn register_types(dir string, mut p Project) {
+	for path in v_files_under(dir) {
+		lines := read_lines(path)
+		ast := astquery.parse(path)
+		for decl in astquery.declarations(ast) {
+			match decl.kind {
+				.enum { collect_enum(path, lines, decl, mut p) }
+				.struct {
+					block := read_above(lines, decl.line)
+					if attr_class !in block.attrs && attr_error !in block.attrs {
+						collect_plain_struct(path, lines, decl, mut p)
+					}
+				}
+				else {}
+			}
 		}
 	}
 }

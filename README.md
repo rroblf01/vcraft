@@ -1425,7 +1425,7 @@ inside one of the images instead. Linux, macOS and Windows runners are supported
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
-    vcraft-version: v1.4.0
+    vcraft-version: v1.4.1
     args: build --release
 ```
 
@@ -1582,7 +1582,7 @@ Renamed in 1.0, still accepted with a warning: `@[vc_gil]` (now `@[vc_nogil]`),
 ## Requirements
 
 - Python 3.11 to 3.15, or 3.13t/3.14t/3.15t for free-threaded builds
-- Linux (glibc or musl) or macOS
+- Linux (glibc or musl), macOS or Windows (`win_amd64`)
 - A V compiler at the pinned commit: `vcraft toolchain install` builds it
 - gcc or clang, and the CPython development headers
 - Docker, only to build manylinux or musllinux wheels locally

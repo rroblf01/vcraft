@@ -826,6 +826,22 @@ pub fn apply(f voidptr, x int) !int {
         t.check("the rebuild is identical", wheel.read_bytes() == first,
                 "a build that is not reproducible makes a diff meaningless")
 
+        print("strip")
+        strip_out = tmp / "out-strip"
+        proc = vcraft("build", "--strip", "--out-dir", str(strip_out), cwd=project)
+        t.check("a --strip build succeeds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        # The strip is a linker flag, so the extension comes out without a symbol table.
+        # The dynamic symbol table stays, which is why the module still imports; that is
+        # checked by every other build in this suite.
+        if proc.returncode == 0 and sys.platform.startswith("linux") and shutil.which("nm"):
+            stripped = sorted(strip_out.glob(f"build/*{LIB_EXT}"))
+            if stripped:
+                listing = subprocess.run(["nm", str(stripped[0])],
+                                         capture_output=True, text=True).stdout
+                t.check("--strip removes the symbol table", listing.strip() == "",
+                        listing[:200])
+
         print("pyproject.toml is merged, not overwritten")
         # A project's own tables must survive a build: uv keeps [dependency-groups] in
         # pyproject.toml and refuses it anywhere else, and [tool.*] config would otherwise
@@ -1841,6 +1857,77 @@ print("ok" if not bad else bad)
                 (proc.stderr or proc.stdout).strip()[-300:])
         native.write_text(saved)
 
+        print("enum parameters")
+        # An enum as a parameter of a function, a method and a static method, declared in a
+        # file that sorts *after* its users: the registry has to be filled before any
+        # signature is validated, or file order decides whether the project builds.
+        enumproj = tmp / "enumproj"
+        (enumproj / "src").mkdir(parents=True)
+        (enumproj / "v.mod").write_text(
+            'Module {\n\tname: "enum_native"\n\tbase_url: "src"\n'
+            '\trequires: ["vcraft"]\n}\n')
+        (enumproj / "vcraft.toml").write_text(
+            '[package]\nname = "enum"\nversion = "0.1.0"\ndescription = "enum params"\n'
+            '\n[build]\nmodule = "enum_native"\nsource = "src"\noutput = "python"\n')
+        (enumproj / "src" / "a_counter.v").write_text('''module enum_native
+
+@[vc_class]
+pub struct Counter {
+mut:
+	@[vc_field] n int
+}
+
+@[vc_fn]
+pub fn new_counter() &Counter {
+	return &Counter{ n: 0 }
+}
+
+@[vc_method]
+pub fn (mut c Counter) paint(color Color) int {
+	return int(color)
+}
+
+@[vc_static]
+pub fn Counter.from_color(color Color) int {
+	return int(color)
+}
+
+@[vc_fn]
+pub fn color_of(color Color) int {
+	return int(color)
+}
+''')
+        (enumproj / "src" / "zcolor.v").write_text('''module enum_native
+
+pub enum Color {
+	red
+	green
+	blue
+}
+''')
+        proc = vcraft("build", cwd=enumproj)
+        t.check("an enum declared in a later file still resolves in a signature",
+                proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-400:])
+        if proc.returncode == 0:
+            built = sorted(enumproj.glob(f"dist/build/*{LIB_EXT}"))
+            probe = subprocess.run(
+                [sys.executable, "-c",
+                 "import sys\n"
+                 "sys.path.insert(0, sys.argv[1])\n"
+                 "import enum_native as m\n"
+                 "c = m.Counter()\n"
+                 "print(c.paint(m.Color.green), m.Counter.from_color(m.Color.blue), "
+                 "m.color_of(m.Color.red))\n"
+                 "try:\n    c.paint(9)\nexcept ValueError:\n    print('value-error')\n",
+                 str(built[0].parent)], capture_output=True, text=True)
+            t.check("enum parameters convert in a method, a static method and a function",
+                    probe.returncode == 0
+                    and probe.stdout.splitlines()[:2] == ["1 2 0", "value-error"],
+                    (probe.stdout + probe.stderr).strip()[-400:])
+            stub = (enumproj / "python" / "enum_native.pyi").read_text()
+            t.check("the stub declares the enum class",
+                    "class Color(enum.IntEnum):" in stub and "red: int" in stub, stub)
+
         print("buffer and constructor diagnostics")
         native.write_text(saved + "\n@[vc_class]\npub struct BadBuf {\nmut:\n"
                           "\t@[vc_field] x int\n\t@[vc_buffer] y int\n}\n")
@@ -1878,6 +1965,17 @@ print("ok" if not bad else bad)
         print("sdist")
         # Keywords and `[urls]` reach PKG-INFO, which is what PyPI reads for the
         # sidebar of the project page.
+        # A sibling V source, to catch an sdist that carries only the module's own file:
+        # the generator sees just the files it is given, so a missing one is a silently
+        # smaller module rather than an error, which is the worst kind of packaging bug.
+        extra = project / "src" / "extra.v"
+        extra.write_text('''module mypkg_native
+
+@[vc_fn]
+pub fn extra_marker() int {
+	return 7
+}
+''', encoding="utf-8")
         manifest_path = project / "vcraft.toml"
         manifest_saved = manifest_path.read_text()
         manifest_path.write_text(
@@ -1912,6 +2010,8 @@ print("ok" if not bad else bad)
                         top + "/vcraft.toml" in members)
                 t.check("it carries the V sources",
                         top + "/src/mypkg_native.v" in members)
+                t.check("it carries a sibling V source too",
+                        top + "/src/extra.v" in members, str(members))
                 t.check("it carries the demo", top + "/main.py" in members)
                 t.check("it carries the tests",
                         top + "/tests/test_mypkg.py" in members, str(members))
@@ -1935,6 +2035,7 @@ print("ok" if not bad else bad)
                 info = tf.extractfile(top + "/PKG-INFO").read().decode()
                 t.check("PKG-INFO names the package", "Name: mypkg" in info, info[:120])
                 t.check("PKG-INFO has a version", "Version: 0.1.0" in info)
+        extra.unlink(missing_ok=True)
 
         print("pep 517")
         # `pip install .` goes through the backend rather than through vcraft's own
@@ -2035,6 +2136,14 @@ print("ok" if not bad else bad)
                                   capture_output=True, text=True, cwd=tmp)
             t.check("the sdist-built extension works", proc.returncode == 0,
                     (proc.stderr or "").strip()[-300:])
+            # The sibling source has to survive the round trip: it was deleted from the
+            # tree after the sdist was built, so this only works if the sdist carried it.
+            proc = subprocess.run(
+                [str(venv_python(target)), "-c",
+                 "import mypkg_native as m; print(m.extra_marker())"],
+                capture_output=True, text=True, cwd=tmp)
+            t.check("the sdist carried the sibling source",
+                    proc.stdout.strip() == "7", (proc.stdout + proc.stderr).strip()[-200:])
 
         print("generate-ci")
         proc = vcraft("generate-ci", cwd=project)

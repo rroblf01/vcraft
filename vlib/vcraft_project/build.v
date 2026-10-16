@@ -575,6 +575,14 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 			link_extra = (import_lib + ' ' + link_extra).trim_space()
 		}
 	}
+	// `--strip` / `[build] strip`: strip in the linker rather than with a `strip` binary
+	// after the fact, so the flag is part of the build command (`--dry-run` shows it) and
+	// no extra tool has to be on PATH. The symbol table goes; the dynamic symbol table
+	// stays, so `PyInit_` is still exported and the interpreter still loads the module.
+	if p.strip {
+		strip_flag := if target.os == 'macos' { '-Wl,-x' } else { '-Wl,-s' }
+		link_extra = (strip_flag + ' ' + link_extra).trim_space()
+	}
 	ldflags := extension_ldflags(target.os, link_extra)
 	if ldflags.len > 0 {
 		args << '-ldflags'
