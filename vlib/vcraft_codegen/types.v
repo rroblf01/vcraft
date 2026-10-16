@@ -48,6 +48,9 @@ pub enum Strategy {
 	// `enum.IntEnum` subclass exposed under the enum's own name, and a value reads back as
 	// the member rather than as a bare int.
 	enum_type
+	// StructType is a plain V `struct` the project declares. It crosses as a Python
+	// `dict` of its fields.
+	struct_type
 	// Unsupported means the generator refuses to emit code for it.
 	unsupported
 }
@@ -80,6 +83,9 @@ pub fn lookup(v_type string) Strategy {
 	// composite shapes and the scalar names.
 	if base in known_enums {
 		return .enum_type
+	}
+	if base in known_structs {
+		return .struct_type
 	}
 	// The composite types are recognised by their shape before the scalar names, and
 	// only over element types that are themselves plain values: anything else stays
@@ -186,6 +192,8 @@ pub fn describe(v_type string) string {
 		.complex { 'complex' }
 		// The enum's own name is its Python class name.
 		.enum_type { v_type.trim_space() }
+		// A plain struct is a dict of heterogeneous fields.
+		.struct_type { 'dict[str, Any]' }
 		.unsupported { 'Any' }
 	}
 }
@@ -223,7 +231,8 @@ pub fn is_plain_value(v_type string) bool {
 // bytes, a complex, or another composite. It is recursive, so `map[string][]?int` is a
 // valid shape. A multi-value type, a bare object and a void are not elements.
 pub fn is_element_type(v_type string) bool {
-	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str, .bytes, .seq, .optional, .dict, .enum_type]
+	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str, .bytes, .seq, .optional,
+		.dict, .enum_type, .struct_type]
 }
 
 // tuple_parts splits a multi-value type, `(int, string)`, into its element types.

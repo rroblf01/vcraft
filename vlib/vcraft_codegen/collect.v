@@ -51,8 +51,13 @@ pub fn collect_file(path string, mut p Project) {
 			// A `@[vc_error]` struct is collected before the class path, which would
 			// otherwise reject it for not being annotated `@[vc_class]`.
 			.struct {
-				if !collect_error_type(path, lines, ast, decl, mut p) {
+				block := read_above(lines, decl.line)
+				if attr_class in block.attrs {
 					collect_struct(path, lines, ast, decl, mut p)
+				} else if attr_error in block.attrs {
+					_ := collect_error_type(path, lines, ast, decl, mut p)
+				} else {
+					collect_plain_struct(path, lines, decl, mut p)
 				}
 			}
 			.enum { collect_enum(path, lines, decl, mut p) }
@@ -662,6 +667,51 @@ fn collect_enum(path string, lines []string, decl astquery.Declaration, mut p Pr
 	}
 	known_enums[name] = info
 	p.enums << info
+}
+
+// collect_plain_struct records a plain `struct` (no `@[vc_class]`, no `@[vc_error]`),
+// which crosses as a Python `dict` keyed by field name.
+//
+// The fields are read from the source text between the declaration and the closing brace:
+// astquery's field declarations do not say which struct they belong to. Section markers
+// and attributes are skipped; a field is one or more names followed by its type. Whether
+// the struct is marshallable is decided later, once every struct and enum is known.
+fn collect_plain_struct(path string, lines []string, decl astquery.Declaration, mut p Project) {
+	mut fields := []StructField{}
+	for li := decl.line + 1; li <= lines.len; li++ {
+		text := lines[li - 1].all_before('//').trim_space()
+		if text.starts_with('}') {
+			break
+		}
+		if text.len == 0 || text.starts_with('@[') || text.ends_with(':') {
+			continue
+		}
+		part := text.all_before('=').trim_right(',').trim_space()
+		tokens := part.fields()
+		if tokens.len < 2 {
+			continue
+		}
+		v_type := tokens[tokens.len - 1]
+		for i in 0 .. tokens.len - 1 {
+			name := tokens[i].trim_right(',').trim_space()
+			if name.len > 0 {
+				fields << StructField{
+					name:   name
+					v_type: v_type
+				}
+			}
+		}
+	}
+	info := StructInfo{
+		name:   decl.name
+		key:    decl.name.to_lower()
+		fields: fields
+	}
+	// Registered immediately so a signature written before the struct is a `lookup` hit.
+	// Whether every field actually crosses is checked recursively at the point of use,
+	// because a field may name a struct or enum declared later.
+	known_structs[decl.name] = info
+	p.structs << info
 }
 
 fn collect_const(path string, lines []string, decl astquery.Declaration, mut p Project) {
@@ -1865,11 +1915,6 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 		if pointer_target(param.v_type).len > 0 {
 			continue
 		}
-		if lookup(param.v_type) == .unsupported {
-			report(mut p, path, decl,
-				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule')
-			return
-		}
 		// A multi-value type exists in V only as a result: a function cannot take one,
 		// and a Python tuple has no V parameter type to land in.
 		if lookup(param.v_type) == .tuple {
@@ -1877,20 +1922,11 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 				'error: cannot expose `${decl.name}`: parameter `${param.name}` has the multi-value type `${param.v_type}`, which V only allows as a result')
 			return
 		}
-		// A fixed-size array is read as the slice of its element, so the element needs
-		// a sequence reader, as for `[]T`.
-		if lookup(param.v_type) == .fixed && !element_is_readable(fixed_element(param.v_type)) {
+		// The check is recursive: a struct whose field, or a composite whose element,
+		// has no rule is a diagnostic here rather than glue that does not compile.
+		if !type_marshalable(param.v_type) {
 			report(mut p, path, decl,
-				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds `${fixed_element(param.v_type)}`, which has no sequence reader')
-			return
-		}
-		// A `[]T` parameter reads each element, so the element needs a reader of
-		// its own. Without one the glue names a function that does not exist,
-		// and the error points at the generated file instead of here.
-		if lookup(param.v_type) == .seq &&
-			!element_is_readable(element_type(param.v_type)) {
-			report(mut p, path, decl,
-				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` holds `${element_type(param.v_type)}`, which has no sequence reader; a sequence holds bool, integers, floats or strings')
+				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule')
 			return
 		}
 		// A map or a nested composite reads through the generic converter helpers, which
@@ -1934,8 +1970,9 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 		}
 	}
 	// A result is boxed, which is recursive: `map[string][]int` and `[][]int` are boxed
-	// element by element. Any type the table does not know, at any depth, has no rule.
-	if f.v_ret.len > 0 && pointer_target(f.v_ret).len == 0 && !is_boxable_type(f.v_ret) {
+	// element by element, and a struct field by field. Any type the table does not know,
+	// at any depth, has no rule.
+	if f.v_ret.len > 0 && pointer_target(f.v_ret).len == 0 && !type_marshalable(f.v_ret) {
 		report(mut p, path, decl,
 			'error: cannot expose `${decl.name}`: return type `${f.v_ret}` has no marshalling rule')
 		return

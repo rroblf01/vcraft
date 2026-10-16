@@ -513,6 +513,24 @@ pub fn dict_items(obj PyObj, name string) ![]PyObj {
 	return out
 }
 
+// dict_get returns a borrowed reference to `obj[key]`, or an error with a Python
+// exception set when `obj` is not a dict or the key is missing. It is what a plain-struct
+// reader uses to pull one field out of the dict that crossed.
+pub fn dict_get(obj PyObj, key string, name string) !PyObj {
+	if !obj.type_is(dict_type()) {
+		raise(.type_error, '${name}: expected a dict, got ${obj.type_name()}')
+		return error('${name}')
+	}
+	keyp := cstring(key)
+	item := C.PyDict_GetItemString(obj.ptr, keyp)
+	free_cstring(keyp)
+	if item == unsafe { nil } {
+		raise(.key_error, '${name}: missing key ${key}')
+		return error('${name}')
+	}
+	return borrow(item)
+}
+
 // new_dict returns a new empty `dict`, owned by the caller.
 pub fn new_dict() PyObj {
 	return steal(C.PyDict_New())

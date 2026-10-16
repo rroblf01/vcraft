@@ -1606,6 +1606,20 @@ pub fn t_color_list() []Color {
 	return [Color.red, Color.blue]
 }
 
+struct Point {
+	x int
+	y f64
+}
+
+@[vc_fn]
+pub fn t_point(p Point) Point {
+	return Point{ x: p.x + 1, y: p.y * 2 }
+}
+@[vc_fn]
+pub fn t_point_list() []Point {
+	return [Point{ x: 1, y: 1.5 }, Point{ x: 2, y: 2.5 }]
+}
+
 @[vc_fn]
 @[vc_defaults: 'step=1, label="item", loud=false']
 pub fn t_kw(count int, step int, label string, loud bool) string {
@@ -1698,6 +1712,10 @@ cases = [
     ("enum name", lambda: m.t_color_str(m.Color.blue), repr("blue")),
     ("enum not a member", lambda: m.t_color(2), "ValueError"),
     ("enum in a list", lambda: m.t_color_list(), repr([m.Color.red, m.Color.blue])),
+    ("struct as a dict", lambda: m.t_point({"x": 1, "y": 2.0}), repr({"x": 2, "y": 4.0})),
+    ("struct list", lambda: m.t_point_list(), repr([{"x": 1, "y": 1.5}, {"x": 2, "y": 2.5}])),
+    ("struct bad field", lambda: m.t_point({"x": "a", "y": 1.0}), "TypeError"),
+    ("struct missing field", lambda: m.t_point({"x": 1}), "KeyError"),
     ("defaults", lambda: m.t_kw(3), repr("item:3:1")),
     ("keywords in any order", lambda: m.t_kw(loud=True, count=2), repr("ITEM:2:1")),
     ("positional and keyword", lambda: m.t_kw(3, label="z"), repr("z:3:1")),
@@ -1733,6 +1751,7 @@ def churn():
         m.t_nest(2); m.t_nest2(); m.t_nest4()
         m.t_take_map({"a": [1, 2]}); m.t_take_seq([[1, 2]]); m.t_take_opt([1, 2])
         m.t_color(m.Color.green); m.t_color_list()
+        m.t_point({"x": 1, "y": 1.0}); m.t_point_list()
     gc.collect()
 churn(); tracemalloc.start(); churn()
 first = tracemalloc.get_traced_memory()[0]; churn()
@@ -1808,11 +1827,17 @@ print("ok" if not bad else bad)
                     (proc.stderr or proc.stdout).strip()[-300:])
         native.write_text(saved)
 
-        print("enum diagnostics")
+        print("enum and struct diagnostics")
         native.write_text(saved + "\nenum Bad {\n\ta = 1 + 1\n}\n")
         proc = vcraft("build", cwd=project)
         t.check("an enum member that is not an integer literal is a diagnostic",
                 proc.returncode != 0 and "only an integer literal" in proc.stderr,
+                (proc.stderr or proc.stdout).strip()[-300:])
+        native.write_text(saved + "\nstruct BadShape {\n\tgrid [2][2]int\n}\n"
+                          "@[vc_fn]\npub fn t_bad_shape(b BadShape) int { return 0 }\n")
+        proc = vcraft("build", cwd=project)
+        t.check("a struct whose field has no rule is a diagnostic",
+                proc.returncode != 0 and "no marshalling rule" in proc.stderr,
                 (proc.stderr or proc.stdout).strip()[-300:])
         native.write_text(saved)
 

@@ -44,9 +44,9 @@ pub fn generate(opt Options) Generated {
 		module:  opt.module
 		package: opt.package
 	}
-	// The enum registry is module state consulted by `lookup`, so it is cleared before a
-	// project is scanned.
-	reset_enums()
+	// The enum and struct registries are module state consulted by `lookup`, so they are
+	// cleared before a project is scanned.
+	reset_type_registry()
 	src := os.join_path(opt.project_root, opt.src_dir)
 	collect_dir(src, mut p)
 	for path in v_files_under(src) {

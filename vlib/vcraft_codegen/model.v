@@ -686,16 +686,36 @@ pub:
 	members []EnumMember
 }
 
+// StructField is one field of a plain V `struct`: its name and type.
+pub struct StructField {
+pub:
+	name   string
+	v_type string
+}
+
+// StructInfo is a plain V `struct` a project declares. It crosses as a Python `dict` of
+// its fields, keyed by their names.
+pub struct StructInfo {
+pub:
+	name   string
+	key    string
+	fields []StructField
+}
+
 // known_enums is every enum the current project declares, keyed by the name as written in
 // a signature. `lookup` consults it, so an enum name classifies as `.enum_type` rather
-// than as an unknown struct. Cleared at the start of a run.
+// than as an unknown struct. Cleared at the start of a run. `known_structs` is the same
+// for plain structs.
 __global (
-	known_enums map[string]EnumInfo = map[string]EnumInfo{}
+	known_enums   map[string]EnumInfo   = map[string]EnumInfo{}
+	known_structs map[string]StructInfo = map[string]StructInfo{}
 )
 
-// reset_enums clears the registry before a project is collected.
-pub fn reset_enums() {
+// reset_type_registry clears the enum and struct registries before a project is
+// collected.
+pub fn reset_type_registry() {
 	known_enums = map[string]EnumInfo{}
+	known_structs = map[string]StructInfo{}
 }
 
 // is_enum reports whether `v_type` names an enum the project declares.
@@ -708,6 +728,20 @@ pub fn enum_info(v_type string) ?EnumInfo {
 	t := v_type.trim_space()
 	if t in known_enums {
 		return known_enums[t]
+	}
+	return none
+}
+
+// is_struct reports whether `v_type` names a plain struct the project declares.
+pub fn is_struct(v_type string) bool {
+	return v_type.trim_space() in known_structs
+}
+
+// struct_info returns the registry entry for a plain struct type name.
+pub fn struct_info(v_type string) ?StructInfo {
+	t := v_type.trim_space()
+	if t in known_structs {
+		return known_structs[t]
 	}
 	return none
 }
@@ -733,6 +767,9 @@ pub mut:
 	// enums are the V `enum` declarations, in declaration order, each exposed as an
 	// `enum.IntEnum` subclass.
 	enums []EnumInfo
+	// structs are the plain V `struct` declarations, in declaration order, each crossing
+	// as a Python `dict`.
+	structs []StructInfo
 	// diagnostics are problems found while scanning. They do not stop generation;
 	// the emitter reports them all at once so a project with five mistakes takes
 	// one build to fix rather than five.

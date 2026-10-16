@@ -26,6 +26,10 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   back as the member rather than as a bare int. An integer that is not a member is refused
   on the way in with `ValueError`. Member values are read from the source, so an explicit
   `= n` is honoured; a value that is not an integer literal is a diagnostic.
+- **Plain structs.** A V `struct` the project does not annotate `@[vc_class]` crosses as
+  a Python `dict` of its fields, both ways: a field is boxed by its own rule and read back
+  by name, so a missing key is a `KeyError` and a wrong field type a `TypeError`. A field
+  with no marshalling rule, at any depth, is a diagnostic at the signature.
 - **Nested composites, both ways.** A composite nests: `?[]int`, `[][]int` and
   `map[string][]int` cross as nested `list`, `dict` and `None`, as a parameter and as a
   result. A parameter reads through generated generic converters (V gives a generic called

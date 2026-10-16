@@ -1069,6 +1069,14 @@ pub fn reader_fn(v_type string) string {
 			'\t\treturn unsafe { ${t}(v) }\n' +
 			'\t}'
 	}
+	if is_struct(t) {
+		lines := struct_read_lines(t, 'o', 'name', 's', ' or { return error(name) }')
+		mut body := ''
+		for l in lines {
+			body += '\t\t' + l + '\n'
+		}
+		return 'fn (o vcraft.PyObj, name string) !${t} {\n${body}\t\treturn s\n\t}'
+	}
 	return match lookup(t) {
 		.seq {
 			'fn (o vcraft.PyObj, name string) !${t} { return vcraft_convert_seq(o, name, ${reader_fn(element_type(t))}) }'
@@ -1115,6 +1123,7 @@ pub fn box_value_expr(value string, v_type string) string {
 		.seq { seq_boxed_expr(element_type(v_type), value) }
 		.optional, .dict, .fixed { composite_boxed_expr(lookup(v_type), value, v_type) }
 		.enum_type { enum_member_expr(value, v_type) }
+		.struct_type { struct_box_expr(value, v_type) }
 		else { boxed_expr(lookup(v_type), value) }
 	}
 }
@@ -1132,6 +1141,63 @@ fn enum_members_expr(e EnumInfo) string {
 pub fn enum_member_expr(value string, v_type string) string {
 	info := enum_info(v_type) or { return 'vcraft.to_py_none()' }
 	return 'vcraft.enum_member(g_vc_enum_${info.key}.ptr, i64(${value}))'
+}
+
+// struct_box_expr boxes a plain struct as a `dict` of its fields.
+pub fn struct_box_expr(value string, v_type string) string {
+	info := struct_info(v_type) or { return 'vcraft.to_py_none()' }
+	t := v_type.trim_space()
+	mut body := 'fn (s ${t}) vcraft.PyObj {\n\t\td := vcraft.new_dict()\n'
+	for f in info.fields {
+		body += '\t\tvcraft.dict_set_owned(d, vcraft.to_py_string(${vstring_literal(f.name)}), ' +
+			'${box_value_expr('s.' + f.name, f.v_type)})\n'
+	}
+	body += '\t\treturn d\n\t}(${value})'
+	return body
+}
+
+// type_marshalable reports whether a declared type can cross, recursively: every field of
+// a plain struct, every element of a composite and every part of a multi-value type. It
+// is what `validate` uses in place of the shallow per-shape checks, so a struct whose
+// field has no rule is a diagnostic at the signature rather than glue that does not
+// compile.
+pub fn type_marshalable(v_type string) bool {
+	t := v_type.trim_space()
+	return match lookup(t) {
+		.struct_type {
+			info := struct_info(t) or { return false }
+			info.fields.all(type_marshalable(it.v_type))
+		}
+		.seq { type_marshalable(element_type(t)) }
+		.optional { type_marshalable(t[1..]) }
+		.dict {
+			key, val := map_parts(t)
+			lookup(key) in [.bool, .int, .uint, .float, .str] && type_marshalable(val)
+		}
+		.fixed { type_marshalable(fixed_element(t)) }
+		.tuple { tuple_parts(t).all(type_marshalable(it)) }
+		.unsupported { false }
+		else { true }
+	}
+}
+
+// struct_read_lines renders the statements that build a struct `local` from the dict
+// `obj`, one local per field then a single literal, because a plain struct's fields are
+// not `mut` and cannot be assigned one at a time.
+pub fn struct_read_lines(v_type string, obj string, name_expr string, local string,
+	fail string) []string {
+	info := struct_info(v_type) or { return []string{} }
+	t := v_type.trim_space()
+	mut lines := []string{}
+	mut inits := []string{}
+	for i, f in info.fields {
+		fl := '${local}_f${i}'
+		lines << '${fl} := ${reader_fn(f.v_type)}(vcraft.dict_get(${obj}, ' +
+			'${vstring_literal(f.name)}, ${name_expr})${fail}, ${name_expr})${fail}'
+		inits << '${f.name}: ${fl}'
+	}
+	lines << '${local} := ${t}{ ${inits.join(', ')} }'
+	return lines
 }
 
 
@@ -1198,6 +1264,7 @@ pub fn element_box_fn(element string) string {
 		.seq { seq_boxed_expr(element_type(element), 'x') }
 		.optional, .dict, .fixed { composite_boxed_expr(lookup(element), 'x', element) }
 		.enum_type { enum_member_expr('x', element) }
+		.struct_type { struct_box_expr('x', element) }
 		else { 'vcraft.to_py_none()' }
 	}
 	return 'fn (x ${element}) vcraft.PyObj { return ${boxed} }'
@@ -1265,6 +1332,7 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 		// The first member; any value the function returns replaces it. V makes a numeric
 		// cast to an enum an unsafe operation.
 		.enum_type { 'unsafe { ${v_type.trim_space()}(0) }' }
+		.struct_type { '${v_type.trim_space()}{}' }
 		// Never declared as one local: `result_decl` declares one per element.
 		.tuple { 'unsafe { nil }' }
 		.pyobj, .unsupported { 'unsafe { nil }' }
@@ -1307,6 +1375,16 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 		return '${local}_enum := vcraft.enum_value(g_vc_enum_${info.key}.ptr, vcraft.required_arg(args, ${index}, ' +
 			"'${func}', '${param}') or { return unsafe { nil } }, ${vstring_literal(param)}) or { return unsafe { nil } }\n" +
 			'\t${local} := unsafe { ${param_type.trim_space()}(${local}_enum) }'
+	}
+	if strategy == .struct_type {
+		obj := "vcraft.required_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }"
+		lines := struct_read_lines(param_type, obj, vstring_literal(param), local,
+			' or { return unsafe { nil } }')
+		mut out := ''
+		for i, l in lines {
+			out += if i == 0 { l } else { '\n\t' + l }
+		}
+		return out
 	}
 	narrower := scalar_narrower(param_type.trim_space())
 	call := match strategy {
@@ -1443,6 +1521,8 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 		// An enum boxes through `box_value_expr`, which has the declared type to name the
 		// class. This arm is unreachable; it exists because the match is exhaustive.
 		.enum_type { 'vcraft.to_py_none()' }
+		// A plain struct boxes through `box_value_expr`, which has the type. Unreachable.
+		.struct_type { 'vcraft.to_py_none()' }
 		.unsupported { 'unsafe { nil }' }
 	}
 }
