@@ -920,11 +920,16 @@ pub fn apply(f voidptr, x int) !int {
         t.check("the install is marked editable",
                 '"editable":true' in (dist_info / "direct_url.json").read_text().replace(" ", ""),
                 (dist_info / "direct_url.json").read_text())
-        # The pointer mixes separators on Windows (`...\mypkg/dist/build`), so compare
-        # on forward slashes rather than on a spelling the platform happens to pick.
+        # The pointer is a Python literal that escapes backslashes on Windows
+        # (`C:\\...\\mypkg/dist/build`) and mixes separators, so collapse runs of
+        # either separator before comparing.
         pointer_text = pth.read_text()
+
+        def collapse(text: str) -> str:
+            return re.sub(r"[\\/]+", "/", text)
+
         t.check("the pointer names the build output",
-                (project / "dist" / "build").as_posix() in pointer_text.replace("\\", "/"),
+                collapse((project / "dist" / "build").as_posix()) in collapse(pointer_text),
                 pointer_text)
         proc = subprocess.run([str(venv_python(target)), "-c", script],
                               capture_output=True, text=True, cwd=tmp)
