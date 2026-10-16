@@ -203,13 +203,21 @@ pub fn export_script(module string) string {
 }
 
 // windows_import_library returns the linker flags that resolve the CPython symbols a
-// native Windows extension leaves undefined.
+// native Windows extension leaves undefined, and that keep the extension free of the C
+// compiler's own runtime.
 //
 // A PE DLL cannot carry unresolved imports the way an ELF or Mach-O image can: the
 // loader binds every import by name against a module already in the process, so the
 // linker has to resolve each `Py*` call against the interpreter's import library before
 // the image is written. It lives in `<base_prefix>/libs`, named after the DLL: a full-API
 // build links `python3XX.lib`, and any abi3 build links the stable ABI's `python3.lib`.
+//
+// V's Windows C compiler is MinGW gcc, which otherwise links its own runtime as separate
+// DLLs (`libwinpthread-1.dll` and friends) that live in the compiler's bin directory,
+// off the loader's path when a user imports the wheel. `-static` folds that runtime into
+// the extension. The import library is named by full path rather than `-l`, so `-static`
+// cannot send the linker looking for a static libpython that does not exist; the import
+// of `python3XX.dll` itself stays dynamic.
 //
 // Skipped for a cross target: a Linux interpreter's `sysconfig` describes no Windows
 // import library, so a cross build passes one through `--ldflags` instead.
@@ -230,7 +238,7 @@ fn windows_import_library(python string, abi3 string) string {
 	}
 	dir := python_line(python, "sysconfig.get_config_var('LIBDIR') or os.path.join(sys.base_prefix, 'libs')")
 	if dir.len > 0 {
-		return '-L${dir} -l${name}'
+		return '-static ${dir}/${name}.lib'
 	}
 	return '-l${name}'
 }
