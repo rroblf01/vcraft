@@ -233,11 +233,10 @@ def run_script(name: str, *args: str) -> subprocess.CompletedProcess:
 def check_slot_ids() -> subprocess.CompletedProcess:
     """Compare vcraft's hard-coded slot ids with the installed CPython headers.
 
-    Linux-only in practice: the probe is C compiled with a system `gcc`, which a Windows
-    runner does not carry. There it returns success with a note rather than failing on a
-    check about header values that do not vary with the OS.
+    Skipped on Windows. The driver script needs a POSIX `bash`, and the `bash` a Windows
+    runner has on PATH is the WSL launcher, which has no distribution to run. The ids are
+    macros with the same values on every platform, so the Linux jobs already cover them.
     """
     if WINDOWS:
-        if shutil.which("gcc") is None:
-            return subprocess.CompletedProcess([], 0, "skipped: no gcc on this host\n", "")
+        return subprocess.CompletedProcess([], 0, "skipped: no POSIX bash on this host\n", "")
     return run_script("check-slot-ids.sh")
