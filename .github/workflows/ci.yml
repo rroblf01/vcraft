@@ -18,11 +18,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # The platforms no developer machine in this project can cover. Linux x86_64 is
-# verified locally in containers; macOS runs here, on a hosted runner, with the
-# same suites. Windows and aarch64 Linux are covered by the generated build
-# matrix and the published images instead: the test scripts are bash and the
-# toolchain expectations are POSIX, so running them there would test the port
-# rather than the product.
+# verified locally in containers; macOS and Windows run here, on hosted runners.
+# Windows gets its own job (below) because it builds V with `makev.bat` and links
+# extensions against the interpreter's import library, neither of which fits the
+# POSIX matrices. aarch64 Linux is covered by the matrices and the published images.
 
 # V comes from source at a pinned commit, not from a release: no V release is
 # newer than the flags vcraft passes, so a release binary fails every build.
@@ -258,6 +257,60 @@ jobs:
       - name: "suite: cli"
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/cli/test_cli.py
+
+  windows:
+    # Windows is its own job rather than a column in the matrices above. V is built
+    # there with `makev.bat`, not `make`, and release-v.yml publishes no Windows
+    # archive to download; and the suites link extensions against the interpreter's
+    # import library, because a PE image cannot leave `Py*` unresolved the way a
+    # `.so` can. One CPython to start with: the platform is what is new here, not
+    # the interpreter version.
+    name: windows (windows-latest, 3.14)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      # Built here rather than downloaded: release-v.yml publishes archives for the
+      # POSIX runners only, so there is nothing to fetch. Native PowerShell and
+      # `makev.bat`, no emulated shell.
+      - name: build the V compiler
+        shell: pwsh
+        run: |
+          $v = "$env:RUNNER_TEMP\v-src"
+          git init -q $v
+          git -C $v remote add origin https://github.com/vlang/v.git
+          git -C $v fetch -q --depth 1 origin $env:V_COMMIT
+          git -C $v checkout -q FETCH_HEAD
+          git clone -q https://github.com/vlang/vc.git "$v\vc"
+          git -C "$v\vc" checkout -q $env:VC_COMMIT
+          # makev.bat builds with its bundled TCC, which it would fetch itself;
+          # --local keeps it from also re-syncing the vc checkout already at the pin.
+          git clone --filter=blob:none -q --branch thirdparty-windows-amd64 https://github.com/vlang/tccbin "$v\thirdparty\tcc"
+          & "$v\makev.bat" --local
+          & "$v\v.exe" version
+          echo $v >> $env:GITHUB_PATH
+
+      # The suites build their prerequisites through tests/vcraft_build.py, which is
+      # Python on Windows: `run_v` passes -new-compiler and -no-parallel itself.
+      - name: "suite: vcraft.toml parser"
+        run: python tests/project/check_toml.py
+
+      - name: "suite: runtime"
+        run: python tests/runtime/test_runtime.py
+
+      - name: "suite: code generator"
+        run: python tests/codegen/test_codegen.py
+
+      - name: "suite: leaks"
+        run: python tests/memory/test_leaks.py
+
+      - name: "suite: fuzzed conversions"
+        run: python tests/fuzz/test_fuzz.py 4 20000
 
   musl:
     # The suites on musl libc, inside the published musllinux image, which carries V

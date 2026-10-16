@@ -1,0 +1,6 @@
+# One line ending everywhere: LF.
+#
+# The product compiles V sources and runs shell scripts, and a working tree that
+# arrives with CRLF on Windows differs in exactly the bytes the tests read back. Git
+# is told to leave text files alone on checkout and commit on every platform.
+* text=auto eol=lf
