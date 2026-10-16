@@ -419,6 +419,41 @@ pub fn deck_lt(a voidptr, b voidptr) bool {
 	return x.n < y.n
 }
 
+@[vc_add]
+pub fn deck_add(a &Deck, n int) Deck {
+	return Deck{ n: a.n + n }
+}
+
+@[vc_radd]
+pub fn deck_radd(a &Deck, n int) Deck {
+	return Deck{ n: n + a.n }
+}
+
+@[vc_mul]
+pub fn deck_mul(a &Deck, n int) Deck {
+	return Deck{ n: a.n * n }
+}
+
+@[vc_sub]
+pub fn deck_sub(a &Deck, b &Deck) int {
+	return a.n - b.n
+}
+
+@[vc_truediv]
+pub fn deck_truediv(a &Deck, n f64) f64 {
+	return f64(a.n) / n
+}
+
+@[vc_neg]
+pub fn deck_neg(a &Deck) Deck {
+	return Deck{ n: -a.n }
+}
+
+@[vc_invert]
+pub fn deck_invert(a &Deck) Deck {
+	return Deck{ n: ~a.n }
+}
+
 @[vc_classmethod]
 pub fn Deck.named(n int) int {
 	return n * 10
@@ -461,7 +496,10 @@ pub fn apply(f voidptr, x int) !int {
                  "m.Deck(4) > m.Deck(5))\n"
                  "print(m.Deck.named(3), m.Deck(0).named(4))\n"
                  "print(m.limit, m.label)\n"
-                 "print(m.apply(lambda v: v + 1, 41))\n",
+                 "print(m.apply(lambda v: v + 1, 41))\n"
+                 "print((m.Deck(4) + 2).n, (2 + m.Deck(4)).n, (m.Deck(4) * 3).n)\n"
+                 "print(m.Deck(4) - m.Deck(1), m.Deck(4) / 2.0, (-m.Deck(4)).n, "
+                 "(~m.Deck(4)).n)\n",
                  str(built[0].parent)], capture_output=True, text=True)
             t.check("the protocol project runs", probe.returncode == 0,
                     probe.stderr.strip()[-400:])
@@ -475,6 +513,10 @@ pub fn apply(f voidptr, x int) !int {
                     lines[4:5] == ["30 40"], probe.stdout)
             t.check("module constants are attributes", lines[5:6] == ["7 deck"], probe.stdout)
             t.check("a V function calls back into Python", lines[6:7] == ["42"], probe.stdout)
+            t.check("numeric operators build a new instance, reflected included",
+                    lines[7:8] == ["6 6 12"], probe.stdout)
+            t.check("an instance operand and a float operand, and the unaries",
+                    lines[8:9] == ["3 2.0 -4 -5"], probe.stdout)
             stub = (proto / "python" / "proto_native.pyi").read_text()
             t.check("the stub declares a constant", "limit: int" in stub, stub)
             t.check("the stub marks a classmethod", "@classmethod" in stub, stub)
@@ -508,6 +550,18 @@ pub fn apply(f voidptr, x int) !int {
                          proto_source + "\n@[vc_eq]\npub fn deck_eq2(a voidptr, b voidptr) bool {\n"
                          "\treturn false\n}\n",
                          "only one @[vc_eq]")
+        proto_diagnostic("a numeric operator with a non-instance self parameter",
+                         proto_source.replace("pub fn deck_add(a &Deck, n int) Deck {",
+                                              "pub fn deck_add(a int, n int) Deck {"),
+                         "an operator takes `&Deck`")
+        proto_diagnostic("a numeric operator with an operand it cannot marshal",
+                         proto_source.replace("pub fn deck_mul(a &Deck, n int) Deck {",
+                                              "pub fn deck_mul(a &Deck, n string) Deck {"),
+                         "as its operand")
+        proto_diagnostic("a duplicated numeric operator",
+                         proto_source + "\n@[vc_add]\npub fn deck_add2(a &Deck, n int) Deck {\n"
+                         "\treturn Deck{ n: a.n }\n}\n",
+                         "already has a @[vc_add]")
         proto_diagnostic("a const that is not a literal",
                          proto_source + "\n@[vc_const]\npub const derived = limit + 1\n",
                          "must be an int, a float, a bool or a string literal")

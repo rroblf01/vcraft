@@ -322,8 +322,8 @@ pub fn render_class_exec(p Project, c Class) string {
 		}
 	}
 	// The number protocol: the `nb_*` slots for the operators this class declares, each
-	// paired with its slot id. Empty until the numeric operators are wired in.
-	w.write_string('\t\t[]vcraft.PyTypeSlot{},\n')
+	// paired with its slot id, or nothing when it declares none.
+	w.write_string('\t\t' + numeric_slots_expr(c) + ',\n')
 	w.write_string('\t)\n')
 	// The error check is here rather than inside `new_type` because a class that fails
 	// to build is a generator-level problem: the interpreter reports "raised

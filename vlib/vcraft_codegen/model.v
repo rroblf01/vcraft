@@ -620,6 +620,11 @@ pub const numeric_slots = [
 	NumericSlot{ name: 'invert', nb: 'slot_nb_invert', arity: 1, commutative: false },
 ]
 
+// numeric_operand_types are the scalar types a numeric operator's operand and result may
+// be. Each is a width the converters produce and consume exactly, so the generated call
+// needs no cast; a narrower `i64` or `f32` is refused rather than silently miscompiled.
+pub const numeric_operand_types = ['int', 'u64', 'f64', 'bool']
+
 // numeric_slot returns the table entry for an annotation suffix, or none when the suffix
 // is not a numeric operator.
 pub fn numeric_slot(name string) ?NumericSlot {

@@ -58,6 +58,7 @@ fn emit_class(p Project, c Class) string {
 	w.write_string(emit_class_repr(p, c))
 	w.write_string(emit_class_richcompare(c))
 	w.write_string(emit_class_hash(c))
+	w.write_string(emit_class_numeric(c))
 	return w.str()
 }
 
@@ -990,6 +991,173 @@ fn emit_class_richcompare(c Class) string {
 	}
 	w.write_string('\treturn vcraft.richcompare_not_implemented()\n')
 	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_class_numeric renders the `nb_*` trampolines for a class's numeric operators.
+//
+// Each slot is a C callback `(left, right) -> object`. The user's function is a free
+// function taking the instance's state pointer first and, for a binary operator, one
+// operand: a scalar or another instance of the class. The two jobs here are to decide
+// which of `left` and `right` is the instance -- CPython calls the same slot with the
+// operands swapped when the instance is the right operand, which is the reflected case
+// -- and to box the result, a scalar or a new instance of the class.
+fn emit_class_numeric(c Class) string {
+	mut w := new_builder()
+	for s in numeric_slots {
+		if s.arity == 1 {
+			fn_ := c.numeric[s.name] or { Func{} }
+			if fn_.name.len > 0 {
+				w.write_string(emit_numeric_unary(c, s, fn_))
+			}
+			continue
+		}
+		fwd := c.numeric[s.name] or { Func{} }
+		refl := c.numeric['r' + s.name] or { Func{} }
+		if fwd.name.len == 0 && refl.name.len == 0 {
+			continue
+		}
+		w.write_string(emit_numeric_binary(c, s, fwd, refl))
+	}
+	return w.str()
+}
+
+// numeric_slots_expr is the `[]PyTypeSlot` a class passes to `new_type`: one entry per
+// numeric slot it declares, in table order so the generated file does not depend on map
+// iteration.
+fn numeric_slots_expr(c Class) string {
+	mut items := []string{}
+	for s in numeric_slots {
+		if s.arity == 1 {
+			fn_ := c.numeric[s.name] or { Func{} }
+			if fn_.name.len == 0 {
+				continue
+			}
+		} else {
+			fwd := c.numeric[s.name] or { Func{} }
+			refl := c.numeric['r' + s.name] or { Func{} }
+			if fwd.name.len == 0 && refl.name.len == 0 {
+				continue
+			}
+		}
+		items << 'vcraft.number_slot(vcraft.${s.nb}, voidptr(vcraft_generated__nb_${s.name}_${c.key}))'
+	}
+	if items.len == 0 {
+		return '[]vcraft.PyTypeSlot{}'
+	}
+	return '[' + items.join(', ') + ']'
+}
+
+fn emit_numeric_binary(c Class, s NumericSlot, fwd Func, refl Func) string {
+	mut w := new_builder()
+	extra := if s.name == 'pow' { ', modulo voidptr' } else { '' }
+	w.write_string('fn vcraft_generated__nb_${s.name}_${c.key}(left voidptr, right voidptr' +
+		extra + ') voidptr {\n')
+	if s.name == 'pow' {
+		// `pow(a, b, m)` reaches the same slot with a modulus. vcraft handles the plain
+		// two-operand form; a real modulus is left for Python's own error.
+		w.write_string('\tif !vcraft.is_none(modulo) {\n\t\treturn vcraft.richcompare_not_implemented()\n\t}\n')
+	}
+	if fwd.name.len > 0 {
+		w.write_string('\tif vcraft.is_instance_of(left, g_vc_type_${c.key}.ptr) {\n')
+		w.write_string(emit_numeric_call(c, fwd, 'left', 'right'))
+		w.write_string('\t}\n')
+	}
+	mut rfn := refl
+	if rfn.name.len == 0 && s.commutative {
+		// `2 + counter` cannot be told from `counter + 2` for a commutative operator, so
+		// the forward function answers the reflected call with the operands in its own
+		// order.
+		rfn = fwd
+	}
+	if rfn.name.len > 0 {
+		w.write_string('\tif vcraft.is_instance_of(right, g_vc_type_${c.key}.ptr) {\n')
+		w.write_string(emit_numeric_call(c, rfn, 'right', 'left'))
+		w.write_string('\t}\n')
+	}
+	w.write_string('\treturn vcraft.richcompare_not_implemented()\n')
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+fn emit_numeric_unary(c Class, s NumericSlot, fn_ Func) string {
+	mut w := new_builder()
+	w.write_string('fn vcraft_generated__nb_${s.name}_${c.key}(self voidptr) voidptr {\n')
+	w.write_string('\tif !vcraft.is_instance_of(self, g_vc_type_${c.key}.ptr) {\n')
+	w.write_string('\t\treturn vcraft.richcompare_not_implemented()\n\t}\n')
+	w.write_string(emit_numeric_result(c, fn_,
+		'${fn_.name}(vcraft.instance_storage(self))', '\t'))
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_numeric_call dispatches one operand and calls the user's function.
+//
+// `selfv` is the operand that is the instance and `otherv` the scalar or the other
+// instance. The guard accepts only the types the second parameter declares, so an
+// operand the operator does not handle falls through to `NotImplemented` and Python
+// tries its own rules instead of raising a type error.
+fn emit_numeric_call(c Class, handler Func, selfv string, otherv string) string {
+	mut w := new_builder()
+	operand := handler.params[1].v_type.trim_space()
+	storage := 'vcraft.instance_storage(${selfv})'
+	if operand == '&' + c.name {
+		w.write_string('\t\tif vcraft.is_instance_of(${otherv}, g_vc_type_${c.key}.ptr) {\n')
+		w.write_string(emit_numeric_result(c, handler,
+			'${handler.name}(${storage}, vcraft.instance_storage(${otherv}))', '\t\t\t'))
+		w.write_string('\t\t}\n')
+		return w.str()
+	}
+	match lookup(operand) {
+		.int {
+			w.write_string('\t\tif vcraft.is_instance_of(${otherv}, vcraft.long_type().ptr) {\n')
+			w.write_string('\t\t\targ := vcraft.from_py_int(vcraft.borrow(${otherv}), ${vstring_literal(handler.params[1].name)}) or { return unsafe { nil } }\n')
+			w.write_string(emit_numeric_result(c, handler, '${handler.name}(${storage}, arg)', '\t\t\t'))
+			w.write_string('\t\t}\n')
+		}
+		.uint {
+			w.write_string('\t\tif vcraft.is_instance_of(${otherv}, vcraft.long_type().ptr) {\n')
+			w.write_string('\t\t\targ := vcraft.from_py_uint(vcraft.borrow(${otherv}), ${vstring_literal(handler.params[1].name)}) or { return unsafe { nil } }\n')
+			w.write_string(emit_numeric_result(c, handler, '${handler.name}(${storage}, arg)', '\t\t\t'))
+			w.write_string('\t\t}\n')
+		}
+		.float {
+			w.write_string('\t\tif vcraft.is_instance_of(${otherv}, vcraft.float_type().ptr) {\n')
+			w.write_string('\t\t\targ := vcraft.from_py_f64(vcraft.borrow(${otherv}), ${vstring_literal(handler.params[1].name)}) or { return unsafe { nil } }\n')
+			w.write_string(emit_numeric_result(c, handler, '${handler.name}(${storage}, arg)', '\t\t\t'))
+			w.write_string('\t\t}\n')
+		}
+		.bool {
+			w.write_string('\t\tif vcraft.is_instance_of(${otherv}, vcraft.long_type().ptr) {\n')
+			w.write_string('\t\t\targ := vcraft.from_py_bool(vcraft.borrow(${otherv}))\n')
+			w.write_string(emit_numeric_result(c, handler, '${handler.name}(${storage}, arg)', '\t\t\t'))
+			w.write_string('\t\t}\n')
+		}
+		else {}
+	}
+	return w.str()
+}
+
+// emit_numeric_result boxes whatever the user's function returned.
+//
+// A scalar is boxed as itself. The class's own type is copied into a freshly allocated
+// instance, the same path `tp_new` takes: the returned struct is a V value, so it has to
+// be moved into the object's inline state before Python can hold it.
+fn emit_numeric_result(c Class, handler Func, call string, indent string) string {
+	mut w := new_builder()
+	ret := handler.v_ret.trim_space()
+	if ret == c.name {
+		w.write_string(indent + 'mut out := ${call}\n')
+		w.write_string(indent + 'instance := vcraft.type_alloc(g_vc_type_${c.key}.ptr)\n')
+		w.write_string(indent + 'if instance == unsafe { nil } {\n')
+		w.write_string(indent + '\treturn vcraft.no_memory()\n' + indent + '}\n')
+		w.write_string(indent + 'vcraft.load_state(unsafe { voidptr(&out) }, vcraft.instance_storage(instance), ${c.size_fn}())\n')
+		w.write_string(indent + 'if vcraft.error_is_set() {\n')
+		w.write_string(indent + '\treturn vcraft.instance_fail(instance)\n' + indent + '}\n')
+		w.write_string(indent + 'return instance\n')
+		return w.str()
+	}
+	w.write_string(indent + 'return ' + boxed_expr(lookup(ret), call) + '.ptr\n')
 	return w.str()
 }
 

@@ -9,6 +9,15 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ### Added
 
+- **Numeric operators.** `@[vc_add]`, `@[vc_sub]`, `@[vc_mul]`, `@[vc_truediv]`,
+  `@[vc_floordiv]`, `@[vc_mod]`, `@[vc_pow]`, `@[vc_lshift]`, `@[vc_rshift]`, `@[vc_and]`,
+  `@[vc_or]` and `@[vc_xor]` fill CPython's number slots so a class can define `+`, `-`,
+  `*`, `/`, `//`, `%`, `**`, `<<`, `>>`, `&`, `|` and `^`; `@[vc_neg]`, `@[vc_pos]`,
+  `@[vc_abs]` and `@[vc_invert]` are the unary ones. Each is a free function
+  `(self &T, operand) -> result`, where the operand is a scalar or another `&T` and the
+  result is a number or a new `T` that vcraft allocates and fills. A scalar on the left
+  (`2 + counter`) reaches the reflected `@[vc_radd]`-style function, or the forward one for
+  a commutative operator; an operand the function does not accept returns `NotImplemented`.
 - **Windows (`win_amd64`).** `vcraft build` links the `.pyd` against the interpreter's own
   import library and folds the MinGW runtime in with `-static`, so the wheel imports on a
   machine that has no compiler on `PATH`; the CLI, `vcraft toolchain install` (through

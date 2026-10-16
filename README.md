@@ -221,6 +221,10 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_contains]`| methods         | The method is `__contains__` (`x in instance`)               |
 | `@[vc_eq]`      | `pub fn`        | The function is `__eq__` (`==`, `!=`)                        |
 | `@[vc_lt]`, `@[vc_le]`, `@[vc_gt]`, `@[vc_ge]` | `pub fn` | The function is the matching ordering operator |
+| `@[vc_add]`, `@[vc_sub]`, `@[vc_mul]`, `@[vc_truediv]`, `@[vc_floordiv]`, `@[vc_mod]`, `@[vc_pow]` | `pub fn` | The function is the matching arithmetic operator |
+| `@[vc_lshift]`, `@[vc_rshift]`, `@[vc_and]`, `@[vc_or]`, `@[vc_xor]` | `pub fn` | The function is the matching bitwise operator |
+| `@[vc_radd]`, `@[vc_rsub]`, … | `pub fn` | The reflected form, reached when the instance is the right operand |
+| `@[vc_neg]`, `@[vc_pos]`, `@[vc_abs]`, `@[vc_invert]` | `pub fn` | The function is the unary operator |
 | `@[vc_hash]`    | `pub fn`        | The function is `__hash__`                                  |
 | `@[vc_const]`   | `pub const`     | Exposes the constant as a module attribute                  |
 | `@[vc_defaults]`| `pub fn`, methods | Default values: `@[vc_defaults: 'step=1, name="x"']`     |
@@ -625,6 +629,51 @@ pub fn Range.starting_at(n int) int {
 @[vc_const]
 pub const default_range = 8
 ```
+
+### Numeric operators
+
+`@[vc_add]`, `@[vc_sub]`, `@[vc_mul]`, `@[vc_truediv]`, `@[vc_floordiv]`, `@[vc_mod]`,
+`@[vc_pow]`, `@[vc_lshift]`, `@[vc_rshift]`, `@[vc_and]`, `@[vc_or]` and `@[vc_xor]`
+fill CPython's number slots, so `+`, `-`, `*`, `/`, `//`, `%`, `**`, `<<`, `>>`, `&`,
+`|` and `^` work; `@[vc_neg]`, `@[vc_pos]`, `@[vc_abs]` and `@[vc_invert]` are the unary
+ones. Each is a free function `(self &T, operand) -> result`, where the operand is a
+scalar or another `&T` and the result is a number or a new `T`, which vcraft allocates
+and fills:
+
+```v
+@[vc_class]
+pub struct Account {
+mut:
+	@[vc_field] balance int
+}
+
+@[vc_fn]
+pub fn new_account(balance int) &Account {
+	return &Account{ balance: balance }
+}
+
+@[vc_add]
+pub fn account_add(a &Account, n int) Account {
+	return Account{ balance: a.balance + n }
+}
+
+@[vc_sub]
+pub fn account_sub(a &Account, b &Account) int {
+	return a.balance - b.balance
+}
+
+@[vc_neg]
+pub fn account_neg(a &Account) Account {
+	return Account{ balance: -a.balance }
+}
+```
+
+A scalar on the *left* (`2 + account`) reaches the reflected function. Write
+`@[vc_radd]`, `@[vc_rsub]` and the rest with the same shape; for the commutative
+operators (`add`, `mul`, `and`, `or`, `xor`) the forward function answers the reflected
+call when no reflected one is given. An operand the function does not accept leaves the
+slot returning `NotImplemented`, so Python raises its own `TypeError` rather than vcraft
+guessing at a conversion.
 
 A V function can call back into Python with `vcraft.call(callee, args)` (borrowed
 arguments, a new reference back) or `vcraft.call_owned(callee, args)` (it releases the

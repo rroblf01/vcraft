@@ -227,7 +227,45 @@ fn operator_kind(block AttrBlock) string {
 	if attr_ge in block.attrs {
 		return 'ge'
 	}
+	// Forward before reflected: `vc_rshift` is the right-shift operator and `vc_rrshift`
+	// its reflected form, so the plain name has to win.
+	for s in numeric_slots {
+		if 'vc_' + s.name in block.attrs {
+			return s.name
+		}
+	}
+	for s in numeric_slots {
+		if s.arity == 2 && 'vc_r' + s.name in block.attrs {
+			return 'r' + s.name
+		}
+	}
 	return ''
+}
+
+// resolve_numeric maps an operator kind to its table entry and whether it is the
+// reflected form. A forward name wins over a reflected one, so `rshift` is the forward
+// operator and `rrshift` its reflected form rather than the reverse.
+fn resolve_numeric(key string) (NumericSlot, bool) {
+	for s in numeric_slots {
+		if s.name == key {
+			return s, false
+		}
+	}
+	for s in numeric_slots {
+		if s.arity == 2 && 'r' + s.name == key {
+			return s, true
+		}
+	}
+	return NumericSlot{}, false
+}
+
+fn is_numeric_kind(key string) bool {
+	for s in numeric_slots {
+		if s.name == key || (s.arity == 2 && 'r' + s.name == key) {
+			return true
+		}
+	}
+	return false
 }
 
 // assign_operator sets the class field an operator kind fills, reporting a second one.
@@ -262,12 +300,81 @@ fn assign_operator(mut p Project, owner int, kind string, name string, path stri
 	}
 }
 
+// assign_numeric validates a numeric operator against its class and records it.
+//
+// The shape is the whole contract, so it is checked here rather than left to generated C
+// that would not compile: the first parameter is the instance, the second is the operand
+// (a scalar or another instance of the class), and the result is a number or a new
+// instance of the class.
+fn assign_numeric(mut p Project, owner int, kind string, handler Func, path string,
+	decl astquery.Declaration) {
+	slot, _ := resolve_numeric(kind)
+	c := p.classes[owner]
+	if kind in c.numeric {
+		report(mut p, path, decl, 'error: `${c.name}` already has a @[vc_${kind}]; `${c.numeric[kind].name}` is already it')
+		return
+	}
+	if handler.params.len != slot.arity {
+		report(mut p, path, decl, 'error: `@[vc_${kind}] ${handler.name}` takes ${handler.params.len} argument(s); the ${slot.name} operator takes ${slot.arity}')
+		return
+	}
+	self_type := '&' + c.name
+	if handler.params[0].v_type.trim_space() != self_type {
+		report(mut p, path, decl, 'error: `@[vc_${kind}] ${handler.name}` takes `${handler.params[0].v_type}` first; an operator takes `${self_type}`')
+		return
+	}
+	// The operand and result types are spelled out rather than taken from the strategy
+	// table: `int`, `u64`, `f64` and `bool` are the widths the converters produce and
+	// consume exactly, and a narrower `i64` or `f32` would generate a call the V compiler
+	// rejects.
+	if slot.arity == 2 {
+		operand := handler.params[1].v_type.trim_space()
+		if operand != self_type && operand !in numeric_operand_types {
+			report(mut p, path, decl, 'error: `@[vc_${kind}] ${handler.name}` takes `${handler.params[1].v_type}` as its operand; use `int`, `u64`, `f64`, `bool` or `${self_type}`')
+			return
+		}
+	}
+	ret := handler.v_ret.trim_space()
+	if ret != c.name && ret !in numeric_operand_types {
+		report(mut p, path, decl, 'error: `@[vc_${kind}] ${handler.name}` returns `${handler.v_ret}`; an operator returns `int`, `u64`, `f64`, `bool` or a `${c.name}`')
+		return
+	}
+	p.classes[owner].numeric[kind] = handler
+}
+
 fn collect_operator(path string, lines []string, ast &flat.FlatAst,
 	decl astquery.Declaration, mut p Project) bool {
 	block := read_above(lines, decl.line)
 	kind := operator_kind(block)
 	if kind.len == 0 {
 		return false
+	}
+	// A numeric operator carries its own signature -- the operand and result types decide
+	// how the trampoline marshals -- so the built function travels with it, unlike the
+	// fixed calling convention of the comparison operators.
+	if is_numeric_kind(kind) {
+		if find_fn_node(ast, decl.name) == none {
+			report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
+			return true
+		}
+		mut handler := build_func(decl, ast, block, false)
+		handler.origin = path
+		handler.line = decl.line
+		handler.column = decl.column
+		owner := find_eq_owner(decl.name, p.classes)
+		if owner < 0 {
+			p.operators << Operator{
+				name:    decl.name
+				kind:    kind
+				origin:  path
+				line:    decl.line
+				column:  decl.column
+				handler: handler
+			}
+			return true
+		}
+		assign_numeric(mut p, owner, kind, handler, path, decl)
+		return true
 	}
 	// The owner is looked up when the function is seen, but a class declared later in
 	// the file is not in `p.classes` yet. `link_classes` fills in anything that was
@@ -728,11 +835,16 @@ fn link_operators(mut p Project) {
 			}, 'error: `${o.name}` is annotated @[vc_${o.kind}] but its name does not start with its class in snake case, so the class it belongs to cannot be told')
 			continue
 		}
-		assign_operator(mut p, owner, o.kind, o.name, o.origin, astquery.Declaration{
+		decl := astquery.Declaration{
 			name:   o.name
 			line:   o.line
 			column: o.column
-		})
+		}
+		if is_numeric_kind(o.kind) {
+			assign_numeric(mut p, owner, o.kind, o.handler, o.origin, decl)
+		} else {
+			assign_operator(mut p, owner, o.kind, o.name, o.origin, decl)
+		}
 	}
 	p.operators = []Operator{}
 }

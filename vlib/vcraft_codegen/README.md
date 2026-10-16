@@ -101,6 +101,9 @@ place as the stub a type checker reads.
 | `@[vc_contains]`| methods        | Fill `sq_contains` (`__contains__`)                     |
 | `@[vc_eq]`     | `pub fn`        | Fill `tp_richcompare`'s `==`/`!=`                       |
 | `@[vc_lt]`, `@[vc_le]`, `@[vc_gt]`, `@[vc_ge]` | `pub fn` | Fill the matching ordering operator in `tp_richcompare` |
+| `@[vc_add]`, `@[vc_sub]`, `@[vc_mul]`, `@[vc_truediv]`, `@[vc_floordiv]`, `@[vc_mod]`, `@[vc_pow]`, `@[vc_lshift]`, `@[vc_rshift]`, `@[vc_and]`, `@[vc_or]`, `@[vc_xor]` | `pub fn` | Fill the matching `nb_*` number slot |
+| `@[vc_radd]`, `@[vc_rsub]`, … | `pub fn` | The reflected form of a binary operator |
+| `@[vc_neg]`, `@[vc_pos]`, `@[vc_abs]`, `@[vc_invert]` | `pub fn` | Fill the matching unary `nb_*` slot |
 | `@[vc_hash]`   | `pub fn`        | Fill `tp_hash`                                          |
 | `@[vc_const]`  | `pub const`     | Expose the literal as a module attribute                |
 
@@ -118,6 +121,15 @@ The four ordering operators share `tp_richcompare` with `@[vc_eq]`. Like `@[vc_e
 are free functions over two state pointers, so `assign_operator` matches the class by the
 function's name prefix and the emitter dispatches on CPython's operator id; an operator a
 class does not define returns `NotImplemented`, which lets Python try the reflected side.
+
+The numeric operators fill the `nb_*` slots (`emit_class_numeric` writes the trampolines,
+`numeric_slots_expr` names them in the spec). They differ from the comparison operators in
+two ways. Their operand and result types decide how the trampoline marshals, so
+`assign_numeric` keeps each built function rather than a name. And CPython calls the *same*
+slot with the operands swapped when the instance is the right operand (`2 + counter`), so
+the trampoline inspects both `left` and `right` and picks the reflected function, with a
+commutative operator falling back to its forward one. A result that is the class itself is
+copied into a freshly allocated instance, the same path `tp_new` takes.
 
 `@[vc_classmethod]` is collected on V's `.fn` path (V reports `fn Class.name` as
 `Class@static@name`) and differs from `@[vc_static]` only in the method flag:
