@@ -10,6 +10,7 @@ produced. Nothing but the standard library is needed:
 """
 
 import gc
+import shutil
 import subprocess
 import sys
 import sysconfig
@@ -1007,16 +1008,21 @@ def main() -> int:
     exact = PYTHON_DIR / f"{PACKAGE}{sysconfig.get_config_var('EXT_SUFFIX')}"
     extension = exact if exact.exists() else None
     if extension is not None:
-        out = sp.run(["nm", "-D", "--defined-only", str(extension)],
-                     capture_output=True, text=True).stdout
-        exported = {
-            line.split()[-1]
-            for line in out.splitlines()
-            if len(line.split()) == 3 and line.split()[1] in ("T", "D", "B", "R", "W")
-        }
-        allowed = {f"PyInit_{PACKAGE}", "_v_interface_exports"}
-        t.check("only PyInit is exported", exported <= allowed,
-                f"extra: {sorted(exported - allowed)}")
+        # `nm` reads ELF symbol tables; a Windows runner has no equivalent here, so
+        # the export-hygiene check is skipped there rather than failed.
+        if shutil.which("nm") is None:
+            print("  skip no nm on this host")
+        else:
+            out = sp.run(["nm", "-D", "--defined-only", str(extension)],
+                         capture_output=True, text=True).stdout
+            exported = {
+                line.split()[-1]
+                for line in out.splitlines()
+                if len(line.split()) == 3 and line.split()[1] in ("T", "D", "B", "R", "W")
+            }
+            allowed = {f"PyInit_{PACKAGE}", "_v_interface_exports"}
+            t.check("only PyInit is exported", exported <= allowed,
+                    f"extra: {sorted(exported - allowed)}")
         t.check("extension suffix", extension.name.endswith(suffix), extension.name)
 
     print()

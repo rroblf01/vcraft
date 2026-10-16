@@ -150,18 +150,26 @@ def main() -> int:
     t.raises("beyond int64", OverflowError, "out of range", lambda: m.add(2**64, 1))
 
     print("symbol table")
+    import shutil
     import subprocess
 
-    out = subprocess.run(["nm", "-D", "--defined-only", str(extension)],
-                         capture_output=True, text=True).stdout
-    exported = {
-        line.split()[-1]
-        for line in out.splitlines()
-        if len(line.split()) == 3 and line.split()[1] in ("T", "D", "B", "R", "W")
-    }
-    allowed = {f"PyInit_{MODULE}", "_v_interface_exports"}
-    t.check("only PyInit is exported", exported <= allowed,
-            f"extra: {sorted(exported - allowed)}")
+    # `nm` is the ELF reader; a Windows runner has no equivalent to hand here. The
+    # hygiene this checks is enforced by the version script on Linux and macOS's
+    # `-undefined dynamic_lookup`, and Windows exports a `.pyd`'s init through V's own
+    # export handling, so the check is skipped rather than failed there.
+    if shutil.which("nm") is None:
+        print("  skip no nm on this host")
+    else:
+        out = subprocess.run(["nm", "-D", "--defined-only", str(extension)],
+                             capture_output=True, text=True).stdout
+        exported = {
+            line.split()[-1]
+            for line in out.splitlines()
+            if len(line.split()) == 3 and line.split()[1] in ("T", "D", "B", "R", "W")
+        }
+        allowed = {f"PyInit_{MODULE}", "_v_interface_exports"}
+        t.check("only PyInit is exported", exported <= allowed,
+                f"extra: {sorted(exported - allowed)}")
 
     print()
     if t.failures:
