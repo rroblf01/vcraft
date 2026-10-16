@@ -300,6 +300,11 @@ pub fn limited_api_defines(abi3 string) string {
 // stable ABI.
 pub fn interpreter_suffix(python string, abi3 string) string {
 	if abi3.len > 0 {
+		// Windows names an abi3 extension like any other, `.pyd`: the loader's suffix
+		// list has no `.abi3` entry there and would not import one.
+		$if windows {
+			return '.pyd'
+		}
 		return '.abi3.so'
 	}
 	return extension_suffix(python)

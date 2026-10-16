@@ -293,10 +293,14 @@ pub fn (t CrossTarget) extension_platform() string {
 //
 // `.pyd` on Windows, `.so` everywhere else. CPython loads a `.so` on macOS regardless
 // of architecture, so there is no per-arch suffix to compute there.
+//
+// An abi3 extension is `.abi3.so` on Unix, where the loader knows the tag, but plain
+// `.pyd` on Windows: `importlib.machinery.EXTENSION_SUFFIXES` has no `.abi3` entry
+// there, only `.pyd`, so a `.abi3.pyd` installs and then fails to import.
 pub fn (t CrossTarget) extension_suffix(version string, abi3 string) string {
 	if abi3.len > 0 {
 		if t.os == 'windows' {
-			return '.abi3.pyd'
+			return '.pyd'
 		}
 		return '.abi3.so'
 	}

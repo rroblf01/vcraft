@@ -141,6 +141,9 @@ Two smaller ones:
   guard that answered "0 because the struct is hidden" looked reasonable and made every
   class fail with `tp_basicsize ... too small for base 'object'`. A guard that guesses
   is worse than no guard.
+- **The suffix is `.abi3.so` on Unix but plain `.pyd` on Windows.** CPython's loader
+  list has no `.abi3` entry on Windows, only `.pyd`, so a `mypkg.abi3.pyd` installs and
+  then cannot be imported. `setuptools` names it the same way, for the same reason.
 
 The runtime keeps one source serving both APIs and asks at run time which path to take,
 because V's `$if` cannot see a `-cflags` define.
