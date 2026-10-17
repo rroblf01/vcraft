@@ -51,7 +51,7 @@ un único wheel abi3 por plataforma, para CPython 3.11 y posteriores, y no arras
 
 ## Estado
 
-1.4.2. El vocabulario de anotaciones, las claves de `vcraft.toml` y la CLI sólo cambian
+1.4.3. El vocabulario de anotaciones, las claves de `vcraft.toml` y la CLI sólo cambian
 con un periodo de deprecación. Mira el [roadmap](https://github.com/rroblf01/vcraft/blob/main/ROADMAP.md)
 para lo que queda, y [`DECISIONS.md`](https://github.com/rroblf01/vcraft/blob/main/DECISIONS.md)
 para lo que se aparcó y por qué.

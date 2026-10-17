@@ -44,7 +44,11 @@ def main() -> int:
             '\trequires: ["vcraft"]\n}\n')
         (proj / "vcraft.toml").write_text(
             '[package]\nname = "smoke"\nversion = "0.1.0"\nmodule = "smoke_native"\n'
-            'requires-python = ">=3.11"\n\n[build]\nminimum-version = "3.11"\n')
+            'requires-python = ">=3.11"\n\n[build]\nminimum-version = "3.11"\n'
+            'cflags = "-DVCRAFT_SMOKE_CFLAGS=1"\n')
+        info = run([vcraft, "info"], cwd=proj)
+        if "-DVCRAFT_SMOKE_CFLAGS=1" not in info.stdout:
+            problems.append("[build] cflags is not reported by `vcraft info`")
         # The method uses Color, which is declared in zcolor.v -- a file that sorts after
         # this one. extra_marker is the sibling source the sdist must carry.
         (proj / "src" / "a_api.v").write_text('''module smoke_native

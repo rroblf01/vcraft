@@ -373,6 +373,12 @@ fn cmd_info(args Args) {
 	}
 	println('free-threading   ${p.free_threading}')
 	println('strip            ${p.strip}')
+	if p.cflags.len > 0 {
+		println('cflags           ${p.cflags}')
+	}
+	if p.ldflags.len > 0 {
+		println('ldflags          ${p.ldflags}')
+	}
 	if p.gc_free_space_divisor != 2 {
 		println('gc-free-space-divisor ${p.gc_free_space_divisor}')
 	}

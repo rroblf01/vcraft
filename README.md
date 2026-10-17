@@ -1425,7 +1425,7 @@ inside one of the images instead. Linux, macOS and Windows runners are supported
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
-    vcraft-version: v1.4.2
+    vcraft-version: v1.4.3
     args: build --release
 ```
 
@@ -1463,6 +1463,8 @@ free-threading = false       # true: build for a free-threaded CPython (3.13t+)
 strip = false
 embed-pyc = false
 gc-free-space-divisor = 2    # Boehm heap growth: 1 favours speed, 2 memory
+cflags = "-march=x86-64-v2"  # extra C compiler flags, passed to V as -cflags
+# ldflags = ""               # extra C linker flags, passed as -ldflags
 
 [urls]
 Source = "https://github.com/me/my-extension"
@@ -1482,6 +1484,11 @@ The keys of `[build]`:
 | `strip`           | `false`   | Strip the extension                                             |
 | `embed-pyc`       | `false`   | Ship sourceless `.pyc` files instead of the project's `.py`     |
 | `gc-free-space-divisor` | `2` | Boehm heap growth divisor; `1` trades memory for speed       |
+| `cflags`          | unset     | Extra flags for the C compiler, e.g. `-march=x86-64-v2`        |
+| `ldflags`         | unset     | Extra flags for the C linker                                   |
+
+A wheel built with `-march` carries that CPU requirement, so it belongs in a private build
+or a deliberate platform baseline, not in a wheel meant to run on any x86-64.
 
 In `[package]`, `readme` names the file PyPI shows as the project page (`.md` is
 rendered as Markdown, `.rst` as reStructuredText); `vcraft new` writes a

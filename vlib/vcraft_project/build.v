@@ -535,6 +535,10 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	} else {
 		''
 	}
+	// The manifest's flags come first and the CLI's after, so `--cflags` adds to what the
+	// project already asks for rather than replacing it.
+	extra_cflags := (p.cflags + ' ' + opt.cflags).trim_space()
+	mut link_extra := (p.ldflags + ' ' + opt.ldflags).trim_space()
 	mut args := [
 		opt.v,
 		'-new-compiler',
@@ -545,9 +549,8 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		'-path',
 		'${opt.v_path}|@vlib',
 		'-cflags',
-		'-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + gc_define + ' ' + gnu_define + ' ' + opt.cflags,
+		('-I${include} ' + limited + ' ' + limited_define(p.abi3) + ' ' + gc_define + ' ' + gnu_define + ' ' + extra_cflags).trim_space(),
 	]
-	mut link_extra := opt.ldflags
 	if target.os == 'linux' {
 		// Export only the init function. V's `-fvisibility=hidden` already hides most of
 		// the runtime, but not everything: on musl V defines its own `backtrace`,

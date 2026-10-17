@@ -5,6 +5,18 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [1.4.3] - 2026-10-16
+
+### Added
+
+- **`[build] cflags` and `[build] ldflags`.** Extra compiler and linker flags can now be
+  persisted in `vcraft.toml`, passed to V as `-cflags`/`-ldflags` after vcraft's own. This
+  is how a project opts into something like `-march=x86-64-v2` once instead of passing
+  `--cflags` on every build; a CLI `--cflags`/`--ldflags` adds to the manifest's flags
+  rather than replacing them, and `vcraft info` reports both. A wheel built with `-march`
+  inherits that CPU requirement, so it belongs in a private build or a deliberate platform
+  baseline, not in a wheel meant to run on any x86-64.
+
 ## [1.4.2] - 2026-10-16
 
 ### Fixed

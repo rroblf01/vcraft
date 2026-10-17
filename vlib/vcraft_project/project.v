@@ -64,6 +64,12 @@ pub mut:
 	free_threading bool
 	// strip removes symbols from the extension.
 	strip bool
+	// cflags and ldflags are extra flags for the C compiler and linker, passed to V as
+	// `-cflags`/`-ldflags` after vcraft's own. They let a project opt into something like
+	// `-march=x86-64-v2` once in the manifest instead of on every build; the flags belong
+	// to the project, so a wheel built from it carries them.
+	cflags  string
+	ldflags string
 	// gc_free_space_divisor tunes Boehm's heap growth: the collector runs once the
 	// live data exceeds the heap divided by this. The default is 2, which keeps
 	// roughly half a MiB less resident after large workloads than V's own 1, for
@@ -201,6 +207,8 @@ pub fn load(root string) !Project {
 	p.abi3 = settings.string_of('abi3', '')
 	p.free_threading = settings.bool_of('free-threading', false)
 	p.strip = settings.bool_of('strip', false)
+	p.cflags = settings.string_of('cflags', '')
+	p.ldflags = settings.string_of('ldflags', '')
 	p.embed_pyc = settings.bool_of('embed-pyc', false)
 	p.gc_free_space_divisor = settings.int_of('gc-free-space-divisor', 2)
 	if p.gc_free_space_divisor < 1 {
@@ -216,7 +224,7 @@ pub fn load(root string) !Project {
 // with a comma in it is not a bare word and a classifier with a `::` looks like one.
 // build_keys are the settings read from `[build]`.
 pub const build_keys = ['minimum-version', 'abi3', 'free-threading', 'strip', 'embed-pyc',
-	'gc-free-space-divisor']
+	'gc-free-space-divisor', 'cflags', 'ldflags']
 
 pub fn (p Project) render() string {
 	mut out := '[package]\n'
@@ -260,6 +268,12 @@ pub fn (p Project) render() string {
 	}
 	if p.gc_free_space_divisor != 2 {
 		out += 'gc-free-space-divisor = ${p.gc_free_space_divisor}\n'
+	}
+	if p.cflags.len > 0 {
+		out += 'cflags = ${quote(p.cflags)}\n'
+	}
+	if p.ldflags.len > 0 {
+		out += 'ldflags = ${quote(p.ldflags)}\n'
 	}
 	if p.urls.len > 0 {
 		out += '\n[urls]\n'

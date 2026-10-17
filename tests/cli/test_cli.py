@@ -842,6 +842,38 @@ pub fn apply(f voidptr, x int) !int {
                 t.check("--strip removes the symbol table", listing.strip() == "",
                         listing[:200])
 
+        print("build flags")
+        # `[build] cflags`/`ldflags` persist extra compiler and linker flags, which is how a
+        # project opts into something like `-march=x86-64-v2` once instead of on every
+        # build. `--cflags` adds to them rather than replacing them.
+        flags_path = project / "vcraft.toml"
+        flags_saved = flags_path.read_text()
+        try:
+            flags_path.write_text(flags_saved.replace(
+                '[build]\n',
+                '[build]\ncflags = "-DVCRAFT_PROJECT_FLAG=1"\n'
+                'ldflags = "-L/tmp/vcraft-ldflags"\n'))
+            proc = vcraft("info", cwd=project)
+            t.check("info reports the project's C flags",
+                    "-DVCRAFT_PROJECT_FLAG=1" in proc.stdout, proc.stdout)
+            t.check("info reports the project's linker flags",
+                    "-L/tmp/vcraft-ldflags" in proc.stdout, proc.stdout)
+            proc = vcraft("build", "--dry-run", cwd=project)
+            t.check("the dry run shows the project's C flags",
+                    "-DVCRAFT_PROJECT_FLAG=1" in proc.stdout, proc.stdout)
+            t.check("the dry run shows the project's linker flags",
+                    "-L/tmp/vcraft-ldflags" in proc.stdout, proc.stdout)
+            proc = vcraft("build", "--dry-run", "--cflags", "-DVCRAFT_CLI_FLAG=1",
+                          cwd=project)
+            t.check("--cflags adds to the project's flags",
+                    "-DVCRAFT_PROJECT_FLAG=1" in proc.stdout
+                    and "-DVCRAFT_CLI_FLAG=1" in proc.stdout, proc.stdout)
+            proc = vcraft("build", "--out-dir", str(tmp / "out-flags"), cwd=project)
+            t.check("a build with the project's C flags succeeds",
+                    proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-300:])
+        finally:
+            flags_path.write_text(flags_saved)
+
         print("pyproject.toml is merged, not overwritten")
         # A project's own tables must survive a build: uv keeps [dependency-groups] in
         # pyproject.toml and refuses it anywhere else, and [tool.*] config would otherwise
