@@ -5,6 +5,26 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [1.4.4] - 2026-10-16
+
+### Fixed
+
+- **The macOS wheel is self-contained.** The `vcraft` binary linked Boehm's
+  `libgc.dylib` dynamically and V baked the *build machine's* path as an rpath
+  (`/private/tmp/v-src/thirdparty/tcc/lib`), which only existed on the machine that
+  built the wheel: installing it elsewhere failed with
+  `dyld: Library not loaded: @rpath/libgc.dylib`. The wheel now carries `libgc.dylib`
+  next to the binary, the dependency is rewritten to `@loader_path/libgc.dylib`, the
+  build-machine rpath is dropped and the binary is re-signed, so it runs wherever it is
+  installed. Linux and Windows were unaffected.
+
+### Changed
+
+- **The tool wheel suite now builds a project through the installed wheel.** `pip
+  install vcraft`, then the console script scaffolds and builds an abi3 project -- the
+  path the published action takes. The cli suite runs `bin/vcraft` directly, so it never
+  covered the wheel's launcher, which is where a Windows-only failure hides.
+
 ## [1.4.3] - 2026-10-16
 
 ### Added

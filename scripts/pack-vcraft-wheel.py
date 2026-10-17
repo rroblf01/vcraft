@@ -12,6 +12,7 @@ Layout inside the wheel::
     vcraft_tool/__main__.py      `python -m vcraft_tool`
     vcraft_tool/_launch.py       finds bin/vcraft next to itself and execs it
     vcraft_tool/bin/vcraft      the compiled binary, executable bit preserved
+    vcraft_tool/bin/*.dylib     Boehm's libgc on macOS, so the wheel is self-contained
     vcraft_tool/vlib/...        the V modules `-path` points at when building
     vcraft-0.1.0.dist-info/...  METADATA with the README as its description,
                                 and licenses/LICENSE
@@ -197,6 +198,12 @@ def build_wheel(version: str, platform: str, binary: Path, vlib: Path,
         # looks for there; every other platform's binary has no suffix.
         bin_name = "vcraft.exe" if platform.startswith("win") else "vcraft"
         put(f"vcraft_tool/bin/{bin_name}", binary.read_bytes(), executable=True)
+        # A macOS binary links Boehm's libgc dynamically, and the rpath V baked at link
+        # time names the machine that built it. The wheel therefore carries the dylib
+        # next to the binary, and the release workflow points the dependency at
+        # `@loader_path` so it resolves wherever the wheel is installed.
+        for lib in sorted(binary.parent.glob("*.dylib")):
+            put(f"vcraft_tool/bin/{lib.name}", lib.read_bytes())
         for path in sorted(vlib.rglob("*")):
             if path.is_dir():
                 continue

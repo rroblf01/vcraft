@@ -113,6 +113,14 @@ pub fn workflow(p vcraft_project.Project, vcraft_action string, free_threading b
 	w.write_string('          args: ' + gha('matrix.args') +
 		gha("matrix.free-threading && matrix.container == '' && format(' --interpreter {0}', steps.python.outputs.python-path) || ''") +
 		'\n\n')
+	// A build that exits zero without writing a wheel is the failure hardest to read
+	// from the upload step, which only reports an empty path. Failing here, with the
+	// contents of `dist/`, says which step is at fault.
+	w.write_string('      - name: the wheel was written\n')
+	w.write_string('        shell: bash\n')
+	w.write_string('        run: |\n')
+	w.write_string('          ls -la dist || true\n')
+	w.write_string("          ls dist/*.whl >/dev/null 2>&1 || { echo 'no wheel was written in dist/'; exit 1; }\n\n")
 	w.write_string('      - name: upload\n')
 	w.write_string('        uses: actions/upload-artifact@v6\n')
 	w.write_string('        with:\n')

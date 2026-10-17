@@ -78,6 +78,9 @@ def make_fixture(tmp: Path) -> tuple[Path, Path]:
     binary = bindir / "vcraft"
     binary.write_text('#!/bin/sh\necho "vcraft-stub $@"\n')
     binary.chmod(0o755)
+    # A dylib next to the binary, like the `libgc.dylib` the macOS release ships: the
+    # packer has to carry it so the wheel is self-contained.
+    (bindir / "libgc.dylib").write_bytes(b"fake-dylib")
     vlib = tmp / "fakelib"
     (vlib / "vcraft").mkdir(parents=True)
     (vlib / "vcraft" / "env.v").write_text("module vcraft\n")
@@ -120,6 +123,8 @@ def main() -> int:
                     ]), str(names[:6]))
             t.check("the binary ships",
                     f"vcraft_tool/bin/{BIN_NAME}" in names, str(names[:6]))
+            t.check("a dylib next to the binary ships",
+                    "vcraft_tool/bin/libgc.dylib" in names, str(names[:8]))
             t.check("vlib ships",
                     "vcraft_tool/vlib/vcraft/env.v" in names
                     and "vcraft_tool/vlib/vcraft_project/env.v" in names,
@@ -299,6 +304,25 @@ def main() -> int:
             t.check("the installed console script runs the real binary",
                     proc.returncode == 0 and proc.stdout.strip() == STAMPED,
                     (proc.stderr or proc.stdout).strip()[-200:])
+            # The path the published action takes: `pip install vcraft`, then its console
+            # script builds a project. The cli suite runs `bin/vcraft` itself, so it never
+            # covers the wheel's launcher, which is where a Windows-only failure hides --
+            # a launcher that starts the binary but where the build writes no wheel.
+            tool = str(vcraft_build.venv_scripts(venv_dir) / BIN_NAME)
+            scaffolds = tmp / "installed-scaffold"
+            scaffolds.mkdir()
+            proc = subprocess.run([tool, "new", "demo"], cwd=scaffolds,
+                                  capture_output=True, text=True)
+            t.check("the installed tool scaffolds a project", proc.returncode == 0,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+            project = scaffolds / "demo"
+            proc = subprocess.run([tool, "build", "--abi3", "3.11"], cwd=project,
+                                  capture_output=True, text=True)
+            t.check("the installed tool builds an abi3 project", proc.returncode == 0,
+                    (proc.stderr or proc.stdout).strip()[-400:])
+            produced = list((project / "dist").glob("*.whl"))
+            t.check("the installed tool wrote a wheel", len(produced) == 1,
+                    str([p.name for p in (project / "dist").glob("*")]))
         else:
             print("  skip no built binary for the real payload")
     except _Abort:

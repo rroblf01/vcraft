@@ -42,6 +42,23 @@ and a few things vcraft still owns.
       `GC_set_force_unmap_on_gcollect` were measured in 1.3.0 and do not move it: the
       retained memory is live between batches, or free but not collected because nothing
       allocates after the batch. Structural until V exposes a knob.
+- [ ] **Huge pages for native buffers.** A `@[vc_buffer]`'s backing is allocated with
+      CPython's allocator, so it is neither page-aligned nor something `madvise` can act
+      on. A project simulating a 20-qubit state (a 16 MB `[]f64`) is DRAM/TLB-bound: its
+      gate kernels run at ~18 GB/s where a cache-resident run does 25 GB/s, while
+      NumPy-based Cirq holds 23 GB/s. Allocating large buffers with `mmap` and
+      `madvise(..., MADV_HUGEPAGE)` on Linux -- above a size threshold, with an opt-out and
+      a fallback to the current allocator when transparent huge pages are off -- is the
+      portable way to close that gap; macOS and Windows have no equivalent. It changes the
+      core buffer lifecycle, so it lands only after profiling shows the workload is
+      TLB-bound rather than bandwidth-bound.
+- [ ] **Runtime SIMD dispatch for hot kernels.** `-march=x86-64-v2` (now reachable through
+      `[build] cflags`) raises the cache-resident rate from 25 to 38 GB/s but leaves the
+      DRAM-bound case unchanged, and a wheel built with it inherits that CPU floor and
+      breaks a `vcraft.toml` shared with arm64. Function multiversioning -- a baseline and
+      an AVX2 copy chosen at load with `__builtin_cpu_supports`, as NumPy and OpenBLAS do --
+      gives the SIMD speed from a portable wheel. V's codegen does not emit it, so it is a
+      C-shim design.
 
 ## In 1.x
 

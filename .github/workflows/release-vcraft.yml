@@ -189,6 +189,39 @@ jobs:
           ./scripts/build-vcraft.sh
           if [ "$RUNNER_OS" = "Windows" ]; then bin/vcraft.exe version; else bin/vcraft version; fi
 
+      - name: make the macOS binary self-contained
+        # V links Boehm's `libgc.dylib` dynamically from its own tree and bakes that
+        # build path as an rpath, so the wheel only ran on a machine where that path
+        # happened to exist. Carry the dylib next to the binary and point the
+        # dependency at `@loader_path`, then drop the build-machine rpath. Without a
+        # self-contained binary the wheel fails at the user with
+        # `dyld: Library not loaded: @rpath/libgc.dylib`.
+        if: runner.os == 'macOS'
+        run: |
+          lib="$(find /tmp/v-src/thirdparty -name libgc.dylib -print -quit)"
+          test -n "$lib" || { echo "libgc.dylib not found under /tmp/v-src/thirdparty"; exit 1; }
+          cp "$lib" bin/libgc.dylib
+          if otool -L bin/vcraft | grep -q '@rpath/libgc.dylib'; then
+            install_name_tool -change @rpath/libgc.dylib @loader_path/libgc.dylib bin/vcraft
+          fi
+          # Any rpath that names the build machine (the runner's temp dir) goes.
+          otool -l bin/vcraft \
+            | awk '/LC_RPATH/{c=3} c>0{print; c--}' | grep 'path ' | awk '{print $2}' \
+            | while read -r rp; do
+                case "$rp" in
+                  /tmp/*|/private/tmp/*|/Users/*) install_name_tool -delete_rpath "$rp" bin/vcraft ;;
+                esac
+              done
+          # install_name_tool invalidates the ad-hoc signature an arm64 binary needs.
+          codesign --force --sign - bin/vcraft
+          echo "== dependencies =="; otool -L bin/vcraft
+          echo "== rpaths =="; otool -l bin/vcraft | awk '/LC_RPATH/{c=3} c>0{print; c--}' || true
+          test -f bin/libgc.dylib
+          otool -L bin/vcraft | grep -q '@loader_path/libgc.dylib'
+          if otool -l bin/vcraft | awk '/LC_RPATH/{c=3} c>0{print; c--}' | grep -qE ' /(private/)?tmp/| /Users/'; then
+            echo "an absolute rpath is still in the binary"; exit 1
+          fi
+
       # The suites above ran against a binary linked to the runner's glibc, which
       # would make the wheel need that glibc too. The shipped Linux binary is built
       # again inside the manylinux_2_28 image instead, the one the images publish,
@@ -241,10 +274,12 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: vcraft-dist-${{ matrix.asset }}
-          # `bin/vcraft*` picks up `vcraft.exe` on Windows; the glob matches the
-          # one file that exists on each platform.
+          # `bin/vcraft*` picks up `vcraft.exe` on Windows, and points at the one
+          # binary that exists on each platform. `bin/*.dylib` is macOS's libgc,
+          # which the packer ships next to the binary so the wheel is self-contained.
           path: |
             bin/vcraft*
+            bin/*.dylib
             vlib/
 
   publish-pypi:
