@@ -5,6 +5,21 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [1.4.2] - 2026-10-16
+
+### Fixed
+
+- **A method's signature is resolved by its receiver, not by its name.** Two structs that
+  declare a method with the same name made the exported one take the *first* declaration's
+  parameters, so its trampoline and `.pyi` used the wrong signature: the build failed with
+  `cannot use int as Color` when the types differed, or bound the wrong argument types when
+  they did not. A free function and a method sharing a name are kept apart too.
+- **A field is looked up inside its own struct.** Two structs with a field of the same name
+  made the second read the first one's source line, so its `@[vc_field]` was not seen and
+  the field silently disappeared from the instance and the stub.
+- **Enum members in the `.pyi` are typed as the enum** (`red: Color`, not `red: int`), so
+  `Color.red` satisfies a `Color` parameter for a type checker such as ty or mypy.
+
 ## [1.4.1] - 2026-10-16
 
 ### Fixed

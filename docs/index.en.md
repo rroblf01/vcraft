@@ -50,7 +50,7 @@ built on vcraft ([source](https://github.com/rroblf01/vqubit),
 
 ## Status
 
-1.4.0. The annotation vocabulary, the `vcraft.toml` keys and the CLI change only with a
+1.4.2. The annotation vocabulary, the `vcraft.toml` keys and the CLI change only with a
 deprecation period. See the [roadmap](https://github.com/rroblf01/vcraft/blob/main/ROADMAP.md)
 for what is left, and [`DECISIONS.md`](https://github.com/rroblf01/vcraft/blob/main/DECISIONS.md)
 for what was set aside and why.

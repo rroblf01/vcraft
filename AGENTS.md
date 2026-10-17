@@ -8,7 +8,7 @@ git-ignored and local-only, so it may not be in your checkout.
 
 vcraft is to the V language what PyO3 + maturin is to Rust: CPython bindings written in
 V, a code generator that turns `@[vc_*]` annotations into extension glue, and a CLI that
-compiles the project with `v -shared` and writes the wheel itself. Currently at 1.4.0
+compiles the project with `v -shared` and writes the wheel itself. Currently at 1.4.2
 (see `CHANGELOG.md`). No Rust, C++ or zlib in the pipeline.
 
 `bin/`, `build/`, `**/_vcraft_generated.v` and `python/*.pyi` are generated and

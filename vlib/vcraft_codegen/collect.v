@@ -123,27 +123,33 @@ fn collect_v_files(dir string, mut out []string) {
 	}
 }
 
-// find_fn_node locates the fn_decl node for a named function so its parameter list
-// can be read from the tree.
-fn find_fn_node(ast &flat.FlatAst, wanted string) ?flat.NodeId {
+// find_fn_node locates the fn_decl node for a function so its parameter list can be read
+// from the tree.
+//
+// `receiver` is the type a method is declared on, empty for a free function. Matching on
+// both is what keeps two methods of the same name on different structs apart: a method's
+// node value is `Receiver.name`, and matching only the name returned whichever was
+// declared first, so one method's parameters ended up in the other's trampoline and stub.
+// The match is exact, so a free function `paint` no longer resolves to a method `X.paint`.
+fn find_fn_node(ast &flat.FlatAst, wanted string, receiver string) ?flat.NodeId {
 	for raw in ast.file_node_ids {
-		if found := find_in(ast, flat.NodeId(raw), wanted) {
+		if found := find_in(ast, flat.NodeId(raw), wanted, receiver) {
 			return found
 		}
 	}
 	return none
 }
 
-fn find_in(ast &flat.FlatAst, id flat.NodeId, wanted string) ?flat.NodeId {
+fn find_in(ast &flat.FlatAst, id flat.NodeId, wanted string, receiver string) ?flat.NodeId {
 	node := ast.node(id)
 	if node.kind == .fn_decl {
-		// A method's node value is `Receiver.name`.
-		if node.value == wanted || node.value.ends_with('.' + wanted) {
+		expected := if receiver.len > 0 { '${receiver}.${wanted}' } else { wanted }
+		if node.value == expected {
 			return id
 		}
 	}
 	for child in ast.children_of(node) {
-		if found := find_in(ast, child, wanted) {
+		if found := find_in(ast, child, wanted, receiver) {
 			return found
 		}
 	}
@@ -184,7 +190,7 @@ fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 		raw:           attr_raw in block.attrs
 		nogil:         attr_nogil in block.attrs
 		export_buffer: attr_memoryview in block.attrs
-		params:        params_of(ast, find_fn_node(ast, decl.name) or {
+		params:        params_of(ast, find_fn_node(ast, decl.name, decl.receiver) or {
 			flat.empty_node
 		}, is_method)
 	}
@@ -216,7 +222,7 @@ fn collect_fn(path string, lines []string, ast &flat.FlatAst, decl astquery.Decl
 	if attr_fn !in block.attrs && attr_raw !in block.attrs {
 		return
 	}
-	if find_fn_node(ast, decl.name) == none {
+	if find_fn_node(ast, decl.name, decl.receiver) == none {
 		report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
 		return
 	}
@@ -384,7 +390,7 @@ fn collect_operator(path string, lines []string, ast &flat.FlatAst,
 	// how the trampoline marshals -- so the built function travels with it, unlike the
 	// fixed calling convention of the comparison operators.
 	if is_numeric_kind(kind) {
-		if find_fn_node(ast, decl.name) == none {
+		if find_fn_node(ast, decl.name, decl.receiver) == none {
 			report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
 			return true
 		}
@@ -421,7 +427,7 @@ fn collect_operator(path string, lines []string, ast &flat.FlatAst,
 		}
 		return true
 	}
-	if find_fn_node(ast, decl.name) == none {
+	if find_fn_node(ast, decl.name, decl.receiver) == none {
 		report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
 		return true
 	}
@@ -1015,7 +1021,7 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 			'error: `${decl.name}` is annotated @[vc_method] but `${decl.receiver}` is not annotated @[vc_class]')
 		return
 	}
-	if find_fn_node(ast, decl.name) == none {
+	if find_fn_node(ast, decl.name, decl.receiver) == none {
 		report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
 		return
 	}
@@ -1172,7 +1178,7 @@ fn collect_static_method(path string, lines []string, ast &flat.FlatAst,
 			'error: `@[vc_static]` and `@[vc_raw]` cannot be combined on `${decl.name}`; a static method uses the ordinary marshalling rules')
 		return true
 	}
-	node := find_fn_node(ast, decl.name) or {
+	node := find_fn_node(ast, decl.name, decl.receiver) or {
 		report(mut p, path, decl, 'error: could not read the signature of `${decl.name}`')
 		return true
 	}
@@ -1353,7 +1359,7 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			exposed << f
 			continue
 		}
-		line := field_line(ast, f.name)
+		line := field_line_in(ast, id, f.name)
 		// V also accepts an attribute on the line above a declaration, so people write a
 		// field annotation there and it is silently dropped: a field's own line is the
 		// only place `read_inline` looks. Warn rather than let the field vanish.
@@ -1376,7 +1382,7 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			report(mut p, path, astquery.Declaration{
 				name:      f.name
 				type_name: f.v_type
-				line:      field_line(ast, f.name)
+				line:      field_line_in(ast, id, f.name)
 				column:    1
 			}, 'error: `@[vc_buffer_typed] ${struct_name}.${f.name}` needs a `@[vc_buffer]` on the same field: it only chooses how that buffer is reported, and there is no buffer here')
 			continue
@@ -1389,7 +1395,7 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 				report(mut p, path, astquery.Declaration{
 					name:      f.name
 					type_name: f.v_type
-					line:      field_line(ast, f.name)
+					line:      field_line_in(ast, id, f.name)
 					column:    1
 				}, 'error: `@[vc_buffer] ${struct_name}.${f.name}` has type `${f.v_type}`, but a native buffer must be a slice: declare it `[]int`, `[]f64` or another slice of a scalar')
 				continue
@@ -1399,7 +1405,7 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 				report(mut p, path, astquery.Declaration{
 					name:      f.name
 					type_name: f.v_type
-					line:      field_line(ast, f.name)
+					line:      field_line_in(ast, id, f.name)
 					column:    1
 				}, 'error: `@[vc_buffer] ${struct_name}.${f.name}` holds `${element}`, which has no native buffer rule; a buffer holds bool, integers or floats')
 				continue
@@ -1416,7 +1422,7 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 				report(mut p, path, astquery.Declaration{
 					name:       f.name
 					type_name:  f.v_type
-					line:       field_line(ast, f.name)
+					line:       field_line_in(ast, id, f.name)
 					column:     1
 				}, 'error: `@[vc_ref] ${struct_name}.${f.name}` has type `${f.v_type}`, but a reference field must be a `vcraft.PyObj`: it holds a Python object and a reference count, and vcraft keeps that count itself. Declare it as `@[vc_ref] ${f.name} vcraft.PyObj`')
 				continue
@@ -1431,7 +1437,7 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			report(mut p, path, astquery.Declaration{
 				name:       f.name
 				type_name:  f.v_type
-				line:       field_line(ast, f.name)
+				line:       field_line_in(ast, id, f.name)
 				column:     1
 			}, 'error: `@[vc_field] ${struct_name}.${f.name}` has type `${f.v_type}`, which cannot be stored in a Python object: only bool, the integer and float types are safe. Expose it through a method instead')
 			continue
@@ -1584,12 +1590,15 @@ fn is_identifier(text string) bool {
 	return true
 }
 
-// field_line is the 1-based line of a field, used to look its annotation up.
-fn field_line(ast &flat.FlatAst, name string) int {
-	for raw in ast.file_node_ids {
-		if line := find_field_line(ast, flat.NodeId(raw), name) {
-			return line
-		}
+// field_line_in is the 1-based line of a field within one struct, used to look its
+// annotation up.
+//
+// Scoped to the struct because two structs may declare a field of the same name: a
+// file-wide search returned the first one, so the second struct's field read the first
+// one's line and lost its `@[vc_field]` (or picked up an annotation that was not there).
+fn field_line_in(ast &flat.FlatAst, id flat.NodeId, name string) int {
+	if line := find_field_line(ast, id, name) {
+		return line
 	}
 	return 1
 }

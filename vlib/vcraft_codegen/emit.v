@@ -1623,8 +1623,11 @@ pub fn emit_stubs(p Project) string {
 		if e.members.len == 0 {
 			w.write_string('    ...\n')
 		}
+		// The member is typed as the enum itself, the way typeshed does it, so that
+		// `Color.red` satisfies a `Color` parameter. `int` would make `paint(Color.red)`
+		// a type error even though it is what the runtime accepts.
 		for m in e.members {
-			w.write_string('    ${m.name}: int\n')
+			w.write_string('    ${m.name}: ${e.name}\n')
 		}
 	}
 	for f in p.funcs {

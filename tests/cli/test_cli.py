@@ -1926,7 +1926,85 @@ pub enum Color {
                     (probe.stdout + probe.stderr).strip()[-400:])
             stub = (enumproj / "python" / "enum_native.pyi").read_text()
             t.check("the stub declares the enum class",
-                    "class Color(enum.IntEnum):" in stub and "red: int" in stub, stub)
+                    "class Color(enum.IntEnum):" in stub and "red: Color" in stub, stub)
+
+        print("method resolution")
+        # Two methods of the same name on different structs, declared so the non-exported
+        # one comes first, plus a free function with that name and a field name shared with
+        # another struct. Every one of these was resolved by name alone, so the exported
+        # method picked up the other declaration's signature and the field lost its
+        # `@[vc_field]`.
+        methodproj = tmp / "methodproj"
+        (methodproj / "src").mkdir(parents=True)
+        (methodproj / "v.mod").write_text(
+            'Module {\n\tname: "mres_native"\n\tbase_url: "src"\n'
+            '\trequires: ["vcraft"]\n}\n')
+        (methodproj / "vcraft.toml").write_text(
+            '[package]\nname = "mres"\nversion = "0.1.0"\ndescription = "method resolution"\n'
+            '\n[build]\nmodule = "mres_native"\nsource = "src"\noutput = "python"\n')
+        (methodproj / "src" / "mres_native.v").write_text('''module mres_native
+
+struct Helper {
+mut:
+	n int
+}
+
+fn (mut h Helper) paint(code int) int {
+	return code
+}
+
+pub enum Color {
+	red
+	green
+	blue
+}
+
+@[vc_class]
+pub struct Counter {
+mut:
+	@[vc_field] n int
+}
+
+@[vc_fn]
+pub fn new_counter() &Counter {
+	return &Counter{ n: 0 }
+}
+
+@[vc_fn]
+pub fn paint(code int) int {
+	return code
+}
+
+@[vc_method]
+pub fn (mut c Counter) paint(color Color) int {
+	return int(color)
+}
+''')
+        proc = vcraft("build", cwd=methodproj)
+        t.check("a method is resolved by receiver and name, not by name alone",
+                proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-400:])
+        if proc.returncode == 0:
+            stub = (methodproj / "python" / "mres_native.pyi").read_text()
+            t.check("the stub has the method's own signature",
+                    "def paint(self, color: Color) -> int" in stub
+                    and "def paint(self, code: int)" not in stub, stub)
+            t.check("the stub has the free function with its signature",
+                    "def paint(code: int) -> int" in stub, stub)
+            t.check("a field name shared with another struct keeps its annotation",
+                    "    n: int" in stub, stub)
+            built = sorted(methodproj.glob(f"dist/build/*{LIB_EXT}"))
+            probe = subprocess.run(
+                [sys.executable, "-c",
+                 "import sys\n"
+                 "sys.path.insert(0, sys.argv[1])\n"
+                 "import mres_native as m\n"
+                 "print(m.paint(5), m.Counter().paint(m.Color.blue), m.Counter().n)\n"
+                 "try:\n    m.Counter().paint(9)\nexcept ValueError:\n    print('value-error')\n",
+                 str(built[0].parent)], capture_output=True, text=True)
+            t.check("the free function and the method use their own signatures",
+                    probe.returncode == 0
+                    and probe.stdout.splitlines()[:2] == ["5 2 0", "value-error"],
+                    (probe.stdout + probe.stderr).strip()[-400:])
 
         print("buffer and constructor diagnostics")
         native.write_text(saved + "\n@[vc_class]\npub struct BadBuf {\nmut:\n"

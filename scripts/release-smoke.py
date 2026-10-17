@@ -49,6 +49,17 @@ def main() -> int:
         # this one. extra_marker is the sibling source the sdist must carry.
         (proj / "src" / "a_api.v").write_text('''module smoke_native
 
+// A non-exported method and a free function with the same name as the exported one: a
+// method resolved by name alone picked up this signature.
+struct Helper {
+mut:
+	n int
+}
+
+fn (mut h Helper) paint(code int) int {
+	return code
+}
+
 @[vc_class]
 pub struct Counter {
 mut:
@@ -58,6 +69,11 @@ mut:
 @[vc_fn]
 pub fn new_counter() &Counter {
 	return &Counter{ n: 0 }
+}
+
+@[vc_fn]
+pub fn paint(code int) int {
+	return code
 }
 
 @[vc_method]
@@ -88,7 +104,8 @@ pub fn extra_marker() int {
                     "import sys\n"
                     "sys.path.insert(0, sys.argv[1])\n"
                     "import smoke_native as m\n"
-                    "print(m.Counter().paint(m.Color.green), m.extra_marker())\n"
+                    "print(m.paint(5), m.Counter().paint(m.Color.green), "
+                    "m.extra_marker(), m.Counter().n)\n"
                     "try:\n"
                     "    m.Counter().paint(9)\n"
                     "except ValueError:\n"
@@ -96,11 +113,18 @@ pub fn extra_marker() int {
                 )
                 probe = run([sys.executable, "-c", snippet, built[0].parent])
                 out = probe.stdout
-                if "1 7" not in out or "value-error" not in out:
-                    problems.append("enum param / sibling source failed: " + out + probe.stderr)
+                if "5 1 7 0" not in out or "value-error" not in out:
+                    problems.append("enum param / sibling source / method resolution failed: "
+                        + out + probe.stderr)
             stub = (proj / "python" / "smoke_native.pyi").read_text()
             if "class Color(enum.IntEnum):" not in stub:
                 problems.append("the enum is missing from the .pyi")
+            if "red: Color" not in stub:
+                problems.append("the enum member is not typed as the enum in the .pyi")
+            if "def paint(self, color: Color)" not in stub:
+                problems.append("the method signature was resolved by name, not receiver")
+            if "    n: int" not in stub:
+                problems.append("a field name shared with another struct lost its annotation")
 
         proc = run([vcraft, "sdist"], cwd=proj)
         sdists = sorted((proj / "dist").glob("*.tar.gz"))
