@@ -309,17 +309,25 @@ def main() -> int:
                 capture_output=True, text=True)
             t.check("pip installs the real wheel", proc.returncode == 0,
                     (proc.stderr or proc.stdout).strip()[-300:])
-            proc = subprocess.run(
-                [str(vcraft_build.venv_scripts(venv_dir) / BIN_NAME), "version"],
-                capture_output=True, text=True)
+            tool = str(vcraft_build.venv_scripts(venv_dir) / BIN_NAME)
+            proc = subprocess.run([tool, "version"], capture_output=True, text=True)
             t.check("the installed console script runs the real binary",
                     proc.returncode == 0 and proc.stdout.strip() == STAMPED,
                     (proc.stderr or proc.stdout).strip()[-200:])
+            # The launcher must hand back the binary's status. On Windows the exec
+            # family did not: a build that failed exited 0 and CI saw a green step with
+            # an empty `dist/`. An unknown command exits non-zero, which is the same
+            # contract as a failed build but reachable on Windows, where the stub above
+            # cannot run because it is a shell script.
+            proc = subprocess.run([tool, "definitely-not-a-command"],
+                                  capture_output=True, text=True)
+            t.check("the launcher propagates the binary's failing status",
+                    proc.returncode != 0,
+                    f"exit {proc.returncode}: {(proc.stdout + proc.stderr).strip()[-200:]}")
             # The path the published action takes: `pip install vcraft`, then its console
             # script builds a project. The cli suite runs `bin/vcraft` itself, so it never
             # covers the wheel's launcher, which is where a Windows-only failure hides --
             # a launcher that starts the binary but where the build writes no wheel.
-            tool = str(vcraft_build.venv_scripts(venv_dir) / BIN_NAME)
             # The action's environment: no `VCRAFT_V`/`VCRAFT_HOME`, so the installed
             # tool has to find the compiler on PATH, the way a user's machine does.
             env = {k: v for k, v in os.environ.items()

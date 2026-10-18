@@ -2272,6 +2272,12 @@ pub fn extra_marker() int {
                     "uses: rroblf01/vcraft/actions/vcraft-action@v1" in text,
                     "an action reference needs owner/repo/path@ref")
             t.check("it uploads a wheel", "upload-artifact" in text)
+            # A build that exits zero without writing a wheel used to be read only by
+            # the upload step, which reports an empty path and not which step is at
+            # fault. The generated workflow must keep failing on the build step itself.
+            t.check("it fails a build that wrote no wheel",
+                    "the wheel was written" in text and "no wheel was written" in text,
+                    "a zero-exit build with an empty dist/ must fail before the upload")
             # GitHub is retiring Node 20 for actions; these majors still run on it.
             node20 = re.compile(r"actions/checkout@v[1-4]\b|actions/setup-python@v[1-5]\b|"
                                 r"actions/cache(/restore|/save)?@v[1-4]\b|"
