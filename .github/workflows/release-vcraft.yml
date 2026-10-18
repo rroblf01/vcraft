@@ -185,6 +185,11 @@ jobs:
         # a deployment target the binary would require the runner's own macOS.
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
+          # macOS links with clang rather than V's bundled TCC: the shipped binary has
+          # to be edited so its `libgc.dylib` dependency is relative, and
+          # `install_name_tool` cannot process TCC's Mach-O ("symbol table out of
+          # place"). A clang/ld64 binary it can.
+          VCRAFT_CC: ${{ runner.os == 'macOS' && 'clang' || '' }}
         run: |
           ./scripts/build-vcraft.sh
           if [ "$RUNNER_OS" = "Windows" ]; then bin/vcraft.exe version; else bin/vcraft version; fi
@@ -198,13 +203,19 @@ jobs:
         # `dyld: Library not loaded: @rpath/libgc.dylib`.
         if: runner.os == 'macOS'
         run: |
+          # The dependency as V linked it, whether `@rpath/libgc.dylib` or an absolute
+          # path into the V tree.
+          dep="$(otool -L bin/vcraft | awk '/libgc\.dylib/{print $1; exit}')"
+          if [ -z "$dep" ]; then
+            echo "no dynamic libgc dependency; the binary is already self-contained"
+            exit 0
+          fi
           lib="$(find /tmp/v-src/thirdparty -name libgc.dylib -print -quit)"
           test -n "$lib" || { echo "libgc.dylib not found under /tmp/v-src/thirdparty"; exit 1; }
           cp "$lib" bin/libgc.dylib
-          if otool -L bin/vcraft | grep -q '@rpath/libgc.dylib'; then
-            install_name_tool -change @rpath/libgc.dylib @loader_path/libgc.dylib bin/vcraft
-          fi
-          # Any rpath that names the build machine (the runner's temp dir) goes.
+          install_name_tool -change "$dep" @loader_path/libgc.dylib bin/vcraft
+          # Any rpath that names the build machine (the runner's temp dir) goes; with
+          # the dependency on `@loader_path` none is needed.
           otool -l bin/vcraft \
             | awk '/LC_RPATH/{c=3} c>0{print; c--}' | grep 'path ' | awk '{print $2}' \
             | while read -r rp; do
