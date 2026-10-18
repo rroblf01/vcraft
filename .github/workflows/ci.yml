@@ -383,6 +383,45 @@ jobs:
       - name: "suite: README examples"
         run: python tests/docs/test_readme.py
 
+  # The CLI suite on its own Windows job, mirroring the POSIX split above. It is the
+  # slowest suite by a wide margin -- every case drives a full build -- so running it
+  # after the others made the Windows job the sum of every suite rather than its
+  # slowest one. The two jobs run in parallel against the same restored compiler.
+  windows-cli:
+    needs: v-compiler-windows
+    name: windows cli (windows-latest, ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # The same list as the `windows` job above, kept in step with
+        # `supported_pythons` in vlib/vcraft_project/build.v.
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
+
+      - name: restore the V compiler
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/v-src
+          key: v-slim1-windows-latest-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          fail-on-cache-miss: true
+
+      - name: put V on PATH
+        run: echo "$env:RUNNER_TEMP\v-src" >> $env:GITHUB_PATH
+
+      # The CLI suite checks this repository's workflows and the action with PyYAML,
+      # and skips those checks without it: that is how a renamed job once broke them
+      # with nothing in CI noticing.
+      - name: install PyYAML for the workflow checks
+        run: python -m pip install -q pyyaml
+
       - name: "suite: CLI"
         run: python tests/cli/test_cli.py
 

@@ -993,19 +993,6 @@ pub fn apply(f voidptr, x int) !int {
                 "installed into" in proc.stdout, proc.stdout)
         t.check("develop is editable by default", "(editable)" in proc.stdout,
                 proc.stdout)
-        # `develop` goes through the same build path, so its pyproject.toml write merges
-        # too: a development loop must not eat the project's tables either.
-        dev_manifest = project / "pyproject.toml"
-        dev_saved = dev_manifest.read_text()
-        try:
-            dev_manifest.write_text(dev_saved + '\n[dependency-groups]\ndev = ["pytest"]\n')
-            proc = subprocess.run([str(VCRAFT), "develop"], cwd=project, env=env,
-                                  capture_output=True, text=True)
-            t.check("[dependency-groups] survives develop",
-                    proc.returncode == 0 and "[dependency-groups]" in dev_manifest.read_text(),
-                    dev_manifest.read_text())
-        finally:
-            dev_manifest.write_text(dev_saved)
         platlib = venv_platlib(target)
         pth = platlib / "_mypkg_editable.pth"
         t.check("an editable pointer is installed", pth.exists(),
@@ -1071,6 +1058,26 @@ pub fn apply(f voidptr, x int) !int {
                               capture_output=True, text=True, cwd=project)
         t.check("the scaffolded tests pass", proc.returncode == 0,
                 (proc.stderr or proc.stdout).strip()[-400:])
+
+        # Last, because a second `develop` rebuilds and can leave the build output
+        # different, which would turn one real failure into a handful of misleading
+        # ones below. `develop` goes through the same build path, so its pyproject.toml
+        # write merges too: a development loop must not eat the project's tables.
+        dev_manifest = project / "pyproject.toml"
+        dev_saved = dev_manifest.read_text()
+        try:
+            dev_manifest.write_text(dev_saved + '\n[dependency-groups]\ndev = ["pytest"]\n')
+            proc = subprocess.run([str(VCRAFT), "develop"], cwd=project, env=env,
+                                  capture_output=True, text=True)
+            # The build's own output, not the manifest: the manifest is what it should
+            # be whether the merge worked or the build failed, so printing it hides the
+            # reason a second develop refused. The exit status is the failing half.
+            t.check("[dependency-groups] survives develop",
+                    proc.returncode == 0 and "[dependency-groups]" in dev_manifest.read_text(),
+                    f"develop exited {proc.returncode}: "
+                    f"{(proc.stderr or proc.stdout).strip()[-400:]}")
+        finally:
+            dev_manifest.write_text(dev_saved)
 
         print("develop --copy")
         copy_target = tmp / "venv-develop-copy"
