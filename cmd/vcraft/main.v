@@ -519,7 +519,18 @@ fn cmd_publish(args Args) {
 
 // command_exists reports whether a program is on PATH.
 fn command_exists(name string) bool {
-	return os.find_abs_path_of_executable(name) or { '' } != ''
+	if os.find_abs_path_of_executable(name) or { '' } != '' {
+		return true
+	}
+	// On Windows the compiler is `v.exe`, and a caller may hand over either spelling.
+	$if windows {
+		if !name.to_lower().ends_with('.exe') {
+			if os.find_abs_path_of_executable(name + '.exe') or { '' } != '' {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // cmd_clean removes build output.

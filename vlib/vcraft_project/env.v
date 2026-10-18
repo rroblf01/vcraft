@@ -12,7 +12,7 @@ import vcraft_wheel
 // runner that has V configured for something else.
 
 // version is vcraft's own version, and the version it stamps into a wheel's `WHEEL`.
-pub const version = '1.4.4'
+pub const version = '1.4.5'
 
 // executable_name is the file name an executable has on this platform.
 //
@@ -77,7 +77,14 @@ pub fn v_compiler() string {
 	if installed != '' {
 		return installed
 	}
-	return executable_name('v')
+	// Resolve the bare name on PATH, so the caller execs the compiler it checked
+	// for rather than relying on the platform's search at exec time. On Windows the
+	// executable is `v.exe`, which `executable_name` supplies.
+	name := executable_name('v')
+	if found := os.find_abs_path_of_executable(name) {
+		return found
+	}
+	return name
 }
 
 // active_environment returns the virtualenv the build should install into, or an empty

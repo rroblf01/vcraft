@@ -126,6 +126,7 @@ and silently running it is how a stale binary debugs the wrong project.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 
 
@@ -145,7 +146,11 @@ def _binary() -> str:
 
 def main() -> None:
     exe = _binary()
-    os.execv(exe, [exe, *sys.argv[1:]])
+    # `subprocess` rather than `os.execv`: on Windows the exec family does not
+    # replace the process the way it does on POSIX, so the child's exit code was
+    # lost and a failed build looked green in CI. The child's stdout and stderr
+    # are inherited either way.
+    raise SystemExit(subprocess.run([exe, *sys.argv[1:]]).returncode)
 
 
 if __name__ == "__main__":

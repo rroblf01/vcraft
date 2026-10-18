@@ -76,7 +76,10 @@ def make_fixture(tmp: Path) -> tuple[Path, Path]:
     bindir = tmp / "fakebin"
     bindir.mkdir()
     binary = bindir / "vcraft"
-    binary.write_text('#!/bin/sh\necho "vcraft-stub $@"\n')
+    # The `fail` argument makes the stub exit nonzero, so the launcher's exit-code
+    # propagation can be checked.
+    binary.write_text('#!/bin/sh\necho "vcraft-stub $@"\n'
+                      'if [ "$1" = "fail" ]; then exit 7; fi\n')
     binary.chmod(0o755)
     # A dylib next to the binary, like the `libgc.dylib` the macOS release ships: the
     # packer has to carry it so the wheel is self-contained.
@@ -272,6 +275,14 @@ def main() -> int:
             t.check("python -m reaches the binary too", proc.returncode == 0
                     and proc.stdout.strip() == "vcraft-stub new demo",
                     (proc.stderr or proc.stdout).strip()[-200:])
+            # A build that fails must fail the launcher too: on Windows the exec
+            # family did not, so CI saw a green step with an empty `dist/`.
+            proc = subprocess.run(
+                [str(vcraft_build.venv_scripts(venv_dir) / BIN_NAME), "fail"],
+                capture_output=True, text=True)
+            t.check("the launcher propagates the binary's exit code",
+                    proc.returncode == 7,
+                    f"exit {proc.returncode}: {(proc.stdout + proc.stderr).strip()[-200:]}")
 
         print("the real payload")
         real_bin = vcraft_build.VCRAFT
@@ -309,6 +320,10 @@ def main() -> int:
             # covers the wheel's launcher, which is where a Windows-only failure hides --
             # a launcher that starts the binary but where the build writes no wheel.
             tool = str(vcraft_build.venv_scripts(venv_dir) / BIN_NAME)
+            # The action's environment: no `VCRAFT_V`/`VCRAFT_HOME`, so the installed
+            # tool has to find the compiler on PATH, the way a user's machine does.
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("VCRAFT_V", "VCRAFT_HOME")}
             scaffolds = tmp / "installed-scaffold"
             scaffolds.mkdir()
             proc = subprocess.run([tool, "new", "demo"], cwd=scaffolds,
@@ -317,7 +332,7 @@ def main() -> int:
                     (proc.stderr or proc.stdout).strip()[-300:])
             project = scaffolds / "demo"
             proc = subprocess.run([tool, "build", "--abi3", "3.11"], cwd=project,
-                                  capture_output=True, text=True)
+                                  env=env, capture_output=True, text=True)
             t.check("the installed tool builds an abi3 project", proc.returncode == 0,
                     (proc.stderr or proc.stdout).strip()[-400:])
             produced = list((project / "dist").glob("*.whl"))

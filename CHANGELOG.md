@@ -5,6 +5,24 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [1.4.5] - 2026-10-18
+
+### Fixed
+
+- **The wheel's launcher propagates the binary's exit code.** `_launch.py` used
+  `os.execv`, and on Windows the exec family does not replace the process the way it
+  does on POSIX, so the child's exit code was lost: `vcraft build` that printed
+  `error: no V compiler found` still exited 0, and CI saw a green step with an empty
+  `dist/`. It now runs the binary with `subprocess.run` and exits with its status, which
+  is also what makes a failing `vcraft toolchain install` stop looking like success.
+- **V discovery is resolved to an absolute path.** `v_compiler()` now resolves the bare
+  name on `PATH` (`v.exe` on Windows) instead of returning it for the caller to exec,
+  and `command_exists` also tries the `.exe` spelling there.
+
+The tool wheel suite now builds through the installed wheel with `VCRAFT_V`/`VCRAFT_HOME`
+removed (the action's environment, where V has to be found on `PATH`), and checks that
+the launcher returns the binary's non-zero status.
+
 ## [1.4.4] - 2026-10-16
 
 ### Fixed
