@@ -212,6 +212,11 @@ pub fn (c Class) buffer_fields() []Field {
 	return c.state_fields.filter(it.buffer)
 }
 
+// handle_fields is every `@[vc_handle]` field the instance holds, the bases' included.
+pub fn (c Class) handle_fields() []Field {
+	return c.state_fields.filter(it.handle)
+}
+
 // own_buffer_fields returns only this class's own `@[vc_buffer]` fields, in declaration
 // order. The first is the one `memoryview(instance)` exposes.
 pub fn (c Class) own_buffer_fields() []Field {
@@ -219,10 +224,10 @@ pub fn (c Class) own_buffer_fields() []Field {
 }
 
 // scalar_fields returns this class's own fields that are exposed as ordinary Python
-// attributes: everything but the native buffers, which are reached through
+// attributes: everything but the native buffers and the handles, which are reached through
 // `memoryview` and methods rather than as an attribute.
 pub fn (c Class) scalar_fields() []Field {
-	return c.fields.filter(!it.buffer)
+	return c.fields.filter(!it.buffer && !it.handle)
 }
 
 // stub_ctor_params renders the constructor's parameters for a `.pyi` `__init__`, with a
@@ -727,16 +732,21 @@ fn emit_class_dealloc(p Project, c Class) string {
 	w.write_string('fn vcraft_generated__dealloc_${c.key}(self voidptr) voidptr {\n')
 	refs := c.ref_fields()
 	bufs := c.buffer_fields()
-	if refs.len > 0 || bufs.len > 0 {
+	handles := c.handle_fields()
+	if refs.len > 0 || bufs.len > 0 || handles.len > 0 {
 		w.write_string(emit_state_pointer(c))
 		if refs.len > 0 {
 			w.write_string(emit_clear_refs(c))
 		}
-		// The backing of every buffer, the base's included, is released before the state
-		// that holds it goes. `buffer_free` is a no-op on an unset field, which is what a class
-		// constructed without allocating them holds.
+		// Native state goes next, through the drop function the field was built with, and
+		// before the block that holds it is gone. `buffer_free` is a no-op on an unset
+		// field, and `release` is a no-op on a handle that was never set, which is what a
+		// class constructed without allocating them holds.
 		for f in bufs {
 			w.write_string('\tvcraft.buffer_free(state.' + f.path + '.data)\n')
+		}
+		for f in handles {
+			w.write_string('\tstate.' + f.path + '.release()\n')
 		}
 	}
 	w.write_string('\treturn vcraft.class_dealloc(self)\n')
@@ -1226,6 +1236,11 @@ fn emit_class_repr(p Project, c Class) string {
 			// million-element tableau is not useful and would walk the whole thing.
 			rendered = vstring_literal('buffer(') + ' + state.' + f.path + '.len.str() + ' +
 				vstring_literal(')')
+		} else if f.handle {
+			// A handle prints whether it still owns something. The pointer itself is not
+			// useful in a repr and is not there to be printed.
+			rendered = vstring_literal('handle(') + ' + state.' + f.path +
+				'.is_set().str() + ' + vstring_literal(')')
 		} else {
 			rendered = py_repr_expr(lookup(f.v_type), 'state.' + f.path)
 		}

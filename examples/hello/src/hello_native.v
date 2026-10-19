@@ -871,3 +871,61 @@ pub fn box_value(handle voidptr) int {
 	}
 	return unsafe { *(&int(p)) }
 }
+
+// ---- native state a class owns ------------------------------------------
+
+// handle_releases counts how many handles have been released, so a test can see that
+// dealloc ran the drop rather than trusting that it did.
+__global handle_releases = 0
+
+// handle_release_count reports how many handles have been released.
+@[vc_fn]
+pub fn handle_release_count() int {
+	return handle_releases
+}
+
+// pointer_free releases an int allocation and counts it.
+fn pointer_free(p voidptr) {
+	handle_releases++
+	vcraft.native_free(p)
+}
+
+// OwnedBox owns a native int. The field is `@[vc_handle]`, so the generated `tp_dealloc`
+// releases it: the allocation's lifetime is the instance's, and no Python object is
+// involved the way it is with a capsule.
+@[vc_class]
+pub struct OwnedBox {
+mut:
+	@[vc_handle] owned vcraft.Owned
+	// value is the int the handle holds, copied out for the Python side.
+	@[vc_field] value int
+}
+
+// new_owned_box allocates an int the instance owns.
+@[vc_fn]
+pub fn new_owned_box(value int) &OwnedBox {
+	p := vcraft.native_alloc(usize(sizeof(int)))
+	if p == unsafe { nil } {
+		panic('memory allocation failure')
+	}
+	unsafe {
+		*(&int(p)) = value
+	}
+	return &OwnedBox{
+		owned: vcraft.own(p, pointer_free)
+		value: value
+	}
+}
+
+// owned_is_set reports whether the handle still owns its pointer.
+@[vc_method]
+pub fn (b &OwnedBox) owned_is_set() bool {
+	return b.owned.is_set()
+}
+
+// release_now releases the handle before dealloc, which is what a caller does when the
+// native resource has to go earlier than the object does.
+@[vc_method]
+pub fn (mut b OwnedBox) release_now() {
+	b.owned.release()
+}

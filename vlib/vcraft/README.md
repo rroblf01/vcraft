@@ -341,6 +341,53 @@ the base from the data pointer and the shim frees with `PyObject_Free`. The gene
 `@[vc_memoryview]` on a slice-returning function into a call to
 `buffer_export_<T>(result)`, whose `.ptr` is the `PyObject *` the trampoline returns.
 
+## Native state a class owns
+
+A `@[vc_handle]` field is a `vcraft.Owned`: a pointer together with the function that
+releases it. The generated `tp_dealloc` calls `release` on it, so the allocation lives
+exactly as long as the instance does, and the field is not a Python attribute.
+
+```v
+@[vc_class]
+pub struct OwnedBox {
+mut:
+	@[vc_handle] owned vcraft.Owned
+	@[vc_field] value int
+}
+
+// new_owned_box allocates an int the instance owns.
+@[vc_fn]
+pub fn new_owned_box(value int) &OwnedBox {
+	p := vcraft.native_alloc(usize(sizeof(int)))
+	if p == unsafe { nil } {
+		panic('memory allocation failure')
+	}
+	unsafe {
+		*(&int(p)) = value
+	}
+	return &OwnedBox{
+		owned: vcraft.own(p, pointer_free)
+		value: value
+	}
+}
+
+fn pointer_free(p voidptr) {
+	vcraft.native_free(p)
+}
+```
+
+The pair is the point, and there is a reason a `voidptr` field is not allowed to be one.
+The state block lives in memory CPython allocated, and Boehm does not scan it: a bare
+pointer there is a pointer nothing frees, and the object is left holding a dangling address
+after the allocation goes. Naming the release next to the pointer is what makes the field
+ownable, and `release` is idempotent, which matters because `tp_dealloc` also runs on an
+instance whose constructor raised before it set the field. `@[vc_field]` on the same field
+is refused: exposing a handle would hand Python a pointer whose owner is the class.
+
+`Owned` is for state that stays native - a socket, a cursor, an arena, a coroutine a
+transport is driving. When Python itself has to see the handle, a capsule in a `@[vc_ref]`
+field does the same job at the cost of a Python object per handle; see Capsules.
+
 ## Capsules
 
 `new_handle` wraps an arbitrary native pointer in an anonymous `PyCapsule` with a

@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 31,
+            glue.count("add_function_owned") == 32,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -809,6 +809,30 @@ def main() -> int:
     t.check("the releasebuffer slot is emitted",
             "fn vcraft_generated__releasebuffer_vector(self voidptr, _view voidptr) int {"
             in glue)
+
+    print("native state a class owns, released at dealloc")
+    # A `@[vc_handle]` field is a `vcraft.Owned`: the pointer plus the function that frees
+    # it. Nothing in the state block is scanned by V's collector, which is why the release
+    # has to be generated rather than left to it, and why a bare pointer field is refused.
+    t.check("the handle is released by the generated dealloc", "state.owned.release()" in glue)
+    t.check("a handle is not a Python attribute", "get_ownedbox_owned" not in glue)
+    t.check("the repr reports whether it still owns something",
+            "handle(' + state.owned.is_set().str()" in glue)
+    before = h.handle_release_count()
+    box = h.OwnedBox(7)
+    t.equal("the handle field survives construction", box.value, 7)
+    t.check("the handle owns something", box.owned_is_set())
+    t.check("the repr names the handle", "handle(true)" in repr(box), repr(box))
+    del box
+    gc.collect()
+    t.equal("dealloc released the handle", h.handle_release_count(), before + 1)
+    box = h.OwnedBox(9)
+    box.release_now()
+    t.equal("releasing early releases once", h.handle_release_count(), before + 2)
+    t.check("the handle is unset after an early release", not box.owned_is_set())
+    del box
+    gc.collect()
+    t.equal("dealloc does not release it a second time", h.handle_release_count(), before + 2)
     t.check("the constructor binds its arguments",
             "vcraft.bind_new_args(raw_args, kwds, unsafe { voidptr(&bound[0]) }" in glue)
     # The slots are a fixed array on the stack and the parameter names are a module

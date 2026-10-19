@@ -58,6 +58,11 @@ pub const attr_error = 'vc_error'
 // where `@[vc_field]` is a boolean.
 pub const attr_ref = 'vc_ref'
 
+// attr_handle marks a field as native state the class owns: a `vcraft.Owned`, a pointer
+// and the function that releases it. The generated `tp_dealloc` calls `release` on it, so
+// the allocation's lifetime is the instance's. It is not exposed to Python.
+pub const attr_handle = 'vc_handle'
+
 // attr_defaults gives parameters default values: `@[vc_defaults: 'step=1, name="x"']`.
 // V has no default arguments of its own, so they are declared on the function.
 pub const attr_defaults = 'vc_defaults'
@@ -237,6 +242,7 @@ pub const known_attrs = [
 	attr_field,
 	attr_buffer,
 	attr_buffer_typed,
+	attr_handle,
 	attr_memoryview,
 	attr_property,
 	attr_static,
@@ -489,6 +495,9 @@ pub mut:
 	// buffer_typed is `@[vc_buffer_typed]`: the buffer protocol reports a typed view
 	// instead of the default byte view.
 	buffer_typed bool
+	// handle marks a `@[vc_handle]` field: a `vcraft.Owned` whose pointer vcraft releases
+	// at dealloc, for native state the collector cannot follow into the object.
+	handle bool
 	// ref_target is the class named by `@[vc_ref(Name)]`, empty when the field holds a
 	// reference to any vcraft instance. Only a check: the field holds a `PyObj`, so
 	// nothing in the layout depends on the target.

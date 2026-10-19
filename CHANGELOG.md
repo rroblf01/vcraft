@@ -9,6 +9,14 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ### Added
 
+- **`@[vc_handle]` and `vcraft.Owned`, for native state a class owns.** A field holds the
+  pointer together with the function that releases it, and the generated `tp_dealloc` calls
+  it, so the allocation's lifetime is the instance's. A `voidptr` field could not do this:
+  the state block lives in CPython-allocated memory that V's collector does not scan, so
+  nothing would ever free what it points at, and the object would be left holding a dangling
+  address. The alternative was a capsule - a Python object per handle - and this is for the
+  state that never has to be visible to Python at all. `release` is idempotent, which
+  `tp_dealloc` needs because it also runs on instances whose constructor raised.
 - **`vcraft.with_gil`, `gil_ensure` and `gil_release`.** A thread V created with `spawn`
   holds no Python thread state, so calling into Python from it was impossible: only the
   release half (`allow_threads`) was exposed. `with_gil` acquires the GIL for a block and

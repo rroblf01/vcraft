@@ -1374,7 +1374,7 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 		}
 		block := read_inline(lines, line)
 		if attr_field !in block.attrs && attr_ref !in block.attrs && attr_buffer !in block.attrs
-			&& attr_buffer_typed !in block.attrs {
+			&& attr_buffer_typed !in block.attrs && attr_handle !in block.attrs {
 			continue
 		}
 		f.doc = block.doc
@@ -1433,6 +1433,32 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			exposed << f
 			continue
 		}
+		if attr_handle in block.attrs {
+			// Native state the class owns. The type is `vcraft.Owned` rather than any
+			// scalar because the release is the whole point: a bare pointer field is one
+			// nothing frees, and the object keeps a dangling address.
+			if f.v_type.trim_space() !in ['vcraft.Owned', 'Owned'] {
+				report(mut p, path, astquery.Declaration{
+					name:       f.name
+					type_name:  f.v_type
+					line:       field_line_in(ast, id, f.name)
+					column:     1
+				}, 'error: `@[vc_handle] ${struct_name}.${f.name}` has type `${f.v_type}`, but a handle field must be a `vcraft.Owned`: it pairs the pointer with the function that releases it, and that pair is what vcraft calls at dealloc')
+				continue
+			}
+			if attr_field in block.attrs {
+				report(mut p, path, astquery.Declaration{
+					name:       f.name
+					type_name:  f.v_type
+					line:       field_line_in(ast, id, f.name)
+					column:     1
+				}, 'error: `@[vc_handle] ${struct_name}.${f.name}` also carries `@[vc_field]`: a handle is native state, and exposing it to Python would hand out a pointer with no owner')
+				continue
+			}
+			f.handle = true
+			exposed << f
+			continue
+		}
 		if !f.is_scalar() {
 			report(mut p, path, astquery.Declaration{
 				name:       f.name
@@ -1465,7 +1491,7 @@ fn stray_field_annotation(lines []string, line int) string {
 	}
 	for name in parse_attr_names(text) {
 		canonical := canonical_attr(name)
-		if canonical in [attr_field, attr_ref, attr_buffer, attr_buffer_typed] {
+		if canonical in [attr_field, attr_ref, attr_buffer, attr_buffer_typed, attr_handle] {
 			return canonical
 		}
 	}
