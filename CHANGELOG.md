@@ -5,6 +5,35 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [Unreleased]
+
+### Added
+
+- **`vcraft.with_gil`, `gil_ensure` and `gil_release`.** A thread V created with `spawn`
+  holds no Python thread state, so calling into Python from it was impossible: only the
+  release half (`allow_threads`) was exposed. `with_gil` acquires the GIL for a block and
+  gives it back on every path, panic included, which is what a hand-written pair does not
+  do. Found by an ASGI server written for the proof of concept, where the alternative was
+  to have Python create every thread.
+- **`vcraft.bytes_view` and `buffer_view_of`.** `bytes_arg` borrowed a `[]u8` *argument*
+  through the buffer protocol, but a bytes-like object Python *returned* from a call could
+  only be read by copying it twice (`from_py_bytes` into a `string`, `.bytes()` into a
+  `[]u8`). `bytes_view` asserts the same borrow for a result; a server writing a large body
+  straight to a socket measured 1 MB responses at 1459 req/s before and ~3400 after.
+
+### Fixed
+
+- **A failed build no longer buries its error under a notice per wrapper.** The glue bound
+  its arguments with `mut args := raw_args`, which V reports as a notice, and declared the
+  parameters a wrapper does not read under names V then reported as well: `self` on a module
+  function or a static method, `closure` on a property or a field accessor, `view` on
+  `bf_releasebuffer`. In a project with ten exported functions a compile that failed for one
+  real reason printed a dozen lines about vcraft's own habits first. The binding is `unsafe`
+  now and the unread parameters are named with a leading underscore, so the glue compiles
+  without a single notice whether or not the build succeeds.
+- `buffer_resize_backing` named a local `copy`, which shadows a builtin function and made V
+  say so on every compile.
+
 ## [1.4.5] - 2026-10-18
 
 ### Fixed

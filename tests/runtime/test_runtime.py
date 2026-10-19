@@ -121,6 +121,15 @@ def main() -> int:
     t.raises("a non-bytes result is refused", TypeError, "bytes-like",
              lambda: m.sum_callback(lambda: "str"))
 
+    print("a thread V created calls back into Python")
+    t.equal("with_gil acquires the GIL for it", m.call_from_thread(lambda: 7), 7)
+    t.equal("the callable's return value crosses", m.call_from_thread(lambda: 4242), 4242)
+    # -101 is the sentinel the worker reports for "the callable raised": the exception is
+    # dropped on a thread that is about to end, which is what a caller can act on.
+    t.equal("an exception is reported, not a crash",
+            m.call_from_thread(lambda: (_ for _ in ()).throw(ValueError("from the thread"))),
+            -101)
+
     print("a native buffer exported as a memoryview")
     mv = m.export_squares(4)
     t.check("export_squares returns a memoryview", isinstance(mv, memoryview), type(mv))

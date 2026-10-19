@@ -99,6 +99,8 @@ void vpy_type_clear(void *self);
 // pointer because V cannot name `PyThreadState *` either, for the same reason.
 void *vpy_allow_threads(void);
 void vpy_end_allow_threads(void *state);
+int vpy_gil_ensure(void);
+void vpy_gil_release(int state);
 
 // Declaring that a module runs without the GIL.
 //

@@ -580,6 +580,28 @@ void vpy_end_allow_threads(void *state) {
 	PyEval_RestoreThread((PyThreadState *)state);
 }
 
+// vpy_gil_ensure acquires the GIL for a thread that does not hold it, and returns the
+// state to give back.
+//
+// The mirror of `vpy_allow_threads`, for the other direction: a thread V created with
+// `spawn`, or a callback from a C library, holds no Python thread state at all, so there
+// is nothing to release and everything to acquire. `PyGILState_Ensure` is a no-op when the
+// calling thread already holds the GIL, so a function may call it defensively.
+//
+// The state is CPython's own enum, which V has no name for, so it travels as an int.
+int vpy_gil_ensure(void) {
+	return (int)PyGILState_Ensure();
+}
+
+// vpy_gil_release gives back the state `vpy_gil_ensure` returned.
+//
+// Paired exactly once per acquisition. Releasing a state twice, or one from another
+// thread, corrupts the interpreter the same way an unbalanced
+// `vpy_allow_threads`/`vpy_end_allow_threads` pair does.
+void vpy_gil_release(int state) {
+	PyGILState_Release((PyGILState_STATE)state);
+}
+
 // vpy_mod_gil_not_used returns the `Py_MOD_GIL_NOT_USED` slot value.
 //
 // Through an accessor because it is a macro, and because it only exists where the

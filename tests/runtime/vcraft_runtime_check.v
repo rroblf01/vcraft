@@ -12,6 +12,7 @@ module vcraft_runtime_check
 
 import vcraft
 
+
 @[export: 'PyInit_vcraft_runtime_check']
 fn pyinit_vcraft_runtime_check() voidptr {
 	vcraft.init_state()
@@ -34,6 +35,8 @@ fn pyinit_vcraft_runtime_check() voidptr {
 		'sum_all(values)')
 	m.add_function_owned('sum_callback', voidptr(sum_callback_trampoline), vcraft.meth_fastcall,
 		'sum_callback(callee)')
+	m.add_function_owned('call_from_thread', voidptr(call_from_thread_trampoline),
+		vcraft.meth_fastcall, 'call_from_thread(callee)')
 	m.add_function_owned('export_squares', voidptr(export_squares_trampoline),
 		vcraft.meth_fastcall, 'export_squares(n)')
 	m.add_function_owned('layout', voidptr(layout_trampoline), vcraft.meth_noargs,
@@ -179,6 +182,71 @@ fn sum_callback_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	if vcraft.error_is_set() {
 		// `bytes_view` leaves CPython's own TypeError pending; returning a value with an
 		// exception set is a SystemError, so the null pointer is the answer.
+		return unsafe { nil }
+	}
+	return vcraft.to_py_int(result).ptr
+}
+
+// call_from_thread calls `callee()` from a thread V created, and returns what it produced.
+//
+// A `spawn`ed thread holds no Python thread state, so this is exactly what
+// `vcraft.with_gil` exists for: without it the call is undefined behaviour, with it the
+// GIL is acquired for the block and given back on the way out. The result travels back on
+// a channel, which is a reference type and the one thing `spawn` accepts without an
+// argument dance.
+// call_from_thread calls `callee()` from a thread V created.
+//
+// A `spawn`ed thread holds no Python thread state, so this is exactly what
+// `vcraft.with_gil` exists for: without it the call is undefined behaviour, with it the
+// GIL is acquired for the block and given back on the way out. The answer travels on a
+// channel, a reference type, so nothing has to be shared mutably between the threads -
+// a closure capturing a `mut` local captures a copy and would report the initial value.
+fn thread_call_worker(callee voidptr, results chan int) {
+	vcraft.with_gil(fn [callee, results] () {
+		results <- thread_python_call(callee)
+	})
+}
+
+// thread_python_call is the Python work, so the GIL question stays in one place.
+fn thread_python_call(callee voidptr) int {
+	result := vcraft.call(callee, []voidptr{})
+	if result.is_null() {
+		// Dropped rather than left pending: the exception belongs to a thread that is
+		// about to end, and -101 is what the caller can act on.
+		vcraft.clear_error()
+		return -101
+	}
+	value := vcraft.from_py_int(result, 'result') or {
+		vcraft.clear_error()
+		-103
+	}
+	result.decref()
+	return value
+}
+
+fn call_from_thread(callee voidptr) int {
+	results := chan int{cap: 1}
+	spawn thread_call_worker(callee, results)
+	// The trampoline holds the GIL, and the thread this waits for needs the GIL to finish:
+	// waiting with it held is a deadlock, and these two lines are the pattern `with_gil`
+	// makes possible rather than the feature itself.
+	state := vcraft.allow_threads()
+	value := <-results
+	vcraft.end_allow_threads(state)
+	return value
+}
+
+fn call_from_thread_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('call_from_thread', 1, int(nargs))
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	callee := vcraft.require_voidptr_arg(args, 0, 'call_from_thread', 'callee')
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	result := call_from_thread(callee)
+	if vcraft.error_is_set() {
 		return unsafe { nil }
 	}
 	return vcraft.to_py_int(result).ptr

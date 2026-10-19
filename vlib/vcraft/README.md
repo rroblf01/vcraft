@@ -350,6 +350,54 @@ capsule as an opaque `voidptr` and calls `handle_data` itself. CPython calls the
 with the capsule object rather than the stored pointer, so the destructor has to call
 `handle_data` to get its pointer back before freeing it.
 
+A capsule is also how a class owns native state, because a field cannot hold a pointer the
+collector would have to keep alive. Store the capsule in a `@[vc_ref]` field: the field
+holds an owned reference, the generated `tp_dealloc` drops it, and the capsule's destructor
+runs then, on whatever the pointer was. The `new_box`/`box_free` pair in the top-level
+README is the whole idiom. What must not happen is the other shape - a bare `voidptr` field,
+or a `@[vc_field]` one - because nothing in the object's memory is scanned by V's collector,
+and an allocation behind such a field is freed under the class while the class still holds
+the pointer to it.
+
+## Calling into C: the declarations, the widths and the member names
+
+V emits no prototype for a `C.` call, and an `#include` does not change that: each function
+has to be declared, and the declaration is what decides how the call is compiled.
+
+```v
+#include <sys/socket.h>
+#include <unistd.h>
+
+fn C.accept4(fd int, addr voidptr, addrlen voidptr, flags int) int
+fn C.recv(fd int, buf voidptr, len usize, flags int) isize
+fn C.send(fd int, buf voidptr, len usize, flags int) isize
+```
+
+Two rules follow from that, and both cost an afternoon when they are missed. The width has
+to be right - `recv` returns a `ssize_t`, and declaring it `int` truncates it silently on a
+64-bit build - and a macro is not visible at all, so `MSG_NOSIGNAL`, `POLLIN` or a
+`POLL*` flag has to be written out as its value with a comment saying which macro it is. An
+`#include` of the header that defines the function is still needed for the types.
+
+A C struct declared from V is matched to the *real* struct by name, so the fields have to
+carry the C names, not the ones the shape suggests:
+
+```v
+struct C.iovec {
+	iov_base voidptr
+	iov_len  usize
+}
+```
+
+`base`/`len` compile in V and fail in C with "struct iovec has no member named base". A
+struct with a union in it needs `[packed]` and a member wide enough to hold the union -
+`[packed] struct C.epoll_event { events u32 data u64 }` is 12 bytes and matches the kernel's
+layout, which is what makes `epoll` reachable from V.
+
+One V syntax trap belongs here too: `[]voidptr{a, b}` in code you write yourself is rejected
+("array initializer elements must use square brackets"), so an argument array for
+`vcraft.call` is built with `<<` into a `mut args := []voidptr{cap: n}`.
+
 ## Inherited state is published, not reachable from the receiver
 
 A subclass's state is the base's state followed by the subclass's own struct, all in
@@ -487,6 +535,37 @@ panic unwinds straight into a restore of the handle that is still set. An unbala
 pair leaves the GIL count wrong and crashes the next thread switch inside CPython --
 found the hard way, as a segfault in `PyErr_Occurred` with nothing in the frame
 pointing back at the missing re-acquire.
+
+## Acquiring the GIL from a thread V created
+
+`allow_threads` is the way out; `gil_ensure`/`gil_release` are the way in, and `with_gil`
+pairs them around a block. A thread V made with `spawn`, or a callback from a C library,
+holds no Python thread state at all: `vcraft.call`, `to_py_*` and every `PyObj` need the
+GIL, and nothing in V can hand it over. `PyGILState_Ensure` is a no-op when the calling
+thread already holds the GIL, so a function may call it defensively rather than knowing
+which thread it is on:
+
+```v
+spawn fn (callee voidptr, results chan int) {
+	vcraft.with_gil(fn [callee, results] () {
+		results <- work_with_python(callee)
+	})
+}(callee, results)
+```
+
+The block is the whole point: the `defer` gives the GIL back on the way out, panic
+included, which is what a hand-written pair does not do. Two things it does not change:
+`@[vc_nogil]` code still may not touch Python, and a thread that holds the GIL and waits
+for a thread that needs it deadlocks. Waiting has to release first:
+
+```v
+saved := vcraft.allow_threads()
+answer := <-results
+vcraft.end_allow_threads(saved)
+```
+
+That pair is also the reason `with_gil` exists rather than being sugar: a worker V starts
+is only reachable if its caller steps out of the way of the GIL first.
 
 ## The state chain is per-thread because of `@[vc_nogil]`
 

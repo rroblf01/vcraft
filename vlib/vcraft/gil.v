@@ -66,3 +66,39 @@ pub fn end_allow_threads(state voidptr) {
 		C.vpy_end_allow_threads(state)
 	}
 }
+
+// gil_ensure acquires the GIL for a thread that does not hold it, and returns the state to
+// give back with `gil_release`.
+//
+// The other direction from `allow_threads`, and the one that makes a V-owned thread
+// possible. A thread V created with `spawn` holds no Python thread state: calling into
+// Python from it - `vcraft.call`, `to_py_*`, a `PyObj` - needs the GIL, and nothing in V
+// can hand it over. `PyGILState_Ensure` is a no-op when the calling thread already holds
+// the GIL, so a function may call it defensively rather than asserting which thread it is
+// on.
+//
+// The state is CPython's own enum and travels as an int, because V has no name for it and
+// a `[faulty]` void pointer would invite someone to invent one.
+pub fn gil_ensure() int {
+	return C.vpy_gil_ensure()
+}
+
+// gil_release gives back the state `gil_ensure` returned. Exactly once per acquisition.
+pub fn gil_release(state int) {
+	C.vpy_gil_release(state)
+}
+
+// with_gil runs `f` holding the GIL, acquiring it for the duration when the calling thread
+// does not already have it.
+//
+// This is the shape a V-created thread wants: everything Python-touching goes inside the
+// block, and the defer gives the GIL back on the way out, panic included. It does not make
+// `@[vc_nogil]` safe to call Python from - a released call still may not touch Python -
+// it is the way back in.
+pub fn with_gil(f fn ()) {
+	state := gil_ensure()
+	defer {
+		gil_release(state)
+	}
+	f()
+}
