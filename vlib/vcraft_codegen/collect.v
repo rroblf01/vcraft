@@ -190,6 +190,8 @@ fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 		raw:           attr_raw in block.attrs
 		nogil:         attr_nogil in block.attrs
 		export_buffer: attr_memoryview in block.attrs
+		opaque:         attr_opaque in block.attrs
+		opaque_destructor: (block.args[attr_opaque] or { '' }).trim("'\"")
 		params:        params_of(ast, find_fn_node(ast, decl.name, decl.receiver) or {
 			flat.empty_node
 		}, is_method)
@@ -1938,6 +1940,23 @@ pub fn default_fits(strategy Strategy, value string) bool {
 
 // validate rejects a declaration the generator cannot honour, with a position.
 fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
+	if f.opaque {
+		if lookup(f.v_ret) != .pyobj || f.v_ret.trim_space() != 'voidptr' {
+			report(mut p, path, decl,
+				'error: `@[vc_opaque] ${decl.name}` returns `${f.v_ret}`, but an opaque result must be a `voidptr`: a capsule carries a pointer, not a value')
+			return
+		}
+		if f.raw {
+			report(mut p, path, decl,
+				'error: `@[vc_raw]` and `@[vc_opaque]` cannot be combined on `${decl.name}`; raw already means "the wrapper does not marshal", which is the opposite of wrapping the result in a capsule')
+			return
+		}
+		if f.export_buffer {
+			report(mut p, path, decl,
+				'error: `@[vc_memoryview]` and `@[vc_opaque]` cannot be combined on `${decl.name}`; a memoryview is a typed view of native memory, a capsule an untyped pointer')
+			return
+		}
+	}
 	for name in f.unknown_defaults {
 		report(mut p, path, decl,
 			'error: `@[vc_defaults]` on `${decl.name}` names `${name}`, which is not one of its parameters')

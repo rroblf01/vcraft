@@ -946,7 +946,15 @@ pub fn emit_trampoline(f Func) string {
 // A raw result is a `voidptr` handed over borrowed, so a reference of the caller's own
 // is taken on it. Everything else is a real V value that has to be boxed. `v_type` is
 // the declared value type, which a sequence needs to choose how each element is boxed.
-pub fn return_expr(strategy Strategy, value string, raw bool, v_type string, export_buffer bool) string {
+pub fn return_expr(strategy Strategy, value string, raw bool, v_type string, export_buffer bool,
+	opaque bool, destructor string) string {
+	if opaque {
+		// A native pointer Python does not own: a capsule, never the bare pointer. The
+		// destructor is the one the annotation named, or nothing when the pointer lives as
+		// long as the process (an SSL context, a global pool).
+		drop := if destructor.len > 0 { 'voidptr(${destructor})' } else { 'unsafe { nil }' }
+		return 'vcraft.new_handle(${value}, ${drop}).ptr'
+	}
 	if raw {
 		// A raw function hands back a borrowed pointer, so the wrapper takes the
 		// reference itself. Without this the caller receives a pointer it never
@@ -1010,7 +1018,7 @@ fn emit_tail_return(f Func, ret Strategy, candidates string, raw bool) string {
 	if f.instance_result.len > 0 {
 		return '\treturn ${instance_result_expr(f, 'result', candidates)}\n'
 	}
-	return '\treturn ${return_expr(ret, 'result', raw, f.v_ret, f.export_buffer)}\n'
+	return '\treturn ${return_expr(ret, 'result', raw, f.v_ret, f.export_buffer, f.opaque, f.opaque_destructor)}\n'
 }
 
 // composite_boxed_expr boxes an optional, a map or a fixed-size array as an expression.

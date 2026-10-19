@@ -41,6 +41,13 @@ pub const attr_buffer_typed = 'vc_buffer_typed'
 // slice must be native-backed (`buffer_new_*`), because the view takes ownership of it.
 pub const attr_memoryview = 'vc_memoryview'
 
+// attr_opaque marks a function whose `voidptr` result is an opaque native pointer rather
+// than a borrowed `PyObject`. The wrapper hands it to Python in a capsule, which is the
+// only way a pointer Python does not own can travel safely; an unannotated `voidptr`
+// result is a `PyObject *` and returning anything else through it crashes the interpreter.
+// `@[vc_opaque: 'free_fn']` names the capsule's destructor.
+pub const attr_opaque = 'vc_opaque'
+
 pub const attr_property = 'vc_property'
 
 pub const attr_static = 'vc_static'
@@ -243,6 +250,7 @@ pub const known_attrs = [
 	attr_buffer,
 	attr_buffer_typed,
 	attr_handle,
+	attr_opaque,
 	attr_memoryview,
 	attr_property,
 	attr_static,
@@ -297,6 +305,12 @@ pub mut:
 	raw bool
 	// nogil marks a pure V function the wrapper may call with the GIL released.
 	nogil bool
+	// opaque marks a function whose `voidptr` result is a native pointer, not a borrowed
+	// `PyObject`: the wrapper hands it to Python in a capsule.
+	opaque bool
+	// opaque_destructor is the V function `@[vc_opaque: 'name']` names as the capsule's
+	// destructor, empty when the pointer outlives the capsule (a process-wide context).
+	opaque_destructor string
 	// export_buffer marks a function whose `[]T` result is returned as a zero-copy
 	// `memoryview` over native-backed memory, rather than boxed as a list. The slice's
 	// backing must come from `buffer_new_*`: the view takes ownership of it.

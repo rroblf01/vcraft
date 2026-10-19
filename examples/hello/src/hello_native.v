@@ -929,3 +929,39 @@ pub fn (b &OwnedBox) owned_is_set() bool {
 pub fn (mut b OwnedBox) release_now() {
 	b.owned.release()
 }
+
+// ---- an opaque pointer as a capsule -------------------------------------
+
+// new_opaque_box allocates an int and returns it as an opaque handle.
+//
+// The `voidptr` result would otherwise be read as a borrowed `PyObject *`, so the wrapper
+// wraps it in a capsule instead; `@[vc_opaque: 'name']` names the destructor, and without
+// one the pointer would live as long as the process.
+@[vc_fn]
+@[vc_opaque: 'opaque_box_free']
+pub fn new_opaque_box(value int) voidptr {
+	p := vcraft.native_alloc(usize(sizeof(int)))
+	if p == unsafe { nil } {
+		panic('memory allocation failure')
+	}
+	unsafe {
+		*(&int(p)) = value
+	}
+	return p
+}
+
+// opaque_box_free releases an opaque box when its capsule is collected.
+fn opaque_box_free(capsule voidptr) {
+	handle_releases++
+	vcraft.native_free(vcraft.handle_data(capsule))
+}
+
+// opaque_box_value reads the int an opaque handle carries.
+@[vc_fn]
+pub fn opaque_box_value(handle voidptr) int {
+	p := vcraft.handle_data(handle)
+	if p == unsafe { nil } {
+		return 0
+	}
+	return unsafe { *(&int(p)) }
+}

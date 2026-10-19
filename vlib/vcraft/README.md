@@ -392,8 +392,29 @@ A `voidptr` *result* is not a way to hand back a pointer. The type table reads `
 `pyobj`, which means "the pointer to a Python object, passed through untouched" - the
 borrowed `PyObject *` side of the fixed signature - so a function returning an `SSL_CTX *`
 or a struct of pointers through one hands CPython a pointer to memory that is not an object,
-and the first Python operation on the value follows it into a segfault. An opaque pointer
-travels in a capsule (`new_handle`), or it does not travel to Python at all.
+and the first Python operation on the value follows it into a segfault.
+
+`@[vc_opaque]` says that the result is the other thing: the wrapper wraps it in a capsule
+instead of passing it through, and `@[vc_opaque: 'free_fn']` names the capsule's destructor,
+which runs when Python collects the handle. A `voidptr` *parameter* is left alone - it stays
+the borrowed object - because unwrapping one the caller handed over is a decision about the
+callee's contract that an annotation on the result cannot make. A function that receives a
+capsule calls `handle_data` on it, which is one line at the point of use and says which
+parameter is a handle:
+
+```v
+// new_context loads what a connection needs and hands it over as an opaque handle.
+@[vc_fn]
+@[vc_opaque: 'context_free']
+pub fn new_context(path string) voidptr {
+	return load(path)
+}
+
+// context_free releases the handle when Python collects it.
+fn context_free(capsule voidptr) {
+	unload(vcraft.handle_data(capsule))
+}
+```
 
 ## Capsules
 

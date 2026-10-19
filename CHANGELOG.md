@@ -9,6 +9,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ### Added
 
+- **`@[vc_opaque]`, for a function that returns a native pointer.** A `voidptr` result reads
+  as `pyobj` - a borrowed `PyObject *` - so returning a C pointer through one is a pointer
+  CPython treats as an object, and it crashes the interpreter. The annotation makes the
+  wrapper build a capsule instead, and `@[vc_opaque: 'free_fn']` names the destructor that
+  runs when Python collects the handle. A `voidptr` parameter is unchanged: unwrapping one
+  is the callee's contract, and `handle_data` at the point of use says which parameter is a
+  handle.
 - **`@[vc_handle]` and `vcraft.Owned`, for native state a class owns.** A field holds the
   pointer together with the function that releases it, and the generated `tp_dealloc` calls
   it, so the allocation's lifetime is the instance's. A `voidptr` field could not do this:

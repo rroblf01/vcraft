@@ -187,6 +187,17 @@ def box_value(handle: Any) -> int: ...
 """handle_release_count reports how many handles have been released."""
 def handle_release_count() -> int: ...
 
+"""new_opaque_box allocates an int and returns it as an opaque handle.
+
+	The `voidptr` result would otherwise be read as a borrowed `PyObject *`, so the wrapper
+	wraps it in a capsule instead; `@[vc_opaque: 'name']` names the destructor, and without
+	one the pointer would live as long as the process.
+"""
+def new_opaque_box(value: int) -> Any: ...
+
+"""opaque_box_value reads the int an opaque handle carries."""
+def opaque_box_value(handle: Any) -> int: ...
+
 """A counter with state.
 
 	Fields must be scalars. A V string inside a Python object would be a pointer

@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 32,
+            glue.count("add_function_owned") == 34,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -833,6 +833,19 @@ def main() -> int:
     del box
     gc.collect()
     t.equal("dealloc does not release it a second time", h.handle_release_count(), before + 2)
+
+    print("an opaque result comes back as a capsule")
+    # A `voidptr` result is a borrowed `PyObject *` unless the function says otherwise, and
+    # returning a native pointer through one crashes the interpreter. `@[vc_opaque]` is the
+    # annotation that makes the wrapper build a capsule instead.
+    t.check("the wrapper builds a capsule", "vcraft.new_handle(" in glue)
+    releases = h.handle_release_count()
+    opaque = h.new_opaque_box(11)
+    t.check("the result is a capsule", type(opaque).__name__ == "PyCapsule", type(opaque))
+    t.equal("the pointer round-trips through the capsule", h.opaque_box_value(opaque), 11)
+    del opaque
+    gc.collect()
+    t.equal("the named destructor ran", h.handle_release_count(), releases + 1)
     t.check("the constructor binds its arguments",
             "vcraft.bind_new_args(raw_args, kwds, unsafe { voidptr(&bound[0]) }" in glue)
     # The slots are a fixed array on the stack and the parameter names are a module
