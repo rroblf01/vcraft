@@ -504,6 +504,14 @@ reference on every path. A V slice cannot be built from a pointer by indexing --
 `(&u8(p))[..n]` is rejected -- so the slice is assembled by writing `.data` directly,
 which is the one field a slice exposes for exactly this.
 
+Generated glue acquires a view for a `[]u8` *argument*. Hand-written V that gets a
+bytes-like object back from a call - `vcraft.call` returning what an application built -
+uses `bytes_view`, which is the object-shaped counterpart of `bytes_arg`: exact `bytes` is
+aliased with no view at all, anything else goes through a view that pins the exporter, and
+`release` gives it back. For an exact-`bytes` alias nothing but the caller keeps the
+object alive, so a reference to it has to be held for as long as the slice is used; a
+server that writes a body straight to a socket is the case it exists for.
+
 ## Iterators are two slots and a pair rule
 
 `tp_iter` returns the instance itself after running the `@[vc_iter]` method for its
