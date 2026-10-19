@@ -113,6 +113,14 @@ def main() -> int:
     t.equal("sum_all over a tuple", m.sum_all((5, 5)), 10)
     t.equal("sum_all empty", m.sum_all([]), 0)
 
+    print("bytes_of reads a bytes-like value a call handed back, without copying")
+    t.equal("an exact bytes result", m.sum_callback(lambda: b"hello"), sum(b"hello"))
+    t.equal("a bytearray result", m.sum_callback(lambda: bytearray(b"hello")), sum(b"hello"))
+    t.equal("a memoryview result", m.sum_callback(lambda: memoryview(b"hello")), sum(b"hello"))
+    t.equal("a zero-length result", m.sum_callback(lambda: b""), 0)
+    t.raises("a non-bytes result is refused", TypeError, "bytes-like",
+             lambda: m.sum_callback(lambda: "str"))
+
     print("a native buffer exported as a memoryview")
     mv = m.export_squares(4)
     t.check("export_squares returns a memoryview", isinstance(mv, memoryview), type(mv))

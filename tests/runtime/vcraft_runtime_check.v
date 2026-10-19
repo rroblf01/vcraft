@@ -32,6 +32,8 @@ fn pyinit_vcraft_runtime_check() voidptr {
 		'identity(obj)')
 	m.add_function_owned('sum_all', voidptr(sum_all_trampoline), vcraft.meth_fastcall,
 		'sum_all(values)')
+	m.add_function_owned('sum_callback', voidptr(sum_callback_trampoline), vcraft.meth_fastcall,
+		'sum_callback(callee)')
 	m.add_function_owned('export_squares', voidptr(export_squares_trampoline),
 		vcraft.meth_fastcall, 'export_squares(n)')
 	m.add_function_owned('layout', voidptr(layout_trampoline), vcraft.meth_noargs,
@@ -140,6 +142,46 @@ fn maybe_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 		return vcraft.to_py_int(42).ptr
 	}
 	return vcraft.to_py_none().ptr
+}
+
+// sum_callback calls `callee()` and sums the bytes it returns, which is what puts
+// `bytes_view` through both of its paths: the exact-`bytes` alias, which needs no view, and
+// the buffer view a `bytearray` or a `memoryview` goes through.
+fn sum_callback(callee voidptr) int {
+	empty := []voidptr{}
+	result := vcraft.call(callee, empty)
+	if result.is_null() {
+		return -1
+	}
+	view := vcraft.bytes_view(result, 'result') or {
+		result.decref()
+		return -1
+	}
+	mut total := 0
+	for byte in view.data {
+		total += int(byte)
+	}
+	view.release()
+	result.decref()
+	return total
+}
+
+fn sum_callback_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('sum_callback', 1, int(nargs))
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	callee := vcraft.require_voidptr_arg(args, 0, 'sum_callback', 'callee')
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	result := sum_callback(callee)
+	if vcraft.error_is_set() {
+		// `bytes_view` leaves CPython's own TypeError pending; returning a value with an
+		// exception set is a SystemError, so the null pointer is the answer.
+		return unsafe { nil }
+	}
+	return vcraft.to_py_int(result).ptr
 }
 
 fn identity_trampoline(self voidptr, args voidptr, nargs isize) voidptr {

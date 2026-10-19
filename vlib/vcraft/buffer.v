@@ -32,6 +32,10 @@ module vcraft
 // which is immutable and owns its storage, so there is nothing to alias into. A
 // zero-copy return would need a `memoryview` over V memory with a lifetime the
 // collector cannot give it.
+//
+// The one exception is reading a bytes-like object Python *handed back* from a call:
+// `bytes_view` aliases it the same way an argument is aliased, which is what a server needs
+// to write a large body without copying it twice on the way out.
 
 // buffer_view acquires a buffer-protocol view of positional argument `i`.
 //
@@ -45,16 +49,31 @@ pub fn buffer_view(argv voidptr, i int, func string, name string) !voidptr {
 		raise(.type_error, '${func}() missing required argument: ${name}')
 		return error('missing ${name}')
 	}
+	return buffer_view_of(obj, '${func}() argument ${name}')
+}
+
+// buffer_view_of acquires a buffer-protocol view of any object, which is what `buffer_view`
+// does for a positional argument.
+//
+// It is the shape a hand-written extension needs for an object that did not arrive as an
+// argument: a value that came back from a call. The view holds a reference on the exporter,
+// so `buffer_release` is what lets the exporter go. Fails with the `TypeError` CPython sets
+// itself when the object is not bytes-like.
+pub fn buffer_view_of(obj PyObj, name string) !voidptr {
+	if obj.is_null() {
+		raise(.type_error, '${name} is not bytes-like')
+		return error('${name} is not bytes-like')
+	}
 	unsafe {
 		view := C.vpy_buffer_new()
 		if view == nil {
-			raise(.memory_error, '${func}() cannot view argument: ${name}')
+			raise(.memory_error, 'cannot view ${name}')
 			return error('cannot view ${name}')
 		}
 		// CPython sets the exception itself on failure -- "a bytes-like object is
 		// required" -- so there is nothing to raise here, only an error value to
-		// return so the wrapper takes its `or` branch. The view is zeroed on
-		// allocation, so releasing it after a failed acquisition finds nothing.
+		// return. The view is zeroed on allocation, so releasing it after a failed
+		// acquisition finds nothing.
 		if C.vpy_buffer_get(obj.ptr, view) != 0 {
 			C.vpy_buffer_release(view)
 			return error('${name} is not bytes-like')
@@ -150,6 +169,52 @@ pub fn bytes_arg(argv voidptr, i int, func string, name string) !BytesArg {
 pub fn (b BytesArg) release() {
 	if b.view != unsafe { nil } {
 		unsafe { C.vpy_buffer_release(b.view) }
+	}
+}
+
+// bytes_view reads any bytes-like object as a borrowed `[]u8`, without copying.
+//
+// `bytes_arg` is the argument-shaped version of this and indexes into a vectorcall tuple;
+// this is the one for a value that came back from a call, which is just an object. Exact
+// `bytes` is aliased directly -- no view, no acquisition -- and anything else bytes-like
+// goes through a buffer view, whose reference pins the exporter. `bytes_of`, in cstring.v,
+// is the lower-level exact-`bytes` pointer+length with no view at all.
+//
+// The slice aliases memory the caller does not own, so two rules are absolute. For an
+// exact `bytes` alias nothing but the caller keeps the object alive, so a reference to it
+// must be held for as long as the slice is used; a view, by contrast, holds its own. And
+// `release` has to run on every path, success or failure.
+//
+// Hand-written V is the audience: a `[]u8` parameter already crosses without copying, but
+// a large buffer that Python built and handed back (`await request.body()`, a cached
+// response) otherwise costs a copy into a V `string` and another into a `[]u8` before the
+// server can write it. Generated glue never needs this.
+pub fn bytes_view(obj PyObj, name string) !BytesArg {
+	if obj.is_null() {
+		raise(.type_error, '${name} is not bytes-like')
+		return error('${name} is not bytes-like')
+	}
+	if C.vpy_is_exact_bytes(obj.ptr) != 0 {
+		unsafe {
+			mut buf := voidptr(nil)
+			mut n := isize(0)
+			if C.PyBytes_AsStringAndSize(obj.ptr, voidptr(&buf), voidptr(&n)) != 0 {
+				return error('${name} is not bytes-like')
+			}
+			mut exact := []u8{}
+			exact.data = buf
+			exact.len = int(n)
+			exact.cap = int(n)
+			return BytesArg{
+				data: exact
+				view: nil
+			}
+		}
+	}
+	view := buffer_view_of(obj, name)!
+	return BytesArg{
+		data: buffer_bytes(view)
+		view: view
 	}
 }
 
