@@ -388,6 +388,13 @@ is refused: exposing a handle would hand Python a pointer whose owner is the cla
 transport is driving. When Python itself has to see the handle, a capsule in a `@[vc_ref]`
 field does the same job at the cost of a Python object per handle; see Capsules.
 
+A `voidptr` *result* is not a way to hand back a pointer. The type table reads `voidptr` as
+`pyobj`, which means "the pointer to a Python object, passed through untouched" - the
+borrowed `PyObject *` side of the fixed signature - so a function returning an `SSL_CTX *`
+or a struct of pointers through one hands CPython a pointer to memory that is not an object,
+and the first Python operation on the value follows it into a segfault. An opaque pointer
+travels in a capsule (`new_handle`), or it does not travel to Python at all.
+
 ## Capsules
 
 `new_handle` wraps an arbitrary native pointer in an anonymous `PyCapsule` with a

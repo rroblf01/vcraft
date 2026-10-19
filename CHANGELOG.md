@@ -41,6 +41,10 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   without a single notice whether or not the build succeeds.
 - `buffer_resize_backing` named a local `copy`, which shadows a builtin function and made V
   say so on every compile.
+- The README says what a `voidptr` result actually is. It reads as `pyobj` - the borrowed
+  `PyObject *` of a fixed signature - so returning a C pointer through one is not an opaque
+  handle but a pointer CPython will treat as an object and follow into a segfault. The
+  mistake is easy to make and the symptom points nowhere near the return statement.
 
 ## [1.4.5] - 2026-10-18
 
