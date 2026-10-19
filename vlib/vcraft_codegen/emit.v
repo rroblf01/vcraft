@@ -486,7 +486,11 @@ fn emit_bind_globals(f Func) string {
 // builds a slot array either.
 fn emit_bind(f Func) string {
 	n := f.params.len
-	return '\tmut args := raw_args\n' +
+	// `unsafe` because V reports `raw_args` as immutable otherwise, and it prints that
+	// notice once per wrapper on every compile that has an error to report: a project with
+	// eight exported functions gets eight lines of noise stacked above the one diagnostic
+	// the build is actually about.
+	return '\tmut args := unsafe { raw_args }\n' +
 		'\tif kwnames != unsafe { nil } {\n' +
 		'\t\tbound := []voidptr{len: ${n}, init: unsafe { nil }}\n' +
 		'\t\tif !vcraft.bind_args(raw_args, nargs, kwnames, bound.data, g_vc_names_${f.trampoline}, g_vc_optional_${f.trampoline}, ${vstring_literal(f.name)}) {\n' +
@@ -577,7 +581,7 @@ fn python_default(param Param) string {
 pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
 	signature := if f.params.len == 0 {
-		'self voidptr, args voidptr'
+		'self voidptr, _args voidptr'
 	} else {
 		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
@@ -671,9 +675,9 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 pub fn emit_static_trampoline(f Func) string {
 	mut w := new_builder()
 	signature := if f.params.len == 0 {
-		'self voidptr, args voidptr'
+		'_self voidptr, _args voidptr'
 	} else {
-		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
+		'_self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 	if f.params.len > 0 {
@@ -745,7 +749,7 @@ pub fn emit_static_trampoline(f Func) string {
 // argument tuple, and it must take no arguments.
 pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
-	w.write_string('fn ${f.trampoline}(self voidptr, closure voidptr) voidptr {\n')
+	w.write_string('fn ${f.trampoline}(self voidptr, _closure voidptr) voidptr {\n')
 	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
 	ret := lookup(f.v_ret)
@@ -824,9 +828,9 @@ fn local_name(i int) string {
 pub fn emit_trampoline(f Func) string {
 	mut w := new_builder()
 	signature := if f.params.len == 0 {
-		'self voidptr, args voidptr'
+		'_self voidptr, _args voidptr'
 	} else {
-		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
+		'_self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 

@@ -173,6 +173,18 @@ def _generator() -> Path:
     return Path(str(out) + EXE)
 
 
+def generate(project: Path | str, module: str) -> None:
+    """Run the code generator over `project`, writing its glue and stub.
+
+    Split out of `build_example` so a suite can get as far as the glue and then compile it
+    itself - the only way to test what a build that is *meant* to fail prints.
+    """
+    gen = _generator()
+    result = _run([gen, project, module, module])
+    if result.returncode != 0:
+        raise SystemExit(f"the generator failed:\n{result.stdout}\n{result.stderr}")
+
+
 def build_example(example: str = "hello", module: str = "hello_native") -> None:
     """Build `examples/<example>` into `<project>/python/<module><suffix>`."""
     if not WINDOWS:

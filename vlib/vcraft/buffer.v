@@ -292,9 +292,9 @@ fn buffer_resize_backing(old voidptr, nbytes usize) !voidptr {
 	if p == unsafe { nil } {
 		return raise_domain(.memory_error, 'cannot grow a buffer')
 	}
-	copy := if old_cap < int(nbytes) { old_cap } else { int(nbytes) }
-	if copy > 0 {
-		C.vpy_memcpy(unsafe { voidptr(&u8(p) + native_header) }, old, usize(copy))
+	carry := if old_cap < int(nbytes) { old_cap } else { int(nbytes) }
+	if carry > 0 {
+		C.vpy_memcpy(unsafe { voidptr(&u8(p) + native_header) }, old, usize(carry))
 	}
 	C.PyObject_Free(native_base(old))
 	unsafe {

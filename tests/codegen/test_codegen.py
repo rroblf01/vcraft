@@ -807,7 +807,7 @@ def main() -> int:
             "fn vcraft_generated__getbuffer_vector(self voidptr, view voidptr, flags int) int {"
             in glue)
     t.check("the releasebuffer slot is emitted",
-            "fn vcraft_generated__releasebuffer_vector(self voidptr, view voidptr) int {"
+            "fn vcraft_generated__releasebuffer_vector(self voidptr, _view voidptr) int {"
             in glue)
     t.check("the constructor binds its arguments",
             "vcraft.bind_new_args(raw_args, kwds, unsafe { voidptr(&bound[0]) }" in glue)
@@ -989,6 +989,43 @@ def main() -> int:
     finally:
         import shutil
         shutil.rmtree(mirror_tmp, ignore_errors=True)
+
+    print("the generated glue compiles without telling V about its own habits")
+    # The glue used to bind its arguments with `mut args := raw_args`, and to declare the
+    # parameters a wrapper does not read (`self` on a module function, `closure` on a
+    # property, `view` on `bf_releasebuffer`) under names V then reports. A notice costs
+    # nothing on its own; a page of them above the one diagnostic a failing build is about
+    # costs a reader the diagnostic. The example carries a class, a property and a native
+    # buffer, so every wrapper shape is compiled, and it is broken on purpose so the failed
+    # build prints everything it would print when it matters.
+    broken_tmp = Path(tempfile.mkdtemp(prefix="vcraft-broken-"))
+    try:
+        shutil.copytree(PROJECT / "src", broken_tmp / "src")
+        shutil.copy(PROJECT / "v.mod", broken_tmp / "v.mod")
+        source = broken_tmp / "src" / "hello_native.v"
+        source.write_text(source.read_text() +
+                          "\n// Broken on purpose: the build has to fail for the compiler\n"
+                          "// to print anything at all.\n"
+                          "@[vc_fn]\npub fn broken_on_purpose() int {\n"
+                          "\treturn 'not an int'\n}\n")
+        vcraft_build.generate(broken_tmp, PACKAGE)
+        t.check("the generator still writes the glue for a broken project",
+                (broken_tmp / "src" / "_vcraft_generated.v").exists())
+        proc = vcraft_build.run_v(
+            ["-enable-globals", "-shared", "-o", broken_tmp / "out",
+             "-path", f"{ROOT}/vlib|@vlib",
+             "-cflags", f"-I{vcraft_build.python_include()}",
+             *vcraft_build.link_flags(PACKAGE), broken_tmp])
+        output = proc.stdout + proc.stderr
+        t.check("the compile fails", proc.returncode != 0, output[-200:])
+        t.check("the error is reported", "error:" in output, output[-300:])
+        # Only the glue: the example's own source has a couple of style notices of its own,
+        # and what a vcraft build is judged on is what vcraft writes.
+        glue_notices = [line for line in output.splitlines()
+                        if "notice:" in line and "_vcraft_generated.v" in line]
+        t.check("the glue reports no notices", not glue_notices, str(glue_notices[:3]))
+    finally:
+        shutil.rmtree(broken_tmp, ignore_errors=True)
 
     print("layout is checked at import")
     # `check_layout` turns a drifted mirror into a named SystemError instead of a

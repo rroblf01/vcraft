@@ -125,7 +125,7 @@ fn emit_field_accessors(p Project, c Class) string {
 	}
 	mut w := new_builder()
 	for f in c.scalar_fields() {
-		w.write_string('fn vcraft_generated__get_${c.key}_${f.name}(self voidptr, closure voidptr) voidptr {\n')
+		w.write_string('fn vcraft_generated__get_${c.key}_${f.name}(self voidptr, _closure voidptr) voidptr {\n')
 		w.write_string(emit_state_pointer(c))
 		w.write_string(emit_enter_state(p, c))
 		if f.is_reference() {
@@ -777,7 +777,7 @@ fn emit_class_buffer_slots(p Project, c Class) string {
 	}
 	w.write_string('\tif rc == 0 {\n\t\tvcraft.buffer_views_incr(field.data)\n\t}\n')
 	w.write_string('\treturn rc\n}\n\n')
-	w.write_string('fn vcraft_generated__releasebuffer_${c.key}(self voidptr, view voidptr) int {\n')
+	w.write_string('fn vcraft_generated__releasebuffer_${c.key}(self voidptr, _view voidptr) int {\n')
 	w.write_string(emit_state_pointer(c))
 	w.write_string('\tvcraft.buffer_views_decr(state.' + access + '.data)\n')
 	w.write_string('\treturn 0\n}\n\n')
