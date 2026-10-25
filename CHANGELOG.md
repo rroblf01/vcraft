@@ -63,6 +63,15 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `[]u8`). `bytes_view` asserts the same borrow for a result; a server writing a large body
   straight to a socket measured 1 MB responses at 1459 req/s before and ~3400 after.
 
+- **`from_py_int_item`, `from_py_str_item` and `from_py_bytes_item`.** The argument readers
+  (`from_py_*_arg`) take a trampoline's `argv` pointer and an index; these take a tuple
+  or list that is already in hand, which is what a function that receives a sequence from
+  Python uses. They are borrowed, so they do not release the source, and they raise
+  `IndexError` when the index is out of range.
+- **`examples/async_callback`.** A minimal extension that calls a Python `async def` with
+  `vcraft.call_async` and drives it to completion, including the fast path, the slow path
+  and the exception-propagation case.
+
 ### Fixed
 
 - **A failed build no longer buries its error under a notice per wrapper.** The glue bound

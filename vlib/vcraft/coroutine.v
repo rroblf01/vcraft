@@ -96,12 +96,12 @@ pub fn run_coroutine(coro PyObj) PyObj {
 				loop.decref()
 				return value
 			}
-			C.PyErr_Restore(t.ptr, v.ptr, tb.ptr)
 			restore_marker(events, previous, loop)
 			if !previous.is_null() {
 				previous.decref()
 			}
 			loop.decref()
+			C.PyErr_Restore(t.ptr, v.ptr, tb.ptr)
 			return steal(unsafe { nil })
 		}
 		restore_marker(events, previous, loop)
@@ -205,12 +205,12 @@ pub fn run_coroutine(coro PyObj) PyObj {
 					return value
 				}
 				// Not StopIteration: restore the exception so it propagates.
-				C.PyErr_Restore(t.ptr, v.ptr, tb.ptr)
 				restore_marker(events, previous, loop)
 				if !previous.is_null() {
 					previous.decref()
 				}
 				loop.decref()
+				C.PyErr_Restore(t.ptr, v.ptr, tb.ptr)
 				return steal(unsafe { nil })
 			}
 			restore_marker(events, previous, loop)

@@ -78,6 +78,22 @@ the marshalled signature becomes `__text_signature__`, and the same source produ
 The full list, with the exact signatures each expects, is in the
 [annotation reference](../reference/annotations.md).
 
+
+## Zero-copy arguments and the syscalls pattern
+
+`bytes_arg` is the runtime helper that makes a `[]u8` parameter alias the argument
+without copying: an exact `bytes` costs nothing, anything else goes through a view that
+pins the exporter, and the slice must not outlive the call. It is the counterpart of
+`bytes_view` for results. The generated glue uses it for every `[]u8` parameter, so
+hand-written V only needs it when it reads a bytes-like object that Python returned.
+
+`@[vc_nogil]` applies to methods too, not just module functions: a method that only
+touches V state can run with the GIL released, and the receiver is a pointer into the
+instance's live state just like any other method. Use it together with `vcraft.released`
+for the syscalls pattern - a `@[vc_nogil]` function that does the blocking call, and
+V-only work wrapped in `released` around it - so a long operation does not stall every
+other Python thread. The block passed to `released` must not call Python.
+
 ## Next
 
 - [Type marshalling](types.md)

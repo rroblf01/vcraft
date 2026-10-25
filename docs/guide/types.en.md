@@ -56,3 +56,37 @@ type a `TypeError`. A field with no rule, at any depth, is a diagnostic.
 A `&T` where `T` is a `@[vc_class]` passes the instance itself, not a copy: a parameter
 hands the V function a pointer into the instance's live state, and a result is matched back
 to the instance it points into. See [Classes and properties](classes.md).
+
+## Zero-copy helpers
+
+The marshalling rules above copy. Three helpers exist for the hot path where a copy is
+not acceptable:
+
+- `vcraft.bytes_arg` (for a `[]u8` parameter) aliases the argument without copying: exact
+  `bytes` costs nothing, anything else goes through a view whose reference pins the
+  exporter. The slice must not outlive the call.
+- `vcraft.bytes_view` does the same for a bytes-like value Python *returned* from a call.
+  An exact `bytes` is aliased (the caller keeps the object alive for as long as the
+  slice is used); anything else goes through a view that pins the exporter. `release`
+  gives it back.
+- `vcraft.to_py_bytes_slice` is the other direction and copies, because Python `bytes`
+  owns immutable storage. A zero-copy return to Python is `@[vc_memoryview]`, which hands
+  the native-backed slice over as a writable `memoryview`.
+
+## GIL helpers
+
+- `vcraft.with_gil(fn () {})` acquires the GIL for a block and gives it back on every
+  path, panic included. Use it inside a V thread created with `spawn` before touching
+  Python.
+- `vcraft.released(fn () {})` is the mirror image: it runs a block with the GIL *released*,
+  for V-only work, and re-acquires it in a `defer`. The block must not call Python.
+- `vcraft.gil_ensure()` / `vcraft.gil_release(state)` are the manual pair, for the cases
+  the block forms cannot cover (a `poll` with a timeout, a choice between conditions).
+
+## Calling Python coroutines
+
+`vcraft.run_coroutine(coro)` and `vcraft.call_async(callee, args)` drive a Python coroutine
+to completion on the current thread. The fast path is a single `send(None)` (~1.8 us); the
+loop is only entered when the coroutine suspends. The GIL stays held for the whole call, so
+V can release it with `released` around V-only work, but the coroutine itself is not paused
+while V works. See `examples/async_callback` for the canonical use.

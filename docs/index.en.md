@@ -50,7 +50,14 @@ built on vcraft ([source](https://github.com/rroblf01/vqubit),
 
 ## Status
 
-1.5.0. The annotation vocabulary, the `vcraft.toml` keys and the CLI change only with a
+1.5.0. Highlights: `@[vc_handle]` for native state a class owns, `@[vc_opaque]` for
+pointers that travel as capsules (result and parameter), `vcraft.with_gil` / `released` /
+`gil_ensure` / `gil_release` for GIL control from V threads, `bytes_view` for zero-copy
+reads of bytes-like results, `to_py_str_list` / `to_py_bytes_list`, and `run_coroutine` /
+`call_async` to drive a Python coroutine from V. See the
+[changelog](https://github.com/rroblf01/vcraft/blob/main/CHANGELOG.md) for the full list.
+
+The annotation vocabulary, the `vcraft.toml` keys and the CLI change only with a
 deprecation period. See the [roadmap](https://github.com/rroblf01/vcraft/blob/main/ROADMAP.md)
 for what is left, and [`DECISIONS.md`](https://github.com/rroblf01/vcraft/blob/main/DECISIONS.md)
 for what was set aside and why.

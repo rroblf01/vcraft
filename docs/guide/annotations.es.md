@@ -79,6 +79,22 @@ fuente produce un stub `.pyi`, así que `help()` y un type checker ven lo mismo.
 La lista completa, con la firma exacta que espera cada una, está en la
 [referencia de anotaciones](../reference/annotations.md).
 
+
+## Argumentos sin copia y el patrón de syscalls
+
+`bytes_arg` es el helper de runtime que hace que un parámetro `[]u8` aliasa el argumento
+sin copiar: un `bytes` exacto no cuesta nada, cualquier otra cosa va por una vista que fija
+al exportador, y el slice no debe sobrevivir a la llamada. Es la contraparte de
+`bytes_view` para resultados. El glue generado lo usa para cada parámetro `[]u8`, así que
+el V escrito a mano sólo lo necesita cuando lee un objeto bytes-like que Python devolvió.
+
+`@[vc_nogil]` se aplica también a métodos, no sólo a funciones de módulo: un método que
+sólo toca estado V puede ejecutarse con el GIL liberado, y el receptor es un puntero al
+estado vivo de la instancia como en cualquier otro método. Úsalo junto con `vcraft.released`
+para el patrón de syscalls - una función `@[vc_nogil]` que hace la llamada bloqueante, y
+trabajo V puro envuelto en `released` alrededor - para que una operación larga no bloquee
+a los demás hilos Python. El bloque pasado a `released` no debe llamar a Python.
+
 ## Siguiente
 
 - [Tipos](types.md)

@@ -20,7 +20,27 @@ mut:
 }
 ```
 
+## Estado nativo
+
+Un campo que no es escalar (un `string`, un `[]T`) no puede vivir en memoria propiedad de
+CPython: el recolector de V no la escanea. `@[vc_handle]` sobre un campo `vcraft.Owned`
+posee estado nativo en su lugar: un puntero junto con la función que lo libera, liberado
+por el `tp_dealloc` generado. `release` es idempotente, lo que importa porque `tp_dealloc`
+también se ejecuta sobre instancias cuyo constructor lanzó.
+
+```v
+@[vc_class]
+pub struct Listener {
+mut:
+	@[vc_handle] socket vcraft.Owned
+}
+```
+
+Cuando Python mismo tiene que ver el handle, una cápsula en un campo `@[vc_ref]` hace el
+mismo trabajo al coste de un objeto Python por handle (ver `vlib/vcraft/README.md`).
+
 ## Constructores
+
 
 `new_<clase>` es el constructor, que corre en `tp_new`. Puede tomar argumentos, enlazados
 con las mismas reglas de marshalling que un método. Se crea una instancia llamando al tipo:

@@ -57,3 +57,38 @@ diagnóstico.
 Un `&T` donde `T` es un `@[vc_class]` pasa la instancia misma, no una copia: un parámetro
 entrega a la función V un puntero al estado vivo de la instancia, y un resultado se empareja
 de vuelta con la instancia a la que apunta. Ver [Clases y propiedades](classes.md).
+
+## Helpers sin copia
+
+Las reglas de marshalling anteriores copian. Tres helpers existen para el camino caliente
+donde una copia no es aceptable:
+
+- `vcraft.bytes_arg` (para un parámetro `[]u8`) aliasa el argumento sin copiar: un `bytes`
+  exacto no cuesta nada; cualquier otra cosa va por una vista cuya referencia fija al
+  exportador. El slice no debe sobrevivir a la llamada.
+- `vcraft.bytes_view` hace lo mismo para un valor bytes-like que Python *devolvió* de una
+  llamada. Un `bytes` exacto se aliasa (el llamador mantiene el objeto vivo mientras use
+  el slice); cualquier otra cosa va por una vista que fija al exportador. `release` la
+  devuelve.
+- `vcraft.to_py_bytes_slice` va en la otra dirección y copia, porque los `bytes` de Python
+  tienen almacenamiento inmutable propio. Un retorno sin copia a Python es `@[vc_memoryview]`,
+  que entrega el slice native-backed como un `memoryview` escribible.
+
+## Helpers del GIL
+
+- `vcraft.with_gil(fn () {})` adquiere el GIL para un bloque y lo devuelve en todos los
+  caminos, panic incluido. Úsalo dentro de un hilo V creado con `spawn` antes de tocar
+  Python.
+- `vcraft.released(fn () {})` es la imagen especular: ejecuta un bloque con el GIL
+  *liberado*, para trabajo V puro, y lo re-adquiere en un `defer`. El bloque no debe llamar
+  a Python.
+- `vcraft.gil_ensure()` / `vcraft.gil_release(state)` son el par manual, para los casos que
+  las formas de bloque no cubren (un `poll` con timeout, una elección entre condiciones).
+
+## Llamar a corrutinas de Python
+
+`vcraft.run_coroutine(coro)` y `vcraft.call_async(callee, args)` conducen una corrutina de
+Python hasta el final en el hilo actual. El camino rápido es un único `send(None)` (~1.8
+us); el bucle sólo se entra cuando la corrutina suspende. El GIL se mantiene durante toda
+la llamada, así que V puede liberarlo con `released` para trabajo V puro, pero la corrutina
+no se pausa mientras V trabaja. Ver `examples/async_callback` para el caso canónico.

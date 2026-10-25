@@ -119,6 +119,13 @@ def main() -> int:
     t.equal("a memoryview result", m.sum_callback(lambda: memoryview(b"hello")), sum(b"hello"))
     t.equal("a zero-length result", m.sum_callback(lambda: b""), 0)
 
+    print("from_py_*_item reads a tuple or a list by index")
+    t.equal("from_py_int_item and from_py_str_item", m.unpack_tuple((7, "hola")), 11)
+    t.equal("from_py_bytes_item", m.unpack_bytes((b"abc",)), 3)
+    t.raises("from_py_int_item out of range", IndexError, "out of range",
+             lambda: m.unpack_tuple((1,)))
+    t.raises("from_py_str_item out of range", IndexError, "out of range",
+             lambda: m.unpack_bytes(()))
     print("run_coroutine drives a coroutine to completion")
     import asyncio
 

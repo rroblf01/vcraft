@@ -20,7 +20,27 @@ mut:
 }
 ```
 
+## Native state
+
+A field that is not a scalar (a `string`, a `[]T`) cannot live in CPython-owned
+memory: V's collector does not scan it. `@[vc_handle]` on a `vcraft.Owned` field owns
+native state instead - a pointer together with the function that releases it, released by
+the generated `tp_dealloc`. `release` is idempotent, which matters because `tp_dealloc`
+also runs on instances whose constructor raised.
+
+```v
+@[vc_class]
+pub struct Listener {
+mut:
+	@[vc_handle] socket vcraft.Owned
+}
+```
+
+When Python itself has to see the handle, a capsule in a `@[vc_ref]` field does the same
+job at the cost of a Python object per handle (see `vlib/vcraft/README.md`).
+
 ## Constructors
+
 
 `new_<class>` is the constructor, run in `tp_new`. It may take arguments, bound with the
 same marshalling rules as a method. An instance is made by calling the type:

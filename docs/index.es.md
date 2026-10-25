@@ -51,7 +51,14 @@ un único wheel abi3 por plataforma, para CPython 3.11 y posteriores, y no arras
 
 ## Estado
 
-1.5.0. El vocabulario de anotaciones, las claves de `vcraft.toml` y la CLI sólo cambian
+1.5.0. Novedades: `@[vc_handle]` para estado nativo del que una clase es dueña, `@[vc_opaque]`
+para punteros que viajan en cápsulas (resultado y parámetro), `vcraft.with_gil` / `released` /
+`gil_ensure` / `gil_release` para control del GIL desde hilos V, `bytes_view` para lecturas sin
+copia de resultados bytes-like, `to_py_str_list` / `to_py_bytes_list`, y `run_coroutine` /
+`call_async` para conducir una corrutina de Python desde V. Ver el
+[changelog](https://github.com/rroblf01/vcraft/blob/main/CHANGELOG.md) para la lista completa.
+
+El vocabulario de anotaciones, las claves de `vcraft.toml` y la CLI sólo cambian
 con un periodo de deprecación. Mira el [roadmap](https://github.com/rroblf01/vcraft/blob/main/ROADMAP.md)
 para lo que queda, y [`DECISIONS.md`](https://github.com/rroblf01/vcraft/blob/main/DECISIONS.md)
 para lo que se aparcó y por qué.

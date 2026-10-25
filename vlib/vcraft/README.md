@@ -729,6 +729,13 @@ whose argument count is dynamic. Re-entry is safe: the state chain is a per-thre
 trampoline restores on the way out, and a Python exception from the callback is just a
 pending exception the trampoline returns null for.
 
+Reading the arguments back is done with `from_py_int_arg(argv, i, func, name)` and its
+`string`/`bytes` siblings: they take the trampoline's `argv` pointer and an index, with
+the function name and argument name used in the error messages. Their `from_py_*_item`
+counterparts read element `i` of a tuple or list that is already in hand, which is what a
+function that receives a sequence from Python uses. Both are borrowed, so they do not
+release the source.
+
 ## Running Python coroutines from V
 
 `vcraft.run_coroutine(coro)` drives a coroutine to completion on the current thread and

@@ -28,6 +28,52 @@ import math.complex
 // bool is rejected. It is a subclass of int in Python, so PyLong_AsLongLong
 // would happily accept it, but `True` becoming `1` in a V function is almost
 // never what the caller meant.
+// from_py_int_item reads element `i` of a list or a tuple as an int.
+//
+// The `from_py_*_arg` readers ask for a positional argument by index; this one asks for
+// an element of a value that is already in hand, which is what a function that receives a
+// tuple or a list from Python does. The element is borrowed, so it is not released here.
+pub fn from_py_int_item(obj PyObj, i int, name string) !int {
+	if obj.is_null() {
+		raise(.type_error, '${name} is not a list or a tuple')
+		return error('missing ${name}')
+	}
+	elem := obj.item(i)
+	if elem.is_null() {
+		raise(.index_error, '${name}[${i}] is out of range')
+		return error('out of range')
+	}
+	return from_py_int(elem, name)!
+}
+
+// from_py_str_item reads element `i` of a list or a tuple as a str.
+pub fn from_py_str_item(obj PyObj, i int, name string) !string {
+	if obj.is_null() {
+		raise(.type_error, '${name} is not a list or a tuple')
+		return error('missing ${name}')
+	}
+	elem := obj.item(i)
+	if elem.is_null() {
+		raise(.index_error, '${name}[${i}] is out of range')
+		return error('out of range')
+	}
+	return from_py_string(elem, name)!
+}
+
+// from_py_bytes_item reads element `i` of a list or a tuple as bytes.
+pub fn from_py_bytes_item(obj PyObj, i int, name string) !string {
+	if obj.is_null() {
+		raise(.type_error, '${name} is not a list or a tuple')
+		return error('missing ${name}')
+	}
+	elem := obj.item(i)
+	if elem.is_null() {
+		raise(.index_error, '${name}[${i}] is out of range')
+		return error('out of range')
+	}
+	return from_py_bytes(elem, name)!
+}
+
 pub fn from_py_int(obj PyObj, name string) !int {
 	// An exact int that fits is decided by one pointer comparison. Everything else,
 	// including every error, takes the checks below.

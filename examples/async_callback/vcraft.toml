@@ -1,0 +1,12 @@
+[package]
+name = "async_callback"
+version = "0.1.0"
+module = "async_callback_native"
+description = "A Python extension written in V."
+license = "MIT"
+requires-python = ">=3.11"
+readme = "README.md"
+classifiers = ["Programming Language :: Other", "Programming Language :: Python :: 3", "Programming Language :: Python :: Implementation :: CPython"]
+
+[build]
+minimum-version = "3.11"

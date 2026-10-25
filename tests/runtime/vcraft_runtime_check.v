@@ -35,6 +35,10 @@ fn pyinit_vcraft_runtime_check() voidptr {
 		'sum_all(values)')
 	m.add_function_owned('sum_callback', voidptr(sum_callback_trampoline), vcraft.meth_fastcall,
 		'sum_callback(callee)')
+	m.add_function_owned('unpack_tuple', voidptr(unpack_tuple_trampoline), vcraft.meth_fastcall,
+		'unpack_tuple(t)')
+	m.add_function_owned('unpack_bytes', voidptr(unpack_bytes_trampoline), vcraft.meth_fastcall,
+		'unpack_bytes(t)')
 	m.add_function_owned('run_coro_fast', voidptr(run_coro_fast_trampoline), vcraft.meth_fastcall,
 		'run_coro_fast(callee)')
 	m.add_function_owned('call_from_thread', voidptr(call_from_thread_trampoline),
@@ -347,6 +351,55 @@ fn run_coro_fast_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	}
 	return vcraft.to_py_int(result).ptr
 }
+
+// unpack_tuple reads a `(int, str)` tuple with the item helpers.
+//
+// `from_py_*_item` is the counterpart of `from_py_*_arg`: one for a positional argument,
+// the other for an element of a value that is already in hand. They are what a function
+// that receives a tuple or a list from Python uses.
+fn unpack_tuple(t voidptr) !int {
+	obj := vcraft.borrow(t)
+	a := vcraft.from_py_int_item(obj, 0, 'a')!
+	b := vcraft.from_py_str_item(obj, 1, 'b')!
+	return a + b.len
+}
+
+fn unpack_bytes(t voidptr) !int {
+	obj := vcraft.borrow(t)
+	b := vcraft.from_py_bytes_item(obj, 0, 'b')!
+	return b.len
+}
+
+fn unpack_tuple_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('unpack_tuple', 1, int(nargs))
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	t := vcraft.require_voidptr_arg(args, 0, 'unpack_tuple', 't')
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	result := unpack_tuple(t) or {
+		return unsafe { nil }
+	}
+	return vcraft.to_py_int(result).ptr
+}
+
+fn unpack_bytes_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('unpack_bytes', 1, int(nargs))
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	t := vcraft.require_voidptr_arg(args, 0, 'unpack_bytes', 't')
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	result := unpack_bytes(t) or {
+		return unsafe { nil }
+	}
+	return vcraft.to_py_int(result).ptr
+}
+
 
 fn identity_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	vcraft.require_nargs('identity', 1, int(nargs))
