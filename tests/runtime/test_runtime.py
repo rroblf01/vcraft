@@ -118,6 +118,31 @@ def main() -> int:
     t.equal("a bytearray result", m.sum_callback(lambda: bytearray(b"hello")), sum(b"hello"))
     t.equal("a memoryview result", m.sum_callback(lambda: memoryview(b"hello")), sum(b"hello"))
     t.equal("a zero-length result", m.sum_callback(lambda: b""), 0)
+
+    print("run_coroutine drives a coroutine to completion")
+    import asyncio
+
+    async def _fast():
+        return 7
+
+    async def _slow():
+        await asyncio.sleep(0.001)
+        return 42
+
+    async def _uses_loop():
+        loop = asyncio.get_running_loop()
+        await asyncio.sleep(0)
+        return 123
+
+    async def _raising():
+        raise ValueError("boom")
+        return 0
+
+    t.equal("run_coroutine slow path", m.run_coro_fast(_slow), 42)
+    t.equal("run_coroutine fast path", m.run_coro_fast(_fast), 7)
+    t.equal("run_coroutine exposes the running loop", m.run_coro_fast(_uses_loop), 123)
+    t.raises("run_coroutine propagates the exception", ValueError, "boom",
+             lambda: m.run_coro_fast(_raising))
     t.raises("a non-bytes result is refused", TypeError, "bytes-like",
              lambda: m.sum_callback(lambda: "str"))
 

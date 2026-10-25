@@ -729,7 +729,39 @@ whose argument count is dynamic. Re-entry is safe: the state chain is a per-thre
 trampoline restores on the way out, and a Python exception from the callback is just a
 pending exception the trampoline returns null for.
 
+## Running Python coroutines from V
+
+`vcraft.run_coroutine(coro)` drives a coroutine to completion on the current thread and
+returns its result, or the null object with a Python exception set. `vcraft.call_async`
+is the composition: it calls the callable and drives the coroutine it returns.
+
+```v
+result := vcraft.run_coroutine(coro)
+if result.is_null() {
+    // the coroutine raised; the exception is pending
+    return unsafe { nil }
+}
+```
+
+The fast path is a single `send(None)`: most awaits in an extension are our own
+receive/send, which complete without suspending, so the request finishes in ~1.8 us
+instead of the 9.5 us that `loop.run_until_complete` costs. If the coroutine suspends
+on real I/O it is driven the rest of the way through the loop.
+
+The GIL is held for the whole call, exactly as for `call`. V can release it with
+`released` if it has V-only work to do, but the coroutine itself is not paused while V
+works: it has already finished (fast path) or has suspended on a future that V cannot
+resume without re-entering the loop. Releasing the GIL *during* a Python await needs
+the coroutine to be driven by a loop that is not this thread's, which is a different
+feature (`call_async` level 2) and is not implemented yet.
+
+`asyncio.events._set_running_loop` is private and is the only way to make
+`asyncio.get_running_loop()` work while the coroutine is being stepped by hand. vcraft
+is now the only place that depends on it: an extension that does not reimplement this
+function does not depend on it at all.
+
 ## Tests
+
 
 ```console
 $ ./scripts/build-runtime-tests.sh

@@ -35,6 +35,8 @@ fn pyinit_vcraft_runtime_check() voidptr {
 		'sum_all(values)')
 	m.add_function_owned('sum_callback', voidptr(sum_callback_trampoline), vcraft.meth_fastcall,
 		'sum_callback(callee)')
+	m.add_function_owned('run_coro_fast', voidptr(run_coro_fast_trampoline), vcraft.meth_fastcall,
+		'run_coro_fast(callee)')
 	m.add_function_owned('call_from_thread', voidptr(call_from_thread_trampoline),
 		vcraft.meth_fastcall, 'call_from_thread(callee)')
 	m.add_function_owned('released_then_call', voidptr(released_then_call_trampoline),
@@ -303,6 +305,47 @@ fn released_then_call_trampoline(self voidptr, args voidptr, nargs isize) voidpt
 
 fn released_panics_trampoline(self voidptr, args voidptr) voidptr {
 	return vcraft.to_py_int(released_panics()).ptr
+}
+
+// run_coro_fast drives a coroutine to completion and returns its result.
+//
+// `vcraft.run_coroutine` is the thing under test: the fast path for a coroutine that never
+// suspends, and the slow path for one that does.
+fn run_coro_fast(callee voidptr) int {
+	coro := vcraft.call(callee, []voidptr{})
+	if coro.is_null() {
+		vcraft.clear_error()
+		return -1
+	}
+	result := vcraft.run_coroutine(coro)
+	coro.decref()
+	if result.is_null() {
+		// Leave the exception pending so Python sees it. The trampoline checks
+		// `error_is_set` and returns null, which raises it.
+		return 0
+	}
+	value := vcraft.from_py_int(result, 'result') or {
+		vcraft.clear_error()
+		-1
+	}
+	result.decref()
+	return value
+}
+
+fn run_coro_fast_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('run_coro_fast', 1, int(nargs))
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	callee := vcraft.require_voidptr_arg(args, 0, 'run_coro_fast', 'callee')
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	result := run_coro_fast(callee)
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	return vcraft.to_py_int(result).ptr
 }
 
 fn identity_trampoline(self voidptr, args voidptr, nargs isize) voidptr {

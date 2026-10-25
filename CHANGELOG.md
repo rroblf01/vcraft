@@ -44,6 +44,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   not do: an unbalanced pair leaves the GIL count wrong and crashes the next thread switch
   inside CPython. The manual pair stays for the cases the block form cannot cover - a
   `poll` with a 1 s timeout, or a choice between several conditions.
+- **`vcraft.run_coroutine` and `vcraft.call_async`.** An extension that calls a Python
+  `async def` had to drive the coroutine itself, which is where the fast path lives: a single
+  `send(None)` finishes the common case in ~1.8 us instead of the 9.5 us that
+  `loop.run_until_complete` costs. The fast path and the private `asyncio._set_running_loop`
+  dance that makes `get_running_loop()` work during it now live in vcraft, so an extension
+  depends on the private name zero times instead of once. `call_async` is the composition:
+  call the callable and drive the coroutine it returns.
 - **`vcraft.with_gil`, `gil_ensure` and `gil_release`.** A thread V created with `spawn`
   holds no Python thread state, so calling into Python from it was impossible: only the
   release half (`allow_threads`) was exposed. `with_gil` acquires the GIL for a block and
