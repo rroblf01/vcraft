@@ -2328,8 +2328,7 @@ pub fn extra_marker() int {
             t.check("the action takes args",
                     "args" in definition["inputs"], str(definition["inputs"]))
             for workflow_file in [
-                    "ci.yml", "release-images.yml", "release-action.yml",
-                    "release-vcraft.yml"]:
+                    "ci.yml", "release.yml"]:
                 path = ROOT / ".github" / "workflows" / workflow_file
                 t.check(f"{workflow_file} exists", path.exists(), str(path))
                 if path.exists():
@@ -2377,10 +2376,10 @@ pub fn extra_marker() int {
             t.check("CI covers free-threading with the GIL disabled",
                     "PYTHON_GIL=0" in ci_text and "3.13t" in ci_text, ci_text[-500:])
             images = yaml.safe_load(
-                (ROOT / ".github" / "workflows" / "release-images.yml").read_text())
+                (ROOT / ".github" / "workflows" / "release.yml").read_text())
             dockerfiles = set()
             for match in re.finditer(r"dockerfile:\s*(\S+)",
-                                     (ROOT / ".github" / "workflows" / "release-images.yml").read_text()):
+                                     (ROOT / ".github" / "workflows" / "release.yml").read_text()):
                 dockerfiles.add(match.group(1))
             t.check("every image the release builds is a file here",
                     dockerfiles == {"docker/manylinux.Dockerfile",
@@ -2388,18 +2387,17 @@ pub fn extra_marker() int {
                     all((ROOT / name).exists() for name in dockerfiles),
                     str(sorted(dockerfiles)))
             release = yaml.safe_load(
-                (ROOT / ".github" / "workflows" / "release-vcraft.yml").read_text())
+                (ROOT / ".github" / "workflows" / "release.yml").read_text())
             t.check("the release builds per platform",
                     set(cell.get("asset", "") for cell in
                         release["jobs"]["build"]["strategy"]["matrix"]["include"])
                     == {"linux-x86_64", "macos-arm64", "win-amd64"})
-            publish = release["jobs"]["publish-pypi"]
-            release_text = (ROOT / ".github" / "workflows" / "release-vcraft.yml").read_text()
+            publish = release["jobs"]["publish"]
+            release_text = (ROOT / ".github" / "workflows" / "release.yml").read_text()
             t.check("PyPI publish waits for every platform",
                     publish["needs"] == ["build"], str(publish.get("needs")))
-            t.check("PyPI publish is tag-gated twice",
-                    "vcraft/v*" in release_text
-                    and "refs/tags/vcraft/v" in str(publish.get("if", "")),
+            t.check("PyPI publish is tag-gated",
+                    "refs/tags/v" in str(publish.get("if", "")),
                     str(publish.get("if", "")))
             t.check("PyPI publish uses trusted publishing",
                     publish.get("environment") == "pypi"
@@ -2551,7 +2549,7 @@ pub fn extra_marker() int {
         toolchain_v = (ROOT / "vlib" / "vcraft_project" / "toolchain.v").read_text()
         pin_v = re.search(r"pub const v_commit = '([0-9a-f]{40})'", toolchain_v).group(1)
         pin_vc = re.search(r"pub const vc_commit = '([0-9a-f]{40})'", toolchain_v).group(1)
-        for place in [".github/workflows/ci.yml", ".github/workflows/release-vcraft.yml",
+        for place in [".github/workflows/ci.yml", ".github/workflows/release.yml",
                       ".github/workflows/release-v.yml",
                       "actions/vcraft-action/action.yml", "docker/manylinux.Dockerfile",
                       "docker/musllinux.Dockerfile"]:

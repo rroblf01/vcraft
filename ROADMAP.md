@@ -101,7 +101,7 @@ Additions that do not change anything 1.x promises.
       own import library with the MinGW runtime folded in statically, the CLI and
       `vcraft toolchain install` (`makev.bat`) work there, the action and
       `vcraft generate-ci` run on `windows-latest`, `release-v` publishes a prebuilt
-      Windows V and `release-vcraft` a `win_amd64` wheel, and every suite — including the
+      Windows V and `release` a `win_amd64` wheel, and every suite — including the
       previously POSIX-only packaging, cli, docs and wheel — passes on `windows-latest`.
       Ships in 1.4.0.
 - [x] **Linux aarch64 and musl green in CI.** The cells exist (`ubuntu-24.04-arm`, and

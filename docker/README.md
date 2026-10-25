@@ -45,8 +45,7 @@ $ docker run --rm -v "$PWD:/work" -w /work vcraft-manylinux:local \
 `VCRAFT_REF` is the revision being baked in. A different revision always rebuilds
 vcraft without rebuilding V, so a stale binary can never ship with fresh sources.
 
-Publishing is `.github/workflows/release-images.yml`, triggered by an
-`images/v*` tag. Each architecture builds on a native runner -- there is no QEMU
+Publishing is `.github/workflows/release.yml`, triggered by a `v*` tag. Each architecture builds on a native runner -- there is no QEMU
 anywhere, because emulating a compiler is how a build becomes unreproducible --
 and the per-architecture tags are merged into one multi-arch manifest. The same
 workflow verifies each image by building a fresh project inside it and importing

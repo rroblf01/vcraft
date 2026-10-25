@@ -64,6 +64,6 @@ $ git tag -fa v1.3 -m "vcraft-action v1.3"
 $ git push origin v1.3.0 v1.3 v1
 ```
 
-The release workflow in `.github/workflows/release-action.yml` moves the floating
-tags whenever a `vcraft-action/v*` tag is pushed, so the only manual step is
-pushing the version tag.
+The release workflow in `.github/workflows/release.yml` moves the floating
+tags whenever a `v*` tag is pushed, so the only manual step is pushing the
+version tag.
