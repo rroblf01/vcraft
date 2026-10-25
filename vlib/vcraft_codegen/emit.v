@@ -1254,6 +1254,8 @@ fn seq_boxed_expr(element string, value string) string {
 		'i64' { 'vcraft.to_py_i64_list(${value})' }
 		'int' { 'vcraft.to_py_int_list(${value})' }
 		'f64' { 'vcraft.to_py_f64_list(${value})' }
+		'string' { 'vcraft.to_py_str_list(${value})' }
+		'[]u8' { 'vcraft.to_py_bytes_list(${value})' }
 		else { 'vcraft.to_py_list(${value}, ${element_box_fn(element)})' }
 	}
 }

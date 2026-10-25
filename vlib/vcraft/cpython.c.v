@@ -262,6 +262,10 @@ fn C.vpy_list_from_i64(items &i64, n isize) voidptr
 
 fn C.vpy_list_from_f64(items &f64, n isize) voidptr
 
+fn C.vpy_list_from_str(items voidptr, n isize) voidptr
+
+fn C.vpy_list_from_bytes(items voidptr, n isize) voidptr
+
 // vpy_call calls a Python callable with borrowed positional arguments, returning a new
 // reference or null with an exception set.
 fn C.vpy_call(callee voidptr, args voidptr, nargs isize) voidptr

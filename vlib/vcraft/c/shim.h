@@ -202,6 +202,13 @@ Py_ssize_t vpy_seq_fill_i64(PyObject *o, long long *out, Py_ssize_t n);
 
 // Building a list from a slice of plain numbers in one pass.
 PyObject *vpy_list_from_i64(const long long *items, Py_ssize_t n);
+// vpy_list_from_str builds a `list[str]` from a V `[]string` in one pass, so the per-element
+// `to_py_string` call and the boxing closure in `to_py_list` are not paid per element.
+// `data` points at the slice's backing, whose elements are V strings: `{str, len, is_lit}`.
+PyObject *vpy_list_from_str(const void *data, Py_ssize_t count);
+// vpy_list_from_bytes builds a `list[bytes]` from a V `[][]u8` in one pass.
+// `data` points at the slice's backing, whose elements are V slices: `{data, len, cap}`.
+PyObject *vpy_list_from_bytes(const void *data, Py_ssize_t count);
 PyObject *vpy_list_from_f64(const double *items, Py_ssize_t n);
 
 // Calling a Python callable with borrowed positional arguments, as a new reference.

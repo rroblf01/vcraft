@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 34,
+            glue.count("add_function_owned") == 35,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -144,8 +144,10 @@ def main() -> int:
     # `.ptr` of a pointer.
     t.check("a list of numbers is built in one pass",
             "vcraft.to_py_i64_list(result)" in glue)
-    t.check("any other list is boxed per element",
-            "vcraft.to_py_list(result, fn (x string) vcraft.PyObj" in glue)
+    t.check("a string list is built in one pass",
+            "vcraft.to_py_str_list(result)" in glue)
+    t.check("a bytes list is built in one pass",
+            "vcraft.to_py_bytes_list(result)" in glue)
     t.equal("an i64 list", h.count_up(4), [0, 1, 2, 3])
     t.equal("an empty list", h.count_up(0), [])
     t.equal("a string list", h.words("hola qué tal"), ["hola", "qué", "tal"])

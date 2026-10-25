@@ -198,6 +198,9 @@ def new_opaque_box(value: int) -> Any: ...
 """opaque_box_value reads the int an opaque handle carries."""
 def opaque_box_value(handle: Any) -> int: ...
 
+"""chunks splits `data` into `size`-byte slices."""
+def chunks(data: bytes, size: int) -> Sequence[bytes]: ...
+
 """A counter with state.
 
 	Fields must be scalars. A V string inside a Python object would be a pointer

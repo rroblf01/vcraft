@@ -1257,3 +1257,43 @@ PyObject *vpy_call(PyObject *callee, PyObject **args, Py_ssize_t nargs) {
 	Py_DECREF(tuple);
 	return result;
 }
+
+// vpy_list_from_str builds a Python list of str from a V `[]string` in one pass.
+typedef struct { const char *str; int64_t len; int64_t is_lit; } VString;
+
+PyObject *vpy_list_from_str(const void *data, Py_ssize_t count) {
+	const VString *items = (const VString *)data;
+	PyObject *list = PyList_New(count);
+	if (list == NULL) {
+		return NULL;
+	}
+	for (Py_ssize_t i = 0; i < count; i++) {
+		PyObject *s = PyUnicode_FromStringAndSize(items[i].str, items[i].len);
+		if (s == NULL) {
+			Py_DECREF(list);
+			return NULL;
+		}
+		PyList_SetItem(list, i, s);
+	}
+	return list;
+}
+
+// vpy_list_from_bytes builds a Python list of bytes from a V `[][]u8` in one pass.
+typedef struct { const unsigned char *data; int64_t offset; int64_t len; int64_t cap; int flags; } VSlice;
+
+PyObject *vpy_list_from_bytes(const void *data, Py_ssize_t count) {
+	const VSlice *items = (const VSlice *)data;
+	PyObject *list = PyList_New(count);
+	if (list == NULL) {
+		return NULL;
+	}
+	for (Py_ssize_t i = 0; i < count; i++) {
+		PyObject *b = PyBytes_FromStringAndSize((const char *)items[i].data, items[i].len);
+		if (b == NULL) {
+			Py_DECREF(list);
+			return NULL;
+		}
+		PyList_SetItem(list, i, b);
+	}
+	return list;
+}

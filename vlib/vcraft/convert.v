@@ -421,6 +421,22 @@ pub fn to_py_f64_list(items []f64) PyObj {
 	return steal(C.vpy_list_from_f64(unsafe { &f64(items.data) }, isize(items.len)))
 }
 
+// to_py_str_list boxes a `[]string` as a Python list of str in one pass, without a call per
+// element. The generated glue used to call `to_py_list` with `to_py_string` as the boxer,
+// which worked and cost a V function call and the closure's indirection for every element.
+pub fn to_py_str_list(items []string) PyObj {
+	unsafe {
+		return steal(C.vpy_list_from_str(items.data, isize(items.len)))
+	}
+}
+
+// to_py_bytes_list boxes a `[][]u8` as a Python list of bytes in one pass.
+pub fn to_py_bytes_list(items [][]u8) PyObj {
+	unsafe {
+		return steal(C.vpy_list_from_bytes(items.data, isize(items.len)))
+	}
+}
+
 // to_py_object is the default boxing rule for a `[]voidptr` sequence: each element
 // is already a PyObject pointer, and it is passed through with its own reference
 // kept by the list.

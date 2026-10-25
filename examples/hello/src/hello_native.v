@@ -965,3 +965,16 @@ pub fn opaque_box_value(handle voidptr) int {
 	}
 	return unsafe { *(&int(p)) }
 }
+
+// chunks splits `data` into `size`-byte slices.
+@[vc_fn]
+pub fn chunks(data []u8, size int) [][]u8 {
+	mut out := [][]u8{}
+	mut i := 0
+	for i < data.len {
+		end := if i + size < data.len { i + size } else { data.len }
+		out << data[i..end]
+		i += size
+	}
+	return out
+}

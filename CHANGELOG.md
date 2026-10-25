@@ -16,6 +16,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   runs when Python collects the handle. A `voidptr` parameter is unchanged: unwrapping one
   is the callee's contract, and `handle_data` at the point of use says which parameter is a
   handle.
+- **`to_py_str_list` and `to_py_bytes_list`.** The generated glue boxed a `[]string` or
+  `[][]u8` result with `to_py_list` and a boxing function, which worked and cost a V
+  function call and the closure's indirection for every element. The integer and float
+  helpers already did the boxing in C (`vpy_list_from_i64`, `vpy_list_from_f64`); these two
+  did not, and they are the ones a high-throughput extension boxes per request - headers,
+  paths, chunks. `vpy_list_from_str` reads the V string's layout (24 bytes, `len` is
+  `i64`) and `vpy_list_from_bytes` reads the V slice's layout (40 bytes).
 - **`@[vc_handle]` and `vcraft.Owned`, for native state a class owns.** A field holds the
   pointer together with the function that releases it, and the generated `tp_dealloc` calls
   it, so the allocation's lifetime is the instance's. A `voidptr` field could not do this:
