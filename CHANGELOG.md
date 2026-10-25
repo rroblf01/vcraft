@@ -9,7 +9,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ### Added
 
-- **`@[vc_opaque]`, for a function that returns a native pointer.** A `voidptr` result reads
+- **`@[vc_opaque]`, for a function that takes or returns a native pointer.** A `voidptr`
+  result reads as `pyobj` - a borrowed `PyObject *` - so returning a C pointer through one is a
+  pointer CPython treats as an object, and it crashes the interpreter. The annotation makes the
+  wrapper build a capsule instead, and `@[vc_opaque: 'free_fn']` names the destructor that runs
+  when Python collects the handle. A `voidptr` *parameter* is unwrapped with `handle_data` the
+  same way, so the function never has to call it itself; that is the symmetry the result side
+  already had.
   as `pyobj` - a borrowed `PyObject *` - so returning a C pointer through one is a pointer
   CPython treats as an object, and it crashes the interpreter. The annotation makes the
   wrapper build a capsule instead, and `@[vc_opaque: 'free_fn']` names the destructor that
@@ -31,6 +37,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   address. The alternative was a capsule - a Python object per handle - and this is for the
   state that never has to be visible to Python at all. `release` is idempotent, which
   `tp_dealloc` needs because it also runs on instances whose constructor raised.
+- **`vcraft.released`, the RAII form of `allow_threads`/`end_allow_threads`.** A function that
+  is not `@[vc_nogil]` holds the GIL for its whole call, so a long V-only stretch blocks
+  every other Python thread. `released` runs a block with the GIL released and gives it
+  back in a `defer` that protects against a panic, which is what a hand-written pair does
+  not do: an unbalanced pair leaves the GIL count wrong and crashes the next thread switch
+  inside CPython. The manual pair stays for the cases the block form cannot cover - a
+  `poll` with a 1 s timeout, or a choice between several conditions.
 - **`vcraft.with_gil`, `gil_ensure` and `gil_release`.** A thread V created with `spawn`
   holds no Python thread state, so calling into Python from it was impossible: only the
   release half (`allow_threads`) was exposed. `with_gil` acquires the GIL for a block and

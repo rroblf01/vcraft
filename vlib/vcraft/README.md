@@ -425,6 +425,13 @@ capsule as an opaque `voidptr` and calls `handle_data` itself. CPython calls the
 with the capsule object rather than the stored pointer, so the destructor has to call
 `handle_data` to get its pointer back before freeing it.
 
+`@[vc_opaque]` is the same capsule at the generator level: a function whose result is a
+`voidptr` gets it wrapped on the way out, and each `voidptr` parameter of such a function
+is unwrapped with `handle_data` on the way in. The annotation is what tells the generator
+that the pointer is not a borrowed `PyObject *` - without it, a `voidptr` result is the
+borrowed side of a fixed signature, and returning a real pointer through it hands CPython
+something that is not an object.
+
 A capsule is also how a class owns native state, because a field cannot hold a pointer the
 collector would have to keep alive. Store the capsule in a `@[vc_ref]` field: the field
 holds an owned reference, the generated `tp_dealloc` drops it, and the capsule's destructor

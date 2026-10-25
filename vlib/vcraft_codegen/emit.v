@@ -508,7 +508,7 @@ fn emit_bind(f Func) string {
 // that pin a buffer until the end of the call. A required parameter is checked present
 // first, so a positional-only call that stops short is a missing-argument error rather
 // than a read past the argument array.
-fn param_reader(param Param, local string, index int, func string) string {
+fn param_reader(param Param, local string, index int, func string, opaque bool) string {
 	// A `&T` parameter is an instance reference: the argument must be an instance of `T`,
 	// and the function receives a pointer into that instance's state. The object read is
 	// kept in `${local}_obj` so a `&T` result of the same call can be resolved back to it.
@@ -528,17 +528,17 @@ fn param_reader(param Param, local string, index int, func string) string {
 	strategy := lookup(param.v_type)
 	if param.default.len == 0 {
 		if param.optional() {
-			return reader_expr(strategy, local, index, func, param.name, param.v_type)
+			return reader_expr(strategy, local, index, func, param.name, param.v_type, opaque)
 		}
 		return 'if !vcraft.arg_present(args, nargs, kwnames, ${index}) {\n' +
 			'\t\tvcraft.missing_arg(${vstring_literal(func)}, ${vstring_literal(param.name)})\n' +
 			'\t\treturn unsafe { nil }\n\t}\n' +
-			'\t' + reader_expr(strategy, local, index, func, param.name, param.v_type)
+			'\t' + reader_expr(strategy, local, index, func, param.name, param.v_type, opaque)
 	}
 	given := '${local}_given'
 	return 'mut ${local} := ${v_default(param)}\n' +
 		'\tif vcraft.arg_present(args, nargs, kwnames, ${index}) {\n' +
-		'\t\t${reader_expr(strategy, given, index, func, param.name, param.v_type)}\n' +
+		'\t\t${reader_expr(strategy, given, index, func, param.name, param.v_type, opaque)}\n' +
 		'\t\t${local} = ${given}\n\t}'
 }
 
@@ -601,7 +601,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 			w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 			continue
 		}
-		w.write_string('\t${param_reader(param, name, i, f.name)}\n')
+		w.write_string('\t${param_reader(param, name, i, f.name, f.opaque)}\n')
 	}
 	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
@@ -687,7 +687,7 @@ pub fn emit_static_trampoline(f Func) string {
 	for i, param in f.params {
 		name := local_name(i)
 		names << name
-		w.write_string('\t${param_reader(param, name, i, f.name)}\n')
+		w.write_string('\t${param_reader(param, name, i, f.name, f.opaque)}\n')
 	}
 	ret := lookup(f.v_ret)
 	has_value := ret != .void
@@ -854,7 +854,7 @@ pub fn emit_trampoline(f Func) string {
 		}
 		name := local_name(i)
 		names << name
-		w.write_string('\t${param_reader(param, name, i, f.name)}\n')
+		w.write_string('\t${param_reader(param, name, i, f.name, f.opaque)}\n')
 	}
 
 
@@ -948,10 +948,12 @@ pub fn emit_trampoline(f Func) string {
 // the declared value type, which a sequence needs to choose how each element is boxed.
 pub fn return_expr(strategy Strategy, value string, raw bool, v_type string, export_buffer bool,
 	opaque bool, destructor string) string {
-	if opaque {
+	if opaque && strategy == .pyobj {
 		// A native pointer Python does not own: a capsule, never the bare pointer. The
 		// destructor is the one the annotation named, or nothing when the pointer lives as
-		// long as the process (an SSL context, a global pool).
+		// long as the process (an SSL context, a global pool). A `voidptr` parameter of the
+		// same function is unwrapped in `param_reader`, so `@[vc_opaque]` is a single
+		// annotation for both directions.
 		drop := if destructor.len > 0 { 'voidptr(${destructor})' } else { 'unsafe { nil }' }
 		return 'vcraft.new_handle(${value}, ${drop}).ptr'
 	}
@@ -1376,7 +1378,7 @@ fn scalar_narrower(v_type string) string {
 // raises the Python exception itself and the trampoline only has to notice that
 // something is pending.
 pub fn reader_expr(strategy Strategy, local string, index int, func string, param string,
-	param_type string) string {
+	param_type string, opaque bool) string {
 	// A width narrower than the reader's result does not convert implicitly in V:
 	// `i8`, `i16`, `i32`, `u8`, `u16`, `u32` and `f32` parameters generated glue that
 	// did not compile. They read the object and go through the same range-checked
@@ -1463,11 +1465,16 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 			}
 		}
 		.pyobj {
-			// A `voidptr` parameter, so the reader hands one over. `require_arg` returns a
-			// `PyObj` and relies on V dereferencing the struct into the `voidptr`, which
-			// warns and is documented as going away.
-			"\t${local} := vcraft.require_voidptr_arg(args, ${index}, '${func}', '${param}')\n" +
-				'\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}'
+			// A `voidptr` parameter. With `@[vc_opaque]` it is not a `PyObject *` at all
+			// but a capsule, and the pointer is unwrapped here so the V function never has
+			// to call `handle_data` itself.
+			if opaque {
+				"\t${local} := vcraft.handle_data(vcraft.require_voidptr_arg(args, ${index}, '${func}', '${param}'))\n" +
+					'\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}'
+			} else {
+				"\t${local} := vcraft.require_voidptr_arg(args, ${index}, '${func}', '${param}')\n" +
+					'\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}'
+			}
 		}
 		.complex {
 			"vcraft.from_py_complex(vcraft.required_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }, '${param}')"
@@ -1750,7 +1757,7 @@ fn composite_reader(strategy Strategy, local string, index int, func string, par
 		.fixed {
 			n, element := fixed_parts(t)
 			seq := '${local}_seq'
-			'${reader_expr(.seq, seq, index, func, param, '[]' + element)}\n' +
+			'${reader_expr(.seq, seq, index, func, param, '[]' + element, false)}\n' +
 				'\tif ${seq}.len != ${n} {\n' +
 				"\t\tvcraft.raise_value_error('${func}() argument ${param}: expected ${n} items, got \${${seq}.len}')\n" +
 				'\t\treturn unsafe { nil }\n\t}\n' +

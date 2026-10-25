@@ -1691,6 +1691,7 @@ fn link_classes(mut p Project) {
 			if f.name.to_lower().replace('_', '') == wanted {
 				p.classes[i].ctor_fn = f.name
 				p.classes[i].ctor_params = f.params
+				p.classes[i].ctor_opaque = f.opaque
 				ctors << f.name
 			}
 		}
@@ -1941,20 +1942,22 @@ pub fn default_fits(strategy Strategy, value string) bool {
 // validate rejects a declaration the generator cannot honour, with a position.
 fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 	if f.opaque {
-		if lookup(f.v_ret) != .pyobj || f.v_ret.trim_space() != 'voidptr' {
+		if f.v_ret.trim_space() != 'voidptr' && !f.params.any(it.v_type.trim_space() == 'voidptr') {
 			report(mut p, path, decl,
-				'error: `@[vc_opaque] ${decl.name}` returns `${f.v_ret}`, but an opaque result must be a `voidptr`: a capsule carries a pointer, not a value')
+				'error: `@[vc_opaque] ${decl.name}` has no `voidptr`: an opaque function has to take or return a pointer, otherwise there is nothing to put in the capsule')
 			return
 		}
-		if f.raw {
-			report(mut p, path, decl,
-				'error: `@[vc_raw]` and `@[vc_opaque]` cannot be combined on `${decl.name}`; raw already means "the wrapper does not marshal", which is the opposite of wrapping the result in a capsule')
-			return
-		}
-		if f.export_buffer {
-			report(mut p, path, decl,
-				'error: `@[vc_memoryview]` and `@[vc_opaque]` cannot be combined on `${decl.name}`; a memoryview is a typed view of native memory, a capsule an untyped pointer')
-			return
+		if f.v_ret.trim_space() == 'voidptr' {
+			if f.raw {
+				report(mut p, path, decl,
+					'error: `@[vc_raw]` and `@[vc_opaque]` cannot be combined on `${decl.name}`; raw already means "the wrapper does not marshal", which is the opposite of wrapping the result in a capsule')
+				return
+			}
+			if f.export_buffer {
+				report(mut p, path, decl,
+					'error: `@[vc_memoryview]` and `@[vc_opaque]` cannot be combined on `${decl.name}`; a memoryview is a typed view of native memory, a capsule an untyped pointer')
+				return
+			}
 		}
 	}
 	for name in f.unknown_defaults {

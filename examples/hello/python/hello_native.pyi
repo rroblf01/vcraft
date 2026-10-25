@@ -201,6 +201,14 @@ def opaque_box_value(handle: Any) -> int: ...
 """chunks splits `data` into `size`-byte slices."""
 def chunks(data: bytes, size: int) -> Sequence[bytes]: ...
 
+"""read_box reads the int an opaque handle carries.
+
+	The handle arrives as a capsule and the generated glue unwraps it before the call, so
+	the function never has to touch `handle_data` itself: `handle` is the pointer the
+	capsule held, not the capsule.
+"""
+def read_box(handle: Any) -> int: ...
+
 """A counter with state.
 
 	Fields must be scalars. A V string inside a Python object would be a pointer

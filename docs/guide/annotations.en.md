@@ -69,7 +69,9 @@ the marshalled signature becomes `__text_signature__`, and the same source produ
 | `@[vc_add]` … `@[vc_invert]` | `pub fn` | Arithmetic, bitwise and unary operators |
 | `@[vc_const]` | `pub const` | A module-level constant |
 | `@[vc_defaults]` | `pub fn`, methods | Default argument values |
-| `@[vc_nogil]` | `pub fn` | Runs with the GIL released |
+| `@[vc_handle]` | struct fields | Native state the class owns: a pointer plus the function that releases it, freed at dealloc |
+| `@[vc_opaque]` | `pub fn` | A `voidptr` result travels as a capsule, and each `voidptr` parameter is unwrapped from one |
+| `@[vc_nogil]` | `pub fn` | Runs with the GIL released (methods included) |
 | `@[vc_raw]` | `pub fn` | Skips marshalling; you handle `PyObject *` |
 | `@[vc_memoryview]` | `pub fn`, methods | Returns a native slice as a writable `memoryview` |
 

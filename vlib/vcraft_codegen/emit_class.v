@@ -503,7 +503,7 @@ fn emit_contains_trampoline(p Project, c Class, f Func) string {
 	w.write_string('\targs := unsafe { voidptr(&item) }\n')
 	w.write_string('\tnargs := isize(1)\n')
 	w.write_string('\tkwnames := unsafe { nil }\n')
-	w.write_string('\t${param_reader(f.params[0], 'arg0', 0, f.name)}\n')
+	w.write_string('\t${param_reader(f.params[0], 'arg0', 0, f.name, f.opaque)}\n')
 	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
 	if f.nogil {
@@ -600,7 +600,7 @@ fn emit_class_new(c Class) string {
 		for i, param in c.newstate_params {
 			name := local_name(i)
 			call_args << name
-			w.write_string('\t${param_reader(param, name, i, c.name)}\n')
+			w.write_string('\t${param_reader(param, name, i, c.name, c.ctor_opaque)}\n')
 		}
 	} else {
 		// `tp_init` is left null, so the arguments land here, and `object.__init__` stays

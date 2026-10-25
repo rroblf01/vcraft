@@ -1425,7 +1425,7 @@ inside one of the images instead. Linux, macOS and Windows runners are supported
 ```yaml
 - uses: rroblf01/vcraft/actions/vcraft-action@v1
   with:
-    vcraft-version: v1.4.5
+    vcraft-version: v1.5.0
     args: build --release
 ```
 

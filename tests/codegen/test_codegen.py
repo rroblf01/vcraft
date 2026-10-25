@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 35,
+            glue.count("add_function_owned") == 36,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -848,6 +848,13 @@ def main() -> int:
     del opaque
     gc.collect()
     t.equal("the named destructor ran", h.handle_release_count(), releases + 1)
+
+    print("an opaque parameter is unwrapped before the call")
+    t.check("the glue unwraps the handle", "vcraft.handle_data(vcraft.require_voidptr_arg" in glue)
+    capsule = h.new_opaque_box(23)
+    t.equal("the pointer round-trips back through the parameter", h.read_box(capsule), 23)
+    del capsule
+    gc.collect()
     t.check("the constructor binds its arguments",
             "vcraft.bind_new_args(raw_args, kwds, unsafe { voidptr(&bound[0]) }" in glue)
     # The slots are a fixed array on the stack and the parameter names are a module

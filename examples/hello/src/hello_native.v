@@ -978,3 +978,17 @@ pub fn chunks(data []u8, size int) [][]u8 {
 	}
 	return out
 }
+
+// read_box reads the int an opaque handle carries.
+//
+// The handle arrives as a capsule and the generated glue unwraps it before the call, so
+// the function never has to touch `handle_data` itself: `handle` is the pointer the
+// capsule held, not the capsule.
+@[vc_fn]
+@[vc_opaque]
+pub fn read_box(handle voidptr) int {
+	if handle == unsafe { nil } {
+		return 0
+	}
+	return unsafe { *(&int(handle)) }
+}

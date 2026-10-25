@@ -382,6 +382,9 @@ pub mut:
 	// ctor_has_defaults is true when any constructor parameter carries `@[vc_defaults]`,
 	// which only matters for the generated signature's rendering.
 	ctor_has_defaults bool
+	// ctor_opaque is true when the constructor is `@[vc_opaque]`: every `voidptr`
+	// parameter is unwrapped from a capsule before the call.
+	ctor_opaque bool
 	// base_ctor_count is how many of `newstate_params` belong to the base: `newstate`
 	// forwards that many to the base's own state constructor. Zero for a class with no
 	// base, or one whose base takes no arguments.

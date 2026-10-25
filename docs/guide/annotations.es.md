@@ -70,7 +70,9 @@ fuente produce un stub `.pyi`, así que `help()` y un type checker ven lo mismo.
 | `@[vc_add]` … `@[vc_invert]` | `pub fn` | Operadores aritméticos, de bits y unarios |
 | `@[vc_const]` | `pub const` | Una constante de módulo |
 | `@[vc_defaults]` | `pub fn`, métodos | Valores por defecto de argumentos |
-| `@[vc_nogil]` | `pub fn` | Se ejecuta con el GIL liberado |
+| `@[vc_handle]` | campos de struct | Estado nativo del que la clase es dueña: un puntero y su liberador, liberado en dealloc |
+| `@[vc_opaque]` | `pub fn` | Un resultado `voidptr` viaja en cápsula, y cada parámetro `voidptr` se desenvuelve de una |
+| `@[vc_nogil]` | `pub fn` | Se ejecuta con el GIL liberado (métodos incluidos) |
 | `@[vc_raw]` | `pub fn` | Sin marshalling; tú manejas `PyObject *` |
 | `@[vc_memoryview]` | `pub fn`, métodos | Devuelve un slice nativo como `memoryview` escribible |
 
