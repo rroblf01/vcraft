@@ -121,6 +121,10 @@ def main() -> int:
     t.raises("a non-bytes result is refused", TypeError, "bytes-like",
              lambda: m.sum_callback(lambda: "str"))
 
+    print("released gives the GIL back, panic included")
+    t.equal("released then calls Python", m.released_then_call(lambda: 7), 7)
+    t.equal("a panic inside released is caught", m.released_panics(), 1)
+
     print("a thread V created calls back into Python")
     t.equal("with_gil acquires the GIL for it", m.call_from_thread(lambda: 7), 7)
     t.equal("the callable's return value crosses", m.call_from_thread(lambda: 4242), 4242)

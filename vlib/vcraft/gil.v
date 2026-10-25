@@ -102,3 +102,30 @@ pub fn with_gil(f fn ()) {
 	}
 	f()
 }
+
+// released runs `f` with the GIL released, and re-acquires it on every path, panic included.
+//
+// The mirror image of `with_gil`: a function that is not `@[vc_nogil]` holds the GIL for its
+// whole call, so a long V-only stretch - a poll, a parse, a compress, a syscall loop - blocks
+// every other Python thread. `released` is the RAII version of the `allow_threads`/
+// `end_allow_threads` pair the README describes, and it is the only way to get the pair
+// balanced when the block can panic: the restore runs in a `defer` registered *after* the
+// `recover` defer, so on a panic the restore fires first and the raise that follows it
+// already holds the GIL. An unbalanced pair leaves the GIL count wrong and crashes the
+// next thread switch inside CPython, which is how this was found.
+//
+// `f` runs released, so it may not touch Python, may not call `allow_threads` or
+// `end_allow_threads`, and may not raise a V error: all three go through the interpreter.
+// Anything that has to cross the boundary goes before `released` or after it.
+pub fn released(f fn ()) {
+	state := allow_threads()
+	defer {
+		if message := recover() {
+			vcraft.raise_panic(message)
+		}
+	}
+	defer {
+		end_allow_threads(state)
+	}
+	f()
+}

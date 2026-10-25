@@ -642,6 +642,34 @@ vcraft.end_allow_threads(saved)
 That pair is also the reason `with_gil` exists rather than being sugar: a worker V starts
 is only reachable if its caller steps out of the way of the GIL first.
 
+## Acquiring and releasing the GIL on purpose
+
+`allow_threads` and `end_allow_threads` are the way out, and `with_gil` and `released` are
+the way in and out. A function that is not `@[vc_nogil]` holds the GIL for its whole call,
+so a long V-only stretch - a poll, a parse, a compress, a syscall loop - blocks every other
+Python thread. `released` is the RAII version of the manual pair, and it is the one that
+gets the balance right when the block can panic: the restore runs in a `defer` registered
+*after* the `recover` defer, so on a panic the restore fires first and the raise that
+follows it already holds the GIL. An unbalanced pair leaves the GIL count wrong and
+crashes the next thread switch inside CPython, which is how this was found.
+
+```v
+vcraft.released(fn () {
+	// Pure V only: no Python calls, no `raise_domain`, no `PyObj`.
+})
+// The GIL is held here again. A call into Python that follows proves it.
+```
+
+The manual pair still has to be used when the release has to span something the block
+form cannot - a `poll` with a 1 s timeout that returns without the GIL being restored,
+or a `select` between several conditions. The rule for the manual form is the same as for
+`released`: release and restore exactly once per path, restore before any Python call, and
+never release inside a `@[vc_nogil]` function that is already released.
+
+`with_gil` is the other direction, for a thread V created: it acquires the GIL for a
+block and gives it back in a `defer`, panic included. A V thread holds no thread state
+until one of the two is called.
+
 ## The state chain is per-thread because of `@[vc_nogil]`
 
 With the GIL held, one global chain would do. A released call runs concurrently with a

@@ -37,6 +37,10 @@ fn pyinit_vcraft_runtime_check() voidptr {
 		'sum_callback(callee)')
 	m.add_function_owned('call_from_thread', voidptr(call_from_thread_trampoline),
 		vcraft.meth_fastcall, 'call_from_thread(callee)')
+	m.add_function_owned('released_then_call', voidptr(released_then_call_trampoline),
+		vcraft.meth_fastcall, 'released_then_call(callee)')
+	m.add_function_owned('released_panics', voidptr(released_panics_trampoline),
+		vcraft.meth_noargs, 'released_panics()')
 	m.add_function_owned('export_squares', voidptr(export_squares_trampoline),
 		vcraft.meth_fastcall, 'export_squares(n)')
 	m.add_function_owned('layout', voidptr(layout_trampoline), vcraft.meth_noargs,
@@ -250,6 +254,55 @@ fn call_from_thread_trampoline(self voidptr, args voidptr, nargs isize) voidptr 
 		return unsafe { nil }
 	}
 	return vcraft.to_py_int(result).ptr
+}
+
+fn released_then_call(callee voidptr) int {
+	vcraft.released(fn () {
+		// Pure V only. Touching Python here is the same mistake as touching it in a
+		// `@[vc_nogil]` function.
+	})
+	result := vcraft.call(callee, []voidptr{})
+	if result.is_null() {
+		vcraft.clear_error()
+		return -1
+	}
+	value := vcraft.from_py_int(result, 'result') or {
+		vcraft.clear_error()
+		-1
+	}
+	result.decref()
+	return value
+}
+
+fn released_panics() int {
+	vcraft.released(fn () {
+		panic('deliberate release panic')
+	})
+	if !vcraft.error_is_set() {
+		return 0
+	}
+	vcraft.clear_error()
+	// The panic is caught and re-raised as a Python exception by the `recover` defer;
+	// the GIL is already back by the time that runs, so a call into Python afterwards
+	// is the thing that proves it was restored rather than abandoned.
+	_ = vcraft.to_py_int(1)
+	return 1
+}
+
+fn released_then_call_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('released_then_call', 1, int(nargs))
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	callee := vcraft.require_voidptr_arg(args, 0, 'released_then_call', 'callee')
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	return vcraft.to_py_int(released_then_call(callee)).ptr
+}
+
+fn released_panics_trampoline(self voidptr, args voidptr) voidptr {
+	return vcraft.to_py_int(released_panics()).ptr
 }
 
 fn identity_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
