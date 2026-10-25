@@ -1,37 +1,166 @@
-name: release-vcraft
+name: release
 
+# One trigger for the whole release: push a single tag `v1.5.0` and the images,
+# the wheels, the PyPI upload, the GitHub release and the action's floating tags
+# all follow in order. The old namespaces (`images/v*`, `vcraft/v*`,
+# `vcraft-action/v*`) are no longer used.
 on:
   push:
     tags:
-      - vcraft/v*
+      - v*
 
 # Serialise releases per ref, but never cancel one. Publishing to PyPI is not
-# safely interruptible: a run cancelled between uploading some wheels and
-# others leaves a partial release, and a release cannot be un-published. So a
-# second run for the same tag queues behind the first instead of replacing it.
+# safely interruptible: a run cancelled between uploading some wheels and others
+# leaves a partial release, and a release cannot be un-published. So a second
+# run for the same tag queues behind the first instead of replacing it.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  # Read the image build cache in ghcr.io.
-  packages: read
+  contents: read
 
-# The V compiler comes from the release published by release-v.yml, one archive
-# per runner platform (Windows included). A missing archive falls back to the
-# cache, and then to a source build at this pinned commit -- no V release is
-# newer than the flags vcraft passes, so a release binary fails every build with
-# "Unknown argument". On Windows the fallback is V's own `makev.bat` and its
-# bundled TCC, because the runner has no `make`. Same pins as docker/* and the
-# vcraft-action; when V cuts a newer release these steps go back to a plain
-# release download.
 env:
   V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
   VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
 
+# ---------------------------------------------------------------------------
+# 1. Images: build and push the manylinux/musllinux images (x86_64 + aarch64)
+#    that CI and the wheel build depend on. The buildcache-* tags pushed here
+#    are what the `build` job's manylinux rebuild reads back.
+# ---------------------------------------------------------------------------
 jobs:
+  images:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: manylinux
+            dockerfile: docker/manylinux.Dockerfile
+            base: quay.io/pypa/manylinux_2_28_x86_64
+            runner: ubuntu-latest
+            arch: x86_64
+            python: /opt/python/cp314-cp314/bin/python
+          - image: manylinux
+            dockerfile: docker/manylinux.Dockerfile
+            base: quay.io/pypa/manylinux_2_28_aarch64
+            runner: ubuntu-24.04-arm
+            arch: aarch64
+            python: /opt/python/cp314-cp314/bin/python
+          - image: musllinux
+            dockerfile: docker/musllinux.Dockerfile
+            runner: ubuntu-latest
+            arch: x86_64
+            python: /usr/bin/python3
+          - image: musllinux
+            dockerfile: docker/musllinux.Dockerfile
+            runner: ubuntu-24.04-arm
+            arch: aarch64
+            python: /usr/bin/python3
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: check the tag names the version being built
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAMPED="$(grep -o "pub const version = '[^']*'" vlib/vcraft_project/env.v | cut -d"'" -f2)"
+          test "$VERSION" = "$STAMPED" || {
+            echo "error: tag says $VERSION but the tree stamps $STAMPED" >&2
+            exit 1
+          }
+
+      - name: smoke-test the image definition
+        env:
+          BASE: ${{ matrix.base }}
+        run: |
+          docker build --check ${BASE:+--build-arg "BASE=$BASE"} \
+            -f ${{ matrix.dockerfile }} .
+
+      - name: log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: set up buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: build the architecture image
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: |
+            BASE=${{ matrix.base }}
+            VCRAFT_REF=${{ github.sha }}
+          load: true
+          tags: vcraft-${{ matrix.image }}:verify
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/vcraft-${{ matrix.image }}:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/vcraft-${{ matrix.image }}:buildcache-${{ matrix.arch }},mode=max
+
+      - name: verify the image builds a wheel that imports
+        run: |
+          IMAGE=vcraft-${{ matrix.image }}:verify
+          PY=${{ matrix.python }}
+          mkdir -p "$RUNNER_TEMP/verify"
+          docker run --rm -v "$RUNNER_TEMP/verify:/work" -w /work "$IMAGE" vcraft new verify
+          docker run --rm -v "$RUNNER_TEMP/verify/verify:/work" -w /work "$IMAGE" sh -c "
+            set -e
+            vcraft build --target linux-${{ matrix.arch }}-${{ matrix.image == 'musllinux' && 'musl' || 'gnu' }} --interpreter $PY
+            $PY -m venv /tmp/check
+            /tmp/check/bin/python -m pip install -q dist/*.whl
+            /tmp/check/bin/python -c 'import verify_native as m; assert m.add(2, 3) == 5; print(m.greet(\"image\"))'
+          "
+
+      - name: push the architecture tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          TARGET="ghcr.io/${{ github.repository_owner }}/vcraft-${{ matrix.image }}:${VERSION}-${{ matrix.arch }}"
+          docker tag vcraft-${{ matrix.image }}:verify "$TARGET"
+          docker push "$TARGET"
+
+  images-merge:
+    needs: [images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: set up buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: merge the per-architecture tags into one manifest
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          for IMAGE in manylinux musllinux; do
+            for TAG in "$VERSION" latest; do
+              docker buildx imagetools create \
+                -t "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${TAG}" \
+                "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${VERSION}-x86_64" \
+                "ghcr.io/${{ github.repository_owner }}/vcraft-${IMAGE}:${VERSION}-aarch64"
+            done
+          done
+
+# ---------------------------------------------------------------------------
+# 2. Build: run the suites on three platforms and produce the vcraft binaries.
+#    Needs the images (manylinux rebuild + buildcache).
+# ---------------------------------------------------------------------------
   build:
+    needs: [images-merge]
     strategy:
       fail-fast: false
       matrix:
@@ -43,9 +172,9 @@ jobs:
           - os: windows-latest
             asset: win-amd64
     runs-on: ${{ matrix.os }}
-    # Git Bash on the Windows runner too, so the platform-neutral steps are one
-    # body. The V build step below overrides this with pwsh, because `makev.bat`
-    # is a batch file and building V is not what a POSIX shell is for.
+    permissions:
+      contents: read
+      packages: read
     defaults:
       run:
         shell: bash
@@ -53,16 +182,10 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: set up Python
-        # The suites build venvs, so the interpreter needs ensurepip. Runner
-        # Pythons do not guarantee that; a pinned CPython does.
         uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
-      # The compiler published by release-v.yml, downloaded in seconds rather than
-      # built in minutes. A missing archive falls back to the cache ci.yml fills,
-      # and then to a source build, so a tag can always be cut even on the first run
-      # after a pin moves.
       - name: download the prebuilt compiler
         id: v-prebuilt
         if: runner.os != 'Windows'
@@ -121,8 +244,6 @@ jobs:
           make fresh_tcc
           make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
 
-      # Windows builds V with the tools V ships for the platform, when the download
-      # and the cache both came up empty: `makev.bat`, and no `make`.
       - name: build the V compiler (Windows)
         if: runner.os == 'Windows' && steps.v-prebuilt-win.outcome != 'success' && steps.v-cache-win.outputs.cache-hit != 'true'
         shell: pwsh
@@ -138,8 +259,6 @@ jobs:
           & "$v\makev.bat" --local
           & "$v\v.exe" version
 
-      # Saved before the suites, and not gated on their success, so a failing run
-      # still hands the compiler to the next one.
       - name: save the V compiler (Windows)
         if: runner.os == 'Windows' && steps.v-cache-win.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
@@ -156,7 +275,6 @@ jobs:
         shell: pwsh
         run: echo "$env:RUNNER_TEMP\v-src" >> $env:GITHUB_PATH
 
-
       - name: run the test suites
         if: runner.os != 'Windows'
         run: |
@@ -167,8 +285,6 @@ jobs:
           python3 tests/packaging/test_pack.py
           python3 tests/cli/test_cli.py
 
-      # The Windows-portable suites only. packaging, cli, docs and wheel are still
-      # POSIX-shaped (bash stubs, `bin/`, `.so`), so they are not run here.
       - name: run the test suites (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -179,32 +295,16 @@ jobs:
           python tests/fuzz/test_fuzz.py 4 20000
 
       - name: build the shipped vcraft
-        # After the suites, not before: the CLI suite rebuilds bin/vcraft itself
-        # without a deployment target, and an earlier build would be overwritten
-        # by that one. The macOS wheel is tagged `macosx_11_0_arm64`, and without
-        # a deployment target the binary would require the runner's own macOS.
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
-          # macOS links with clang rather than V's bundled TCC: the shipped binary has
-          # to be edited so its `libgc.dylib` dependency is relative, and
-          # `install_name_tool` cannot process TCC's Mach-O ("symbol table out of
-          # place"). A clang/ld64 binary it can.
           VCRAFT_CC: ${{ runner.os == 'macOS' && 'clang' || '' }}
         run: |
           ./scripts/build-vcraft.sh
           if [ "$RUNNER_OS" = "Windows" ]; then bin/vcraft.exe version; else bin/vcraft version; fi
 
       - name: make the macOS binary self-contained
-        # V links Boehm's `libgc.dylib` dynamically from its own tree and bakes that
-        # build path as an rpath, so the wheel only ran on a machine where that path
-        # happened to exist. Carry the dylib next to the binary and point the
-        # dependency at `@loader_path`, then drop the build-machine rpath. Without a
-        # self-contained binary the wheel fails at the user with
-        # `dyld: Library not loaded: @rpath/libgc.dylib`.
         if: runner.os == 'macOS'
         run: |
-          # The dependency as V linked it, whether `@rpath/libgc.dylib` or an absolute
-          # path into the V tree.
           dep="$(otool -L bin/vcraft | awk '/libgc\.dylib/{print $1; exit}')"
           if [ -z "$dep" ]; then
             echo "no dynamic libgc dependency; the binary is already self-contained"
@@ -214,8 +314,6 @@ jobs:
           test -n "$lib" || { echo "libgc.dylib not found under /tmp/v-src/thirdparty"; exit 1; }
           cp "$lib" bin/libgc.dylib
           install_name_tool -change "$dep" @loader_path/libgc.dylib bin/vcraft
-          # Any rpath that names the build machine (the runner's temp dir) goes; with
-          # the dependency on `@loader_path` none is needed.
           otool -l bin/vcraft \
             | awk '/LC_RPATH/{c=3} c>0{print; c--}' | grep 'path ' | awk '{print $2}' \
             | while read -r rp; do
@@ -223,7 +321,6 @@ jobs:
                   /tmp/*|/private/tmp/*|/Users/*) install_name_tool -delete_rpath "$rp" bin/vcraft ;;
                 esac
               done
-          # install_name_tool invalidates the ad-hoc signature an arm64 binary needs.
           codesign --force --sign - bin/vcraft
           echo "== dependencies =="; otool -L bin/vcraft
           echo "== rpaths =="; otool -l bin/vcraft | awk '/LC_RPATH/{c=3} c>0{print; c--}' || true
@@ -233,18 +330,10 @@ jobs:
             echo "an absolute rpath is still in the binary"; exit 1
           fi
 
-      # The suites above ran against a binary linked to the runner's glibc, which
-      # would make the wheel need that glibc too. The shipped Linux binary is built
-      # again inside the manylinux_2_28 image instead, the one the images publish,
-      # so its `manylinux_2_28` tag is true. PyPI refuses a plain `linux_x86_64`
-      # tag outright, so this is also what makes the upload possible at all.
       - name: set up buildx
         if: runner.os == 'Linux'
         uses: docker/setup-buildx-action@v4
 
-      # Reads the layer cache release-images.yml writes to the registry, so the
-      # tinycc, Boehm and V layers come from it and only vcraft rebuilds. Read
-      # only: the image release owns that cache.
       - name: log in to ghcr.io
         if: runner.os == 'Linux'
         uses: docker/login-action@v4
@@ -256,8 +345,6 @@ jobs:
       - name: rebuild the Linux binary in the manylinux image
         if: runner.os == 'Linux'
         uses: docker/build-push-action@v7
-        # No build record artifact: nothing reads it, and it is one more artifact
-        # in the run for the publish job to step around.
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
         with:
@@ -278,33 +365,24 @@ jobs:
           docker rm "$id"
           bin/vcraft version
 
-      # The binary and the V modules it was built with, uploaded for the publish
-      # job rather than published as tarballs: PyPI is the only distribution
-      # channel, and the tarballs existed only for the action to download.
       - name: upload the distribution
         uses: actions/upload-artifact@v6
         with:
           name: vcraft-dist-${{ matrix.asset }}
-          # `bin/vcraft*` picks up `vcraft.exe` on Windows, and points at the one
-          # binary that exists on each platform. `bin/*.dylib` is macOS's libgc,
-          # which the packer ships next to the binary so the wheel is self-contained.
           path: |
             bin/vcraft*
             bin/*.dylib
             vlib/
 
-  publish-pypi:
-    # A release is not published with a red platform: every matrix build runs
-    # the full suites, and this job waits for all of them.
+# ---------------------------------------------------------------------------
+# 3. Publish: assemble the platform wheels, upload to PyPI, and create the
+#    GitHub release. Needs the build artifacts.
+# ---------------------------------------------------------------------------
+  publish:
     needs: [build]
-    # Redundant with the tag-only trigger above, and kept on purpose: it is
-    # the one line standing between a build and an upload.
-    if: startsWith(github.ref, 'refs/tags/vcraft/v')
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
-    # Both: trusted publishing mints its token from `id-token`, and the notes
-    # step creates the GitHub release with `contents`. Job permissions replace
-    # the workflow's rather than merging into them, so both are named here.
     permissions:
       contents: write
       id-token: write
@@ -312,22 +390,14 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: download the distributions
-        # One directory per platform artifact, not merged: both hold `bin/` and
-        # `vlib/`, and merging them would overwrite one binary with the other.
-        # Only the distributions: other steps in the run can leave artifacts of
-        # their own (buildx uploads a `.dockerbuild` record), and an unfiltered
-        # download fails the whole step on one it cannot extract.
         uses: actions/download-artifact@v7
         with:
           path: dists
           pattern: vcraft-dist-*
 
       - name: check the tag names the version being built
-        # A tag of `vcraft/v0.2.0` on a tree that stamps `0.1.0` publishes a
-        # wheel that lies about its version, and PyPI keeps it forever.
         run: |
-          VERSION="${GITHUB_REF_NAME#vcraft/}"
-          VERSION="${VERSION#v}"
+          VERSION="${GITHUB_REF_NAME#v}"
           STAMPED="$(grep -o "pub const version = '[^']*'" vlib/vcraft_project/env.v | cut -d"'" -f2)"
           test "$VERSION" = "$STAMPED" || {
             echo "error: tag says $VERSION but the tree stamps $STAMPED" >&2
@@ -336,8 +406,6 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: assemble the platform wheels
-        # No sdist: a source distribution of a launcher with no binary installs
-        # something that cannot run.
         run: |
           mkdir -p dist
           python3 scripts/pack-vcraft-wheel.py --version "$VERSION" \
@@ -364,8 +432,42 @@ jobs:
           verify-metadata: true
 
       - name: publish the GitHub release notes
-        # Notes only, no assets: the tarballs used to live here for the action
-        # to download, and PyPI is the distribution channel now.
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
+
+# ---------------------------------------------------------------------------
+# 4. Action: validate the composite action and move its floating tags so that
+#    @v1 / @v1.x follow the release. Needs publish to have succeeded.
+# ---------------------------------------------------------------------------
+  action:
+    needs: [publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: install PyYAML
+        run: python -m pip install -q pyyaml
+
+      - name: validate the action definition
+        run: python -c "import yaml,sys; d=yaml.safe_load(open('actions/vcraft-action/action.yml')); assert d['runs']['using']=='composite', d; print('action ok:', d['name'])"
+
+      - name: move the floating tags
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          VERSION="${GITHUB_REF_NAME#v}"
+          MAJOR="${VERSION%%.*}"
+          MINOR="${VERSION%.*}"
+          git tag -fa "$MAJOR" -m "vcraft-action $MAJOR"
+          git tag -fa "$MINOR" -m "vcraft-action $MINOR"
+          git push origin "$MAJOR" "$MINOR" --force

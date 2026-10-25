@@ -11,7 +11,7 @@ name: release-v
 # Run on demand, after the V pin moves. Deliberately not on push: it touches only the V
 # pin, so a push that happens to edit ci.yml -- a version bump, a comment -- would rebuild
 # V for three platforms and publish a release for nothing. It is an optimisation anyway:
-# ci.yml and release-vcraft.yml fall back to building from source when an archive is
+# ci.yml and release.yml fall back to building from source when an archive is
 # missing, so a first run or a failed publish only costs time.
 on:
   workflow_dispatch:
@@ -119,7 +119,7 @@ jobs:
           prerelease: true
           body: |
             The V compiler vcraft pins for this commit, built from source on each
-            runner platform. `ci.yml` and `release-vcraft.yml` download these instead
+            runner platform. `ci.yml` and `release.yml` download these instead
             of building V, and fall back to a source build when one is missing.
 
             This is a workflow toolchain cache, not a vcraft release.

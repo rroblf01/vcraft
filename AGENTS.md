@@ -78,12 +78,13 @@ Other scripts:
   in `scripts/pack-vcraft-wheel.py` and `version` (`vlib/vcraft_project/env.v`) in step.
 - CI also runs the suites on musl inside the published `vcraft-musllinux` image, under
   ASan/UBSan, and against a free-threaded interpreter. `MUSL_IMAGE` in `ci.yml` names the
-  floating `:latest` tag, which `release-images.yml` moves on every image release, so it
+  floating `:latest` tag, which `release.yml` moves on every image release, so it
   needs no per-release bump; the versioned tags stay for consumers, whom `vcraft
-  generate-ci` names with the vcraft version. Release order: `images/v<version>` (checked
-  against `version` in `env.v`), then `vcraft/v<version>` (PyPI and the GitHub release),
-  then `vcraft-action/v<version>` (which moves the action's floating tags and whose
-  default version must already point at the vcraft release).
+  generate-ci` names with the vcraft version. Releasing is now a single step:
+  `git tag v<version> && git push origin v<version>` runs `.github/workflows/release.yml`,
+  which builds and pushes the images, builds and publishes the wheels to PyPI, creates
+  the GitHub release, and moves the action's floating tags, in that order (each job
+  gates the next). The tag is checked against `version` in `env.v` by every job.
 
 ## Architecture
 

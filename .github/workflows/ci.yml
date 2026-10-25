@@ -27,7 +27,7 @@ concurrency:
 
 # V comes from source at a pinned commit, not from a release: no V release is
 # newer than the flags vcraft passes, so a release binary fails every build.
-# Same pins as docker/*, the vcraft-action and release-vcraft.yml.
+# Same pins as docker/*, the vcraft-action and release.yml.
 env:
   V_COMMIT: 36be92642c49a8fe9213ea4b96c6bf56b67b668c
   VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
@@ -429,7 +429,7 @@ jobs:
     # The suites on musl libc, inside the published musllinux image, which carries V
     # at the pinned commit, gcc and CPython. Run with `docker run` from the runner
     # rather than as a job container: GitHub's JavaScript actions (checkout, cache)
-    # cannot run inside Alpine. MUSL_IMAGE names `latest`, which `release-images.yml`
+    # cannot run inside Alpine. MUSL_IMAGE names `latest`, which `release.yml`
     # moves on every image release, so this never has to be bumped. It lags the V pin
     # until the images for a new pin are published; a pin change is released with its
     # images before this CI rests on it. The versioned tags still exist for consumers,

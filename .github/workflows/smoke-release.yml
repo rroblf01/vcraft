@@ -30,8 +30,7 @@ jobs:
         run: |
           VERSION="${{ github.event.inputs.version }}"
           if [ -z "$VERSION" ]; then
-            VERSION="${GITHUB_REF_NAME#vcraft/}"
-            VERSION="${VERSION#v}"
+            VERSION="${GITHUB_REF_NAME#v}"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
