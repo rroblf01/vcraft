@@ -157,6 +157,10 @@ pub const attr_len = 'vc_len'
 // `sq_item`. It makes `instance[i]` work.
 pub const attr_getitem = 'vc_getitem'
 
+// attr_setitem marks a method as `__setitem__`: an integer index plus a value,
+// installed as `sq_ass_item`. It makes `instance[i] = value` work.
+pub const attr_setitem = 'vc_setitem'
+
 // attr_contains marks a method as `__contains__`: one parameter, a bool result,
 // installed as `sq_contains`. It makes `x in instance` work.
 pub const attr_contains = 'vc_contains'
@@ -235,6 +239,7 @@ pub const known_attrs = [
 	attr_invert,
 	attr_len,
 	attr_getitem,
+	attr_setitem,
 	attr_contains,
 	attr_classmethod,
 	attr_const,
@@ -340,6 +345,7 @@ pub mut:
 	// and `sq_contains`: `len(instance)`, `instance[i]` and `x in instance`.
 	is_len      bool
 	is_getitem  bool
+	is_setitem  bool
 	is_contains bool
 	// classmethod marks a `fn Class.name(...)` registered with `METH_CLASS`, so CPython
 	// passes the class rather than NULL and a subclass sees itself.
@@ -443,6 +449,7 @@ pub mut:
 	// `@[vc_contains]`.
 	len_fn string
 	item_fn string
+	setitem_fn string
 	contains_fn string
 	// numeric maps a numeric operator's key (see numeric_slots, e.g. `add` or `radd`) to
 	// the user's function, so the trampoline knows the name to call and the operand and

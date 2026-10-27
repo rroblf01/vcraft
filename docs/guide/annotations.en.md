@@ -62,7 +62,7 @@ the marshalled signature becomes `__text_signature__`, and the same source produ
 | `@[vc_ref]` | struct fields | A strong reference to another instance |
 | `@[vc_buffer]` | struct fields | A persistent native `[]T` of scalars |
 | `@[vc_error]` | `pub struct` | A `!T` error type with a `msg()`/`code()` |
-| `@[vc_len]` / `@[vc_getitem]` / `@[vc_contains]` | methods | `len()`, `obj[i]`, `x in obj` |
+| `@[vc_len]` / `@[vc_getitem]` / `@[vc_setitem]` / `@[vc_contains]` | methods | `len()`, `obj[i]`, `obj[i] = v`, `x in obj` |
 | `@[vc_iter]` / `@[vc_next]` | methods | `__iter__` / `__next__` |
 | `@[vc_eq]` / `@[vc_lt]` … | `pub fn` | Comparison and ordering |
 | `@[vc_hash]` | `pub fn` | `__hash__` |

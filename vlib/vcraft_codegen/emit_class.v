@@ -534,6 +534,57 @@ fn emit_contains_trampoline(p Project, c Class, f Func) string {
 	return w.str()
 }
 
+// emit_setitem_trampoline renders `sq_ass_item`, the slot behind `instance[i] = value`.
+//
+// CPython hands the index as a `PyObject *` (unlike `sq_item`, which receives a
+// `Py_ssize_t`), so the trampoline converts it to the user method's integer width
+// before the call. The value is converted through the same reader as a parameter.
+// An out-of-range index is the user's own `IndexError`, raised from a `!T` method.
+fn emit_setitem_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${c.setitem_fn}(self voidptr, index isize, value voidptr) int {\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	if f.nogil {
+		w.write_string(emit_nogil_open())
+	} else {
+		w.write_string('\tdefer {\n')
+		w.write_string('\t\tif message := recover() {\n')
+		w.write_string('\t\t\tvcraft.raise_panic(message)\n')
+		w.write_string('\t\t}\n')
+		w.write_string('\t}\n')
+	}
+	vt := f.params[1].v_type.trim_space()
+	if lookup(vt) == .int {
+		w.write_string('\tvalue_v := ' + vt + '(vcraft.from_py_int(vcraft.borrow(value), \'value\') or { return -1 })\n')
+	} else if lookup(vt) == .float {
+		w.write_string('\tvalue_v := ' + vt + '(vcraft.from_py_f64(vcraft.borrow(value), \'value\') or { return -1 })\n')
+	} else if lookup(vt) == .str {
+		w.write_string('\tvalue_v := vcraft.from_py_string(vcraft.borrow(value), \'value\') or { return -1 }\n')
+	} else if lookup(vt) == .bool {
+		w.write_string('\tvalue_v := vcraft.from_py_bool(vcraft.borrow(value))\n')
+	} else {
+		w.write_string('\tvalue_v := value\n')
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
+	call := 'state.' + c.self_access() + '${f.name}(${f.params[0].v_type.trim_space()}(index), value_v)'
+	if f.returns_result {
+		w.write_string('\t${call} or {\n')
+		w.write_string('\t\tvcraft.raise_from_error(err)\n\t\treturn -1\n')
+		w.write_string('\t}\n')
+	} else {
+		w.write_string('\t${call}\n')
+	}
+	if f.nogil {
+		w.write_string(emit_nogil_close())
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
+	w.write_string('\treturn 0\n')
+	w.write_string('}\n\n')
+	return w.str()
+}
+
+
 // emit_class_sequences renders the `sq_length`, `sq_item` and `sq_contains` trampolines
 // for the methods that fill them.
 fn emit_class_sequences(p Project, c Class) string {
@@ -544,6 +595,9 @@ fn emit_class_sequences(p Project, c Class) string {
 		}
 		if m.is_getitem {
 			w.write_string(emit_item_trampoline(p, c, m))
+		}
+		if m.is_setitem {
+			w.write_string(emit_setitem_trampoline(p, c, m))
 		}
 		if m.is_contains {
 			w.write_string(emit_contains_trampoline(p, c, m))

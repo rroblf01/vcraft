@@ -554,7 +554,7 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 	dealloc voidptr, methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr,
 	hash voidptr, bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr,
 	next_fn voidptr, getbuffer voidptr, releasebuffer voidptr, len_fn voidptr,
-	item_fn voidptr, contains_fn voidptr, number_slots []PyTypeSlot) PyObj {
+	item_fn voidptr, setitem_fn voidptr, contains_fn voidptr, number_slots []PyTypeSlot) PyObj {
 	// The instance size is the PyObject header plus this class's state struct. A
 	// subclass's `state_size` includes its base's, so a subclass is never smaller than
 	// its base -- which is what CPython rejects with "tp_basicsize ... too small for
@@ -663,10 +663,22 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 			value: item_fn
 		}
 	}
+	if setitem_fn != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_sq_ass_item
+			value: setitem_fn
+		}
+	}
 	if contains_fn != unsafe { nil } {
 		slots << PyTypeSlot{
 			slot:  slot_sq_contains
 			value: contains_fn
+		}
+	}
+	if setitem_fn != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_sq_ass_item
+			value: setitem_fn
 		}
 	}
 	// The base tuple has to outlive this call: CPython reads it and keeps a reference to

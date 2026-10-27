@@ -34,6 +34,7 @@ int main(void) {
 	printf("slot_sq_length %d\n", Py_sq_length);
 	printf("slot_sq_item %d\n", Py_sq_item);
 	printf("slot_sq_contains %d\n", Py_sq_contains);
+	printf("slot_sq_ass_item %d\n", Py_sq_ass_item);
 	printf("slot_str %d\n", Py_tp_str);
 	printf("slot_nb_add %d\n", Py_nb_add);
 	printf("slot_nb_subtract %d\n", Py_nb_subtract);
@@ -80,6 +81,7 @@ slot_hash 59
 slot_sq_length 45
 slot_sq_item 44
 slot_sq_contains 41
+slot_sq_ass_item 39
 slot_str 70
 slot_nb_add 7
 slot_nb_subtract 36

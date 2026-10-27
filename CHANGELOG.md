@@ -32,6 +32,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `setitem`, `getattr`, `setattr`, `hasattr` delegate to the existing helpers,
   so a function holding a `PyObj` can invoke, index and mutate it without
   dropping to `voidptr`.
+- **`@[vc_setitem]`.** `instance[i] = value` now has a slot, the counterpart of
+  `@[vc_getitem]`. The method takes an integer index and a value; an out-of-range
+  index is the user's own `IndexError` from a `!T` method.
 - **Sets.** `new_set`, `set_add_owned`, `to_py_set` and `from_py_set`
   mirror the list/dict helpers, plus `set_type()` and `PySet_New`/`PySet_Add`
   in the shim.

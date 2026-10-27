@@ -795,6 +795,7 @@ fn link_sequences(mut p Project) {
 	for i, c in p.classes {
 		mut lens := 0
 		mut items := 0
+		mut setitems := 0
 		mut contains := 0
 		for m in c.methods {
 			if m.is_len {
@@ -803,11 +804,14 @@ fn link_sequences(mut p Project) {
 			if m.is_getitem {
 				items++
 			}
+			if m.is_setitem {
+				setitems++
+			}
 			if m.is_contains {
 				contains++
 			}
 		}
-		if lens > 1 || items > 1 || contains > 1 {
+		if lens > 1 || items > 1 || setitems > 1 || contains > 1 {
 			report(mut p, c.origin, astquery.Declaration{
 				name:   c.name
 				line:   c.line
@@ -820,6 +824,9 @@ fn link_sequences(mut p Project) {
 		}
 		if items == 1 {
 			p.classes[i].item_fn = 'vcraft_generated__item_${c.key}'
+		}
+		if setitems == 1 {
+			p.classes[i].setitem_fn = 'vcraft_generated__setitem_${c.key}'
 		}
 		if contains == 1 {
 			p.classes[i].contains_fn = 'vcraft_generated__contains_${c.key}'
@@ -1036,16 +1043,29 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	m.is_next = attr_next in block.attrs
 	m.is_len = attr_len in block.attrs
 	m.is_getitem = attr_getitem in block.attrs
+	m.is_setitem = attr_setitem in block.attrs
 	m.is_contains = attr_contains in block.attrs
-	if [m.is_len, m.is_getitem, m.is_contains].filter(it).len > 1 {
+	if [m.is_len, m.is_getitem, m.is_setitem, m.is_contains].filter(it).len > 1 {
 		report(mut p, path, decl,
-			'error: `${decl.name}` carries more than one of @[vc_len], @[vc_getitem] and @[vc_contains]; each fills a different slot')
+			'error: `${decl.name}` carries more than one of @[vc_len], @[vc_getitem], @[vc_setitem] and @[vc_contains]; each fills a different slot')
 		return
 	}
-	if (m.is_len || m.is_getitem || m.is_contains) && (m.property || m.is_iter || m.is_next) {
+	if (m.is_len || m.is_getitem || m.is_setitem || m.is_contains) && (m.property || m.is_iter || m.is_next) {
 		report(mut p, path, decl,
-			'error: `@[vc_len]`, `@[vc_getitem]` and `@[vc_contains]` cannot be combined with @[vc_property], @[vc_iter] or @[vc_next] on `${decl.name}`')
+			'error: `@[vc_len]`, `@[vc_getitem]`, `@[vc_setitem]` and `@[vc_contains]` cannot be combined with @[vc_property], @[vc_iter] or @[vc_next] on `${decl.name}`')
 		return
+	}
+	if m.is_setitem {
+		if m.params.len != 2 {
+			report(mut p, path, decl,
+				'error: `@[vc_setitem] ${decl.name}` takes ${m.params.len} argument(s); `__setitem__` takes an index and a value')
+			return
+		}
+		if lookup(m.params[0].v_type) !in [.int, .uint] {
+			report(mut p, path, decl,
+				'error: `@[vc_setitem] ${decl.name}` takes a `${m.params[0].v_type}` index; `__setitem__` takes an integer index')
+			return
+		}
 	}
 	if m.is_len {
 		if m.params.len > 0 {

@@ -331,7 +331,7 @@ pub fn render_class_exec(p Project, c Class) string {
 		w.write_string('\t\tunsafe { nil },\n')
 	}
 	// The sequence protocol, each slot only when the class declares it.
-	for fn_ in [c.len_fn, c.item_fn, c.contains_fn] {
+	for fn_ in [c.len_fn, c.item_fn, c.setitem_fn, c.contains_fn] {
 		if fn_.len > 0 {
 			w.write_string('\t\tvoidptr(' + fn_ + '),\n')
 		} else {

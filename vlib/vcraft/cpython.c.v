@@ -475,6 +475,7 @@ pub const slot_sq_length = i32(45)
 pub const slot_sq_item = i32(44)
 
 pub const slot_sq_contains = i32(41)
+pub const slot_sq_ass_item = i32(39)
 
 // The number protocol. `nb_*` slots are what `+`, `-`, `*`, `&`, `|` and the unary
 // operators reach; the ids are the `PyType_Slot` ones, which sit below the `Py_sq_*`
