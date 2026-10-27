@@ -715,3 +715,24 @@ pub fn tuple_of(items []PyObj) PyObj {
 	}
 	return steal(t)
 }
+
+// list_new returns a new empty list, owned by the caller.
+pub fn list_new() PyObj {
+	return steal(C.PyList_New(0))
+}
+
+// list_append_owned appends `item` to `list`, transferring ownership: the list
+// takes its own reference and the caller's is released. A failed append leaves
+// the exception set and releases `item`.
+pub fn list_append_owned(list PyObj, item PyObj) int {
+	out := C.PyList_Append(list.ptr, item.ptr)
+	item.decref()
+	return int(out)
+}
+
+// list_set_owned stores `item` at index `i` of `list` (which must already have
+// room), stealing the caller's reference.
+pub fn list_set_owned(list PyObj, i int, item PyObj) {
+	C.PyList_SetItem(list.ptr, isize(i), item.ptr)
+	// PyList_SetItem steals; nothing to decref.
+}

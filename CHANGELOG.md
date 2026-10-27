@@ -23,6 +23,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `[]PyObj` / `map[string]PyObj` of borrowed references, the counterparts of
   `to_py_obj_list`/`to_py_obj_dict`. A function walking a composite Python value
   (a decoder, a query result) no longer calls `item(i)` / `dict_items` by hand.
+- **`list_new`, `list_append_owned`, `list_set_owned`.** Build a Python list
+  incrementally without pre-sizing, transferring ownership of each appended
+  item. The counterpart of `to_py_obj_list` for the streaming case.
 - **`setattr` and `hasattr`.** Companions to the existing `getattr`: set an
   attribute (stealing the value) and test for one without raising.
 - **`repr_f64` uses Python's shortest round-trip form.** It now renders
