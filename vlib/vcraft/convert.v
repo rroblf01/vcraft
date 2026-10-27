@@ -337,6 +337,46 @@ pub fn from_py_voidptr(obj PyObj) voidptr {
 	return obj.ptr
 }
 
+// from_py_list reads a list or a tuple into a `[]PyObj` of borrowed references.
+//
+// The elements are borrowed, so the caller does not release them; they stay
+// alive as long as the source object does. This is the counterpart of
+// `to_py_obj_list` and is what a function that has to walk a composite Python
+// value (a decoder, a query result) uses.
+pub fn from_py_list(obj PyObj, name string) ![]PyObj {
+	if !obj.type_is(list_type()) && !obj.type_is(tuple_type()) {
+		raise(.type_error, '${name}: expected a list or a tuple, got ${obj.type_name()}')
+		return error('${name}: not a list')
+	}
+	n := int(obj.len())
+	mut out := []PyObj{cap: n}
+	for i in 0 .. n {
+		out << obj.item(i)
+	}
+	return out
+}
+
+// from_py_dict reads a dict into a `map[string]PyObj` of borrowed references.
+//
+// A key that is not a str raises TypeError. The values are borrowed.
+pub fn from_py_dict(obj PyObj, name string) !(map[string]PyObj) {
+	if !obj.type_is(dict_type()) {
+		raise(.type_error, '${name}: expected a dict, got ${obj.type_name()}')
+		return error('${name}: not a dict')
+	}
+	pairs := dict_items(obj, name)!
+	mut out := map[string]PyObj{}
+	mut i := 0
+	for i < pairs.len {
+		key := pairs[i]
+		val := pairs[i + 1]
+		ks := from_py_string(key, 'key')!
+		out[ks] = val
+		i += 2
+	}
+	return out
+}
+
 // ------------------------------------------------------------- to Python
 
 // to_py_int boxes a V integer.
