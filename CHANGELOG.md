@@ -28,6 +28,10 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   item. The counterpart of `to_py_obj_list` for the streaming case.
 - **`setattr` and `hasattr`.** Companions to the existing `getattr`: set an
   attribute (stealing the value) and test for one without raising.
+- **Convenience methods on `PyObj`.** `call`, `call_method`, `getitem`,
+  `setitem`, `getattr`, `setattr`, `hasattr` delegate to the existing helpers,
+  so a function holding a `PyObj` can invoke, index and mutate it without
+  dropping to `voidptr`.
 - **`repr_f64` uses Python's shortest round-trip form.** It now renders
   through `PyObject_Repr`, matching `repr()`/`str()` of the equivalent Python
   float (scientific notation only when needed, non-finite values as

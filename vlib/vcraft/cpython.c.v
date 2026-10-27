@@ -228,6 +228,8 @@ fn C.PyDict_SetItem(d voidptr, key voidptr, value voidptr) int
 fn C.PyDict_Next(d voidptr, pos &isize, key &voidptr, value &voidptr) int
 
 fn C.PyObject_GetAttrString(o voidptr, name voidptr) voidptr
+fn C.PyObject_GetItem(o voidptr, key voidptr) voidptr
+fn C.PyObject_SetItem(o voidptr, key voidptr, value voidptr) int
 
 fn C.PyObject_SetAttrString(o voidptr, name voidptr, value voidptr) int
 fn C.PyObject_HasAttrString(o voidptr, name voidptr) int

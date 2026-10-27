@@ -111,6 +111,45 @@ pub fn (o PyObj) is(other PyObj) bool {
 	return C.Py_Is(o.ptr, other.ptr) == 1
 }
 
+// call invokes the object as a callable with the positional `args` (borrowed) and
+// returns a new reference, or the null object with an exception set.
+pub fn (o PyObj) call(args []voidptr) PyObj {
+	return vcraft.call(o.ptr, args)
+}
+
+// call_method invokes `o.name(...)` with the positional `args` (borrowed).
+pub fn (o PyObj) call_method(name string, args []voidptr) PyObj {
+	return vcraft.call_method(o.ptr, name, args)
+}
+
+// getitem returns `o[key]` as a new reference.
+pub fn (o PyObj) getitem(key PyObj) PyObj {
+	return steal(C.PyObject_GetItem(o.ptr, key.ptr))
+}
+
+// setitem stores `value` under `key`, stealing the caller's reference to `value`.
+// Returns 0 on success and -1 with an exception set on failure.
+pub fn (o PyObj) setitem(key PyObj, value PyObj) int {
+	out := C.PyObject_SetItem(o.ptr, key.ptr, value.ptr)
+	value.decref()
+	return int(out)
+}
+
+// getattr returns `o.name` as a new reference (or null with an exception set).
+pub fn (o PyObj) getattr(name string) PyObj {
+	return vcraft.getattr(o.ptr, name)
+}
+
+// setattr sets `o.name = value`, stealing the caller's reference to `value`.
+pub fn (o PyObj) setattr(name string, value PyObj) int {
+	return vcraft.setattr(o.ptr, name, value)
+}
+
+// hasattr reports whether `o` has an attribute `name`, without raising.
+pub fn (o PyObj) hasattr(name string) bool {
+	return vcraft.hasattr(o.ptr, name)
+}
+
 // consume_bool maps an owned bool object to `sq_contains`'s int result and releases it:
 // 1 for a true object, 0 for a false one, and -1 for null, which is the error the caller
 // already set. The object is consumed, so the reference is not leaked.
