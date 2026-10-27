@@ -977,11 +977,14 @@ int vpy_set_dict(PyObject *self, PyObject *value, void *closure) {
 // flag alone is not enough; this sets tp_dictoffset = -1 (MANAGED_DICT_OFFSET)
 // directly, which the limited API cannot do.
 void vpy_enable_managed_dict(PyObject *type) {
+#ifndef Py_LIMITED_API
 	PyTypeObject *t = (PyTypeObject *)type;
 	t->tp_dictoffset = -1;
 #ifdef Py_TPFLAGS_MANAGED_DICT
 	t->tp_flags |= Py_TPFLAGS_MANAGED_DICT;
 #endif
+#endif
+	(void)type;
 }
 
 PyObject *vpy_dict_type(void) {
