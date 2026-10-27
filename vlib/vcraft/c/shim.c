@@ -992,6 +992,7 @@ void vpy_enable_managed_dict(PyObject *type) {
 // three may be NULL for a partial protocol.
 void vpy_enable_mapping(PyObject *type, void *mp_length, void *mp_subscript,
                         void *mp_ass_subscript) {
+#ifndef Py_LIMITED_API
 	PyTypeObject *t = (PyTypeObject *)type;
 	PyMappingMethods *m = (PyMappingMethods *)PyObject_Malloc(sizeof(PyMappingMethods));
 	if (m == NULL) return;
@@ -1000,6 +1001,9 @@ void vpy_enable_mapping(PyObject *type, void *mp_length, void *mp_subscript,
 	m->mp_subscript = (binaryfunc)mp_subscript;
 	m->mp_ass_subscript = (objobjargproc)mp_ass_subscript;
 	t->tp_as_mapping = m;
+#else
+	(void)type; (void)mp_length; (void)mp_subscript; (void)mp_ass_subscript;
+#endif
 }
 
 PyObject *vpy_dict_type(void) {
