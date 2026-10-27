@@ -1121,13 +1121,15 @@ fn emit_numeric_call(c Class, handler Func, selfv string, otherv string) string 
 	match lookup(operand) {
 		.int {
 			w.write_string('\t\tif vcraft.is_instance_of(${otherv}, vcraft.long_type().ptr) {\n')
-			w.write_string('\t\t\targ := vcraft.from_py_int(vcraft.borrow(${otherv}), ${vstring_literal(handler.params[1].name)}) or { return unsafe { nil } }\n')
+			w.write_string('\t\t\targ_raw := vcraft.from_py_int(vcraft.borrow(${otherv}), ${vstring_literal(handler.params[1].name)}) or { return unsafe { nil } }\n')
+			w.write_string('\t\t\targ := ' + handler.params[1].v_type + '(arg_raw)\n')
 			w.write_string(emit_numeric_result(c, handler, '${handler.name}(${storage}, arg)', '\t\t\t'))
 			w.write_string('\t\t}\n')
 		}
 		.uint {
 			w.write_string('\t\tif vcraft.is_instance_of(${otherv}, vcraft.long_type().ptr) {\n')
-			w.write_string('\t\t\targ := vcraft.from_py_uint(vcraft.borrow(${otherv}), ${vstring_literal(handler.params[1].name)}) or { return unsafe { nil } }\n')
+			w.write_string('\t\t\targ_raw := vcraft.from_py_uint(vcraft.borrow(${otherv}), ${vstring_literal(handler.params[1].name)}) or { return unsafe { nil } }\n')
+			w.write_string('\t\t\targ := ' + handler.params[1].v_type + '(arg_raw)\n')
 			w.write_string(emit_numeric_result(c, handler, '${handler.name}(${storage}, arg)', '\t\t\t'))
 			w.write_string('\t\t}\n')
 		}
