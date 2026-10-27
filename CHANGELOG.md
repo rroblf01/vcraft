@@ -7,6 +7,18 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A function returning a freshly created Python object leaked one reference
+  per call.** A `voidptr`/`pyobj` result was wrapped as
+  `vcraft.borrow(result).new_ref().ptr`, so V had to hand back a borrowed
+  pointer and could never transfer ownership of an object it had just built:
+  the wrapper took a reference of its own and V's original was never released.
+  The wrapper now passes the pointer through, and V returns an owned reference
+  (the C extension convention). Pass-through helpers take their own reference
+  before returning, so callers still receive one owned reference. Found while
+  building `vjson`, where `decode` leaked ~330 bytes per call.
+
 ### Added
 
 - **`@[vc_opaque]`, for a function that takes or returns a native pointer.** A `voidptr`

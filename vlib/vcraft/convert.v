@@ -33,7 +33,7 @@ import math.complex
 // The `from_py_*_arg` readers ask for a positional argument by index; this one asks for
 // an element of a value that is already in hand, which is what a function that receives a
 // tuple or a list from Python does. The element is borrowed, so it is not released here.
-pub fn from_py_int_item(obj PyObj, i int, name string) !int {
+pub fn from_py_int_item(obj PyObj, i int, name string) !i64 {
 	if obj.is_null() {
 		raise(.type_error, '${name} is not a list or a tuple')
 		return error('missing ${name}')
@@ -74,12 +74,12 @@ pub fn from_py_bytes_item(obj PyObj, i int, name string) !string {
 	return from_py_bytes(elem, name)!
 }
 
-pub fn from_py_int(obj PyObj, name string) !int {
+pub fn from_py_int(obj PyObj, name string) !i64 {
 	// An exact int that fits is decided by one pointer comparison. Everything else,
 	// including every error, takes the checks below.
 	mut fast := i64(0)
 	if C.vpy_exact_long_as_i64(obj.ptr, &fast) == 1 {
-		return int(fast)
+		return fast
 	}
 	if obj.is_null() {
 		set_error(pyexc_obj(.type_error), '${name}: missing argument')

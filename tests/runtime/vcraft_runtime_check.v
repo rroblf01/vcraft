@@ -361,7 +361,7 @@ fn unpack_tuple(t voidptr) !int {
 	obj := vcraft.borrow(t)
 	a := vcraft.from_py_int_item(obj, 0, 'a')!
 	b := vcraft.from_py_str_item(obj, 1, 'b')!
-	return a + b.len
+	return int(a) + b.len
 }
 
 fn unpack_bytes(t voidptr) !int {

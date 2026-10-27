@@ -363,7 +363,7 @@ pub fn from_py_int_seq_arg(argv voidptr, i int, func string, name string) ![]int
 		k = int(C.vpy_seq_fill_i64(obj.ptr, unsafe { &i64(out.data) }, isize(n)))
 	}
 	for k < n {
-		out[k] = from_py_int(obj.item(k), name)!
+		out[k] = int(from_py_int(obj.item(k), name)!)
 		k++
 	}
 	return out
