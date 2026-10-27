@@ -9,7 +9,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ### Added
 
+- **`@[vc_mapping]`.** A class implements the mapping protocol (`obj[key]`, `obj[key] = v`, `del obj[key]`, `len(obj)`) via `mp_subscript` and `mp_ass_subscript` slots.
+- **`@[vc_rename]`.** Renames the Python-side name of a function, class or field.
+- **`@[vc_pass_module]`.** Passes the module object as the first argument.
 - **`@[vc_from_py]` and `@[vc_into_py]`.** Custom converters: `@[vc_from_py: 'fn']`
+  replaces the standard reader for struct parameters, `@[vc_into_py: 'fn']` replaces
+  the standard boxing of a struct result.
+** Custom converters: `@[vc_from_py: 'fn']`
   replaces the standard reader for struct parameters, `@[vc_into_py: 'fn']` replaces
   the standard boxing of a struct result. The converter is a V function taking a
   `PyObj` (from_py) or the V value (into_py) and returning the other side, so a

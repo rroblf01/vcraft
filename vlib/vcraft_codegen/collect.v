@@ -189,6 +189,7 @@ fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 		py_name: if attr_rename in block.attrs { (block.args[attr_rename] or { decl.name }).trim("'\"") } else { decl.name }
 		doc:     block.doc
 		raw:           attr_raw in block.attrs
+		pass_module:   attr_pass_module in block.attrs
 		nogil:         attr_nogil in block.attrs
 		export_buffer: attr_memoryview in block.attrs
 		opaque:         attr_opaque in block.attrs

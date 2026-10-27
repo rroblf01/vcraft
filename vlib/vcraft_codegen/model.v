@@ -11,6 +11,7 @@ module vcraft_codegen
 pub const attr_fn = 'vc_fn'
 
 pub const attr_raw = 'vc_raw'
+pub const attr_pass_module = 'vc_pass_module'
 pub const attr_rename = 'vc_rename'
 pub const attr_from_py = 'vc_from_py'
 pub const attr_into_py = 'vc_into_py'
@@ -221,6 +222,7 @@ pub const known_attrs = [
 	attr_fn,
 	attr_defaults,
 	attr_raw,
+	attr_pass_module,
 	attr_rename,
 	attr_from_py,
 	attr_into_py,
@@ -336,6 +338,8 @@ pub mut:
 	// raw marks a function the generated wrapper must not marshal at all: it
 	// takes and returns `voidptr` and sees the real PyObject pointers.
 	raw bool
+	// pass_module makes the wrapper pass the module object as the first argument.
+	pass_module bool
 	// nogil marks a pure V function the wrapper may call with the GIL released.
 	nogil bool
 	// opaque marks a function whose `voidptr` result is a native pointer, not a borrowed

@@ -77,6 +77,8 @@ the marshalled signature becomes `__text_signature__`, and the same source produ
 | `@[vc_opaque]` | `pub fn` | A `voidptr` result travels as a capsule, and each `voidptr` parameter is unwrapped from one |
 | `@[vc_nogil]` | `pub fn` | Runs with the GIL released (methods included) |
 | `@[vc_raw]` | `pub fn` | Skips marshalling; you handle `PyObject *` |
+| `@[vc_mapping]` | `pub struct` | Enables the mapping protocol (`obj[key]`, `obj[key] = v`, `del obj[key]`) |
+| `@[vc_pass_module]` | `pub fn` | Passes the module object as the first argument |
 | `@[vc_rename: 'name']` | `pub fn`, `pub struct`, fields | Renames the Python-side name |
 | `@[vc_from_py: 'fn']` | `pub fn` | Replaces the standard reader for every parameter with a custom converter |
 | `@[vc_into_py: 'fn']` | `pub fn` | Replaces the standard boxing of the result with a custom converter |

@@ -599,7 +599,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
-	if f.params.len > 0 {
+	if f.params.len > 0 && !f.pass_module {
 		w.write_string(emit_bind(f))
 	}
 	mut names := []string{}
@@ -693,7 +693,7 @@ pub fn emit_static_trampoline(f Func) string {
 		'_self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
-	if f.params.len > 0 {
+	if f.params.len > 0 && !f.pass_module {
 		w.write_string(emit_bind(f))
 	}
 	mut names := []string{}
@@ -857,21 +857,29 @@ pub fn emit_trampoline(f Func) string {
 	// every reference it touches.
 	mut names := []string{}
 	for i, param in f.params {
+		if f.pass_module && i == 0 {
+			name := local_name(i)
+			names << name
+			w.write_string('\t${name} := vcraft.borrow(g_vc_module.obj.ptr).new_ref()\n')
+			continue
+		}
+		// Adjust arg index for pass_module
+		arg_index := if f.pass_module { i - 1 } else { i }
 		if f.raw {
 			name := local_name(i)
 			names << name
 			w.write_string('\t${name} := vcraft.from_py_voidptr(' +
-				"vcraft.require_arg(args, ${i}, '${f.name}', '${param.name}'))\n")
+				"vcraft.require_arg(args, ${arg_index}, '${f.name}', '${param.name}'))\n")
 			w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 			continue
 		}
 		name := local_name(i)
 		names << name
 		if f.from_py.len > 0 && is_struct(param.v_type.trim_space()) {
-			// Custom converter (only for struct params): read the borrowed PyObject and convert.
-			w.write_string('\t${name} := ${f.from_py}(vcraft.require_arg(args, ${i}, ${vstring_literal(f.name)}, ${vstring_literal(param.name)})) or { return unsafe { nil } }\n')
+			w.write_string('\t${name} := ${f.from_py}(vcraft.require_arg(args, ${arg_index}, ${vstring_literal(f.name)}, ${vstring_literal(param.name)})) or { return unsafe { nil } }\n')
 		} else {
-			w.write_string('\t${param_reader(param, name, i, f.name, f.opaque)}\n')
+			// param_reader uses index for arg_present; adjust
+			w.write_string('\t${param_reader(param, name, arg_index, f.name, f.opaque)}\n')
 		}
 	}
 
