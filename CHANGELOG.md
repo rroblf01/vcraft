@@ -15,6 +15,8 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `PyObj` (from_py) or the V value (into_py) and returning the other side, so a
   Python dict can cross as a V struct and back without manual marshalling at
   every call site.
+- **`@[vc_rename]`.** Renames the Python-side name of a function, class or field,
+  so a V `greet` can ship as `greet_user` and a `value` field as `count`.
 - **`@[vc_weakref]`.** A class opts in to `weakref.ref(instance)`; vcraft turns
   on `Py_TPFLAGS_HAVE_GC` so the VM allocates a weakref list for each instance,
   even when the class holds no reference fields of its own.

@@ -185,8 +185,9 @@ fn params_of(ast &flat.FlatAst, id flat.NodeId, is_method bool) []Param {
 fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 	is_method bool) Func {
 	mut f := Func{
-		name:          decl.name
-		doc:           block.doc
+		name:    decl.name
+		py_name: if attr_rename in block.attrs { (block.args[attr_rename] or { decl.name }).trim("'\"") } else { decl.name }
+		doc:     block.doc
 		raw:           attr_raw in block.attrs
 		nogil:         attr_nogil in block.attrs
 		export_buffer: attr_memoryview in block.attrs
@@ -697,6 +698,7 @@ fn collect_enum(path string, lines []string, decl astquery.Declaration, mut p Pr
 	}
 	info := EnumInfo{
 		name:    name
+		py_name: name
 		key:     name.to_lower()
 		members: members
 	}
@@ -738,8 +740,9 @@ fn collect_plain_struct(path string, lines []string, decl astquery.Declaration, 
 		}
 	}
 	info := StructInfo{
-		name:   decl.name
-		key:    decl.name.to_lower()
+		name:    decl.name
+		py_name: decl.name
+		key:     decl.name.to_lower()
 		fields: fields
 	}
 	// Registered immediately so a signature written before the struct is a `lookup` hit.
@@ -779,8 +782,9 @@ fn collect_const(path string, lines []string, decl astquery.Declaration, mut p P
 		}
 	}
 	p.consts << Const{
-		name:   decl.name
-		value:  value
+		name:    decl.name
+		py_name: decl.name
+		value:   value
 		kind:   kind
 		origin: path
 		line:   decl.line
@@ -1304,6 +1308,7 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 	}
 	mut c := Class{
 		name:      decl.name
+		py_name:   if attr_rename in block.attrs { (block.args[attr_rename] or { decl.name }).trim("'\"") } else { decl.name }
 		doc:       block.doc
 		base:      base
 		weakref:   attr_weakref in block.attrs
@@ -1447,6 +1452,7 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			continue
 		}
 		f.doc = block.doc
+		f.py_name = if attr_rename in block.attrs { (block.args[attr_rename] or { f.name }).trim("'\"") } else { f.name }
 		if attr_buffer_typed in block.attrs && attr_buffer !in block.attrs {
 			report(mut p, path, astquery.Declaration{
 				name:      f.name
@@ -1656,6 +1662,7 @@ fn collect_error_type(path string, lines []string, ast &flat.FlatAst,
 	}
 	p.errors << ErrorType{
 		name:      decl.name
+		py_name:   decl.name
 		exc_field: exc_field
 		doc:       block.doc
 		origin:    path

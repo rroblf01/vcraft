@@ -11,6 +11,7 @@ module vcraft_codegen
 pub const attr_fn = 'vc_fn'
 
 pub const attr_raw = 'vc_raw'
+pub const attr_rename = 'vc_rename'
 pub const attr_from_py = 'vc_from_py'
 pub const attr_into_py = 'vc_into_py'
 
@@ -220,6 +221,7 @@ pub const known_attrs = [
 	attr_fn,
 	attr_defaults,
 	attr_raw,
+	attr_rename,
 	attr_from_py,
 	attr_into_py,
 	attr_eq,
@@ -318,7 +320,8 @@ pub fn (p Param) optional() bool {
 // scan learns more about it, so its fields are mutable.
 pub struct Func {
 pub mut:
-	name string
+	name    string
+	py_name string
 	// v_ret is the declared return type, already split so that `!string` yields
 	// `string` and `!void` yields an empty result.
 	v_ret string
@@ -405,8 +408,9 @@ pub mut:
 // Class is one struct the generator will expose as a Python type.
 pub struct Class {
 pub mut:
-	name string
-	doc  string
+	name    string
+	py_name string
+	doc     string
 	// qualified is the name the type is created under, which is the V module name
 	// plus the class name, so that two modules may each declare a `Point`.
 	qualified string
@@ -548,8 +552,9 @@ pub fn (c Class) state_type() string {
 
 pub struct Field {
 pub mut:
-	name string
-	doc  string
+	name    string
+	py_name string
+	doc     string
 	// v_type is the declared field type, which decides the accessor.
 	v_type string
 	// setter is empty for a read-only field.
@@ -652,7 +657,8 @@ pub fn (f Field) is_reference() bool {
 // from the struct's own field before the value is returned.
 pub struct ErrorType {
 pub mut:
-	name string
+	name    string
+	py_name string
 	// exc_field is the field holding the Python exception class. Empty when the type
 	// carries no class and names a builtin one through `code()` instead.
 	exc_field string
@@ -720,7 +726,9 @@ pub fn numeric_slot(name string) ?NumericSlot {
 // same file or in a file that sorts after this one.
 pub struct Operator {
 pub mut:
-	name   string
+	name    string
+	// py_name is the Python-side name, which `@[vc_rename]` may override.
+	py_name string
 	// kind is `eq` or `hash`, an ordering name, or a numeric slot key.
 	kind   string
 	origin string
@@ -736,7 +744,8 @@ pub mut:
 // Python attribute.
 pub struct Const {
 pub mut:
-	name string
+	name    string
+	py_name string
 	// value is the literal as written, and kind is `int`, `float`, `bool` or `str`.
 	// Nothing else can cross: a const is read at generation time, not at run time, so
 	// the value has to be a literal the generator can box itself.
@@ -759,6 +768,7 @@ pub:
 pub struct EnumInfo {
 pub:
 	name    string
+	py_name string
 	key     string
 	members []EnumMember
 }
@@ -774,8 +784,9 @@ pub:
 // its fields, keyed by their names.
 pub struct StructInfo {
 pub:
-	name   string
-	key    string
+	name    string
+	py_name string
+	key     string
 	fields []StructField
 }
 

@@ -158,7 +158,7 @@ pub fn glue_module_body(p Project) string {
 		flags := if f.params.len == 0 { 'vcraft.meth_noargs' } else {
 			'vcraft.meth_fastcall_keywords'
 		}
-		w.write_string('\tg_vc_module.add_function_owned(' + vstring_literal(f.name) +
+		w.write_string('\tg_vc_module.add_function_owned(' + vstring_literal(f.py_name) +
 			', voidptr(' + f.trampoline + '), ' + flags + ',\n')
 		w.write_string('\t\t${vstring_literal(python_signature(f))})\n')
 	}
@@ -194,7 +194,7 @@ pub fn glue_module_body(p Project) string {
 	// Module-level constants, each a boxed literal attached under its own name. The
 	// reference the boxer returns is stolen by `add_object_owned`, so nothing leaks.
 	for cn in p.consts {
-		w.write_string('\tvcraft.add_object_owned(module, ' + vstring_literal(cn.name) +
+		w.write_string('\tvcraft.add_object_owned(module, ' + vstring_literal(cn.py_name) +
 			', ' + const_value_expr(cn) + ')\n')
 	}
 	// Each enum becomes an `enum.IntEnum` subclass, attached under the enum's own name and
@@ -202,8 +202,8 @@ pub fn glue_module_body(p Project) string {
 	// reference while the global holds the original, so the class outlives the call.
 	for e in p.enums {
 		w.write_string('\tg_vc_enum_' + e.key + ' = vcraft.int_enum(' +
-			vstring_literal(e.name) + ', ' + enum_members_expr(e) + ')\n')
-		w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(e.name) +
+			vstring_literal(e.py_name) + ', ' + enum_members_expr(e) + ')\n')
+		w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(e.py_name) +
 			', g_vc_enum_' + e.key + ')\n')
 	}
 	w.write_string('\t_ = module\n')
@@ -364,7 +364,7 @@ pub fn render_class_exec(p Project, c Class) string {
 		c.name) + ')\n')
 	w.write_string('\t\treturn -1\n')
 	w.write_string('\t}\n')
-	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.name) + ', ' +
+	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.py_name) + ', ' +
 		c.ctype + ')\n')
 	return w.str()
 }

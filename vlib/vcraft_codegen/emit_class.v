@@ -89,7 +89,7 @@ fn emit_class_getsets(c Class) string {
 	w.write_string('\tg_vc_getsets_${c.key} = [\n')
 	for f in c.scalar_fields() {
 		w.write_string('\t\tvcraft.PyGetSetDef{\n')
-		w.write_string("\t\t\tname:    voidptr(c'${f.name}')\n")
+		w.write_string("\t\t\tname:    voidptr(c'${if f.py_name.len > 0 { f.py_name } else { f.name } }')\n")
 		w.write_string("\t\t\tget:     voidptr(vcraft_generated__get_${c.key}_${f.name})\n")
 		w.write_string("\t\t\tset:     voidptr(vcraft_generated__set_${c.key}_${f.name})\n")
 		w.write_string('\t\t\tdoc:     ' + doc_pointer(f.doc) + '\n')
