@@ -5,7 +5,7 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
-## [Unreleased]
+## [1.6.0] - 2026-10-27
 
 ### Added
 
@@ -59,6 +59,17 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   before returning, so callers still receive one owned reference. Found while
   building `vjson`, where `decode` leaked ~330 bytes per call.
 
+- **`repr()` and `str()` on `PyObj` leaked the object.** Both adopted the
+  `PyObject_Repr`/`PyObject_Str` result with `steal` and never released it (the
+  V string shares its memory, so a plain decref would have freed it). They now
+  copy the string before decref'ing. Found while making `vjson`'s encode
+  byte-identical to `orjson`.
+- **`released` drops the GIL for the whole block.** Documented that this exposes
+  V state to data races: the GIL protects Python objects, not V memory. Found
+  while building `vgraph`'s thread-safe counter.
+
+## [1.5.0] - 2026-10-25
+
 ### Added
 
 - **`@[vc_opaque]`, for a function that takes or returns a native pointer.** A `voidptr`
@@ -67,13 +78,8 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   wrapper build a capsule instead, and `@[vc_opaque: 'free_fn']` names the destructor that runs
   when Python collects the handle. A `voidptr` *parameter* is unwrapped with `handle_data` the
   same way, so the function never has to call it itself; that is the symmetry the result side
-  already had.
-  as `pyobj` - a borrowed `PyObject *` - so returning a C pointer through one is a pointer
-  CPython treats as an object, and it crashes the interpreter. The annotation makes the
-  wrapper build a capsule instead, and `@[vc_opaque: 'free_fn']` names the destructor that
-  runs when Python collects the handle. A `voidptr` parameter is unchanged: unwrapping one
-  is the callee's contract, and `handle_data` at the point of use says which parameter is a
-  handle.
+  already had. A `voidptr` parameter is unchanged: unwrapping one is the callee's contract,
+  and `handle_data` at the point of use says which parameter is a handle.
 - **`to_py_str_list` and `to_py_bytes_list`.** The generated glue boxed a `[]string` or
   `[][]u8` result with `to_py_list` and a boxing function, which worked and cost a V
   function call and the closure's indirection for every element. The integer and float
