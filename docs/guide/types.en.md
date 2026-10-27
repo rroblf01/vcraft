@@ -80,6 +80,9 @@ not acceptable:
   Python.
 - `vcraft.released(fn () {})` is the mirror image: it runs a block with the GIL *released*,
   for V-only work, and re-acquires it in a `defer`. The block must not call Python.
+  Note that releasing the GIL lets other threads run the same block concurrently, so a
+  `mut` field they both touch is a data race: the GIL protects Python objects, not V
+  memory. Guard shared V state with a mutex, or keep the mutation under `with_gil`.
 - `vcraft.gil_ensure()` / `vcraft.gil_release(state)` are the manual pair, for the cases
   the block forms cannot cover (a `poll` with a timeout, a choice between conditions).
 

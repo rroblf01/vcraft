@@ -673,6 +673,12 @@ or a `select` between several conditions. The rule for the manual form is the sa
 `released`: release and restore exactly once per path, restore before any Python call, and
 never release inside a `@[vc_nogil]` function that is already released.
 
+`released` drops the GIL for the whole block, so two V threads (or two Python
+threads that both enter it) run concurrently: a `mut` field they both touch is a
+data race, because the GIL does not protect V memory. Keep shared state under
+`with_gil`, or guard it with a V mutex, the way you would in any threaded C
+extension.
+
 V closures capture by value, so a mutable outer variable is not updated by code inside
 the block. Store the result through a pointer (`mut cell := 0; ptr := &cell; vcraft.released(fn [ptr] () { unsafe { *ptr = ... } })`) or keep the state in a struct the closure receives.
 
