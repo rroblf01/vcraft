@@ -313,6 +313,14 @@ pub fn from_py_str_borrowed(obj PyObj, name string) !string {
 	}
 }
 
+// from_py_bytes_borrowed is the borrowed form of `from_py_bytes`: the V string aliases
+// the bytes object's buffer for exactly the call. `from_py_bytes` already borrows,
+// so this is the same operation under a name that pairs with `from_py_str_borrowed`;
+// it exists so a reader can state the aliasing contract at the call site.
+pub fn from_py_bytes_borrowed(obj PyObj, name string) !string {
+	return from_py_bytes(obj, name)
+}
+
 // from_py_bytes reads a Python bytes object into a V string holding the same
 // bytes. The result aliases CPython's buffer, so a caller that needs it to
 // outlive the source object must copy it.

@@ -194,6 +194,14 @@ pub fn (o PyObj) type_is(wanted PyObj) bool {
 	return C.vpy_is_instance(o.ptr, wanted.ptr) == 1
 }
 
+// type_obj returns a new reference to the object's type.
+pub fn (o PyObj) type_obj() PyObj {
+	if o.is_null() {
+		return steal(unsafe { nil })
+	}
+	return steal(C.PyObject_Type(o.ptr))
+}
+
 // type_name returns the name of the object's type, for error messages.
 pub fn (o PyObj) type_name() string {
 	if o.is_null() {
