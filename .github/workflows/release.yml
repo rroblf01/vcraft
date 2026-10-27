@@ -437,11 +437,42 @@ jobs:
           generate_release_notes: true
 
 # ---------------------------------------------------------------------------
-# 4. Action: validate the composite action and move its floating tags so that
+# 4. Smoke: install the published wheel from PyPI and run release-smoke.py.
+#    Runs after publish so PyPI has the new version. A failure here does not
+#    un-publish (PyPI can't), but it flags a broken release for follow-up.
+# ---------------------------------------------------------------------------
+  smoke:
+    needs: [publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: resolve the version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: install the published vcraft
+        run: pip install "vcraft==$VERSION"
+
+      - name: install the V toolchain
+        run: vcraft toolchain install
+
+      - name: smoke test the published release
+        run: python scripts/release-smoke.py
+
+# ---------------------------------------------------------------------------
+# 5. Action: validate the composite action and move its floating tags so that
 #    @v1 / @v1.x follow the release. Needs publish to have succeeded.
 # ---------------------------------------------------------------------------
   action:
-    needs: [publish]
+    needs: [smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: write

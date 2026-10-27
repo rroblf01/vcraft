@@ -5,8 +5,6 @@ name: smoke-release
 # gate that would have caught the 1.4.0 packaging and enum regressions before users did.
 # On `workflow_dispatch` it takes a version, so a release can be re-checked on demand.
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
