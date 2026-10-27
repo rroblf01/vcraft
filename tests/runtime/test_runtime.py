@@ -119,6 +119,11 @@ def main() -> int:
     t.equal("a memoryview result", m.sum_callback(lambda: memoryview(b"hello")), sum(b"hello"))
     t.equal("a zero-length result", m.sum_callback(lambda: b""), 0)
 
+    print("call_kw drives a callable with keyword arguments")
+    def _kw(a, b):
+        return a + b * 10
+    t.equal("call_kw passes kwargs", m.call_kw_test(_kw), 21)
+
     print("from_py_*_item reads a tuple or a list by index")
     t.equal("from_py_int_item and from_py_str_item", m.unpack_tuple((7, "hola")), 11)
     t.equal("from_py_bytes_item", m.unpack_bytes((b"abc",)), 3)

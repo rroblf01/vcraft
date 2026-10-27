@@ -35,6 +35,8 @@ fn pyinit_vcraft_runtime_check() voidptr {
 		'sum_all(values)')
 	m.add_function_owned('sum_callback', voidptr(sum_callback_trampoline), vcraft.meth_fastcall,
 		'sum_callback(callee)')
+	m.add_function_owned('call_kw_test', voidptr(call_kw_test_trampoline), vcraft.meth_fastcall,
+		'call_kw_test(callee)')
 	m.add_function_owned('unpack_tuple', voidptr(unpack_tuple_trampoline), vcraft.meth_fastcall,
 		'unpack_tuple(t)')
 	m.add_function_owned('unpack_bytes', voidptr(unpack_bytes_trampoline), vcraft.meth_fastcall,
@@ -177,6 +179,40 @@ fn sum_callback(callee voidptr) int {
 	view.release()
 	result.decref()
 	return total
+}
+
+// call_kw_test calls `callee(a=1, b=2)` and returns the result as an int.
+fn call_kw_test(callee voidptr) int {
+	mut kwargs := map[string]vcraft.PyObj{}
+	kwargs['a'] = vcraft.to_py_int(1)
+	kwargs['b'] = vcraft.to_py_int(2)
+	result := vcraft.call_kw(callee, []voidptr{}, kwargs)
+	if result.is_null() {
+		vcraft.clear_error()
+		return -1
+	}
+	value := vcraft.from_py_int(result, 'result') or {
+		vcraft.clear_error()
+		-1
+	}
+	result.decref()
+	return int(value)
+}
+
+fn call_kw_test_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('call_kw_test', 1, int(nargs))
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	callee := vcraft.require_voidptr_arg(args, 0, 'call_kw_test', 'callee')
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	result := call_kw_test(callee)
+	if vcraft.error_is_set() {
+		return unsafe { nil }
+	}
+	return vcraft.to_py_int(result).ptr
 }
 
 fn sum_callback_trampoline(self voidptr, args voidptr, nargs isize) voidptr {

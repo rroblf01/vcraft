@@ -128,6 +128,10 @@ fn C.Py_Is(a voidptr, b voidptr) int
 fn C.Py_IncRef(o voidptr)
 
 fn C.Py_DecRef(o voidptr)
+fn C.PySet_New(o voidptr) voidptr
+fn C.PySet_Add(s voidptr, key voidptr) int
+fn C.PyObject_GetIter(o voidptr) voidptr
+fn C.PyIter_Next(it voidptr) voidptr
 
 fn C.PyObject_Type(o voidptr) voidptr
 
@@ -326,6 +330,7 @@ fn C.vpy_bytes_type() voidptr
 fn C.vpy_tuple_type() voidptr
 
 fn C.vpy_list_type() voidptr
+fn C.vpy_set_type() voidptr
 
 fn C.vpy_dict_type() voidptr
 

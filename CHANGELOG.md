@@ -32,6 +32,11 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `setitem`, `getattr`, `setattr`, `hasattr` delegate to the existing helpers,
   so a function holding a `PyObj` can invoke, index and mutate it without
   dropping to `voidptr`.
+- **Sets.** `new_set`, `set_add_owned`, `to_py_set` and `from_py_set`
+  mirror the list/dict helpers, plus `set_type()` and `PySet_New`/`PySet_Add`
+  in the shim.
+- **kwargs.** `call_kw`/`call_method_kw` (and `PyObj.call_kw`/`call_method_kw`)
+  invoke a callable with keyword arguments, via `vpy_call_kw` in the shim.
 - **`repr_f64` uses Python's shortest round-trip form.** It now renders
   through `PyObject_Repr`, matching `repr()`/`str()` of the equivalent Python
   float (scientific notation only when needed, non-finite values as

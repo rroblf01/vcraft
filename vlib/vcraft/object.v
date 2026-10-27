@@ -329,6 +329,10 @@ pub fn list_type() PyObj {
 	return borrow(C.vpy_list_type())
 }
 
+pub fn set_type() PyObj {
+	return borrow(C.vpy_set_type())
+}
+
 pub fn dict_type() PyObj {
 	return borrow(C.vpy_dict_type())
 }

@@ -944,6 +944,10 @@ PyObject *vpy_list_type(void) {
 	return (PyObject *)&PyList_Type;
 }
 
+PyObject *vpy_set_type(void) {
+	return (PyObject *)&PySet_Type;
+}
+
 PyObject *vpy_dict_type(void) {
 	return (PyObject *)&PyDict_Type;
 }

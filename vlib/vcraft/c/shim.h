@@ -165,6 +165,7 @@ PyObject *vpy_str_type(void);
 PyObject *vpy_bytes_type(void);
 PyObject *vpy_tuple_type(void);
 PyObject *vpy_list_type(void);
+PyObject *vpy_set_type(void);
 PyObject *vpy_dict_type(void);
 PyObject *vpy_module_type(void);
 

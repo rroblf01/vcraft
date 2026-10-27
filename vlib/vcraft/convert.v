@@ -716,6 +716,62 @@ pub fn tuple_of(items []PyObj) PyObj {
 	return steal(t)
 }
 
+// new_set returns a new empty `set`, owned by the caller.
+pub fn new_set() PyObj {
+	return steal(C.PySet_New(unsafe { nil }))
+}
+
+// set_add_owned adds `item` to `s`, stealing the caller's reference. Returns 0 on
+// success and -1 with an exception set on failure (for example a TypeError for an
+// unhashable item).
+pub fn set_add_owned(s PyObj, item PyObj) int {
+	out := C.PySet_Add(s.ptr, item.ptr)
+	item.decref()
+	return int(out)
+}
+
+// to_py_set boxes a `[]PyObj` as a Python set, transferring ownership of each
+// element.
+pub fn to_py_set(items []PyObj) PyObj {
+	s := new_set()
+	if s.is_null() {
+		return s
+	}
+	for item in items {
+		if set_add_owned(s, item) != 0 {
+			s.decref()
+			return steal(unsafe { nil })
+		}
+	}
+	return s
+}
+
+// from_py_set reads a set into a `[]PyObj` of borrowed references.
+pub fn from_py_set(obj PyObj, name string) ![]PyObj {
+	if !obj.type_is(set_type()) {
+		raise(.type_error, '${name}: expected a set, got ${obj.type_name()}')
+		return error('${name}: not a set')
+	}
+	mut out := []PyObj{}
+	it := C.PyObject_GetIter(obj.ptr)
+	if it == unsafe { nil } {
+		return error('${name}: cannot iterate')
+	}
+	defer { C.Py_DecRef(it) }
+	for {
+		next := C.PyIter_Next(it)
+		if next == unsafe { nil } {
+			if C.PyErr_Occurred() != unsafe { nil } {
+				return error('${name}: iteration failed')
+			}
+			break
+		}
+		out << borrow(next)
+		C.Py_DecRef(next)
+	}
+	return out
+}
+
 // list_new returns a new empty list, owned by the caller.
 pub fn list_new() PyObj {
 	return steal(C.PyList_New(0))
