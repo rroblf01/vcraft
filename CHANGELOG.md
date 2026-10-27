@@ -9,12 +9,17 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ### Added
 
+- **`@[vc_from_py]` and `@[vc_into_py]`.** Custom converters: `@[vc_from_py: 'fn']`
+  replaces the standard reader for struct parameters, `@[vc_into_py: 'fn']` replaces
+  the standard boxing of a struct result. The converter is a V function taking a
+  `PyObj` (from_py) or the V value (into_py) and returning the other side, so a
+  Python dict can cross as a V struct and back without manual marshalling at
+  every call site.
 - **`@[vc_weakref]`.** A class opts in to `weakref.ref(instance)`; vcraft turns
   on `Py_TPFLAGS_HAVE_GC` so the VM allocates a weakref list for each instance,
   even when the class holds no reference fields of its own.
 - **`@[vc_dict]`.** A class gets an instance `__dict__` for arbitrary attributes,
   via managed dict (`tp_dictoffset = -1`).
-- **`@[vc_setitem]`.** `instance[i] = value` now has a slot (added in 1.6.0-dev).
 - **`vcraft.PyScope` and `with_py_scope`.** Scope-based reference management:
   track temporaries with `scope.track(o)` and they are released on exit, on every
   path including a panic; `scope.keep(o)` lets a result survive the scope.
@@ -31,6 +36,7 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - Documented that `released` drops the GIL and exposes V state to data races.
 - Documented that `@[vc_buffer]` fields must be initialised with `buffer_new_*`.
 - Documented that V closures capture by value.
+- Documented memoryview ownership transfer.
 
 ## [1.6.0] - 2026-10-27
 

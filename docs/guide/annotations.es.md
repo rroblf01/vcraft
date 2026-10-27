@@ -76,6 +76,8 @@ fuente produce un stub `.pyi`, así que `help()` y un type checker ven lo mismo.
 | `@[vc_opaque]` | `pub fn` | Un resultado `voidptr` viaja en cápsula, y cada parámetro `voidptr` se desenvuelve de una |
 | `@[vc_nogil]` | `pub fn` | Se ejecuta con el GIL liberado (métodos incluidos) |
 | `@[vc_raw]` | `pub fn` | Sin marshalling; tú manejas `PyObject *` |
+| `@[vc_from_py: 'fn']` | `pub fn` | Reemplaza el reader estándar de cada parámetro por un conversor custom |
+| `@[vc_into_py: 'fn']` | `pub fn` | Reemplaza el boxing estándar del resultado por un conversor custom |
 | `@[vc_memoryview]` | `pub fn`, métodos | Devuelve un slice nativo como `memoryview` escribible |
 
 La lista completa, con la firma exacta que espera cada una, está en la

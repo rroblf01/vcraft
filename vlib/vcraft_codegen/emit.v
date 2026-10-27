@@ -856,7 +856,12 @@ pub fn emit_trampoline(f Func) string {
 		}
 		name := local_name(i)
 		names << name
-		w.write_string('\t${param_reader(param, name, i, f.name, f.opaque)}\n')
+		if f.from_py.len > 0 && is_struct(param.v_type.trim_space()) {
+			// Custom converter (only for struct params): read the borrowed PyObject and convert.
+			w.write_string('\t${name} := ${f.from_py}(vcraft.require_arg(args, ${i}, ${vstring_literal(f.name)}, ${vstring_literal(param.name)})) or { return unsafe { nil } }\n')
+		} else {
+			w.write_string('\t${param_reader(param, name, i, f.name, f.opaque)}\n')
+		}
 	}
 
 
@@ -1024,6 +1029,9 @@ fn instance_result_expr(f Func, value string, candidates string) string {
 fn emit_tail_return(f Func, ret Strategy, candidates string, raw bool) string {
 	if f.instance_result.len > 0 {
 		return '\treturn ${instance_result_expr(f, 'result', candidates)}\n'
+	}
+	if f.into_py.len > 0 {
+		return '\treturn ${f.into_py}(result).ptr\n'
 	}
 	return '\treturn ${return_expr(ret, 'result', raw, f.v_ret, f.export_buffer, f.opaque, f.opaque_destructor)}\n'
 }

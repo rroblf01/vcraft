@@ -11,6 +11,8 @@ module vcraft_codegen
 pub const attr_fn = 'vc_fn'
 
 pub const attr_raw = 'vc_raw'
+pub const attr_from_py = 'vc_from_py'
+pub const attr_into_py = 'vc_into_py'
 
 // attr_nogil releases the GIL around a call. It was spelled `vc_gil` before 1.0, which
 // read as the opposite; that name is still accepted, with a warning.
@@ -209,6 +211,8 @@ pub const known_attrs = [
 	attr_fn,
 	attr_defaults,
 	attr_raw,
+	attr_from_py,
+	attr_into_py,
 	attr_eq,
 	attr_hash,
 	attr_lt,
@@ -324,6 +328,14 @@ pub mut:
 	// opaque_destructor is the V function `@[vc_opaque: 'name']` names as the capsule's
 	// destructor, empty when the pointer outlives the capsule (a process-wide context).
 	opaque_destructor string
+	// from_py is the V function `@[vc_from_py: 'name']` names as the per-parameter
+	// converter: it takes a `PyObj` and returns the parameter's V type, replacing
+	// the standard reader for every parameter.
+	from_py string
+	// into_py is the V function `@[vc_into_py: 'name']` names as the result
+	// converter: it takes the function's V result and returns a `PyObj`, replacing
+	// the standard boxing.
+	into_py string
 	// export_buffer marks a function whose `[]T` result is returned as a zero-copy
 	// `memoryview` over native-backed memory, rather than boxed as a list. The slice's
 	// backing must come from `buffer_new_*`: the view takes ownership of it.

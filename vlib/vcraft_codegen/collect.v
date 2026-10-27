@@ -192,6 +192,8 @@ fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 		export_buffer: attr_memoryview in block.attrs
 		opaque:         attr_opaque in block.attrs
 		opaque_destructor: (block.args[attr_opaque] or { '' }).trim("'\"")
+		from_py:       (block.args[attr_from_py] or { '' }).trim("'\"")
+		into_py:       (block.args[attr_into_py] or { '' }).trim("'\"")
 		params:        params_of(ast, find_fn_node(ast, decl.name, decl.receiver) or {
 			flat.empty_node
 		}, is_method)

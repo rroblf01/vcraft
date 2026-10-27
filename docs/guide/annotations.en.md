@@ -75,6 +75,8 @@ the marshalled signature becomes `__text_signature__`, and the same source produ
 | `@[vc_opaque]` | `pub fn` | A `voidptr` result travels as a capsule, and each `voidptr` parameter is unwrapped from one |
 | `@[vc_nogil]` | `pub fn` | Runs with the GIL released (methods included) |
 | `@[vc_raw]` | `pub fn` | Skips marshalling; you handle `PyObject *` |
+| `@[vc_from_py: 'fn']` | `pub fn` | Replaces the standard reader for every parameter with a custom converter |
+| `@[vc_into_py: 'fn']` | `pub fn` | Replaces the standard boxing of the result with a custom converter |
 | `@[vc_memoryview]` | `pub fn`, methods | Returns a native slice as a writable `memoryview` |
 
 The full list, with the exact signatures each expects, is in the
