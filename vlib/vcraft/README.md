@@ -673,6 +673,10 @@ or a `select` between several conditions. The rule for the manual form is the sa
 `released`: release and restore exactly once per path, restore before any Python call, and
 never release inside a `@[vc_nogil]` function that is already released.
 
+V closures capture by value, so a mutable outer variable is not updated by code inside
+the block. Store the result through a pointer (`mut cell := 0; ptr := &cell; vcraft.released(fn [ptr] () { unsafe { *ptr = ... } })`) or keep the state in a struct the closure receives.
+
+
 `with_gil` is the other direction, for a thread V created: it acquires the GIL for a
 block and gives it back in a `defer`, panic included. A V thread holds no thread state
 until one of the two is called.
