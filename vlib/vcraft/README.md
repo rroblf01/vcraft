@@ -729,6 +729,11 @@ whose argument count is dynamic. Re-entry is safe: the state chain is a per-thre
 trampoline restores on the way out, and a Python exception from the callback is just a
 pending exception the trampoline returns null for.
 
+Attribute access is `vcraft.getattr(obj, name)` (a new reference, or null with an
+exception set), `vcraft.setattr(obj, name, value)` (steals `value`, returns 0/-1) and
+`vcraft.hasattr(obj, name)` (no exception). `vcraft.call_method(obj, name, args)` is
+`getattr` followed by `call`.
+
 A function that takes or returns "a Python object of unknown shape" (a JSON value, a query
 row) declares the parameter or result as `vcraft.PyObj` rather than going through
 `@[vc_raw]`: the generated glue treats it as a borrowed `PyObject *` on the way in and

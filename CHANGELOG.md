@@ -23,6 +23,8 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `[]PyObj` / `map[string]PyObj` of borrowed references, the counterparts of
   `to_py_obj_list`/`to_py_obj_dict`. A function walking a composite Python value
   (a decoder, a query result) no longer calls `item(i)` / `dict_items` by hand.
+- **`setattr` and `hasattr`.** Companions to the existing `getattr`: set an
+  attribute (stealing the value) and test for one without raising.
 - **`repr_f64` uses Python's shortest round-trip form.** It now renders
   through `PyObject_Repr`, matching `repr()`/`str()` of the equivalent Python
   float (scientific notation only when needed, non-finite values as
