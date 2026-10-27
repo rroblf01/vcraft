@@ -5,6 +5,22 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [1.7.0-dev] - unreleased
+
+### Added
+
+- **`vcraft.PyScope` and `with_py_scope`.** Scope-based reference management:
+  track temporaries with `scope.track(o)` and they are released on exit, on every
+  path including a panic; `scope.keep(o)` lets a result survive the scope.
+- **`from_py_bytes_borrowed`.** Naming consistency with `from_py_str_borrowed`.
+- **`PyObj.type_obj()`.** Typed accessor for an object's type.
+
+### Changed
+
+- Documented that `released` drops the GIL and exposes V state to data races.
+- Documented that `@[vc_buffer]` fields must be initialised with `buffer_new_*`.
+- Documented that V closures capture by value.
+
 ## [1.6.0] - 2026-10-27
 
 ### Added

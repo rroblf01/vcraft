@@ -73,6 +73,14 @@ not acceptable:
   owns immutable storage. A zero-copy return to Python is `@[vc_memoryview]`, which hands
   the native-backed slice over as a writable `memoryview`.
 
+## Scope-based reference management
+
+`vcraft.with_py_scope(fn (mut scope vcraft.PyScope) {})` runs a block with a fresh scope
+that tracks every `PyObj` passed to `scope.track(o)` and releases them all when the block
+exits, on every path including a panic. `scope.keep(o)` removes a reference from the
+tracked set so it survives the scope. Use it for a function that builds several temporary
+Python objects and returns one of them.
+
 ## GIL helpers
 
 - `vcraft.with_gil(fn () {})` acquires the GIL for a block and gives it back on every

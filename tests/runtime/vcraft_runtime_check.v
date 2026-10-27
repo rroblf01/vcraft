@@ -43,6 +43,8 @@ fn pyinit_vcraft_runtime_check() voidptr {
 		'unpack_bytes(t)')
 	m.add_function_owned('build_obj_list', voidptr(build_obj_list_trampoline), vcraft.meth_noargs,
 		'build_obj_list()')
+	m.add_function_owned('py_scope_test', voidptr(py_scope_test_trampoline), vcraft.meth_noargs,
+		'py_scope_test()')
 	m.add_function_owned('setattr_hasattr', voidptr(setattr_hasattr_trampoline), vcraft.meth_fastcall,
 		'setattr_hasattr(obj)')
 	m.add_function_owned('repr_f64_test', voidptr(repr_f64_test_trampoline), vcraft.meth_noargs,
@@ -587,6 +589,29 @@ fn type_obj_name() vcraft.PyObj {
 
 fn type_obj_name_trampoline(self voidptr, args voidptr) voidptr {
 	return type_obj_name().ptr
+}
+
+// py_scope_test creates several PyObj inside a scope and returns their count.
+// The scope releases them on exit; the function returns how many were tracked.
+fn py_scope_test() int {
+	mut cell := 0
+	ptr := &cell
+	vcraft.with_py_scope(fn [ptr] (mut scope vcraft.PyScope) {
+		a := scope.track(vcraft.to_py_int(1))
+		b := scope.track(vcraft.to_py_int(2))
+		c := scope.track(vcraft.to_py_int(3))
+		// keep `c` alive past the scope
+		scope.keep(c)
+		unsafe { *ptr = 3 }
+		_ = a
+		_ = b
+		_ = c
+	})
+	return cell
+}
+
+fn py_scope_test_trampoline(self voidptr, args voidptr) voidptr {
+	return vcraft.to_py_int(py_scope_test()).ptr
 }
 
 fn identity_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
