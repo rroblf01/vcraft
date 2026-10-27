@@ -416,6 +416,26 @@ pub fn to_py_list[T](items []T, box fn (T) PyObj) PyObj {
 	return list
 }
 
+// to_py_obj_list boxes a `[]PyObj` as a Python list without a per-element boxing
+// call. Every element is already a `PyObject *`, so there is nothing to convert;
+// this is the path a function that has built a list of Python objects by hand
+// (a JSON decoder, a query result) takes, and it skips the closure indirection
+// `to_py_list` pays for every element.
+pub fn to_py_obj_list(items []PyObj) PyObj {
+	list := steal(C.PyList_New(isize(items.len)))
+	if list.is_null() {
+		return list
+	}
+	for i, item in items {
+		if item.is_null() {
+			list.decref()
+			return steal(unsafe { nil })
+		}
+		C.PyList_SetItem(list.ptr, isize(i), item.ptr)
+	}
+	return list
+}
+
 // to_py_dict boxes a map as a new `dict`, with one boxing rule for the keys and one for
 // the values, so a value that is itself a composite boxes through the same call.
 //
@@ -442,6 +462,29 @@ pub fn to_py_dict[K, V](m map[K]V, key_box fn (K) PyObj, val_box fn (V) PyObj) P
 			return steal(unsafe { nil })
 		}
 		dict_set_owned(d, key, value)
+	}
+	return d
+}
+
+// to_py_obj_dict boxes a `map[string]PyObj` as a Python dict without per-element
+// boxing calls, since the keys and values are already `PyObject *`.
+pub fn to_py_obj_dict(m map[string]PyObj) PyObj {
+	d := new_dict()
+	if d.is_null() {
+		return d
+	}
+	for k, v in m {
+		key := vcraft.to_py_string(k)
+		if key.is_null() {
+			d.decref()
+			return steal(unsafe { nil })
+		}
+		if v.is_null() {
+			key.decref()
+			d.decref()
+			return steal(unsafe { nil })
+		}
+		dict_set_owned(d, key, v)
 	}
 	return d
 }
