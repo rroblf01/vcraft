@@ -18,6 +18,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **`@[vc_weakref]`.** A class opts in to `weakref.ref(instance)`; vcraft turns
   on `Py_TPFLAGS_HAVE_GC` so the VM allocates a weakref list for each instance,
   even when the class holds no reference fields of its own.
+- **`@[vc_mapping]`.** A class implements the mapping protocol
+  (`obj[key]`, `obj[key] = v`, `del obj[key]`, `len(obj)`) via `mp_subscript`
+  and `mp_ass_subscript` slots, the counterpart of the sequence protocol.
 - **`@[vc_dict]`.** A class gets an instance `__dict__` for arbitrary attributes,
   via managed dict (`tp_dictoffset = -1`).
 - **`vcraft.PyScope` and `with_py_scope`.** Scope-based reference management:

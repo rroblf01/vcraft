@@ -65,6 +65,8 @@ the marshalled signature becomes `__text_signature__`, and the same source produ
 | `@[vc_buffer]` | struct fields | A persistent native `[]T` of scalars |
 | `@[vc_error]` | `pub struct` | A `!T` error type with a `msg()`/`code()` |
 | `@[vc_len]` / `@[vc_getitem]` / `@[vc_setitem]` / `@[vc_contains]` | methods | `len()`, `obj[i]`, `obj[i] = v`, `x in obj` |
+| `@[vc_mapping]` | `pub struct` | Enables the mapping protocol (`obj[key]`, `obj[key] = v`, `del obj[key]`, `len(obj)`) |
+| `@[vc_map_getitem]` / `@[vc_map_setitem]` / `@[vc_map_delitem]` | methods | Mapping protocol handlers |
 | `@[vc_iter]` / `@[vc_next]` | methods | `__iter__` / `__next__` |
 | `@[vc_eq]` / `@[vc_lt]` … | `pub fn` | Comparison and ordering |
 | `@[vc_hash]` | `pub fn` | `__hash__` |

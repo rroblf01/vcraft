@@ -119,6 +119,11 @@ pub fn vpy_set_dict(self voidptr, value PyObj, closure voidptr) int {
 	return int(out)
 }
 
+// vpy_enable_mapping attaches a mapping protocol to a heap type.
+pub fn enable_mapping(typ voidptr, mp_length voidptr, mp_subscript voidptr, mp_ass_subscript voidptr) {
+	C.vpy_enable_mapping(typ, mp_length, mp_subscript, mp_ass_subscript)
+}
+
 // call_method calls `obj.name(...)` with the positional `args` (borrowed) and returns a
 // new reference, or the null object with an exception set.
 pub fn call_method(obj voidptr, name string, args []voidptr) PyObj {

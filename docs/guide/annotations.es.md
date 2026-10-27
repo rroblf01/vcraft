@@ -66,6 +66,8 @@ fuente produce un stub `.pyi`, así que `help()` y un type checker ven lo mismo.
 | `@[vc_buffer]` | campos | Un `[]T` nativo persistente de escalares |
 | `@[vc_error]` | `pub struct` | Un tipo de error `!T` con `msg()`/`code()` |
 | `@[vc_len]` / `@[vc_getitem]` / `@[vc_setitem]` / `@[vc_contains]` | métodos | `len()`, `obj[i]`, `obj[i] = v`, `x in obj` |
+| `@[vc_mapping]` | `pub struct` | Activa el protocolo de mapeo (`obj[key]`, `obj[key] = v`, `del obj[key]`, `len(obj)`) |
+| `@[vc_map_getitem]` / `@[vc_map_setitem]` / `@[vc_map_delitem]` | métodos | Handlers del protocolo de mapeo |
 | `@[vc_iter]` / `@[vc_next]` | métodos | `__iter__` / `__next__` |
 | `@[vc_eq]` / `@[vc_lt]` … | `pub fn` | Comparación y orden |
 | `@[vc_hash]` | `pub fn` | `__hash__` |

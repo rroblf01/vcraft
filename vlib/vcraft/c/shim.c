@@ -987,6 +987,21 @@ void vpy_enable_managed_dict(PyObject *type) {
 	(void)type;
 }
 
+// vpy_enable_mapping attaches a PyMappingMethods struct to a heap type, giving it
+// the mapping protocol (mp_length, mp_subscript, mp_ass_subscript). Any of the
+// three may be NULL for a partial protocol.
+void vpy_enable_mapping(PyObject *type, void *mp_length, void *mp_subscript,
+                        void *mp_ass_subscript) {
+	PyTypeObject *t = (PyTypeObject *)type;
+	PyMappingMethods *m = (PyMappingMethods *)PyObject_Malloc(sizeof(PyMappingMethods));
+	if (m == NULL) return;
+	memset(m, 0, sizeof(PyMappingMethods));
+	m->mp_length = (lenfunc)mp_length;
+	m->mp_subscript = (binaryfunc)mp_subscript;
+	m->mp_ass_subscript = (objobjargproc)mp_ass_subscript;
+	t->tp_as_mapping = m;
+}
+
 PyObject *vpy_dict_type(void) {
 	return (PyObject *)&PyDict_Type;
 }

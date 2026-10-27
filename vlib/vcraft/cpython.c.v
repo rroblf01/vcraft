@@ -337,6 +337,7 @@ fn C.vpy_set_type() voidptr
 fn C.vpy_get_dict(self voidptr, closure voidptr) voidptr
 fn C.vpy_set_dict(self voidptr, value voidptr, closure voidptr) int
 fn C.vpy_enable_managed_dict(o voidptr)
+fn C.vpy_enable_mapping(typ voidptr, mp_length voidptr, mp_subscript voidptr, mp_ass_subscript voidptr)
 
 fn C.vpy_dict_type() voidptr
 
@@ -482,6 +483,9 @@ pub const slot_sq_item = i32(44)
 
 pub const slot_sq_contains = i32(41)
 pub const slot_sq_ass_item = i32(39)
+pub const slot_mp_length = i32(4)
+pub const slot_mp_subscript = i32(5)
+pub const slot_mp_ass_subscript = i32(3)
 
 // The number protocol. `nb_*` slots are what `+`, `-`, `*`, `&`, `|` and the unary
 // operators reach; the ids are the `PyType_Slot` ones, which sit below the `Py_sq_*`

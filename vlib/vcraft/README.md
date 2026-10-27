@@ -767,6 +767,14 @@ vcraft.with_py_scope(fn [mut out] (mut scope vcraft.PyScope) {
 Use it for a function that builds several temporary Python objects and returns
 one of them: track the temporaries, keep the result.
 
+## The mapping protocol
+
+`@[vc_mapping]` on a class fills `mp_length`, `mp_subscript` and
+`mp_ass_subscript`: `len(instance)`, `instance[key]`, `instance[key] = value`
+and `del instance[key]`. The key is a `PyObject *` (any hashable type),
+unlike `sq_item` which takes an integer index. `mp_length` reuses the
+`@[vc_len]` method.
+
 ## Calling back into Python
 
 `vcraft.call(callee, args)` and `vcraft.call_method(obj, name, args)` run a Python

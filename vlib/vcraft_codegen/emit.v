@@ -338,6 +338,17 @@ pub fn render_class_exec(p Project, c Class) string {
 			w.write_string('\t\tunsafe { nil },\n')
 		}
 	}
+	// Mapping protocol slots.
+	if c.map_getitem_fn.len > 0 {
+		w.write_string('\t\tvoidptr(' + c.map_getitem_fn + '),\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+	}
+	if c.map_ass_subscript_fn.len > 0 {
+		w.write_string('\t\tvoidptr(' + c.map_ass_subscript_fn + '),\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+	}
 	// The number protocol: the `nb_*` slots for the operators this class declares, each
 	// paired with its slot id, or nothing when it declares none.
 	w.write_string('\t\t' + if c.weakref { 'true' } else { 'false' } + ',\n')

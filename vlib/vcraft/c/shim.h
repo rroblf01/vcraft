@@ -171,6 +171,7 @@ PyObject *vpy_set_type(void);
 PyObject *vpy_get_dict(PyObject *self, void *closure);
 int vpy_set_dict(PyObject *self, PyObject *value, void *closure);
 void vpy_enable_managed_dict(PyObject *type);
+void vpy_enable_mapping(PyObject *type, void *mp_length, void *mp_subscript, void *mp_ass_subscript);
 PyObject *vpy_dict_type(void);
 PyObject *vpy_module_type(void);
 

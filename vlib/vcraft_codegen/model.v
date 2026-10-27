@@ -173,6 +173,15 @@ pub const attr_weakref = 'vc_weakref'
 // attr_dict marks a class as having an instance __dict__.
 pub const attr_dict = 'vc_dict'
 
+// attr_mapping marks a class as implementing the mapping protocol.
+pub const attr_mapping = 'vc_mapping'
+// attr_map_getitem marks a method as `__getitem__` for mappings (PyObject* key).
+pub const attr_map_getitem = 'vc_map_getitem'
+// attr_map_setitem marks a method as `__setitem__` for mappings.
+pub const attr_map_setitem = 'vc_map_setitem'
+// attr_map_delitem marks a method as `__delitem__` for mappings.
+pub const attr_map_delitem = 'vc_map_delitem'
+
 // attr_classmethod marks a `fn Class.name(...)` as a Python `classmethod`. It is like
 // `@[vc_static]` but CPython passes the class rather than NULL, so a subclass calling it
 // sees the subclass.
@@ -253,6 +262,10 @@ pub const known_attrs = [
 	attr_contains,
 	attr_weakref,
 	attr_dict,
+	attr_mapping,
+	attr_map_getitem,
+	attr_map_setitem,
+	attr_map_delitem,
 	attr_classmethod,
 	attr_const,
 	attr_iter,
@@ -366,6 +379,9 @@ pub mut:
 	is_len      bool
 	is_getitem  bool
 	is_setitem  bool
+	is_map_getitem bool
+	is_map_setitem bool
+	is_map_delitem bool
 	is_contains bool
 	// classmethod marks a `fn Class.name(...)` registered with `METH_CLASS`, so CPython
 	// passes the class rather than NULL and a subclass sees itself.
@@ -451,6 +467,10 @@ pub mut:
 	weakref bool
 	// dict turns on Py_TPFLAGS_MANAGED_DICT so instances get a __dict__.
 	dict bool
+	// mapping turns on the mapping protocol (mp_length, mp_subscript, mp_ass_subscript).
+	mapping bool
+	map_getitem_fn string
+	map_ass_subscript_fn string
 	// eq_fn and hash_name are the user's methods marked `@[vc_eq]` and `@[vc_hash]`,
 	// empty when the class declares neither.
 	eq_fn     string

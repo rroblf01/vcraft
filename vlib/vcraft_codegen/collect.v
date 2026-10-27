@@ -798,6 +798,9 @@ fn link_sequences(mut p Project) {
 		mut lens := 0
 		mut items := 0
 		mut setitems := 0
+		mut map_getitems := 0
+		mut map_setitems := 0
+		mut map_delitems := 0
 		mut contains := 0
 		for m in c.methods {
 			if m.is_len {
@@ -808,6 +811,15 @@ fn link_sequences(mut p Project) {
 			}
 			if m.is_setitem {
 				setitems++
+			}
+			if m.is_map_getitem {
+				map_getitems++
+			}
+			if m.is_map_setitem {
+				map_setitems++
+			}
+			if m.is_map_delitem {
+				map_delitems++
 			}
 			if m.is_contains {
 				contains++
@@ -829,6 +841,12 @@ fn link_sequences(mut p Project) {
 		}
 		if setitems == 1 {
 			p.classes[i].setitem_fn = 'vcraft_generated__setitem_${c.key}'
+		}
+		if map_getitems == 1 {
+			p.classes[i].map_getitem_fn = 'vcraft_generated__map_getitem_${c.key}'
+		}
+		if map_setitems == 1 || map_delitems == 1 {
+			p.classes[i].map_ass_subscript_fn = 'vcraft_generated__map_ass_subscript_${c.key}'
 		}
 		if contains == 1 {
 			p.classes[i].contains_fn = 'vcraft_generated__contains_${c.key}'
@@ -1046,6 +1064,9 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	m.is_len = attr_len in block.attrs
 	m.is_getitem = attr_getitem in block.attrs
 	m.is_setitem = attr_setitem in block.attrs
+	m.is_map_getitem = attr_map_getitem in block.attrs
+	m.is_map_setitem = attr_map_setitem in block.attrs
+	m.is_map_delitem = attr_map_delitem in block.attrs
 	m.is_contains = attr_contains in block.attrs
 	if [m.is_len, m.is_getitem, m.is_setitem, m.is_contains].filter(it).len > 1 {
 		report(mut p, path, decl,
@@ -1087,6 +1108,27 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 				'error: `@[vc_getitem] ${decl.name}` takes ${m.params.len} argument(s); `__getitem__` takes one index')
 			return
 		}
+	if m.is_map_getitem {
+		if m.params.len != 1 {
+			report(mut p, path, decl,
+				'error: `@[vc_map_getitem] ${decl.name}` takes ${m.params.len} argument(s); mapping `__getitem__` takes one key')
+			return
+		}
+	}
+	if m.is_map_setitem {
+		if m.params.len != 2 {
+			report(mut p, path, decl,
+				'error: `@[vc_map_setitem] ${decl.name}` takes ${m.params.len} argument(s); mapping `__setitem__` takes a key and a value')
+			return
+		}
+	}
+	if m.is_map_delitem {
+		if m.params.len != 1 {
+			report(mut p, path, decl,
+				'error: `@[vc_map_delitem] ${decl.name}` takes ${m.params.len} argument(s); mapping `__delitem__` takes one key')
+			return
+		}
+	}
 		if lookup(m.params[0].v_type) !in [.int, .uint] {
 			report(mut p, path, decl,
 				'error: `@[vc_getitem] ${decl.name}` takes a `${m.params[0].v_type}` index; `__getitem__` takes an integer')
@@ -1266,6 +1308,7 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 		base:      base
 		weakref:   attr_weakref in block.attrs
 		dict:      attr_dict in block.attrs
+		mapping:   attr_mapping in block.attrs
 		origin:    path
 		line:      decl.line
 		column:    decl.column
