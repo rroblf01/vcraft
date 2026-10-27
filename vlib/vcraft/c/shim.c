@@ -85,6 +85,22 @@ unsigned int vpy_tpflags_default(void) {
 	return (unsigned int)Py_TPFLAGS_DEFAULT;
 }
 
+unsigned int vpy_tpflags_weakref(void) {
+#ifdef Py_TPFLAGS_MANAGED_WEAKREF
+	return (unsigned int)Py_TPFLAGS_MANAGED_WEAKREF;
+#else
+	return 0;
+#endif
+}
+
+unsigned int vpy_tpflags_managed_dict(void) {
+#ifdef Py_TPFLAGS_MANAGED_DICT
+	return (unsigned int)Py_TPFLAGS_MANAGED_DICT;
+#else
+	return 0;
+#endif
+}
+
 #ifdef vcraft_limited_api
 
 // Under the stable ABI there is no `PyTypeObject` to read a field out of and no
@@ -946,6 +962,26 @@ PyObject *vpy_list_type(void) {
 
 PyObject *vpy_set_type(void) {
 	return (PyObject *)&PySet_Type;
+}
+
+PyObject *vpy_get_dict(PyObject *self, void *closure) {
+	return PyObject_GenericGetDict(self, closure);
+}
+
+int vpy_set_dict(PyObject *self, PyObject *value, void *closure) {
+	return PyObject_GenericSetDict(self, value, closure);
+}
+
+// vpy_enable_managed_dict enables `__dict__` on a heap type created via the
+// limited API. PyType_FromSpec does not set tp_dictoffset, so the MANAGED_DICT
+// flag alone is not enough; this sets tp_dictoffset = -1 (MANAGED_DICT_OFFSET)
+// directly, which the limited API cannot do.
+void vpy_enable_managed_dict(PyObject *type) {
+	PyTypeObject *t = (PyTypeObject *)type;
+	t->tp_dictoffset = -1;
+#ifdef Py_TPFLAGS_MANAGED_DICT
+	t->tp_flags |= Py_TPFLAGS_MANAGED_DICT;
+#endif
 }
 
 PyObject *vpy_dict_type(void) {

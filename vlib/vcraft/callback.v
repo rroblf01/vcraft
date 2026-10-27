@@ -107,6 +107,18 @@ pub fn hasattr(obj voidptr, name string) bool {
 	return out == 1
 }
 
+// vpy_get_dict and vpy_set_dict are the managed-dict accessors exposed to generated
+// code. They are thin shims over PyObject_GenericGetDict/SetDict.
+pub fn vpy_get_dict(self voidptr, closure voidptr) PyObj {
+	return steal(C.vpy_get_dict(self, closure))
+}
+
+pub fn vpy_set_dict(self voidptr, value PyObj, closure voidptr) int {
+	out := C.vpy_set_dict(self, value.ptr, closure)
+	value.decref()
+	return int(out)
+}
+
 // call_method calls `obj.name(...)` with the positional `args` (borrowed) and returns a
 // new reference, or the null object with an exception set.
 pub fn call_method(obj voidptr, name string, args []voidptr) PyObj {

@@ -60,6 +60,8 @@ the marshalled signature becomes `__text_signature__`, and the same source produ
 | `@[vc_classmethod]` | methods | Registers the method as a `classmethod` |
 | `@[vc_base]` | `pub struct` | Inherits the named class |
 | `@[vc_ref]` | struct fields | A strong reference to another instance |
+| `@[vc_weakref]` | `pub struct` | Allows `weakref.ref(instance)` on instances of the class |
+| `@[vc_dict]` | `pub struct` | Gives instances an arbitrary-attribute `__dict__` |
 | `@[vc_buffer]` | struct fields | A persistent native `[]T` of scalars |
 | `@[vc_error]` | `pub struct` | A `!T` error type with a `msg()`/`code()` |
 | `@[vc_len]` / `@[vc_getitem]` / `@[vc_setitem]` / `@[vc_contains]` | methods | `len()`, `obj[i]`, `obj[i] = v`, `x in obj` |

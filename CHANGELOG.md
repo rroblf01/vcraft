@@ -9,11 +9,22 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ### Added
 
+- **`@[vc_weakref]`.** A class opts in to `weakref.ref(instance)`; vcraft turns
+  on `Py_TPFLAGS_HAVE_GC` so the VM allocates a weakref list for each instance,
+  even when the class holds no reference fields of its own.
+- **`@[vc_dict]`.** A class gets an instance `__dict__` for arbitrary attributes,
+  via managed dict (`tp_dictoffset = -1`).
+- **`@[vc_setitem]`.** `instance[i] = value` now has a slot (added in 1.6.0-dev).
 - **`vcraft.PyScope` and `with_py_scope`.** Scope-based reference management:
   track temporaries with `scope.track(o)` and they are released on exit, on every
   path including a panic; `scope.keep(o)` lets a result survive the scope.
 - **`from_py_bytes_borrowed`.** Naming consistency with `from_py_str_borrowed`.
 - **`PyObj.type_obj()`.** Typed accessor for an object's type.
+- **Sets, kwargs, PyObj convenience methods, composite readers/builders.**
+  `new_set`, `set_add_owned`, `to_py_set`, `from_py_set`, `call_kw`,
+  `call_method_kw`, `PyObj.call/getitem/setitem/getattr/setattr/hasattr`,
+  `from_py_list`, `from_py_dict`, `to_py_obj_list`, `to_py_obj_dict`,
+  `list_new`, `list_append_owned`, `list_set_owned`.
 
 ### Changed
 
@@ -53,6 +64,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **`@[vc_setitem]`.** `instance[i] = value` now has a slot, the counterpart of
   `@[vc_getitem]`. The method takes an integer index and a value; an out-of-range
   index is the user's own `IndexError` from a `!T` method.
+- **`@[vc_weakref]`.** A class opts in to `weakref.ref(instance)`; vcraft turns
+  on `Py_TPFLAGS_HAVE_GC` so the VM allocates a weakref list for each instance,
+  even when the class holds no reference fields of its own.
 - **Sets.** `new_set`, `set_add_owned`, `to_py_set` and `from_py_set`
   mirror the list/dict helpers, plus `set_type()` and `PySet_New`/`PySet_Add`
   in the shim.

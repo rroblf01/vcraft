@@ -64,10 +64,16 @@ pub fn instance_basicsize(state_size int) int {
 // `gc` adds `Py_TPFLAGS_HAVE_GC`, which is what makes the collector look at the
 // instances at all. A class with no reference field leaves it off: the flag costs a
 // little on every collection and buys nothing for a type that cannot be in a cycle.
-pub fn type_flags(gc bool) u32 {
+pub fn type_flags(gc bool, weakref bool, dict bool) u32 {
 	mut flags := C.vpy_tpflags_default() | tpflags_basetype
-	if gc {
+	if gc || weakref || dict {
 		flags |= tpflags_have_gc
+	}
+	if weakref {
+		flags |= C.vpy_tpflags_weakref()
+	}
+	if dict {
+		flags |= C.vpy_tpflags_managed_dict()
 	}
 	return flags
 }
@@ -520,7 +526,7 @@ pub fn type_from_spec(name string, basicsize int, slots voidptr) PyObj {
 			name:      namep
 			basicsize: basicsize
 			itemsize:  0
-			flags:     type_flags(false)
+			flags:     type_flags(false, false, false)
 			slots:     slots
 		}
 		return steal(C.PyType_FromSpec(voidptr(spec)))
@@ -554,7 +560,8 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 	dealloc voidptr, methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr,
 	hash voidptr, bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr,
 	next_fn voidptr, getbuffer voidptr, releasebuffer voidptr, len_fn voidptr,
-	item_fn voidptr, setitem_fn voidptr, contains_fn voidptr, number_slots []PyTypeSlot) PyObj {
+	item_fn voidptr, setitem_fn voidptr, contains_fn voidptr, weakref bool, dict bool,
+	number_slots []PyTypeSlot) PyObj {
 	// The instance size is the PyObject header plus this class's state struct. A
 	// subclass's `state_size` includes its base's, so a subclass is never smaller than
 	// its base -- which is what CPython rejects with "tp_basicsize ... too small for
@@ -707,7 +714,7 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 	// The GC flag follows the slots rather than a separate argument, because a type with
 	// the flag and a null `tp_traverse` is refused by CPython with a message about the
 	// wrong slot, and one with the slots and no flag is never collected.
-	flags := type_flags(traverse != unsafe { nil } && clear != unsafe { nil })
+	flags := type_flags(traverse != unsafe { nil } && clear != unsafe { nil }, weakref, dict)
 	unsafe {
 		spec := &PyTypeSpec{
 			name:      namep
@@ -716,7 +723,13 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 			flags:     flags
 			slots:     voidptr(&slots[0])
 		}
-		return steal(C.PyType_FromSpec(voidptr(spec)))
+		result := steal(C.PyType_FromSpec(voidptr(spec)))
+		if dict && !result.is_null() {
+			C.vpy_enable_managed_dict(result.ptr)
+			// Re-ready the type so the managed dict descriptor is added.
+			C.PyType_Ready(result.ptr)
+		}
+		return result
 	}
 }
 

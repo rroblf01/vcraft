@@ -286,7 +286,7 @@ pub fn render_class_exec(p Project, c Class) string {
 	} else {
 		w.write_string('\t\tunsafe { nil },\n')
 	}
-	if c.scalar_fields().len > 0 || c.methods.any(it.property) {
+	if c.scalar_fields().len > 0 || c.methods.any(it.property) || c.dict {
 		w.write_string('\t\tunsafe { voidptr(&g_vc_getsets_' + c.key + '[0]) },\n')
 	} else {
 		w.write_string('\t\tunsafe { nil },\n')
@@ -303,7 +303,7 @@ pub fn render_class_exec(p Project, c Class) string {
 	// turns them into `Py_TPFLAGS_HAVE_GC`, and that flag is what makes the collector
 	// look at the instances at all: without it a cycle is never found, and the objects
 	// in it are never freed.
-	if c.ref_fields().len > 0 {
+	if c.ref_fields().len > 0 || c.weakref {
 		w.write_string('\t\tvoidptr(vcraft_generated__traverse_' + c.key + '),\n')
 		w.write_string('\t\tvoidptr(vcraft_generated__clear_' + c.key + '),\n')
 	} else {
@@ -340,6 +340,8 @@ pub fn render_class_exec(p Project, c Class) string {
 	}
 	// The number protocol: the `nb_*` slots for the operators this class declares, each
 	// paired with its slot id, or nothing when it declares none.
+	w.write_string('\t\t' + if c.weakref { 'true' } else { 'false' } + ',\n')
+	w.write_string('\t\t' + if c.dict { 'true' } else { 'false' } + ',\n')
 	w.write_string('\t\t' + numeric_slots_expr(c) + ',\n')
 	w.write_string('\t)\n')
 	// The error check is here rather than inside `new_type` because a class that fails

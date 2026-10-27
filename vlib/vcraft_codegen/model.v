@@ -165,6 +165,12 @@ pub const attr_setitem = 'vc_setitem'
 // installed as `sq_contains`. It makes `x in instance` work.
 pub const attr_contains = 'vc_contains'
 
+// attr_weakref marks a class as supporting weak references.
+pub const attr_weakref = 'vc_weakref'
+
+// attr_dict marks a class as having an instance __dict__.
+pub const attr_dict = 'vc_dict'
+
 // attr_classmethod marks a `fn Class.name(...)` as a Python `classmethod`. It is like
 // `@[vc_static]` but CPython passes the class rather than NULL, so a subclass calling it
 // sees the subclass.
@@ -241,6 +247,8 @@ pub const known_attrs = [
 	attr_getitem,
 	attr_setitem,
 	attr_contains,
+	attr_weakref,
+	attr_dict,
 	attr_classmethod,
 	attr_const,
 	attr_iter,
@@ -427,6 +435,10 @@ pub mut:
 	// base_index is that class's position, resolved once every class is known. Negative
 	// when there is no base or when the name did not resolve.
 	base_index int = -1
+	// weakref turns on Py_TPFLAGS_HAVE_GC so instances support weakref.ref().
+	weakref bool
+	// dict turns on Py_TPFLAGS_MANAGED_DICT so instances get a __dict__.
+	dict bool
 	// eq_fn and hash_name are the user's methods marked `@[vc_eq]` and `@[vc_hash]`,
 	// empty when the class declares neither.
 	eq_fn     string

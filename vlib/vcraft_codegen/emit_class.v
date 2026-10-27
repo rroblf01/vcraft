@@ -81,7 +81,7 @@ fn emit_class_getsets(c Class) string {
 			count++
 		}
 	}
-	if count == 0 {
+	if count == 0 && !c.dict {
 		return ''
 	}
 	mut w := new_builder()
@@ -105,6 +105,15 @@ fn emit_class_getsets(c Class) string {
 		w.write_string("\t\t\tget:     voidptr(${m.trampoline})\n")
 		w.write_string('\t\t\tset:     unsafe { nil }\n')
 		w.write_string('\t\t\tdoc:     ' + doc_pointer(m.doc) + '\n')
+		w.write_string('\t\t\tclosure: unsafe { nil }\n')
+		w.write_string('\t\t},\n')
+	}
+	if c.dict {
+		w.write_string('\t\tvcraft.PyGetSetDef{\n')
+		w.write_string("\t\t\tname:    voidptr(c'__dict__')\n")
+		w.write_string('\t\t\tget:     voidptr(vcraft.vpy_get_dict)\n')
+		w.write_string('\t\t\tset:     voidptr(vcraft.vpy_set_dict)\n')
+		w.write_string('\t\t\tdoc:     ' + doc_pointer('instance dictionary') + '\n')
 		w.write_string('\t\t\tclosure: unsafe { nil }\n')
 		w.write_string('\t\t},\n')
 	}
@@ -858,7 +867,7 @@ fn emit_class_buffer_slots(p Project, c Class) string {
 // stop at the first field that does.
 fn emit_class_traverse(p Project, c Class) string {
 	refs := c.ref_fields()
-	if refs.len == 0 {
+	if refs.len == 0 && !c.weakref {
 		return ''
 	}
 	mut w := new_builder()
@@ -887,7 +896,7 @@ fn emit_class_traverse(p Project, c Class) string {
 // by the time its reference count reaches zero.
 fn emit_class_clear(p Project, c Class) string {
 	refs := c.ref_fields()
-	if refs.len == 0 {
+	if refs.len == 0 && !c.weakref {
 		return ''
 	}
 	mut w := new_builder()

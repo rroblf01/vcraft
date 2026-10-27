@@ -59,8 +59,11 @@ fn C.vpy_size_PyMethodDef() isize
 fn C.vpy_size_PyObject() isize
 
 fn C.vpy_tpflags_default() u32
+fn C.vpy_tpflags_weakref() u32
+fn C.vpy_tpflags_managed_dict() u32
 
 fn C.PyType_FromSpec(spec voidptr) voidptr
+fn C.PyType_Ready(typ voidptr) int
 
 fn C.PyType_GenericAlloc(typ voidptr, nitems isize) voidptr
 
@@ -331,6 +334,9 @@ fn C.vpy_tuple_type() voidptr
 
 fn C.vpy_list_type() voidptr
 fn C.vpy_set_type() voidptr
+fn C.vpy_get_dict(self voidptr, closure voidptr) voidptr
+fn C.vpy_set_dict(self voidptr, value voidptr, closure voidptr) int
+fn C.vpy_enable_managed_dict(o voidptr)
 
 fn C.vpy_dict_type() voidptr
 

@@ -1262,6 +1262,8 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 		name:      decl.name
 		doc:       block.doc
 		base:      base
+		weakref:   attr_weakref in block.attrs
+		dict:      attr_dict in block.attrs
 		origin:    path
 		line:      decl.line
 		column:    decl.column

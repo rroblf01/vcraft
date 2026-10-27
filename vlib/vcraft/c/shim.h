@@ -29,6 +29,8 @@ Py_ssize_t vpy_size_PyModuleDef(void);
 Py_ssize_t vpy_size_PyMethodDef(void);
 Py_ssize_t vpy_size_PyObject(void);
 unsigned int vpy_tpflags_default(void);
+unsigned int vpy_tpflags_weakref(void);
+unsigned int vpy_tpflags_managed_dict(void);
 
 // A real memcpy, reached through a prototype.
 //
@@ -166,6 +168,9 @@ PyObject *vpy_bytes_type(void);
 PyObject *vpy_tuple_type(void);
 PyObject *vpy_list_type(void);
 PyObject *vpy_set_type(void);
+PyObject *vpy_get_dict(PyObject *self, void *closure);
+int vpy_set_dict(PyObject *self, PyObject *value, void *closure);
+void vpy_enable_managed_dict(PyObject *type);
 PyObject *vpy_dict_type(void);
 PyObject *vpy_module_type(void);
 

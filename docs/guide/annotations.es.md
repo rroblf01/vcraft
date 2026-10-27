@@ -61,6 +61,8 @@ fuente produce un stub `.pyi`, así que `help()` y un type checker ven lo mismo.
 | `@[vc_classmethod]` | métodos | Registra el método como `classmethod` |
 | `@[vc_base]` | `pub struct` | Hereda de la clase indicada |
 | `@[vc_ref]` | campos | Una referencia fuerte a otra instancia |
+| `@[vc_weakref]` | `pub struct` | Permite `weakref.ref(instancia)` sobre instancias de la clase |
+| `@[vc_dict]` | `pub struct` | Da a las instancias un `__dict__` de atributos arbitrarios |
 | `@[vc_buffer]` | campos | Un `[]T` nativo persistente de escalares |
 | `@[vc_error]` | `pub struct` | Un tipo de error `!T` con `msg()`/`code()` |
 | `@[vc_len]` / `@[vc_getitem]` / `@[vc_setitem]` / `@[vc_contains]` | métodos | `len()`, `obj[i]`, `obj[i] = v`, `x in obj` |
