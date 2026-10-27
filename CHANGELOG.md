@@ -7,6 +7,23 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+### Added
+
+- **`to_py_obj_list` and `to_py_obj_dict`.** When the elements are already
+  `PyObject *` (a decoder, a query result), the boxing closure passed to
+  `to_py_list`/`to_py_dict` is the identity and costs a V call per element.
+  These helpers build the list/dict directly, transferring ownership of each
+  element without a per-element call.
+- **`vcraft.PyObj` is a first-class parameter and result type.** A function
+  can take and return `vcraft.PyObj` directly, with `!` error propagation and
+  no `@[vc_raw]`: the generated glue treats it as a borrowed `PyObject *` on
+  the way in and passes the owned reference through on the way out. This is the
+  type for "a Python object of unknown shape" (a JSON value, a query row).
+- **`repr_f64` uses Python's shortest round-trip form.** It now renders
+  through `PyObject_Repr`, matching `repr()`/`str()` of the equivalent Python
+  float (scientific notation only when needed, non-finite values as
+  `nan`/`inf`/`-inf`).
+
 ### Fixed
 
 - **A function returning a freshly created Python object leaked one reference

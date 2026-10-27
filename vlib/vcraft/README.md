@@ -729,6 +729,14 @@ whose argument count is dynamic. Re-entry is safe: the state chain is a per-thre
 trampoline restores on the way out, and a Python exception from the callback is just a
 pending exception the trampoline returns null for.
 
+A function that takes or returns "a Python object of unknown shape" (a JSON value, a query
+row) declares the parameter or result as `vcraft.PyObj` rather than going through
+`@[vc_raw]`: the generated glue treats it as a borrowed `PyObject *` on the way in and
+passes the owned reference through on the way out, so `!` error propagation works and
+there is no manual `voidptr` handling. `vcraft.to_py_obj_list` and
+`vcraft.to_py_obj_dict` build a list or dict from values that are already `PyObject *`
+without a per-element boxing call.
+
 Reading the arguments back is done with `from_py_int_arg(argv, i, func, name)` and its
 `string`/`bytes` siblings: they take the trampoline's `argv` pointer and an index, with
 the function name and argument name used in the error messages. Their `from_py_*_item`

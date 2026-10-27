@@ -584,7 +584,22 @@ pub fn repr_uint(value u64) string {
 }
 
 pub fn repr_f64(value f64) string {
-	return '${value}'
+	// Python's own shortest round-trip form, so a float rendered by vcraft
+	// matches `repr()`/`str()` of the equivalent Python float. Non-finite
+	// values render as `nan`/`inf`/`-inf`, the way Python spells them.
+	if value != value {
+		return 'nan'
+	}
+	if value > 1.7976931348623157e308 {
+		return 'inf'
+	}
+	if value < -1.7976931348623157e308 {
+		return '-inf'
+	}
+	obj := to_py_f64(value)
+	r := obj.repr()
+	obj.decref()
+	return r
 }
 
 pub fn repr_bool(value bool) string {
