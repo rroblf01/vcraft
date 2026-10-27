@@ -729,6 +729,15 @@ awkward one: its argument readers signal failure by returning a null object, whi
 that returns the Python bool and `consume_bool` maps it (`-1` for null, after releasing
 the object).
 
+## Memoryview ownership
+
+`@[vc_memoryview]` transfers ownership of the backing to the view: the exporter
+frees it when the last view is released, so the exporter must not touch the
+buffer afterwards. A class that owns its buffer and wants to keep using it
+should expose it through the buffer protocol (`@[vc_buffer]`) and let callers
+write `memoryview(instance)`, which keeps the instance alive for the view's
+lifetime instead of moving the backing out from under it.
+
 ## Calling back into Python
 
 `vcraft.call(callee, args)` and `vcraft.call_method(obj, name, args)` run a Python

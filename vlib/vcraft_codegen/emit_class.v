@@ -1199,6 +1199,16 @@ fn emit_numeric_call(c Class, handler Func, selfv string, otherv string) string 
 			w.write_string(emit_numeric_result(c, handler, '${handler.name}(${storage}, arg)', '\t\t\t'))
 			w.write_string('\t\t}\n')
 		}
+		.pyobj {
+			w.write_string('\t\targ := vcraft.borrow(${otherv})\n')
+			w.write_string(emit_numeric_result(c, handler, '${handler.name}(${storage}, arg)', '\t\t'))
+			w.write_string('\n')
+		}
+		.pyref {
+			w.write_string('\t\targ := vcraft.borrow(${otherv})\n')
+			w.write_string(emit_numeric_result(c, handler, '${handler.name}(${storage}, arg)', '\t\t'))
+			w.write_string('\n')
+		}
 		else {}
 	}
 	return w.str()
