@@ -736,6 +736,10 @@ passes the owned reference through on the way out, so `!` error propagation work
 there is no manual `voidptr` handling. `vcraft.to_py_obj_list` and
 `vcraft.to_py_obj_dict` build a list or dict from values that are already `PyObject *`
 without a per-element boxing call.
+`vcraft.from_py_list` and `vcraft.from_py_dict` are the reading counterparts: they
+turn a list/tuple or a dict into a `[]PyObj` / `map[string]PyObj` of borrowed
+references, so a function walking a composite Python value no longer calls
+`item(i)` / `dict_items` by hand.
 
 Reading the arguments back is done with `from_py_int_arg(argv, i, func, name)` and its
 `string`/`bytes` siblings: they take the trampoline's `argv` pointer and an index, with

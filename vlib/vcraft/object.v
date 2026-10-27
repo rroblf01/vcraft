@@ -193,12 +193,18 @@ pub fn (o PyObj) append(value PyObj) int {
 
 // repr renders the object the way Python's `repr` would.
 pub fn (o PyObj) repr() string {
-	return steal(C.PyObject_Repr(o.ptr)).to_vstring()
+	obj := steal(C.PyObject_Repr(o.ptr))
+	out := obj.to_vstring().clone()
+	obj.decref()
+	return out
 }
 
 // str renders the object the way Python's `str` would.
 pub fn (o PyObj) str() string {
-	return steal(C.PyObject_Str(o.ptr)).to_vstring()
+	obj := steal(C.PyObject_Str(o.ptr))
+	out := obj.to_vstring().clone()
+	obj.decref()
+	return out
 }
 
 // to_vstring converts a Python str into a V string. CPython caches the UTF-8
