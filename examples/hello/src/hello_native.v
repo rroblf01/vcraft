@@ -182,14 +182,16 @@ pub fn boxed(n i64) vcraft.PyObj {
 // A `voidptr` result is borrowed, so the wrapper takes a reference of its own.
 @[vc_fn]
 pub fn identity(obj voidptr) voidptr {
-	return obj
+	// A `voidptr` result is now an owned reference, so a pass-through takes one
+	// of its own before handing it back.
+	return vcraft.borrow(obj).new_ref().ptr
 }
 
 // Takes any Python object and returns it unchanged.
 @[vc_fn]
 @[vc_raw]
 pub fn passthrough(obj voidptr) voidptr {
-	return obj
+	return vcraft.borrow(obj).new_ref().ptr
 }
 
 // A counter with state.
@@ -408,7 +410,7 @@ pub fn (mut c Counter) add_counter(other &Counter) int {
 @[vc_method]
 @[vc_raw]
 pub fn (mut c Counter) raw_echo(obj voidptr) voidptr {
-	return obj
+	return vcraft.borrow(obj).new_ref().ptr
 }
 
 // A node in a chain, and the class that exists to show a cycle being collected.

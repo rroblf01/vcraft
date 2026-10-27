@@ -958,11 +958,13 @@ pub fn return_expr(strategy Strategy, value string, raw bool, v_type string, exp
 		return 'vcraft.new_handle(${value}, ${drop}).ptr'
 	}
 	if raw {
-		// A raw function hands back a borrowed pointer, so the wrapper takes the
-		// reference itself. Without this the caller receives a pointer it never
-		// owned and CPython over-decrements it at teardown, which crashes the
-		// interpreter on exit rather than at the call.
-		return "vcraft.borrow(${value}).new_ref().ptr"
+		// A raw function hands back a pointer it owns (a new reference), and the
+		// wrapper passes it through without taking another one. V is therefore
+		// responsible for returning an owned reference: a pass-through returns
+		// `vcraft.borrow(obj).new_ref().ptr`, and a freshly created object
+		// returns its creation reference. This matches the C extension
+		// convention and avoids leaking one reference per call.
+		return value
 	}
 	if export_buffer {
 		// A `@[vc_memoryview]` result: hand the native-backed slice to CPython as a
@@ -974,9 +976,10 @@ pub fn return_expr(strategy Strategy, value string, raw bool, v_type string, exp
 	// `.pyref`, where it is the object itself rather than a pointer to one.
 	return match strategy {
 		.pyref { boxed_expr(strategy, value) + '.ptr' }
-		// A `voidptr` result is borrowed, the same contract as a raw one, and it is
-		// already a pointer: boxing it and taking `.ptr` does not compile.
-		.pyobj { 'vcraft.borrow(${value}).new_ref().ptr' }
+		// A `voidptr` result is an owned reference V produced (the same contract
+		// as a raw one): the wrapper passes it through without taking another one,
+		// so V must return an owned reference.
+		.pyobj { value }
 		.seq { '${seq_boxed_expr(element_type(v_type), value)}.ptr' }
 		// A multi-value result lives in `result0`, `result1`...: see `result_decl`.
 		.tuple {
