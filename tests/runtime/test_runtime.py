@@ -128,6 +128,9 @@ def main() -> int:
     print("list_build builds incrementally")
     t.equal("list_build", m.list_build(), [0, 1, 2, 3, 4])
 
+    print("PyObj convenience methods")
+    t.equal("pyobj_methods_test", m.pyobj_methods_test(), 0)
+
     print("py_scope tracks and releases references")
     t.equal("py_scope_test", m.py_scope_test(), 3)
 

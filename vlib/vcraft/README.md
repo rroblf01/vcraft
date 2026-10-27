@@ -785,6 +785,11 @@ whose argument count is dynamic. Re-entry is safe: the state chain is a per-thre
 trampoline restores on the way out, and a Python exception from the callback is just a
 pending exception the trampoline returns null for.
 
+A `PyObj` also carries convenience methods -- `call`, `call_method`, `call_kw`,
+`call_method_kw`, `getitem`, `setitem`, `getattr`, `setattr`, `hasattr`, `iter`,
+`next`, `contains`, `del_attr`, `type_obj`, `repr` and `str` -- so a function holding
+one can invoke, index and mutate it without dropping to `voidptr`.
+
 Attribute access is `vcraft.getattr(obj, name)` (a new reference, or null with an
 exception set), `vcraft.setattr(obj, name, value)` (steals `value`, returns 0/-1) and
 `vcraft.hasattr(obj, name)` (no exception). `vcraft.call_method(obj, name, args)` is

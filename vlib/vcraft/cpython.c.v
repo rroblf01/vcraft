@@ -135,6 +135,8 @@ fn C.PySet_New(o voidptr) voidptr
 fn C.PySet_Add(s voidptr, key voidptr) int
 fn C.PyObject_GetIter(o voidptr) voidptr
 fn C.PyIter_Next(it voidptr) voidptr
+fn C.PySequence_Contains(o voidptr, value voidptr) int
+fn C.PyObject_DelAttrString(o voidptr, name voidptr) int
 
 fn C.PyObject_Type(o voidptr) voidptr
 
