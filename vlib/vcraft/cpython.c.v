@@ -272,6 +272,7 @@ fn C.vpy_list_from_bytes(items voidptr, n isize) voidptr
 // vpy_call calls a Python callable with borrowed positional arguments, returning a new
 // reference or null with an exception set.
 fn C.vpy_call(callee voidptr, args voidptr, nargs isize) voidptr
+fn C.vpy_call_kw(callee voidptr, args voidptr, nargs isize, kwargs voidptr) voidptr
 
 fn C.vpy_not_implemented() voidptr
 fn C.PyTuple_New(size isize) voidptr

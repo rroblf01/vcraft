@@ -39,6 +39,46 @@ pub fn call_owned(callee voidptr, args []PyObj) PyObj {
 	return result
 }
 
+// call_kw calls `callee` with positional `args` (borrowed) and keyword `kwargs`,
+// returning a new reference to the result, or the null object with an exception set.
+//
+// `kwargs` maps keyword names to borrowed values; the runtime builds the dict and
+// releases its own references to them, so the caller keeps whatever it held.
+pub fn call_kw(callee voidptr, args []voidptr, kwargs map[string]PyObj) PyObj {
+	mut raw := []voidptr{cap: args.len}
+	for a in args {
+		raw << a
+	}
+	// Build the kwargs dict.
+	d := new_dict()
+	if d.is_null() {
+		return steal(unsafe { nil })
+	}
+	for k, v in kwargs {
+		key := to_py_string(k)
+		if key.is_null() {
+			d.decref()
+			return steal(unsafe { nil })
+		}
+		value := v.new_ref()
+		dict_set_owned(d, key, value)
+	}
+	result := steal(C.vpy_call_kw(callee, raw.data, isize(raw.len), d.ptr))
+	d.decref()
+	return result
+}
+
+// call_method_kw calls `obj.name(...)` with positional `args` and keyword `kwargs`.
+pub fn call_method_kw(obj voidptr, name string, args []voidptr, kwargs map[string]PyObj) PyObj {
+	m := getattr(obj, name)
+	if m.is_null() {
+		return m
+	}
+	result := call_kw(m.ptr, args, kwargs)
+	m.decref()
+	return result
+}
+
 // getattr returns a new reference to `obj`'s attribute `name`, or the null object with a
 // Python exception set (for example AttributeError). This is how a method is fetched to
 // pass to `call`.

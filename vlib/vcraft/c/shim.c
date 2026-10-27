@@ -1258,6 +1258,29 @@ PyObject *vpy_call(PyObject *callee, PyObject **args, Py_ssize_t nargs) {
 	return result;
 }
 
+// vpy_call_kw calls `callee` with positional `args` and keyword `kwargs` (a dict,
+// or NULL for none) and returns a new reference to the result.
+PyObject *vpy_call_kw(PyObject *callee, PyObject **args, Py_ssize_t nargs, PyObject *kwargs) {
+	if (callee == NULL) {
+		PyErr_SetString(PyExc_TypeError, "call: not a callable");
+		return NULL;
+	}
+	PyObject *tuple = PyTuple_New(nargs);
+	if (tuple == NULL) {
+		return NULL;
+	}
+	for (Py_ssize_t i = 0; i < nargs; i++) {
+		Py_INCREF(args[i]);
+		if (PyTuple_SetItem(tuple, i, args[i]) != 0) {
+			Py_DECREF(tuple);
+			return NULL;
+		}
+	}
+	PyObject *result = PyObject_Call(callee, tuple, kwargs);
+	Py_DECREF(tuple);
+	return result;
+}
+
 // vpy_list_from_str builds a Python list of str from a V `[]string` in one pass.
 typedef struct { const char *str; int64_t len; int64_t is_lit; } VString;
 

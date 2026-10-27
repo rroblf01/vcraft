@@ -117,6 +117,17 @@ pub fn (o PyObj) call(args []voidptr) PyObj {
 	return vcraft.call(o.ptr, args)
 }
 
+// call_kw invokes the object as a callable with positional `args` (borrowed) and
+// keyword `kwargs`, returning a new reference.
+pub fn (o PyObj) call_kw(args []voidptr, kwargs map[string]PyObj) PyObj {
+	return vcraft.call_kw(o.ptr, args, kwargs)
+}
+
+// call_method_kw invokes `o.name(...)` with positional `args` and keyword `kwargs`.
+pub fn (o PyObj) call_method_kw(name string, args []voidptr, kwargs map[string]PyObj) PyObj {
+	return vcraft.call_method_kw(o.ptr, name, args, kwargs)
+}
+
 // call_method invokes `o.name(...)` with the positional `args` (borrowed).
 pub fn (o PyObj) call_method(name string, args []voidptr) PyObj {
 	return vcraft.call_method(o.ptr, name, args)
