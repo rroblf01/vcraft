@@ -49,6 +49,24 @@ pub fn getattr(obj voidptr, name string) PyObj {
 	return out
 }
 
+// setattr sets `obj.name = value`, stealing the caller's reference to `value`.
+// It returns 0 on success and -1 with a Python exception set on failure.
+pub fn setattr(obj voidptr, name string, value PyObj) int {
+	namep := cstring(name)
+	out := C.PyObject_SetAttrString(obj, namep, value.ptr)
+	free_cstring(namep)
+	value.decref()
+	return int(out)
+}
+
+// hasattr reports whether `obj` has an attribute `name`, without raising.
+pub fn hasattr(obj voidptr, name string) bool {
+	namep := cstring(name)
+	out := C.PyObject_HasAttrString(obj, namep)
+	free_cstring(namep)
+	return out == 1
+}
+
 // call_method calls `obj.name(...)` with the positional `args` (borrowed) and returns a
 // new reference, or the null object with an exception set.
 pub fn call_method(obj voidptr, name string, args []voidptr) PyObj {

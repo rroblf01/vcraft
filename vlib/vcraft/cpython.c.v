@@ -230,6 +230,7 @@ fn C.PyDict_Next(d voidptr, pos &isize, key &voidptr, value &voidptr) int
 fn C.PyObject_GetAttrString(o voidptr, name voidptr) voidptr
 
 fn C.PyObject_SetAttrString(o voidptr, name voidptr, value voidptr) int
+fn C.PyObject_HasAttrString(o voidptr, name voidptr) int
 
 // ------------------------------------------------------------------ module
 
