@@ -1,6 +1,6 @@
 name: release
 
-# One trigger for the whole release: push a single tag `v1.5.0` and the images,
+# One trigger for the whole release: push a single tag `v1.6.0` and the images,
 # the wheels, the PyPI upload, the GitHub release and the action's floating tags
 # all follow in order. The old namespaces (`images/v*`, `vcraft/v*`,
 # `vcraft-action/v*`) are no longer used.

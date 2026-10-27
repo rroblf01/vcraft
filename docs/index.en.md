@@ -50,11 +50,15 @@ built on vcraft ([source](https://github.com/rroblf01/vqubit),
 
 ## Status
 
-1.5.0. Highlights: `@[vc_handle]` for native state a class owns, `@[vc_opaque]` for
+1.6.0. Highlights: `@[vc_handle]` for native state a class owns, `@[vc_opaque]` for
 pointers that travel as capsules (result and parameter), `vcraft.with_gil` / `released` /
 `gil_ensure` / `gil_release` for GIL control from V threads, `bytes_view` for zero-copy
 reads of bytes-like results, `to_py_str_list` / `to_py_bytes_list`, and `run_coroutine` /
-`call_async` to drive a Python coroutine from V. See the
+`call_async` to drive a Python coroutine from V. New in this release: a `voidptr`/
+`vcraft.PyObj` result is now an owned reference (no per-call leak), `vcraft.PyObj` works
+as a first-class parameter and result type with `!` propagation, `to_py_obj_list` /
+`to_py_obj_dict` and `from_py_list` / `from_py_dict` for composite Python values, and
+`repr_f64` matching Python's shortest form. See the
 [changelog](https://github.com/rroblf01/vcraft/blob/main/CHANGELOG.md) for the full list.
 
 The annotation vocabulary, the `vcraft.toml` keys and the CLI change only with a
