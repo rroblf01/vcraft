@@ -41,7 +41,17 @@ fn pyinit_vcraft_runtime_check() voidptr {
 		'unpack_tuple(t)')
 	m.add_function_owned('unpack_bytes', voidptr(unpack_bytes_trampoline), vcraft.meth_fastcall,
 		'unpack_bytes(t)')
-	m.add_function_owned('run_coro_fast', voidptr(run_coro_fast_trampoline), vcraft.meth_fastcall,
+	m.add_function_owned('build_obj_list', voidptr(build_obj_list_trampoline), vcraft.meth_noargs,
+		'build_obj_list()')
+	m.add_function_owned('setattr_hasattr', voidptr(setattr_hasattr_trampoline), vcraft.meth_fastcall,
+		'setattr_hasattr(obj)')
+	m.add_function_owned('repr_f64_test', voidptr(repr_f64_test_trampoline), vcraft.meth_noargs,
+		'repr_f64_test()')
+	m.add_function_owned('type_obj_name', voidptr(type_obj_name_trampoline), vcraft.meth_noargs,
+		'type_obj_name()')	m.add_function_owned('build_set', voidptr(build_set_trampoline), vcraft.meth_noargs,
+		'build_set()')
+	m.add_function_owned('list_build', voidptr(list_build_trampoline), vcraft.meth_noargs,
+		'list_build()')	m.add_function_owned('run_coro_fast', voidptr(run_coro_fast_trampoline), vcraft.meth_fastcall,
 		'run_coro_fast(callee)')
 	m.add_function_owned('call_from_thread', voidptr(call_from_thread_trampoline),
 		vcraft.meth_fastcall, 'call_from_thread(callee)')
@@ -436,6 +446,148 @@ fn unpack_bytes_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	return vcraft.to_py_int(result).ptr
 }
 
+
+// to_py_obj_list builds a list of the given ints without a boxing closure.
+fn build_obj_list() vcraft.PyObj {
+	mut items := []vcraft.PyObj{cap: 3}
+	items << vcraft.to_py_int(1)
+	items << vcraft.to_py_int(2)
+	items << vcraft.to_py_int(3)
+	return vcraft.to_py_obj_list(items)
+}
+
+fn build_obj_list_trampoline(self voidptr, args voidptr) voidptr {
+	return build_obj_list().ptr
+}
+
+// from_py_list_sum reads a list and returns the sum of its ints.
+fn from_py_list_sum(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('from_py_list_sum', 1, int(nargs))
+	if vcraft.error_is_set() { return unsafe { nil } }
+	list := vcraft.require_arg(args, 0, 'from_py_list_sum', 'lst')
+	if vcraft.error_is_set() { return unsafe { nil } }
+	items := vcraft.from_py_list(list, 'lst') or { return unsafe { nil } }
+	mut total := int(0)
+	for it in items {
+		total += int(vcraft.from_py_int(it, 'x') or { 0 })
+	}
+	return vcraft.to_py_int(total).ptr
+}
+
+// from_py_dict_sum reads a dict {str: int} and returns the sum of values.
+fn from_py_dict_sum(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('from_py_dict_sum', 1, int(nargs))
+	if vcraft.error_is_set() { return unsafe { nil } }
+	d := vcraft.require_arg(args, 0, 'from_py_dict_sum', 'd')
+	if vcraft.error_is_set() { return unsafe { nil } }
+	m := vcraft.from_py_dict(d, 'd') or { return unsafe { nil } }
+	mut total := int(0)
+	for _, v in m {
+		total += int(vcraft.from_py_int(v, 'x') or { 0 })
+	}
+	return vcraft.to_py_int(total).ptr
+}
+
+// build_set builds a set of ints.
+fn build_set() vcraft.PyObj {
+	mut items := []vcraft.PyObj{cap: 3}
+	items << vcraft.to_py_int(1)
+	items << vcraft.to_py_int(2)
+	items << vcraft.to_py_int(2) // duplicate
+	return vcraft.to_py_set(items)
+}
+
+fn build_set_trampoline(self voidptr, args voidptr) voidptr {
+	return build_set().ptr
+}
+
+// read_set_sum reads a set and returns the sum.
+fn read_set_sum(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('read_set_sum', 1, int(nargs))
+	if vcraft.error_is_set() { return unsafe { nil } }
+	s := vcraft.require_arg(args, 0, 'read_set_sum', 's')
+	if vcraft.error_is_set() { return unsafe { nil } }
+	items := vcraft.from_py_set(s, 's') or { return unsafe { nil } }
+	mut total := int(0)
+	for it in items {
+		total += int(vcraft.from_py_int(it, 'x') or { 0 })
+	}
+	return vcraft.to_py_int(total).ptr
+}
+
+// list_build builds a list incrementally with list_new/append.
+fn list_build() vcraft.PyObj {
+	l := vcraft.list_new()
+	for i in 0 .. 5 {
+		vcraft.list_append_owned(l, vcraft.to_py_int(i))
+	}
+	return l
+}
+
+fn list_build_trampoline(self voidptr, args voidptr) voidptr {
+	return list_build().ptr
+}
+
+
+// repr_f64_test returns repr of a float.
+
+// type_obj_name returns the type name of an object.
+
+// bytes_view_sum reads bytes from a bytes_view.
+fn bytes_view_sum(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('bytes_view_sum', 1, int(nargs))
+	if vcraft.error_is_set() { return unsafe { nil } }
+	obj := vcraft.require_arg(args, 0, 'bytes_view_sum', 'obj')
+	if vcraft.error_is_set() { return unsafe { nil } }
+	view := vcraft.bytes_view(obj, 'obj') or { return unsafe { nil } }
+	mut total := int(0)
+	for b in view.data {
+		total += int(b)
+	}
+	view.release()
+	obj.decref()
+	return vcraft.to_py_int(total).ptr
+}
+
+// setattr_hasattr sets an attr on the passed object and returns the value.
+fn setattr_hasattr(obj voidptr) vcraft.PyObj {
+	o := vcraft.borrow(obj)
+	if !vcraft.hasattr(o.ptr, 'x') {
+		vcraft.setattr(o.ptr, 'x', vcraft.to_py_int(42))
+	}
+	return vcraft.getattr(o.ptr, 'x')
+}
+
+fn setattr_hasattr_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+	vcraft.require_nargs('setattr_hasattr', 1, int(nargs))
+	if vcraft.error_is_set() { return unsafe { nil } }
+	obj := vcraft.require_voidptr_arg(args, 0, 'setattr_hasattr', 'obj')
+	if vcraft.error_is_set() { return unsafe { nil } }
+	return setattr_hasattr(obj).ptr
+}
+
+// repr_f64_test returns the repr of 3.14.
+fn repr_f64_test() vcraft.PyObj {
+	return vcraft.to_py_string(vcraft.repr_f64(3.14))
+}
+
+fn repr_f64_test_trampoline(self voidptr, args voidptr) voidptr {
+	return repr_f64_test().ptr
+}
+
+// type_obj_name returns the type name of an int.
+fn type_obj_name() vcraft.PyObj {
+	o := vcraft.to_py_int(42)
+	t := o.type_obj()
+	name := t.type_name()
+	t.decref()
+	o.decref()
+	return vcraft.to_py_string(name)
+}
+
+fn type_obj_name_trampoline(self voidptr, args voidptr) voidptr {
+	return type_obj_name().ptr
+}
 
 fn identity_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	vcraft.require_nargs('identity', 1, int(nargs))

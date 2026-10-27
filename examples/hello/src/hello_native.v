@@ -68,11 +68,16 @@ pub fn first_char(text string) string {
 // Repeats a string n times.
 @[vc_fn]
 pub fn repeat(text string, n int) string {
-	mut out := ''
-	for _ in 0 .. n {
-		out += text
+	if n <= 0 || text.len == 0 {
+		return ''
 	}
-	return out
+	// Build in one pass: a V string is immutable, so `out += text` in a loop
+	// is O(n^2) in the total length. Accumulate into a buffer and convert once.
+	mut buf := []u8{cap: text.len * n}
+	for _ in 0 .. n {
+		buf << text.bytes()
+	}
+	return buf.bytestr()
 }
 
 // Returns nothing.

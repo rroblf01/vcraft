@@ -119,6 +119,24 @@ def main() -> int:
     t.equal("a memoryview result", m.sum_callback(lambda: memoryview(b"hello")), sum(b"hello"))
     t.equal("a zero-length result", m.sum_callback(lambda: b""), 0)
 
+    print("to_py_obj_list builds a list without boxing")
+    t.equal("build_obj_list", m.build_obj_list(), [1, 2, 3])
+
+    print("build_set deduplicates")
+    t.equal("build_set", sorted(m.build_set()), [1, 2])
+
+    print("list_build builds incrementally")
+    t.equal("list_build", m.list_build(), [0, 1, 2, 3, 4])
+
+    print("setattr/hasattr/getattr")
+    t.equal("setattr_hasattr", m.setattr_hasattr(type("O", (), {})()), 42)
+
+    print("repr_f64")
+    t.equal("repr_f64_test", m.repr_f64_test(), "3.14")
+
+    print("type_obj")
+    t.equal("type_obj_name", m.type_obj_name(), "type")
+
     print("call_kw drives a callable with keyword arguments")
     def _kw(a, b):
         return a + b * 10

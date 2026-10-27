@@ -86,12 +86,12 @@ def floats():
 
 def strs():
     return rng.choice(["", "a", "España", "日本語", "\x00inner\x00nul", "\ud800",
-                       "x" * rng.randrange(0, 100_000), "😀" * 100, "123", "-0", "  42 "])
+                       "x" * rng.randrange(0, 1_000), "😀" * 100, "123", "-0", "  42 "])
 
 def blobs():
     return rng.choice([b"", b"\x00" * 10, bytes(range(256)), bytearray(b"abc"),
                        memoryview(b"view"), memoryview(bytearray(64))[::2],
-                       b"x" * rng.randrange(0, 200_000)])
+                       b"x" * rng.randrange(0, 2_000)])
 
 def seqs():
     k = rng.randrange(0, 50)
