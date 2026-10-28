@@ -5,7 +5,7 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
-## [1.7.0-dev] - unreleased
+## [1.7.0] - 2026-10-28
 
 ### Added
 
