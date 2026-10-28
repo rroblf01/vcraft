@@ -240,3 +240,6 @@ PyObject *vpy_bytes_from_ptr(const char *ptr, Py_ssize_t len);
 
 /* Zero-copy: create a memoryview over V-owned memory (caller must keep V memory alive) */
 PyObject *vpy_memoryview_from_ptr(const void *ptr, Py_ssize_t len);
+
+/* Size of a pointer, for preheader calculations */
+size_t vpy_size_voidptr(void);

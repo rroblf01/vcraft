@@ -57,6 +57,7 @@ fn C.vpy_size_PyModuleDef() isize
 fn C.vpy_size_PyMethodDef() isize
 
 fn C.vpy_size_PyObject() isize
+fn C.vpy_size_voidptr() isize
 fn C.vpy_arena_new() voidptr
 fn C.vpy_arena_alloc(a voidptr, size usize) voidptr
 fn C.vpy_arena_free(a voidptr)

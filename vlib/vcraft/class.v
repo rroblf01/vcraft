@@ -54,8 +54,15 @@ pub fn object_header_size() int {
 // A subclass's state starts with its base's, so its `state_size` is larger and its
 // `tp_basicsize` is larger with it -- which is what CPython's "tp_basicsize ... too
 // small for base" check wants.
-pub fn instance_basicsize(state_size int) int {
-	return object_header_size() + state_size
+pub fn instance_basicsize(state_size int, weakref bool, dict bool) int {
+	mut size := object_header_size() + state_size
+	// Managed weakref/dict (CPython 3.11+) store their state in a preheader
+	// that sits before the PyObject. PyType_FromSpec does not add this space
+	// automatically, so the basicsize must include it.
+	if weakref || dict {
+		size += int(C.vpy_size_voidptr())
+	}
+	return size
 }
 
 // type_flags is what a vcraft heap type asks for: CPython's own default set plus
@@ -566,7 +573,7 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 	// subclass's `state_size` includes its base's, so a subclass is never smaller than
 	// its base -- which is what CPython rejects with "tp_basicsize ... too small for
 	// base". The number it compares against is the base's, not a constant.
-	mut basicsize := instance_basicsize(state_size)
+	mut basicsize := instance_basicsize(state_size, weakref, dict)
 	mut slots := [PyTypeSlot{
 		slot:  slot_new
 		value: new_

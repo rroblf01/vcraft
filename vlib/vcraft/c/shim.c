@@ -1470,3 +1470,7 @@ PyObject *vpy_bytes_from_ptr(const char *ptr, Py_ssize_t len) {
 PyObject *vpy_memoryview_from_ptr(const void *ptr, Py_ssize_t len) {
     return PyMemoryView_FromMemory((char *)ptr, len, PyBUF_READ);
 }
+
+size_t vpy_size_voidptr(void) {
+    return sizeof(void *);
+}
