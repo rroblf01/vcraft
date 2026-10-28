@@ -1522,10 +1522,10 @@ pub fn buf_free(c voidptr) {
             venv = newann / ".venv"
             subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True,
                            capture_output=True)
-            subprocess.run([str(venv / "bin" / "pip"), "install", "-q", "--no-index",
+            subprocess.run([str(venv_python(venv)), "-m", "pip", "install", "-q", "--no-index",
                            "--no-deps", str(built[0])], check=True, capture_output=True)
             probe = subprocess.run(
-                [str(venv / "bin" / "python"), "-c",
+                [str(venv_python(venv)), "-c",
                  "import newann as m\n"
                  "print(m.renamed_fn())\n"
                  "f = m.Foo(5)\n"
