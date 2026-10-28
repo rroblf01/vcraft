@@ -57,8 +57,9 @@ pub fn collect_file(path string, mut p Project) {
 				} else if attr_error in block.attrs {
 					_ := collect_error_type(path, lines, ast, decl, mut p)
 				}
-				// A plain struct is registered by `register_types`, before any signature
-				// is validated, so a struct declared in a later file still resolves.
+			}
+			.sumtype {
+				collect_sumtype(path, lines, decl, mut p)
 			}
 			else {}
 		}
@@ -84,6 +85,9 @@ fn register_types(dir string, mut p Project) {
 					if attr_class !in block.attrs && attr_error !in block.attrs {
 						collect_plain_struct(path, lines, decl, mut p)
 					}
+				}
+				.sumtype {
+					collect_sumtype(path, lines, decl, mut p)
 				}
 				else {}
 			}
@@ -185,13 +189,17 @@ fn params_of(ast &flat.FlatAst, id flat.NodeId, is_method bool) []Param {
 fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 	is_method bool) Func {
 	mut f := Func{
-		name:          decl.name
-		doc:           block.doc
+		name:    decl.name
+		py_name: if attr_rename in block.attrs { (block.args[attr_rename] or { decl.name }).trim("'\"") } else { decl.name }
+		doc:     block.doc
 		raw:           attr_raw in block.attrs
+		pass_module:   attr_pass_module in block.attrs
 		nogil:         attr_nogil in block.attrs
 		export_buffer: attr_memoryview in block.attrs
 		opaque:         attr_opaque in block.attrs
 		opaque_destructor: (block.args[attr_opaque] or { '' }).trim("'\"")
+		from_py:       (block.args[attr_from_py] or { '' }).trim("'\"")
+		into_py:       (block.args[attr_into_py] or { '' }).trim("'\"")
 		params:        params_of(ast, find_fn_node(ast, decl.name, decl.receiver) or {
 			flat.empty_node
 		}, is_method)
@@ -695,11 +703,58 @@ fn collect_enum(path string, lines []string, decl astquery.Declaration, mut p Pr
 	}
 	info := EnumInfo{
 		name:    name
+		py_name: name
 		key:     name.to_lower()
 		members: members
 	}
 	known_enums[name] = info
 	p.enums << info
+}
+
+// collect_sumtype records a V sumtype, which crosses as a generated tagged union.
+//
+// The variants are read from the source text: `type Foo = int | string | []Foo`.
+// Each variant is marshalled by its own rule on the way out and type-checked on
+// the way in, in declaration order.
+fn collect_sumtype(path string, lines []string, decl astquery.Declaration, mut p Project) {
+	name := decl.name
+	// Read the declaration line and the following lines until the variants are parsed.
+	mut text := ''
+	for li := decl.line; li <= lines.len; li++ {
+		text += lines[li - 1] + ' '
+		if lines[li - 1].contains('|') == false && li > decl.line {
+			// stop after the declaration line if no pipe
+			if li == decl.line { continue }
+			break
+		}
+		if li == decl.line { continue }
+		// stop after first line with variants
+		break
+	}
+	// Simpler: just read the declaration line
+	text = lines[decl.line - 1]
+	// Parse variants: "type Foo = A | B | C"
+	mut variants := []string{}
+	if eq := text.index('=') {
+		rhs := text[eq + 1..].trim_space()
+		for part in rhs.split('|') {
+			v := part.trim_space()
+			if v.len > 0 {
+				variants << v
+			}
+		}
+	}
+	if variants.len == 0 {
+		report(mut p, path, decl, 'error: sumtype `${name}` has no variants')
+		return
+	}
+	p.sumtypes << SumtypeInfo{
+		name:     name
+		py_name:  name
+		key:      name.to_lower()
+		variants: variants
+	}
+	known_sumtypes[name] = true
 }
 
 // collect_plain_struct records a plain `struct` (no `@[vc_class]`, no `@[vc_error]`),
@@ -736,8 +791,9 @@ fn collect_plain_struct(path string, lines []string, decl astquery.Declaration, 
 		}
 	}
 	info := StructInfo{
-		name:   decl.name
-		key:    decl.name.to_lower()
+		name:    decl.name
+		py_name: decl.name
+		key:     decl.name.to_lower()
 		fields: fields
 	}
 	// Registered immediately so a signature written before the struct is a `lookup` hit.
@@ -777,8 +833,9 @@ fn collect_const(path string, lines []string, decl astquery.Declaration, mut p P
 		}
 	}
 	p.consts << Const{
-		name:   decl.name
-		value:  value
+		name:    decl.name
+		py_name: decl.name
+		value:   value
 		kind:   kind
 		origin: path
 		line:   decl.line
@@ -796,6 +853,9 @@ fn link_sequences(mut p Project) {
 		mut lens := 0
 		mut items := 0
 		mut setitems := 0
+		mut map_getitems := 0
+		mut map_setitems := 0
+		mut map_delitems := 0
 		mut contains := 0
 		for m in c.methods {
 			if m.is_len {
@@ -806,6 +866,15 @@ fn link_sequences(mut p Project) {
 			}
 			if m.is_setitem {
 				setitems++
+			}
+			if m.is_map_getitem {
+				map_getitems++
+			}
+			if m.is_map_setitem {
+				map_setitems++
+			}
+			if m.is_map_delitem {
+				map_delitems++
 			}
 			if m.is_contains {
 				contains++
@@ -827,6 +896,12 @@ fn link_sequences(mut p Project) {
 		}
 		if setitems == 1 {
 			p.classes[i].setitem_fn = 'vcraft_generated__setitem_${c.key}'
+		}
+		if map_getitems == 1 {
+			p.classes[i].map_getitem_fn = 'vcraft_generated__map_getitem_${c.key}'
+		}
+		if map_setitems == 1 || map_delitems == 1 {
+			p.classes[i].map_ass_subscript_fn = 'vcraft_generated__map_ass_subscript_${c.key}'
 		}
 		if contains == 1 {
 			p.classes[i].contains_fn = 'vcraft_generated__contains_${c.key}'
@@ -1044,6 +1119,9 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	m.is_len = attr_len in block.attrs
 	m.is_getitem = attr_getitem in block.attrs
 	m.is_setitem = attr_setitem in block.attrs
+	m.is_map_getitem = attr_map_getitem in block.attrs
+	m.is_map_setitem = attr_map_setitem in block.attrs
+	m.is_map_delitem = attr_map_delitem in block.attrs
 	m.is_contains = attr_contains in block.attrs
 	if [m.is_len, m.is_getitem, m.is_setitem, m.is_contains].filter(it).len > 1 {
 		report(mut p, path, decl,
@@ -1085,6 +1163,27 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 				'error: `@[vc_getitem] ${decl.name}` takes ${m.params.len} argument(s); `__getitem__` takes one index')
 			return
 		}
+	if m.is_map_getitem {
+		if m.params.len != 1 {
+			report(mut p, path, decl,
+				'error: `@[vc_map_getitem] ${decl.name}` takes ${m.params.len} argument(s); mapping `__getitem__` takes one key')
+			return
+		}
+	}
+	if m.is_map_setitem {
+		if m.params.len != 2 {
+			report(mut p, path, decl,
+				'error: `@[vc_map_setitem] ${decl.name}` takes ${m.params.len} argument(s); mapping `__setitem__` takes a key and a value')
+			return
+		}
+	}
+	if m.is_map_delitem {
+		if m.params.len != 1 {
+			report(mut p, path, decl,
+				'error: `@[vc_map_delitem] ${decl.name}` takes ${m.params.len} argument(s); mapping `__delitem__` takes one key')
+			return
+		}
+	}
 		if lookup(m.params[0].v_type) !in [.int, .uint] {
 			report(mut p, path, decl,
 				'error: `@[vc_getitem] ${decl.name}` takes a `${m.params[0].v_type}` index; `__getitem__` takes an integer')
@@ -1260,8 +1359,12 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 	}
 	mut c := Class{
 		name:      decl.name
+		py_name:   if attr_rename in block.attrs { (block.args[attr_rename] or { decl.name }).trim("'\"") } else { decl.name }
 		doc:       block.doc
 		base:      base
+		weakref:   attr_weakref in block.attrs
+		dict:      attr_dict in block.attrs
+		mapping:   attr_mapping in block.attrs
 		origin:    path
 		line:      decl.line
 		column:    decl.column
@@ -1400,6 +1503,7 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			continue
 		}
 		f.doc = block.doc
+		f.py_name = if attr_rename in block.attrs { (block.args[attr_rename] or { f.name }).trim("'\"") } else { f.name }
 		if attr_buffer_typed in block.attrs && attr_buffer !in block.attrs {
 			report(mut p, path, astquery.Declaration{
 				name:      f.name
@@ -1609,6 +1713,7 @@ fn collect_error_type(path string, lines []string, ast &flat.FlatAst,
 	}
 	p.errors << ErrorType{
 		name:      decl.name
+		py_name:   decl.name
 		exc_field: exc_field
 		doc:       block.doc
 		origin:    path

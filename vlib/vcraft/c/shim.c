@@ -85,6 +85,22 @@ unsigned int vpy_tpflags_default(void) {
 	return (unsigned int)Py_TPFLAGS_DEFAULT;
 }
 
+unsigned int vpy_tpflags_weakref(void) {
+#ifdef Py_TPFLAGS_MANAGED_WEAKREF
+	return (unsigned int)Py_TPFLAGS_MANAGED_WEAKREF;
+#else
+	return 0;
+#endif
+}
+
+unsigned int vpy_tpflags_managed_dict(void) {
+#ifdef Py_TPFLAGS_MANAGED_DICT
+	return (unsigned int)Py_TPFLAGS_MANAGED_DICT;
+#else
+	return 0;
+#endif
+}
+
 #ifdef vcraft_limited_api
 
 // Under the stable ABI there is no `PyTypeObject` to read a field out of and no
@@ -948,6 +964,48 @@ PyObject *vpy_set_type(void) {
 	return (PyObject *)&PySet_Type;
 }
 
+PyObject *vpy_get_dict(PyObject *self, void *closure) {
+	return PyObject_GenericGetDict(self, closure);
+}
+
+int vpy_set_dict(PyObject *self, PyObject *value, void *closure) {
+	return PyObject_GenericSetDict(self, value, closure);
+}
+
+// vpy_enable_managed_dict enables `__dict__` on a heap type created via the
+// limited API. PyType_FromSpec does not set tp_dictoffset, so the MANAGED_DICT
+// flag alone is not enough; this sets tp_dictoffset = -1 (MANAGED_DICT_OFFSET)
+// directly, which the limited API cannot do.
+void vpy_enable_managed_dict(PyObject *type) {
+#ifndef Py_LIMITED_API
+	PyTypeObject *t = (PyTypeObject *)type;
+	t->tp_dictoffset = -1;
+#ifdef Py_TPFLAGS_MANAGED_DICT
+	t->tp_flags |= Py_TPFLAGS_MANAGED_DICT;
+#endif
+#endif
+	(void)type;
+}
+
+// vpy_enable_mapping attaches a PyMappingMethods struct to a heap type, giving it
+// the mapping protocol (mp_length, mp_subscript, mp_ass_subscript). Any of the
+// three may be NULL for a partial protocol.
+void vpy_enable_mapping(PyObject *type, void *mp_length, void *mp_subscript,
+                        void *mp_ass_subscript) {
+#ifndef Py_LIMITED_API
+	PyTypeObject *t = (PyTypeObject *)type;
+	PyMappingMethods *m = (PyMappingMethods *)PyObject_Malloc(sizeof(PyMappingMethods));
+	if (m == NULL) return;
+	memset(m, 0, sizeof(PyMappingMethods));
+	m->mp_length = (lenfunc)mp_length;
+	m->mp_subscript = (binaryfunc)mp_subscript;
+	m->mp_ass_subscript = (objobjargproc)mp_ass_subscript;
+	t->tp_as_mapping = m;
+#else
+	(void)type; (void)mp_length; (void)mp_subscript; (void)mp_ass_subscript;
+#endif
+}
+
 PyObject *vpy_dict_type(void) {
 	return (PyObject *)&PyDict_Type;
 }
@@ -1283,6 +1341,34 @@ PyObject *vpy_call_kw(PyObject *callee, PyObject **args, Py_ssize_t nargs, PyObj
 	PyObject *result = PyObject_Call(callee, tuple, kwargs);
 	Py_DECREF(tuple);
 	return result;
+}
+
+// vpy_checksum sums the bytes of a buffer, for the hot path where a V loop over a
+// []u8 would be the bottleneck. Returns the sum as a uint64.
+uint64_t vpy_checksum(const unsigned char *data, Py_ssize_t len) {
+	uint64_t total = 0;
+	for (Py_ssize_t i = 0; i < len; i++) {
+		total += data[i];
+	}
+	return total;
+}
+
+// vpy_sum_i64 sums a slice of int64, faster than a V loop.
+int64_t vpy_sum_i64(const int64_t *data, Py_ssize_t len) {
+	int64_t total = 0;
+	for (Py_ssize_t i = 0; i < len; i++) {
+		total += data[i];
+	}
+	return total;
+}
+
+// vpy_sum_f64 sums a slice of double, faster than a V loop.
+double vpy_sum_f64(const double *data, Py_ssize_t len) {
+	double total = 0.0;
+	for (Py_ssize_t i = 0; i < len; i++) {
+		total += data[i];
+	}
+	return total;
 }
 
 // vpy_list_from_str builds a Python list of str from a V `[]string` in one pass.

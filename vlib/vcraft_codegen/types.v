@@ -87,6 +87,14 @@ pub fn lookup(v_type string) Strategy {
 	if base in known_structs {
 		return .struct_type
 	}
+	if base in known_sumtypes {
+		// Sumtypes are not marshalled automatically: declare the parameter or
+		// result as `vcraft.PyObj` and do the conversion in V. The sumtype is
+		// registered so `lookup` recognises the name, but the strategy is
+		// unsupported, which makes the generator report it rather than emit
+		// glue that does not compile.
+		return .unsupported
+	}
 	// The composite types are recognised by their shape before the scalar names, and
 	// only over element types that are themselves plain values: anything else stays
 	// unsupported, so it is a diagnostic rather than glue that does not compile.

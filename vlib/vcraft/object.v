@@ -128,6 +128,32 @@ pub fn (o PyObj) call_method_kw(name string, args []voidptr, kwargs map[string]P
 	return vcraft.call_method_kw(o.ptr, name, args, kwargs)
 }
 
+// iter returns a new reference to an iterator over `o`, or null with an exception set.
+pub fn (o PyObj) iter() PyObj {
+	return steal(C.PyObject_GetIter(o.ptr))
+}
+
+// next returns the next item from the iterator `o`, or null with an exception set
+// (StopIteration when exhausted).
+pub fn (o PyObj) next() PyObj {
+	return steal(C.PyIter_Next(o.ptr))
+}
+
+// contains reports whether `item in o`, without raising on a False result. An
+// error (for example an unhashable item) leaves a Python exception set.
+pub fn (o PyObj) contains(item PyObj) bool {
+	out := C.PySequence_Contains(o.ptr, item.ptr)
+	return out == 1
+}
+
+// del_attr deletes `o.name`, returning 0 on success and -1 with an exception set.
+pub fn (o PyObj) del_attr(name string) int {
+	namep := cstring(name)
+	out := C.PyObject_DelAttrString(o.ptr, namep)
+	free_cstring(namep)
+	return int(out)
+}
+
 // call_method invokes `o.name(...)` with the positional `args` (borrowed).
 pub fn (o PyObj) call_method(name string, args []voidptr) PyObj {
 	return vcraft.call_method(o.ptr, name, args)

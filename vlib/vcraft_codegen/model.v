@@ -11,6 +11,10 @@ module vcraft_codegen
 pub const attr_fn = 'vc_fn'
 
 pub const attr_raw = 'vc_raw'
+pub const attr_pass_module = 'vc_pass_module'
+pub const attr_rename = 'vc_rename'
+pub const attr_from_py = 'vc_from_py'
+pub const attr_into_py = 'vc_into_py'
 
 // attr_nogil releases the GIL around a call. It was spelled `vc_gil` before 1.0, which
 // read as the opposite; that name is still accepted, with a warning.
@@ -165,6 +169,21 @@ pub const attr_setitem = 'vc_setitem'
 // installed as `sq_contains`. It makes `x in instance` work.
 pub const attr_contains = 'vc_contains'
 
+// attr_weakref marks a class as supporting weak references.
+pub const attr_weakref = 'vc_weakref'
+
+// attr_dict marks a class as having an instance __dict__.
+pub const attr_dict = 'vc_dict'
+
+// attr_mapping marks a class as implementing the mapping protocol.
+pub const attr_mapping = 'vc_mapping'
+// attr_map_getitem marks a method as `__getitem__` for mappings (PyObject* key).
+pub const attr_map_getitem = 'vc_map_getitem'
+// attr_map_setitem marks a method as `__setitem__` for mappings.
+pub const attr_map_setitem = 'vc_map_setitem'
+// attr_map_delitem marks a method as `__delitem__` for mappings.
+pub const attr_map_delitem = 'vc_map_delitem'
+
 // attr_classmethod marks a `fn Class.name(...)` as a Python `classmethod`. It is like
 // `@[vc_static]` but CPython passes the class rather than NULL, so a subclass calling it
 // sees the subclass.
@@ -203,6 +222,10 @@ pub const known_attrs = [
 	attr_fn,
 	attr_defaults,
 	attr_raw,
+	attr_pass_module,
+	attr_rename,
+	attr_from_py,
+	attr_into_py,
 	attr_eq,
 	attr_hash,
 	attr_lt,
@@ -241,6 +264,12 @@ pub const known_attrs = [
 	attr_getitem,
 	attr_setitem,
 	attr_contains,
+	attr_weakref,
+	attr_dict,
+	attr_mapping,
+	attr_map_getitem,
+	attr_map_setitem,
+	attr_map_delitem,
 	attr_classmethod,
 	attr_const,
 	attr_iter,
@@ -293,7 +322,8 @@ pub fn (p Param) optional() bool {
 // scan learns more about it, so its fields are mutable.
 pub struct Func {
 pub mut:
-	name string
+	name    string
+	py_name string
 	// v_ret is the declared return type, already split so that `!string` yields
 	// `string` and `!void` yields an empty result.
 	v_ret string
@@ -308,6 +338,8 @@ pub mut:
 	// raw marks a function the generated wrapper must not marshal at all: it
 	// takes and returns `voidptr` and sees the real PyObject pointers.
 	raw bool
+	// pass_module makes the wrapper pass the module object as the first argument.
+	pass_module bool
 	// nogil marks a pure V function the wrapper may call with the GIL released.
 	nogil bool
 	// opaque marks a function whose `voidptr` result is a native pointer, not a borrowed
@@ -316,6 +348,14 @@ pub mut:
 	// opaque_destructor is the V function `@[vc_opaque: 'name']` names as the capsule's
 	// destructor, empty when the pointer outlives the capsule (a process-wide context).
 	opaque_destructor string
+	// from_py is the V function `@[vc_from_py: 'name']` names as the per-parameter
+	// converter: it takes a `PyObj` and returns the parameter's V type, replacing
+	// the standard reader for every parameter.
+	from_py string
+	// into_py is the V function `@[vc_into_py: 'name']` names as the result
+	// converter: it takes the function's V result and returns a `PyObj`, replacing
+	// the standard boxing.
+	into_py string
 	// export_buffer marks a function whose `[]T` result is returned as a zero-copy
 	// `memoryview` over native-backed memory, rather than boxed as a list. The slice's
 	// backing must come from `buffer_new_*`: the view takes ownership of it.
@@ -346,6 +386,9 @@ pub mut:
 	is_len      bool
 	is_getitem  bool
 	is_setitem  bool
+	is_map_getitem bool
+	is_map_setitem bool
+	is_map_delitem bool
 	is_contains bool
 	// classmethod marks a `fn Class.name(...)` registered with `METH_CLASS`, so CPython
 	// passes the class rather than NULL and a subclass sees itself.
@@ -369,8 +412,9 @@ pub mut:
 // Class is one struct the generator will expose as a Python type.
 pub struct Class {
 pub mut:
-	name string
-	doc  string
+	name    string
+	py_name string
+	doc     string
 	// qualified is the name the type is created under, which is the V module name
 	// plus the class name, so that two modules may each declare a `Point`.
 	qualified string
@@ -427,6 +471,14 @@ pub mut:
 	// base_index is that class's position, resolved once every class is known. Negative
 	// when there is no base or when the name did not resolve.
 	base_index int = -1
+	// weakref turns on Py_TPFLAGS_HAVE_GC so instances support weakref.ref().
+	weakref bool
+	// dict turns on Py_TPFLAGS_MANAGED_DICT so instances get a __dict__.
+	dict bool
+	// mapping turns on the mapping protocol (mp_length, mp_subscript, mp_ass_subscript).
+	mapping bool
+	map_getitem_fn string
+	map_ass_subscript_fn string
 	// eq_fn and hash_name are the user's methods marked `@[vc_eq]` and `@[vc_hash]`,
 	// empty when the class declares neither.
 	eq_fn     string
@@ -504,8 +556,9 @@ pub fn (c Class) state_type() string {
 
 pub struct Field {
 pub mut:
-	name string
-	doc  string
+	name    string
+	py_name string
+	doc     string
 	// v_type is the declared field type, which decides the accessor.
 	v_type string
 	// setter is empty for a read-only field.
@@ -608,7 +661,8 @@ pub fn (f Field) is_reference() bool {
 // from the struct's own field before the value is returned.
 pub struct ErrorType {
 pub mut:
-	name string
+	name    string
+	py_name string
 	// exc_field is the field holding the Python exception class. Empty when the type
 	// carries no class and names a builtin one through `code()` instead.
 	exc_field string
@@ -676,7 +730,9 @@ pub fn numeric_slot(name string) ?NumericSlot {
 // same file or in a file that sorts after this one.
 pub struct Operator {
 pub mut:
-	name   string
+	name    string
+	// py_name is the Python-side name, which `@[vc_rename]` may override.
+	py_name string
 	// kind is `eq` or `hash`, an ordering name, or a numeric slot key.
 	kind   string
 	origin string
@@ -692,7 +748,8 @@ pub mut:
 // Python attribute.
 pub struct Const {
 pub mut:
-	name string
+	name    string
+	py_name string
 	// value is the literal as written, and kind is `int`, `float`, `bool` or `str`.
 	// Nothing else can cross: a const is read at generation time, not at run time, so
 	// the value has to be a literal the generator can box itself.
@@ -715,8 +772,19 @@ pub:
 pub struct EnumInfo {
 pub:
 	name    string
+	py_name string
 	key     string
 	members []EnumMember
+}
+
+// SumtypeInfo is a V sumtype: `type Foo = int | string | ...`. It crosses as a
+// Python object whose concrete type is one of the variants.
+pub struct SumtypeInfo {
+pub:
+	name     string
+	py_name  string
+	key      string
+	variants []string
 }
 
 // StructField is one field of a plain V `struct`: its name and type.
@@ -730,8 +798,9 @@ pub:
 // its fields, keyed by their names.
 pub struct StructInfo {
 pub:
-	name   string
-	key    string
+	name    string
+	py_name string
+	key     string
 	fields []StructField
 }
 
@@ -740,8 +809,9 @@ pub:
 // than as an unknown struct. Cleared at the start of a run. `known_structs` is the same
 // for plain structs.
 __global (
-	known_enums   map[string]EnumInfo   = map[string]EnumInfo{}
-	known_structs map[string]StructInfo = map[string]StructInfo{}
+	known_enums    map[string]EnumInfo    = map[string]EnumInfo{}
+	known_structs  map[string]StructInfo  = map[string]StructInfo{}
+	known_sumtypes map[string]bool        = map[string]bool{}
 )
 
 // reset_type_registry clears the enum and struct registries before a project is
@@ -749,6 +819,7 @@ __global (
 pub fn reset_type_registry() {
 	known_enums = map[string]EnumInfo{}
 	known_structs = map[string]StructInfo{}
+	known_sumtypes = map[string]bool{}
 }
 
 // is_enum reports whether `v_type` names an enum the project declares.
@@ -769,6 +840,11 @@ pub fn enum_info(v_type string) ?EnumInfo {
 pub fn is_struct(v_type string) bool {
 	return v_type.trim_space() in known_structs
 }
+// is_sumtype reports whether `v_type` names a sumtype the project declares.
+pub fn is_sumtype(v_type string) bool {
+	return v_type.trim_space() in known_sumtypes
+}
+
 
 // struct_info returns the registry entry for a plain struct type name.
 pub fn struct_info(v_type string) ?StructInfo {
@@ -803,6 +879,9 @@ pub mut:
 	// structs are the plain V `struct` declarations, in declaration order, each crossing
 	// as a Python `dict`.
 	structs []StructInfo
+	// sumtypes are the V `type X = A | B` declarations. They cross as a Python
+	// object whose runtime type is one of the variants.
+	sumtypes []SumtypeInfo
 	// diagnostics are problems found while scanning. They do not stop generation;
 	// the emitter reports them all at once so a project with five mistakes takes
 	// one build to fix rather than five.

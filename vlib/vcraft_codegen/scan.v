@@ -212,27 +212,28 @@ fn parse_attr_args(text string) map[string]string {
 		}
 		body := text[start..i].trim_space()
 		i++
-		// Three spellings of an argument: `@[name(value)]`, `@[name = value]`, and V's own
-		// `@[name: 'value']`, whose quotes `unquote_attr` removes. Whichever separator comes first
-		// wins, so an `=` inside a quoted value does not split the name.
-		mut sep := -1
-		mut sep_len := 0
-		for k in 0 .. body.len {
-			if body[k] == `=` || body[k] == `(` || body[k] == `:` {
-				sep = k
-				if body[k] == `(` || body[k] == `:` {
-					sep_len = 1
+		for part in body.split(';') {
+			part2 := part.trim_space()
+			if part2 == '' { continue }
+			mut sep := -1
+			mut sep_len := 0
+			for k in 0 .. part2.len {
+				if part2[k] == `=` || part2[k] == `(` || part2[k] == `:` {
+					sep = k
+					if part2[k] == `(` || part2[k] == `:` {
+						sep_len = 1
+					}
+					break
 				}
-				break
 			}
-		}
-		if sep >= 0 {
-			name := body[..sep].trim_space()
-			mut value := body[sep + sep_len..].trim_space()
-			if value.ends_with(')') && body[sep] == `(` {
-				value = value[..value.len - 1].trim_space()
+			if sep >= 0 {
+				name := part2[..sep].trim_space()
+				mut value := part2[sep + sep_len..].trim_space()
+				if value.ends_with(')') && part2[sep] == `(` {
+					value = value[..value.len - 1].trim_space()
+				}
+				out[name] = unquote_attr(value)
 			}
-			out[name] = unquote_attr(value)
 		}
 	}
 	return out

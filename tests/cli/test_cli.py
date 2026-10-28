@@ -1372,6 +1372,182 @@ pub fn touch(ptr voidptr) voidptr {
 }
 """, "contradicts `@[vc_raw]`")
 
+        print("new annotations build and import")
+        newann = tmp / "newann"
+        (newann / "src").mkdir(parents=True)
+        (newann / "tests").mkdir(parents=True)
+        (newann / "v.mod").write_text(
+            'Module {\n\tname: "newann_native"\n\tbase_url: "src"\n\trequires: ["vcraft"]\n}\n',
+            encoding="utf-8")
+        (newann / "vcraft.toml").write_text(
+            '[package]\nname = "newann"\nversion = "0.1.0"\nmodule = "newann_native"\n'
+            'requires-python = ">=3.11"\n', encoding="utf-8")
+        (newann / "src" / "newann_native.v").write_text("""module newann_native
+
+import vcraft
+
+@[vc_class]
+@[vc_weakref]
+@[vc_dict]
+pub struct Foo {
+mut:
+	@[vc_field] value int
+	@[vc_ref] peer vcraft.PyObj
+}
+
+@[vc_fn]
+pub fn new_foo(v int) &Foo {
+	return &Foo{ value: v }
+}
+
+@[vc_method]
+@[vc_getitem]
+pub fn (f &Foo) get_item(i int) int {
+	return f.value + i
+}
+
+@[vc_method]
+@[vc_setitem]
+pub fn (mut f Foo) set_item(i int, v int) {
+	f.value = v
+}
+
+@[vc_method]
+@[vc_len]
+pub fn (f &Foo) length() int {
+	return f.value
+}
+
+@[vc_method]
+@[vc_contains]
+pub fn (f &Foo) contains(v int) bool {
+	return f.value == v
+}
+
+@[vc_method]
+@[vc_iter]
+pub fn (mut f Foo) rewind() {
+}
+
+@[vc_method]
+@[vc_next]
+pub fn (mut f Foo) advance() !int {
+	return f.value
+}
+
+@[vc_method]
+@[vc_property]
+pub fn (f &Foo) doubled() int {
+	return f.value * 2
+}
+
+@[vc_method]
+@[vc_static]
+pub fn Foo.triple(n int) int {
+	return n * 3
+}
+
+@[vc_method]
+@[vc_classmethod]
+pub fn Foo.scaled(n int) int {
+	return n * 10
+}
+
+@[vc_fn]
+@[vc_rename: 'renamed_fn']
+pub fn original_name() int {
+	return 7
+}
+
+@[vc_fn]
+@[vc_pass_module]
+pub fn module_name(mod vcraft.PyObj) string {
+	return mod.getattr('__name__').str()
+}
+
+@[vc_fn]
+@[vc_from_py: 'make_point']
+@[vc_into_py: 'point_to_dict']
+pub fn scale_point(p Point, factor int) Point {
+	return Point{ x: p.x * factor, y: p.y * factor }
+}
+
+pub struct Point {
+pub:
+	x int
+	y int
+}
+
+fn make_point(o vcraft.PyObj) !Point {
+	x := vcraft.dict_get(o, 'x', 'x') or { return error('missing x') }
+	y := vcraft.dict_get(o, 'y', 'y') or { return error('missing y') }
+	return Point{ x: int(vcraft.from_py_int(x, 'x') or { 0 }), y: int(vcraft.from_py_int(y, 'y') or { 0 }) }
+}
+
+fn point_to_dict(p Point) vcraft.PyObj {
+	mut m := map[string]vcraft.PyObj{}
+	m['x'] = vcraft.to_py_int(i64(p.x))
+	m['y'] = vcraft.to_py_int(i64(p.y))
+	return vcraft.to_py_obj_dict(m)
+}
+
+@[vc_fn]
+@[vc_opaque: 'buf_free']
+pub fn new_buf(size int) voidptr {
+	p := vcraft.native_alloc(usize(size))
+	if p == unsafe { nil } { panic('alloc') }
+	return p
+}
+
+pub fn buf_free(c voidptr) {
+	vcraft.native_free(vcraft.handle_data(c))
+}
+""", encoding="utf-8")
+        (newann / "python" / "newann").mkdir(parents=True, exist_ok=True)
+        (newann / "python" / "newann" / "__init__.py").write_text(
+            "from newann_native import *  # noqa\n", encoding="utf-8")
+        proc = vcraft("build", cwd=newann)
+        t.check("new annotations build", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        if proc.returncode == 0:
+            built = sorted((newann / "dist").glob("*.whl"))
+            t.check("a wheel is written", len(built) == 1, str(built))
+            # import and exercise
+            venv = newann / ".venv"
+            subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True,
+                           capture_output=True)
+            subprocess.run([str(venv / "bin" / "pip"), "install", "-q", "--no-index",
+                           "--no-deps", str(built[0])], check=True, capture_output=True)
+            probe = subprocess.run(
+                [str(venv / "bin" / "python"), "-c",
+                 "import newann as m\n"
+                 "print(m.renamed_fn())\n"
+                 "f = m.Foo(5)\n"
+                 "print(f[0], f[0] == 5)\n"
+                 "f[0] = 99\n"
+                 "print(f[0])\n"
+                 "print(5 in f, 99 in f)\n"
+                 "print(len(f))\n"
+                 "print(list(f))\n"
+                 "print(f.doubled)\n"
+                 "print(m.Foo.triple(4))\n"
+                 "print(m.Foo.scaled(4))\n"
+                 "print(m.module_name())\n"
+                 "print(m.scale_point({'x': 2, 'y': 3}, 4))\n"
+                 "import weakref\n"
+                 "r = weakref.ref(f)\n"
+                 "print('weakref ok:', r() is not None)\n"
+                 "f.foo = 42\n"
+                 "print('dict:', f.__dict__)\n"
+                 "h = m.new_buf(16)\n"
+                 "print('opaque:', type(h).__name__)\n"
+                 ],
+                capture_output=True, text=True)
+            t.check("new annotations import and run", probe.returncode == 0,
+                    (probe.stderr or probe.stdout).strip()[-400:])
+            if probe.returncode == 0:
+                print(probe.stdout.strip())
+
         print("abi3 with cycles")
         # `Py_TPFLAGS_HAVE_GC` reaches CPython differently under the stable ABI: the type
         # object's own traverse has to come through `PyType_GetSlot`, because

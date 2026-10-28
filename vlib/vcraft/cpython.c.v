@@ -59,8 +59,11 @@ fn C.vpy_size_PyMethodDef() isize
 fn C.vpy_size_PyObject() isize
 
 fn C.vpy_tpflags_default() u32
+fn C.vpy_tpflags_weakref() u32
+fn C.vpy_tpflags_managed_dict() u32
 
 fn C.PyType_FromSpec(spec voidptr) voidptr
+fn C.PyType_Ready(typ voidptr) int
 
 fn C.PyType_GenericAlloc(typ voidptr, nitems isize) voidptr
 
@@ -132,6 +135,8 @@ fn C.PySet_New(o voidptr) voidptr
 fn C.PySet_Add(s voidptr, key voidptr) int
 fn C.PyObject_GetIter(o voidptr) voidptr
 fn C.PyIter_Next(it voidptr) voidptr
+fn C.PySequence_Contains(o voidptr, value voidptr) int
+fn C.PyObject_DelAttrString(o voidptr, name voidptr) int
 
 fn C.PyObject_Type(o voidptr) voidptr
 
@@ -277,6 +282,9 @@ fn C.vpy_list_from_bytes(items voidptr, n isize) voidptr
 // reference or null with an exception set.
 fn C.vpy_call(callee voidptr, args voidptr, nargs isize) voidptr
 fn C.vpy_call_kw(callee voidptr, args voidptr, nargs isize, kwargs voidptr) voidptr
+fn C.vpy_checksum(data voidptr, len isize) u64
+fn C.vpy_sum_i64(data voidptr, len isize) i64
+fn C.vpy_sum_f64(data voidptr, len isize) f64
 
 fn C.vpy_not_implemented() voidptr
 fn C.PyTuple_New(size isize) voidptr
@@ -331,6 +339,10 @@ fn C.vpy_tuple_type() voidptr
 
 fn C.vpy_list_type() voidptr
 fn C.vpy_set_type() voidptr
+fn C.vpy_get_dict(self voidptr, closure voidptr) voidptr
+fn C.vpy_set_dict(self voidptr, value voidptr, closure voidptr) int
+fn C.vpy_enable_managed_dict(o voidptr)
+fn C.vpy_enable_mapping(typ voidptr, mp_length voidptr, mp_subscript voidptr, mp_ass_subscript voidptr)
 
 fn C.vpy_dict_type() voidptr
 
@@ -476,6 +488,9 @@ pub const slot_sq_item = i32(44)
 
 pub const slot_sq_contains = i32(41)
 pub const slot_sq_ass_item = i32(39)
+pub const slot_mp_length = i32(4)
+pub const slot_mp_subscript = i32(5)
+pub const slot_mp_ass_subscript = i32(3)
 
 // The number protocol. `nb_*` slots are what `+`, `-`, `*`, `&`, `|` and the unary
 // operators reach; the ids are the `PyType_Slot` ones, which sit below the `Py_sq_*`

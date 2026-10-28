@@ -29,6 +29,8 @@ Py_ssize_t vpy_size_PyModuleDef(void);
 Py_ssize_t vpy_size_PyMethodDef(void);
 Py_ssize_t vpy_size_PyObject(void);
 unsigned int vpy_tpflags_default(void);
+unsigned int vpy_tpflags_weakref(void);
+unsigned int vpy_tpflags_managed_dict(void);
 
 // A real memcpy, reached through a prototype.
 //
@@ -166,6 +168,10 @@ PyObject *vpy_bytes_type(void);
 PyObject *vpy_tuple_type(void);
 PyObject *vpy_list_type(void);
 PyObject *vpy_set_type(void);
+PyObject *vpy_get_dict(PyObject *self, void *closure);
+int vpy_set_dict(PyObject *self, PyObject *value, void *closure);
+void vpy_enable_managed_dict(PyObject *type);
+void vpy_enable_mapping(PyObject *type, void *mp_length, void *mp_subscript, void *mp_ass_subscript);
 PyObject *vpy_dict_type(void);
 PyObject *vpy_module_type(void);
 
@@ -215,5 +221,8 @@ PyObject *vpy_list_from_f64(const double *items, Py_ssize_t n);
 // Calling a Python callable with borrowed positional arguments, as a new reference.
 PyObject *vpy_call(PyObject *callee, PyObject **args, Py_ssize_t nargs);
 PyObject *vpy_call_kw(PyObject *callee, PyObject **args, Py_ssize_t nargs, PyObject *kwargs);
+uint64_t vpy_checksum(const unsigned char *data, Py_ssize_t len);
+int64_t vpy_sum_i64(const int64_t *data, Py_ssize_t len);
+double vpy_sum_f64(const double *data, Py_ssize_t len);
 
 #endif // VCRAFT_SHIM_H

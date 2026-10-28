@@ -711,6 +711,16 @@ aliased with no view at all, anything else goes through a view that pins the exp
 object alive, so a reference to it has to be held for as long as the slice is used; a
 server that writes a body straight to a socket is the case it exists for.
 
+## Buffer fields and their allocator
+
+A `@[vc_buffer]` field's backing must come from `vcraft.buffer_new_*` (or a
+`buffer_resize_*` of one). Assigning an ordinary V slice to it compiles -- V sees
+a `[]T` either way -- but the generated `tp_dealloc` releases it with
+`PyObject_Free` on memory `PyObject_Malloc` never handed out, which is undefined
+behaviour and usually surfaces as `free(): invalid size` at exit. The rule is
+documented in `buffer.v`; a runtime check in `buffer_free` would cost a branch on
+every deallocation, so the contract is enforced by convention.
+
 ## Iterators are two slots and a pair rule
 
 `tp_iter` returns the instance itself after running the `@[vc_iter]` method for its
@@ -738,6 +748,33 @@ should expose it through the buffer protocol (`@[vc_buffer]`) and let callers
 write `memoryview(instance)`, which keeps the instance alive for the view's
 lifetime instead of moving the backing out from under it.
 
+## Scope-based reference management
+
+`vcraft.with_py_scope(fn (mut scope PyScope) { ... })` runs a block with a fresh
+scope that tracks every `PyObj` passed to `scope.track(o)` and releases them all
+when the block exits, on every path including a panic. `scope.keep(o)` removes a
+reference from the tracked set so it survives the scope (a result, a field).
+
+```v
+vcraft.with_py_scope(fn [mut out] (mut scope vcraft.PyScope) {
+    a := scope.track(vcraft.to_py_int(1))
+    b := scope.track(vcraft.to_py_int(2))
+    out = vcraft.to_py_int(a.ptr == b.ptr) // ...
+    scope.keep(out)
+})
+```
+
+Use it for a function that builds several temporary Python objects and returns
+one of them: track the temporaries, keep the result.
+
+## The mapping protocol
+
+`@[vc_mapping]` on a class fills `mp_length`, `mp_subscript` and
+`mp_ass_subscript`: `len(instance)`, `instance[key]`, `instance[key] = value`
+and `del instance[key]`. The key is a `PyObject *` (any hashable type),
+unlike `sq_item` which takes an integer index. `mp_length` reuses the
+`@[vc_len]` method.
+
 ## Calling back into Python
 
 `vcraft.call(callee, args)` and `vcraft.call_method(obj, name, args)` run a Python
@@ -747,6 +784,11 @@ reference the caller owns; `call_owned` releases arguments the caller built for 
 whose argument count is dynamic. Re-entry is safe: the state chain is a per-thread stack a
 trampoline restores on the way out, and a Python exception from the callback is just a
 pending exception the trampoline returns null for.
+
+A `PyObj` also carries convenience methods -- `call`, `call_method`, `call_kw`,
+`call_method_kw`, `getitem`, `setitem`, `getattr`, `setattr`, `hasattr`, `iter`,
+`next`, `contains`, `del_attr`, `type_obj`, `repr` and `str` -- so a function holding
+one can invoke, index and mutate it without dropping to `voidptr`.
 
 Attribute access is `vcraft.getattr(obj, name)` (a new reference, or null with an
 exception set), `vcraft.setattr(obj, name, value)` (steals `value`, returns 0/-1) and

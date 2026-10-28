@@ -43,6 +43,10 @@ fn pyinit_vcraft_runtime_check() voidptr {
 		'unpack_bytes(t)')
 	m.add_function_owned('build_obj_list', voidptr(build_obj_list_trampoline), vcraft.meth_noargs,
 		'build_obj_list()')
+	m.add_function_owned('pyobj_methods_test', voidptr(pyobj_methods_test_trampoline), vcraft.meth_noargs,
+		'pyobj_methods_test()')
+	m.add_function_owned('py_scope_test', voidptr(py_scope_test_trampoline), vcraft.meth_noargs,
+		'py_scope_test()')
 	m.add_function_owned('setattr_hasattr', voidptr(setattr_hasattr_trampoline), vcraft.meth_fastcall,
 		'setattr_hasattr(obj)')
 	m.add_function_owned('repr_f64_test', voidptr(repr_f64_test_trampoline), vcraft.meth_noargs,
@@ -587,6 +591,62 @@ fn type_obj_name() vcraft.PyObj {
 
 fn type_obj_name_trampoline(self voidptr, args voidptr) voidptr {
 	return type_obj_name().ptr
+}
+
+// py_scope_test creates several PyObj inside a scope and returns their count.
+// The scope releases them on exit; the function returns how many were tracked.
+fn py_scope_test() int {
+	mut cell := 0
+	ptr := &cell
+	vcraft.with_py_scope(fn [ptr] (mut scope vcraft.PyScope) {
+		a := scope.track(vcraft.to_py_int(1))
+		b := scope.track(vcraft.to_py_int(2))
+		c := scope.track(vcraft.to_py_int(3))
+		// keep `c` alive past the scope
+		scope.keep(c)
+		unsafe { *ptr = 3 }
+		_ = a
+		_ = b
+		_ = c
+	})
+	return cell
+}
+
+fn py_scope_test_trampoline(self voidptr, args voidptr) voidptr {
+	return vcraft.to_py_int(py_scope_test()).ptr
+}
+
+// pyobj_methods_test exercises PyObj.iter/next/contains/del_attr.
+fn pyobj_methods_test() int {
+	lst := vcraft.to_py_list([vcraft.to_py_int(1), vcraft.to_py_int(2)], fn (x vcraft.PyObj) vcraft.PyObj { return x })
+	// iter + next
+	it := lst.iter()
+	a := it.next()
+	b := it.next()
+	c := it.next() // null (exhausted)
+	has1 := lst.contains(vcraft.to_py_int(1))
+	has3 := lst.contains(vcraft.to_py_int(3))
+	// del_attr on a dict
+	d := vcraft.new_dict()
+	vcraft.setattr(d.ptr, 'x', vcraft.to_py_int(42))
+	d.del_attr('x')
+	had_x := vcraft.hasattr(d.ptr, 'x')
+	a.decref()
+	b.decref()
+	if !c.is_null() { c.decref() }
+	it.decref()
+	lst.decref()
+	d.decref()
+	if had_x { return -1 } // should be deleted
+	if !has1 { return -2 }
+	if has3 { return -3 }
+	if c.is_null() { } else { return -4 }
+	return 0
+}
+
+
+fn pyobj_methods_test_trampoline(self voidptr, args voidptr) voidptr {
+	return vcraft.to_py_int(pyobj_methods_test()).ptr
 }
 
 fn identity_trampoline(self voidptr, args voidptr, nargs isize) voidptr {

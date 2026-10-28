@@ -158,7 +158,7 @@ pub fn glue_module_body(p Project) string {
 		flags := if f.params.len == 0 { 'vcraft.meth_noargs' } else {
 			'vcraft.meth_fastcall_keywords'
 		}
-		w.write_string('\tg_vc_module.add_function_owned(' + vstring_literal(f.name) +
+		w.write_string('\tg_vc_module.add_function_owned(' + vstring_literal(f.py_name) +
 			', voidptr(' + f.trampoline + '), ' + flags + ',\n')
 		w.write_string('\t\t${vstring_literal(python_signature(f))})\n')
 	}
@@ -194,7 +194,7 @@ pub fn glue_module_body(p Project) string {
 	// Module-level constants, each a boxed literal attached under its own name. The
 	// reference the boxer returns is stolen by `add_object_owned`, so nothing leaks.
 	for cn in p.consts {
-		w.write_string('\tvcraft.add_object_owned(module, ' + vstring_literal(cn.name) +
+		w.write_string('\tvcraft.add_object_owned(module, ' + vstring_literal(cn.py_name) +
 			', ' + const_value_expr(cn) + ')\n')
 	}
 	// Each enum becomes an `enum.IntEnum` subclass, attached under the enum's own name and
@@ -202,8 +202,8 @@ pub fn glue_module_body(p Project) string {
 	// reference while the global holds the original, so the class outlives the call.
 	for e in p.enums {
 		w.write_string('\tg_vc_enum_' + e.key + ' = vcraft.int_enum(' +
-			vstring_literal(e.name) + ', ' + enum_members_expr(e) + ')\n')
-		w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(e.name) +
+			vstring_literal(e.py_name) + ', ' + enum_members_expr(e) + ')\n')
+		w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(e.py_name) +
 			', g_vc_enum_' + e.key + ')\n')
 	}
 	w.write_string('\t_ = module\n')
@@ -286,7 +286,7 @@ pub fn render_class_exec(p Project, c Class) string {
 	} else {
 		w.write_string('\t\tunsafe { nil },\n')
 	}
-	if c.scalar_fields().len > 0 || c.methods.any(it.property) {
+	if c.scalar_fields().len > 0 || c.methods.any(it.property) || c.dict {
 		w.write_string('\t\tunsafe { voidptr(&g_vc_getsets_' + c.key + '[0]) },\n')
 	} else {
 		w.write_string('\t\tunsafe { nil },\n')
@@ -303,7 +303,7 @@ pub fn render_class_exec(p Project, c Class) string {
 	// turns them into `Py_TPFLAGS_HAVE_GC`, and that flag is what makes the collector
 	// look at the instances at all: without it a cycle is never found, and the objects
 	// in it are never freed.
-	if c.ref_fields().len > 0 {
+	if c.ref_fields().len > 0 || c.weakref {
 		w.write_string('\t\tvoidptr(vcraft_generated__traverse_' + c.key + '),\n')
 		w.write_string('\t\tvoidptr(vcraft_generated__clear_' + c.key + '),\n')
 	} else {
@@ -338,8 +338,21 @@ pub fn render_class_exec(p Project, c Class) string {
 			w.write_string('\t\tunsafe { nil },\n')
 		}
 	}
+	// Mapping protocol slots.
+	if c.map_getitem_fn.len > 0 {
+		w.write_string('\t\tvoidptr(' + c.map_getitem_fn + '),\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+	}
+	if c.map_ass_subscript_fn.len > 0 {
+		w.write_string('\t\tvoidptr(' + c.map_ass_subscript_fn + '),\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+	}
 	// The number protocol: the `nb_*` slots for the operators this class declares, each
 	// paired with its slot id, or nothing when it declares none.
+	w.write_string('\t\t' + if c.weakref { 'true' } else { 'false' } + ',\n')
+	w.write_string('\t\t' + if c.dict { 'true' } else { 'false' } + ',\n')
 	w.write_string('\t\t' + numeric_slots_expr(c) + ',\n')
 	w.write_string('\t)\n')
 	// The error check is here rather than inside `new_type` because a class that fails
@@ -351,7 +364,7 @@ pub fn render_class_exec(p Project, c Class) string {
 		c.name) + ')\n')
 	w.write_string('\t\treturn -1\n')
 	w.write_string('\t}\n')
-	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.name) + ', ' +
+	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.py_name) + ', ' +
 		c.ctype + ')\n')
 	return w.str()
 }
@@ -586,7 +599,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
-	if f.params.len > 0 {
+	if f.params.len > 0 && !f.pass_module {
 		w.write_string(emit_bind(f))
 	}
 	mut names := []string{}
@@ -680,7 +693,7 @@ pub fn emit_static_trampoline(f Func) string {
 		'_self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
-	if f.params.len > 0 {
+	if f.params.len > 0 && !f.pass_module {
 		w.write_string(emit_bind(f))
 	}
 	mut names := []string{}
@@ -844,17 +857,30 @@ pub fn emit_trampoline(f Func) string {
 	// every reference it touches.
 	mut names := []string{}
 	for i, param in f.params {
+		if f.pass_module && i == 0 {
+			name := local_name(i)
+			names << name
+			w.write_string('\t${name} := vcraft.borrow(g_vc_module.obj.ptr).new_ref()\n')
+			continue
+		}
+		// Adjust arg index for pass_module
+		arg_index := if f.pass_module { i - 1 } else { i }
 		if f.raw {
 			name := local_name(i)
 			names << name
 			w.write_string('\t${name} := vcraft.from_py_voidptr(' +
-				"vcraft.require_arg(args, ${i}, '${f.name}', '${param.name}'))\n")
+				"vcraft.require_arg(args, ${arg_index}, '${f.name}', '${param.name}'))\n")
 			w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 			continue
 		}
 		name := local_name(i)
 		names << name
-		w.write_string('\t${param_reader(param, name, i, f.name, f.opaque)}\n')
+		if f.from_py.len > 0 && is_struct(param.v_type.trim_space()) {
+			w.write_string('\t${name} := ${f.from_py}(vcraft.require_arg(args, ${arg_index}, ${vstring_literal(f.name)}, ${vstring_literal(param.name)})) or { return unsafe { nil } }\n')
+		} else {
+			// param_reader uses index for arg_present; adjust
+			w.write_string('\t${param_reader(param, name, arg_index, f.name, f.opaque)}\n')
+		}
 	}
 
 
@@ -1022,6 +1048,9 @@ fn instance_result_expr(f Func, value string, candidates string) string {
 fn emit_tail_return(f Func, ret Strategy, candidates string, raw bool) string {
 	if f.instance_result.len > 0 {
 		return '\treturn ${instance_result_expr(f, 'result', candidates)}\n'
+	}
+	if f.into_py.len > 0 {
+		return '\treturn ${f.into_py}(result).ptr\n'
 	}
 	return '\treturn ${return_expr(ret, 'result', raw, f.v_ret, f.export_buffer, f.opaque, f.opaque_destructor)}\n'
 }

@@ -61,9 +61,13 @@ fuente produce un stub `.pyi`, así que `help()` y un type checker ven lo mismo.
 | `@[vc_classmethod]` | métodos | Registra el método como `classmethod` |
 | `@[vc_base]` | `pub struct` | Hereda de la clase indicada |
 | `@[vc_ref]` | campos | Una referencia fuerte a otra instancia |
+| `@[vc_weakref]` | `pub struct` | Permite `weakref.ref(instancia)` sobre instancias de la clase |
+| `@[vc_dict]` | `pub struct` | Da a las instancias un `__dict__` de atributos arbitrarios |
 | `@[vc_buffer]` | campos | Un `[]T` nativo persistente de escalares |
 | `@[vc_error]` | `pub struct` | Un tipo de error `!T` con `msg()`/`code()` |
 | `@[vc_len]` / `@[vc_getitem]` / `@[vc_setitem]` / `@[vc_contains]` | métodos | `len()`, `obj[i]`, `obj[i] = v`, `x in obj` |
+| `@[vc_mapping]` | `pub struct` | Activa el protocolo de mapeo (`obj[key]`, `obj[key] = v`, `del obj[key]`, `len(obj)`) |
+| `@[vc_map_getitem]` / `@[vc_map_setitem]` / `@[vc_map_delitem]` | métodos | Handlers del protocolo de mapeo |
 | `@[vc_iter]` / `@[vc_next]` | métodos | `__iter__` / `__next__` |
 | `@[vc_eq]` / `@[vc_lt]` … | `pub fn` | Comparación y orden |
 | `@[vc_hash]` | `pub fn` | `__hash__` |
@@ -74,6 +78,11 @@ fuente produce un stub `.pyi`, así que `help()` y un type checker ven lo mismo.
 | `@[vc_opaque]` | `pub fn` | Un resultado `voidptr` viaja en cápsula, y cada parámetro `voidptr` se desenvuelve de una |
 | `@[vc_nogil]` | `pub fn` | Se ejecuta con el GIL liberado (métodos incluidos) |
 | `@[vc_raw]` | `pub fn` | Sin marshalling; tú manejas `PyObject *` |
+| `@[vc_mapping]` | `pub struct` | Activa el protocolo de mapeo (`obj[key]`, `obj[key] = v`, `del obj[key]`) |
+| `@[vc_pass_module]` | `pub fn` | Pasa el objeto módulo como primer argumento |
+| `@[vc_rename: 'name']` | `pub fn`, `pub struct`, campos | Renombra el nombre del lado Python |
+| `@[vc_from_py: 'fn']` | `pub fn` | Reemplaza el reader estándar de cada parámetro por un conversor custom |
+| `@[vc_into_py: 'fn']` | `pub fn` | Reemplaza el boxing estándar del resultado por un conversor custom |
 | `@[vc_memoryview]` | `pub fn`, métodos | Devuelve un slice nativo como `memoryview` escribible |
 
 La lista completa, con la firma exacta que espera cada una, está en la

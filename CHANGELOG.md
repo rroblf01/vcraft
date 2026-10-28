@@ -5,6 +5,48 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [1.7.0] - 2026-10-28
+
+### Added
+
+- **`@[vc_weakref]`.** A class opts in to `weakref.ref(instance)`; vcraft turns
+  on `Py_TPFLAGS_HAVE_GC` so the VM allocates a weakref list for each instance,
+  even when the class holds no reference fields of its own.
+- **`@[vc_dict]`.** A class gets an instance `__dict__` for arbitrary attributes,
+  via managed dict (`tp_dictoffset = -1`).
+- **`@[vc_mapping]`.** A class implements the mapping protocol (`obj[key]`,
+  `obj[key] = v`, `del obj[key]`, `len(obj)`) via `mp_subscript` and
+  `mp_ass_subscript` slots.
+- **`@[vc_from_py]` and `@[vc_into_py]`.** Custom converters: `@[vc_from_py: 'fn']`
+  replaces the standard reader for struct parameters, `@[vc_into_py: 'fn']`
+  replaces the standard boxing of a struct result. The converter is a V function
+  taking a `PyObj` (from_py) or the V value (into_py) and returning the other
+  side, so a Python dict can cross as a V struct and back without manual
+  marshalling at every call site.
+- **`@[vc_rename]`.** Renames the Python-side name of a function, class or field.
+- **`@[vc_pass_module]`.** Passes the module object as the first argument.
+- **`vcraft.PyScope` and `with_py_scope`.** Scope-based reference management:
+  track temporaries with `scope.track(o)` and they are released on exit, on every
+  path including a panic; `scope.keep(o)` lets a result survive the scope.
+- **`from_py_bytes_borrowed`.** Naming consistency with `from_py_str_borrowed`.
+- **`PyObj.type_obj()`.** Typed accessor for an object's type.
+- **Sets, kwargs, PyObj convenience methods, composite readers/builders.**
+  `new_set`, `set_add_owned`, `to_py_set`, `from_py_set`, `call_kw`,
+  `call_method_kw`, `PyObj.call/getitem/setitem/getattr/setattr/hasattr`,
+  `from_py_list`, `from_py_dict`, `to_py_obj_list`, `to_py_obj_dict`,
+  `list_new`, `list_append_owned`, `list_set_owned`.
+- **C-level helpers.** `checksum_bytes`, `sum_i64`, `sum_f64` (and their shim
+  counterparts `vpy_checksum`, `vpy_sum_i64`, `vpy_sum_f64`) for the hot paths
+  where a V loop over a buffer would be the bottleneck.
+
+### Changed
+
+- Documented that `released` drops the GIL and exposes V state to data races.
+- Documented that `@[vc_buffer]` fields must be initialised with `buffer_new_*`.
+- Documented that V closures capture by value.
+- Documented memoryview ownership transfer.
+- Documented bytes/string bridging limitation.
+
 ## [1.6.0] - 2026-10-27
 
 ### Added
@@ -37,6 +79,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **`@[vc_setitem]`.** `instance[i] = value` now has a slot, the counterpart of
   `@[vc_getitem]`. The method takes an integer index and a value; an out-of-range
   index is the user's own `IndexError` from a `!T` method.
+- **`@[vc_weakref]`.** A class opts in to `weakref.ref(instance)`; vcraft turns
+  on `Py_TPFLAGS_HAVE_GC` so the VM allocates a weakref list for each instance,
+  even when the class holds no reference fields of its own.
 - **Sets.** `new_set`, `set_add_owned`, `to_py_set` and `from_py_set`
   mirror the list/dict helpers, plus `set_type()` and `PySet_New`/`PySet_Add`
   in the shim.
