@@ -243,3 +243,8 @@ PyObject *vpy_memoryview_from_ptr(const void *ptr, Py_ssize_t len);
 
 /* Size of a pointer, for preheader calculations */
 size_t vpy_size_voidptr(void);
+
+/* Enable weak references on a heap type (Python 3.11 fallback, where managed
+   weakrefs are not available). Sets tp_weaklistoffset to point at the weakref
+   list stored at the end of the instance. */
+void vpy_enable_weakref(PyObject *type, Py_ssize_t weaklistoffset);

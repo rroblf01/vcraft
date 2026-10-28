@@ -350,6 +350,7 @@ fn C.vpy_set_type() voidptr
 fn C.vpy_get_dict(self voidptr, closure voidptr) voidptr
 fn C.vpy_set_dict(self voidptr, value voidptr, closure voidptr) int
 fn C.vpy_enable_managed_dict(o voidptr)
+fn C.vpy_enable_weakref(o voidptr, offset isize)
 fn C.vpy_enable_mapping(typ voidptr, mp_length voidptr, mp_subscript voidptr, mp_ass_subscript voidptr)
 
 fn C.vpy_dict_type() voidptr

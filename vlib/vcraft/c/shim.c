@@ -1474,3 +1474,14 @@ PyObject *vpy_memoryview_from_ptr(const void *ptr, Py_ssize_t len) {
 size_t vpy_size_voidptr(void) {
     return sizeof(void *);
 }
+
+void vpy_enable_weakref(PyObject *type, Py_ssize_t weaklistoffset) {
+#if !defined(Py_LIMITED_API) && PY_VERSION_HEX < 0x030C0000
+	((PyTypeObject *)type)->tp_weaklistoffset = weaklistoffset;
+#else
+	/* Python 3.12+ uses managed weakrefs via Py_TPFLAGS_MANAGED_WEAKREF,
+	   and under the limited API PyTypeObject is opaque. */
+	(void)type;
+	(void)weaklistoffset;
+#endif
+}

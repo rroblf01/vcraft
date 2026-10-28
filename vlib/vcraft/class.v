@@ -743,6 +743,12 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 			// Re-ready the type so the managed dict descriptor is added.
 			C.PyType_Ready(result.ptr)
 		}
+		if weakref && !result.is_null() {
+			// Python 3.11: set tp_weaklistoffset manually since managed weakrefs
+			// (Py_TPFLAGS_MANAGED_WEAKREF) are only available in 3.12+.
+			// The weakref list pointer lives at the end of the instance.
+			C.vpy_enable_weakref(result.ptr, isize(basicsize - int(C.vpy_size_voidptr())))
+		}
 		return result
 	}
 }
