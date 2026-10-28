@@ -1392,6 +1392,7 @@ import vcraft
 pub struct Foo {
 mut:
 	@[vc_field] value int
+	@[vc_field] current int
 	@[vc_ref] peer vcraft.PyObj
 }
 
@@ -1427,11 +1428,16 @@ pub fn (f &Foo) contains(v int) bool {
 @[vc_method]
 @[vc_iter]
 pub fn (mut f Foo) rewind() {
+	f.current = 1
 }
 
 @[vc_method]
 @[vc_next]
 pub fn (mut f Foo) advance() !int {
+	if f.current <= 0 {
+		return vcraft.raise_domain(.stop_iteration, 'no more values')
+	}
+	f.current = 0
 	return f.value
 }
 
