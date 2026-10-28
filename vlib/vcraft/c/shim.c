@@ -1129,6 +1129,18 @@ int vpy_slot_bf_releasebuffer(void) {
 	return Py_bf_releasebuffer;
 }
 
+int vpy_slot_mp_length(void) {
+	return Py_mp_length;
+}
+
+int vpy_slot_mp_subscript(void) {
+	return Py_mp_subscript;
+}
+
+int vpy_slot_mp_ass_subscript(void) {
+	return Py_mp_ass_subscript;
+}
+
 // The multi-phase module slot ids, for the same reason: PEP 820 renumbers them too, and
 // an abi3 build whose floor is 3.15 reads the new values.
 int vpy_slot_mod_exec(void) {

@@ -683,16 +683,17 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 			value: contains_fn
 		}
 	}
-	// Mapping protocol. mp_length reuses the sq_length function.
+	// Mapping protocol. The slot ids come from the headers via vpy_slot_mp_*,
+	// because PEP 820 renumbered them in CPython 3.15.
 	if map_getitem_fn != unsafe { nil } {
 		slots << PyTypeSlot{
-			slot:  slot_mp_subscript
+			slot:  i32(C.vpy_slot_mp_subscript())
 			value: map_getitem_fn
 		}
 	}
 	if map_ass_subscript_fn != unsafe { nil } {
 		slots << PyTypeSlot{
-			slot:  slot_mp_ass_subscript
+			slot:  i32(C.vpy_slot_mp_ass_subscript())
 			value: map_ass_subscript_fn
 		}
 	}

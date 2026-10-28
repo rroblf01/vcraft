@@ -194,6 +194,9 @@ void vpy_set_error_utf8(PyObject *exc, const char *msg, Py_ssize_t len);
 int vpy_is_complex(void *o);
 int vpy_slot_bf_getbuffer(void);
 int vpy_slot_bf_releasebuffer(void);
+int vpy_slot_mp_length(void);
+int vpy_slot_mp_subscript(void);
+int vpy_slot_mp_ass_subscript(void);
 int vpy_slot_mod_exec(void);
 int vpy_slot_mod_create(void);
 

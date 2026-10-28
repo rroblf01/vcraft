@@ -548,6 +548,9 @@ pub const slot_getset = i32(73)
 fn C.vpy_slot_bf_getbuffer() int
 
 fn C.vpy_slot_bf_releasebuffer() int
+fn C.vpy_slot_mp_length() int
+fn C.vpy_slot_mp_subscript() int
+fn C.vpy_slot_mp_ass_subscript() int
 
 // Py_TPFLAGS_BASETYPE, required before a Python class may be subclassed.
 pub const tpflags_basetype = u32(1 << 10)
