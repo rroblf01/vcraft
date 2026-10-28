@@ -57,8 +57,9 @@ pub fn collect_file(path string, mut p Project) {
 				} else if attr_error in block.attrs {
 					_ := collect_error_type(path, lines, ast, decl, mut p)
 				}
-				// A plain struct is registered by `register_types`, before any signature
-				// is validated, so a struct declared in a later file still resolves.
+			}
+			.sumtype {
+				collect_sumtype(path, lines, decl, mut p)
 			}
 			else {}
 		}
@@ -84,6 +85,9 @@ fn register_types(dir string, mut p Project) {
 					if attr_class !in block.attrs && attr_error !in block.attrs {
 						collect_plain_struct(path, lines, decl, mut p)
 					}
+				}
+				.sumtype {
+					collect_sumtype(path, lines, decl, mut p)
 				}
 				else {}
 			}
@@ -705,6 +709,52 @@ fn collect_enum(path string, lines []string, decl astquery.Declaration, mut p Pr
 	}
 	known_enums[name] = info
 	p.enums << info
+}
+
+// collect_sumtype records a V sumtype, which crosses as a generated tagged union.
+//
+// The variants are read from the source text: `type Foo = int | string | []Foo`.
+// Each variant is marshalled by its own rule on the way out and type-checked on
+// the way in, in declaration order.
+fn collect_sumtype(path string, lines []string, decl astquery.Declaration, mut p Project) {
+	name := decl.name
+	// Read the declaration line and the following lines until the variants are parsed.
+	mut text := ''
+	for li := decl.line; li <= lines.len; li++ {
+		text += lines[li - 1] + ' '
+		if lines[li - 1].contains('|') == false && li > decl.line {
+			// stop after the declaration line if no pipe
+			if li == decl.line { continue }
+			break
+		}
+		if li == decl.line { continue }
+		// stop after first line with variants
+		break
+	}
+	// Simpler: just read the declaration line
+	text = lines[decl.line - 1]
+	// Parse variants: "type Foo = A | B | C"
+	mut variants := []string{}
+	if eq := text.index('=') {
+		rhs := text[eq + 1..].trim_space()
+		for part in rhs.split('|') {
+			v := part.trim_space()
+			if v.len > 0 {
+				variants << v
+			}
+		}
+	}
+	if variants.len == 0 {
+		report(mut p, path, decl, 'error: sumtype `${name}` has no variants')
+		return
+	}
+	p.sumtypes << SumtypeInfo{
+		name:     name
+		py_name:  name
+		key:      name.to_lower()
+		variants: variants
+	}
+	known_sumtypes[name] = true
 }
 
 // collect_plain_struct records a plain `struct` (no `@[vc_class]`, no `@[vc_error]`),

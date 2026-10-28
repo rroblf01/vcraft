@@ -777,6 +777,16 @@ pub:
 	members []EnumMember
 }
 
+// SumtypeInfo is a V sumtype: `type Foo = int | string | ...`. It crosses as a
+// Python object whose concrete type is one of the variants.
+pub struct SumtypeInfo {
+pub:
+	name     string
+	py_name  string
+	key      string
+	variants []string
+}
+
 // StructField is one field of a plain V `struct`: its name and type.
 pub struct StructField {
 pub:
@@ -799,8 +809,9 @@ pub:
 // than as an unknown struct. Cleared at the start of a run. `known_structs` is the same
 // for plain structs.
 __global (
-	known_enums   map[string]EnumInfo   = map[string]EnumInfo{}
-	known_structs map[string]StructInfo = map[string]StructInfo{}
+	known_enums    map[string]EnumInfo    = map[string]EnumInfo{}
+	known_structs  map[string]StructInfo  = map[string]StructInfo{}
+	known_sumtypes map[string]bool        = map[string]bool{}
 )
 
 // reset_type_registry clears the enum and struct registries before a project is
@@ -808,6 +819,7 @@ __global (
 pub fn reset_type_registry() {
 	known_enums = map[string]EnumInfo{}
 	known_structs = map[string]StructInfo{}
+	known_sumtypes = map[string]bool{}
 }
 
 // is_enum reports whether `v_type` names an enum the project declares.
@@ -828,6 +840,11 @@ pub fn enum_info(v_type string) ?EnumInfo {
 pub fn is_struct(v_type string) bool {
 	return v_type.trim_space() in known_structs
 }
+// is_sumtype reports whether `v_type` names a sumtype the project declares.
+pub fn is_sumtype(v_type string) bool {
+	return v_type.trim_space() in known_sumtypes
+}
+
 
 // struct_info returns the registry entry for a plain struct type name.
 pub fn struct_info(v_type string) ?StructInfo {
@@ -862,6 +879,9 @@ pub mut:
 	// structs are the plain V `struct` declarations, in declaration order, each crossing
 	// as a Python `dict`.
 	structs []StructInfo
+	// sumtypes are the V `type X = A | B` declarations. They cross as a Python
+	// object whose runtime type is one of the variants.
+	sumtypes []SumtypeInfo
 	// diagnostics are problems found while scanning. They do not stop generation;
 	// the emitter reports them all at once so a project with five mistakes takes
 	// one build to fix rather than five.

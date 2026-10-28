@@ -99,6 +99,13 @@ This matters for servers (vlambda) where the request body arrives as a V string.
 Mitigation: keep bodies as `[]u8` (native-backed) where possible, or accept the
 copy for small bodies.
 
+## Sumtype marshalling
+
+V has sumtypes (`type Foo = int | string | []Foo`), but vcraft has no
+marshalling rule for them: a parameter or result of sumtype type is reported
+as unsupported. Declare it as `vcraft.PyObj` and do the conversion in V with
+`is` checks, the same way `vjson` handled `json2.Any`.
+
 ## Where vcraft already beats PyO3
 
 | Workload | vcraft vs PyO3 | Why |
