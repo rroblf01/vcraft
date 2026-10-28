@@ -9,31 +9,22 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ### Added
 
-- **`@[vc_mapping]`.** A class implements the mapping protocol (`obj[key]`, `obj[key] = v`, `del obj[key]`, `len(obj)`) via `mp_subscript` and `mp_ass_subscript` slots.
-- **`@[vc_rename]`.** Renames the Python-side name of a function, class or field.
-- **`@[vc_pass_module]`.** Passes the module object as the first argument.
-- **`@[vc_from_py]` and `@[vc_into_py]`.** Custom converters: `@[vc_from_py: 'fn']`
-  replaces the standard reader for struct parameters, `@[vc_into_py: 'fn']` replaces
-  the standard boxing of a struct result.
-** Custom converters: `@[vc_from_py: 'fn']`
-  replaces the standard reader for struct parameters, `@[vc_into_py: 'fn']` replaces
-  the standard boxing of a struct result. The converter is a V function taking a
-  `PyObj` (from_py) or the V value (into_py) and returning the other side, so a
-  Python dict can cross as a V struct and back without manual marshalling at
-  every call site.
-- **`@[vc_rename]`.** Renames the Python-side name of a function, class or field,
-  so a V `greet` can ship as `greet_user` and a `value` field as `count`.
-- **C-level helpers.** `checksum_bytes`, `sum_i64`, `sum_f64` (and their shim
-  counterparts `vpy_checksum`, `vpy_sum_i64`, `vpy_sum_f64`) for the hot paths
-  where a V loop over a buffer would be the bottleneck.
 - **`@[vc_weakref]`.** A class opts in to `weakref.ref(instance)`; vcraft turns
   on `Py_TPFLAGS_HAVE_GC` so the VM allocates a weakref list for each instance,
   even when the class holds no reference fields of its own.
-- **`@[vc_mapping]`.** A class implements the mapping protocol
-  (`obj[key]`, `obj[key] = v`, `del obj[key]`, `len(obj)`) via `mp_subscript`
-  and `mp_ass_subscript` slots, the counterpart of the sequence protocol.
 - **`@[vc_dict]`.** A class gets an instance `__dict__` for arbitrary attributes,
   via managed dict (`tp_dictoffset = -1`).
+- **`@[vc_mapping]`.** A class implements the mapping protocol (`obj[key]`,
+  `obj[key] = v`, `del obj[key]`, `len(obj)`) via `mp_subscript` and
+  `mp_ass_subscript` slots.
+- **`@[vc_from_py]` and `@[vc_into_py]`.** Custom converters: `@[vc_from_py: 'fn']`
+  replaces the standard reader for struct parameters, `@[vc_into_py: 'fn']`
+  replaces the standard boxing of a struct result. The converter is a V function
+  taking a `PyObj` (from_py) or the V value (into_py) and returning the other
+  side, so a Python dict can cross as a V struct and back without manual
+  marshalling at every call site.
+- **`@[vc_rename]`.** Renames the Python-side name of a function, class or field.
+- **`@[vc_pass_module]`.** Passes the module object as the first argument.
 - **`vcraft.PyScope` and `with_py_scope`.** Scope-based reference management:
   track temporaries with `scope.track(o)` and they are released on exit, on every
   path including a panic; `scope.keep(o)` lets a result survive the scope.
@@ -44,6 +35,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `call_method_kw`, `PyObj.call/getitem/setitem/getattr/setattr/hasattr`,
   `from_py_list`, `from_py_dict`, `to_py_obj_list`, `to_py_obj_dict`,
   `list_new`, `list_append_owned`, `list_set_owned`.
+- **C-level helpers.** `checksum_bytes`, `sum_i64`, `sum_f64` (and their shim
+  counterparts `vpy_checksum`, `vpy_sum_i64`, `vpy_sum_f64`) for the hot paths
+  where a V loop over a buffer would be the bottleneck.
 
 ### Changed
 
@@ -51,6 +45,7 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - Documented that `@[vc_buffer]` fields must be initialised with `buffer_new_*`.
 - Documented that V closures capture by value.
 - Documented memoryview ownership transfer.
+- Documented bytes/string bridging limitation.
 
 ## [1.6.0] - 2026-10-27
 
