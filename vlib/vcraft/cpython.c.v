@@ -57,6 +57,13 @@ fn C.vpy_size_PyModuleDef() isize
 fn C.vpy_size_PyMethodDef() isize
 
 fn C.vpy_size_PyObject() isize
+fn C.vpy_arena_new() voidptr
+fn C.vpy_arena_alloc(a voidptr, size usize) voidptr
+fn C.vpy_arena_free(a voidptr)
+fn C.vpy_list_from_i64(ptr voidptr, n isize) voidptr
+fn C.vpy_list_from_f64(ptr voidptr, n isize) voidptr
+fn C.vpy_bytes_from_ptr(ptr voidptr, n isize) voidptr
+fn C.vpy_memoryview_from_ptr(ptr voidptr, n isize) voidptr
 
 fn C.vpy_tpflags_default() u32
 fn C.vpy_tpflags_weakref() u32
@@ -649,4 +656,54 @@ pub mut:
 	set     voidptr
 	doc     voidptr
 	closure voidptr
+}
+
+// ---- Arena allocator wrappers ----
+
+pub struct Arena {
+	ptr voidptr
+}
+
+pub fn arena_new() Arena {
+	return Arena{ ptr: C.vpy_arena_new() }
+}
+
+pub fn (a Arena) alloc(size int) voidptr {
+	unsafe {
+		return C.vpy_arena_alloc(a.ptr, usize(size))
+	}
+}
+
+pub fn (mut a Arena) free() {
+	unsafe {
+		C.vpy_arena_free(a.ptr)
+	}
+}
+
+// ---- Batch marshalling wrappers ----
+
+pub fn to_py_int_list_fast(ptr &i64, n int) PyObj {
+	unsafe {
+		return PyObj{ ptr: C.vpy_list_from_i64(ptr, isize(n)) }
+	}
+}
+
+pub fn to_py_f64_list_fast(ptr &f64, n int) PyObj {
+	unsafe {
+		return PyObj{ ptr: C.vpy_list_from_f64(ptr, isize(n)) }
+	}
+}
+
+pub fn to_py_bytes_fast(ptr &u8, n int) PyObj {
+	unsafe {
+		return PyObj{ ptr: C.vpy_bytes_from_ptr(ptr, isize(n)) }
+	}
+}
+
+// ---- Zero-copy memoryview ----
+
+pub fn to_py_memoryview(ptr voidptr, n int) PyObj {
+	unsafe {
+		return PyObj{ ptr: C.vpy_memoryview_from_ptr(ptr, isize(n)) }
+	}
 }

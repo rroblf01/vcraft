@@ -226,3 +226,17 @@ int64_t vpy_sum_i64(const int64_t *data, Py_ssize_t len);
 double vpy_sum_f64(const double *data, Py_ssize_t len);
 
 #endif // VCRAFT_SHIM_H
+
+/* Arena allocator for per-request memory */
+typedef struct vpy_arena vpy_arena;
+vpy_arena *vpy_arena_new(void);
+void *vpy_arena_alloc(vpy_arena *a, size_t size);
+void vpy_arena_free(vpy_arena *a);
+
+/* Batch marshalling: V array -> Python list (single C call) */
+PyObject *vpy_list_from_i64(const long long *ptr, Py_ssize_t len);
+PyObject *vpy_list_from_f64(const double *ptr, Py_ssize_t len);
+PyObject *vpy_bytes_from_ptr(const char *ptr, Py_ssize_t len);
+
+/* Zero-copy: create a memoryview over V-owned memory (caller must keep V memory alive) */
+PyObject *vpy_memoryview_from_ptr(const void *ptr, Py_ssize_t len);

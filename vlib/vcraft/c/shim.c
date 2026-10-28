@@ -1410,3 +1410,63 @@ PyObject *vpy_list_from_bytes(const void *data, Py_ssize_t count) {
 	}
 	return list;
 }
+
+/* ---- Arena allocator ---- */
+#include <stdlib.h>
+
+struct vpy_arena {
+    struct vpy_arena_block *blocks;
+    size_t block_size;
+};
+
+struct vpy_arena_block {
+    struct vpy_arena_block *next;
+    size_t used;
+    size_t cap;
+    char data[];
+};
+
+vpy_arena *vpy_arena_new(void) {
+    vpy_arena *a = (vpy_arena *)malloc(sizeof(vpy_arena));
+    a->blocks = NULL;
+    a->block_size = 65536;
+    return a;
+}
+
+void *vpy_arena_alloc(vpy_arena *a, size_t size) {
+    if (size == 0) return NULL;
+    /* align to 8 bytes */
+    size = (size + 7) & ~7;
+    if (a->blocks == NULL || a->blocks->used + size > a->blocks->cap) {
+        size_t cap = a->block_size;
+        if (size > cap) cap = size + a->block_size;
+        struct vpy_arena_block *b = (struct vpy_arena_block *)malloc(sizeof(struct vpy_arena_block) + cap);
+        b->next = a->blocks;
+        b->used = 0;
+        b->cap = cap;
+        a->blocks = b;
+    }
+    void *ptr = a->blocks->data + a->blocks->used;
+    a->blocks->used += size;
+    return ptr;
+}
+
+void vpy_arena_free(vpy_arena *a) {
+    struct vpy_arena_block *b = a->blocks;
+    while (b) {
+        struct vpy_arena_block *next = b->next;
+        free(b);
+        b = next;
+    }
+    free(a);
+}
+
+/* ---- Batch marshalling (bytes) ---- */
+PyObject *vpy_bytes_from_ptr(const char *ptr, Py_ssize_t len) {
+    return PyBytes_FromStringAndSize(ptr, len);
+}
+
+/* ---- Zero-copy memoryview ---- */
+PyObject *vpy_memoryview_from_ptr(const void *ptr, Py_ssize_t len) {
+    return PyMemoryView_FromMemory((char *)ptr, len, PyBUF_READ);
+}
