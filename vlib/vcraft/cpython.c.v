@@ -282,6 +282,9 @@ fn C.vpy_list_from_bytes(items voidptr, n isize) voidptr
 // reference or null with an exception set.
 fn C.vpy_call(callee voidptr, args voidptr, nargs isize) voidptr
 fn C.vpy_call_kw(callee voidptr, args voidptr, nargs isize, kwargs voidptr) voidptr
+fn C.vpy_checksum(data voidptr, len isize) u64
+fn C.vpy_sum_i64(data voidptr, len isize) i64
+fn C.vpy_sum_f64(data voidptr, len isize) f64
 
 fn C.vpy_not_implemented() voidptr
 fn C.PyTuple_New(size isize) voidptr

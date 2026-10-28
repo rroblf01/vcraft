@@ -150,11 +150,7 @@ pub fn reverse3(a [3]int) [3]int {
 // bytes-like object through the buffer protocol.
 @[vc_fn]
 pub fn checksum(data []u8) u64 {
-	mut total := u64(0)
-	for b in data {
-		total += u64(b)
-	}
-	return total
+	return vcraft.checksum_bytes(data)
 }
 
 // expect_positive is the error path: a bad value raises ValueError.

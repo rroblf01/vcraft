@@ -221,5 +221,8 @@ PyObject *vpy_list_from_f64(const double *items, Py_ssize_t n);
 // Calling a Python callable with borrowed positional arguments, as a new reference.
 PyObject *vpy_call(PyObject *callee, PyObject **args, Py_ssize_t nargs);
 PyObject *vpy_call_kw(PyObject *callee, PyObject **args, Py_ssize_t nargs, PyObject *kwargs);
+uint64_t vpy_checksum(const unsigned char *data, Py_ssize_t len);
+int64_t vpy_sum_i64(const int64_t *data, Py_ssize_t len);
+double vpy_sum_f64(const double *data, Py_ssize_t len);
 
 #endif // VCRAFT_SHIM_H

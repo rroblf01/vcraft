@@ -318,6 +318,36 @@ pub fn native_free(p voidptr) {
 	}
 }
 
+// checksum_bytes sums the bytes of a buffer in C, faster than a V loop.
+pub fn checksum_bytes(data []u8) u64 {
+	if data.len == 0 {
+		return 0
+	}
+	unsafe {
+		return C.vpy_checksum(voidptr(data.data), isize(data.len))
+	}
+}
+
+// sum_i64 sums a slice of i64 in C.
+pub fn sum_i64(data []i64) i64 {
+	if data.len == 0 {
+		return 0
+	}
+	unsafe {
+		return C.vpy_sum_i64(voidptr(data.data), isize(data.len))
+	}
+}
+
+// sum_f64 sums a slice of f64 in C.
+pub fn sum_f64(data []f64) f64 {
+	if data.len == 0 {
+		return 0.0
+	}
+	unsafe {
+		return C.vpy_sum_f64(voidptr(data.data), isize(data.len))
+	}
+}
+
 // buffer_free releases a native buffer. Safe on a nil pointer, which is what an
 // unallocated or zero-length field holds, and on a buffer with views open: the view count
 // is for refusing resizes, not frees.

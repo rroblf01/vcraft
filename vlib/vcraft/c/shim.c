@@ -1343,6 +1343,34 @@ PyObject *vpy_call_kw(PyObject *callee, PyObject **args, Py_ssize_t nargs, PyObj
 	return result;
 }
 
+// vpy_checksum sums the bytes of a buffer, for the hot path where a V loop over a
+// []u8 would be the bottleneck. Returns the sum as a uint64.
+uint64_t vpy_checksum(const unsigned char *data, Py_ssize_t len) {
+	uint64_t total = 0;
+	for (Py_ssize_t i = 0; i < len; i++) {
+		total += data[i];
+	}
+	return total;
+}
+
+// vpy_sum_i64 sums a slice of int64, faster than a V loop.
+int64_t vpy_sum_i64(const int64_t *data, Py_ssize_t len) {
+	int64_t total = 0;
+	for (Py_ssize_t i = 0; i < len; i++) {
+		total += data[i];
+	}
+	return total;
+}
+
+// vpy_sum_f64 sums a slice of double, faster than a V loop.
+double vpy_sum_f64(const double *data, Py_ssize_t len) {
+	double total = 0.0;
+	for (Py_ssize_t i = 0; i < len; i++) {
+		total += data[i];
+	}
+	return total;
+}
+
 // vpy_list_from_str builds a Python list of str from a V `[]string` in one pass.
 typedef struct { const char *str; int64_t len; int64_t is_lit; } VString;
 

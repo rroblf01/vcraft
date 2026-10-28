@@ -90,6 +90,15 @@ vcraft.released(fn [ptr] () { unsafe { *ptr = ... } })
 - Object freelist.
 - Smart pointers.
 
+## Bytes/string bridging
+
+V strings are immutable but V's GC does not know about Python references, so a V
+string cannot be zero-copied into a Python `bytes`/`str` the way `bytes_arg` does
+for a Python argument. `to_py_bytes(str)` and `to_py_string(str)` always copy.
+This matters for servers (vlambda) where the request body arrives as a V string.
+Mitigation: keep bodies as `[]u8` (native-backed) where possible, or accept the
+copy for small bodies.
+
 ## Where vcraft already beats PyO3
 
 | Workload | vcraft vs PyO3 | Why |

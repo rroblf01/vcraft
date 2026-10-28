@@ -23,6 +23,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   every call site.
 - **`@[vc_rename]`.** Renames the Python-side name of a function, class or field,
   so a V `greet` can ship as `greet_user` and a `value` field as `count`.
+- **C-level helpers.** `checksum_bytes`, `sum_i64`, `sum_f64` (and their shim
+  counterparts `vpy_checksum`, `vpy_sum_i64`, `vpy_sum_f64`) for the hot paths
+  where a V loop over a buffer would be the bottleneck.
 - **`@[vc_weakref]`.** A class opts in to `weakref.ref(instance)`; vcraft turns
   on `Py_TPFLAGS_HAVE_GC` so the VM allocates a weakref list for each instance,
   even when the class holds no reference fields of its own.
