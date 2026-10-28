@@ -12,7 +12,7 @@ import vcraft_wheel
 // runner that has V configured for something else.
 
 // version is vcraft's own version, and the version it stamps into a wheel's `WHEEL`.
-pub const version = '1.7.0'
+pub const version = '1.7.1'
 
 // executable_name is the file name an executable has on this platform.
 //

@@ -41,7 +41,7 @@ fn tar_header(name string, size int, mode string, is_dir bool) [tar_block]u8 {
 	copy_raw(mut h, 100, mode, 8) // mode
 	copy_raw(mut h, 108, '0000000', 8) // uid
 	copy_raw(mut h, 116, '0000000', 8) // gid
-	copy_raw(mut h, 124, octal(u32(size), 12), 12) // size
+	copy_raw(mut h, 124, octal(u32(size), 11), 12) // size
 	// A fixed timestamp keeps the archive reproducible: the same sources produce the
 	// same bytes, so a rebuild that changed nothing shows as no diff at all. The value
 	// is 2024-01-01T00:00:00Z in octal.
@@ -58,9 +58,13 @@ fn tar_header(name string, size int, mode string, is_dir bool) [tar_block]u8 {
 	// notices when it tries to create `pep517demo-0.1.0/src/` and finds a file in the
 	// way. Python reports it as "Not a directory: .../pep517demo-0.1.0".
 	h[156] = if is_dir { `5` } else { `0` }
-	// "ustar" at 257 and the version "00" at 263. A reader that does not find them
+	// POSIX magic at 257: "ustar", NUL, "00". A reader that does not find it
 	// falls back to its own default, and GNU tar and BSD tar have different ones.
-	copy_raw(mut h, 257, 'ustar', 8)
+	// Writing only "ustar" padded to 8 bytes produces "ustar" + 3 NULs, which is
+	// neither the POSIX nor the GNU magic and makes strict indexers (PyPI) reject
+	// the archive.
+	copy_raw(mut h, 257, 'ustar', 6) // magic: "ustar" + NUL
+	copy_raw(mut h, 263, '00', 2)    // version: "00"
 	copy_raw(mut h, 265, 'vcraft', 32) // uname
 	copy_raw(mut h, 297, 'vcraft', 32) // gname
 	mut sum := u32(0)
@@ -68,7 +72,7 @@ fn tar_header(name string, size int, mode string, is_dir bool) [tar_block]u8 {
 		sum += u32(byte)
 	}
 	copy_raw(mut h, 148, octal(sum, 6), 8)
-	h[154] = ` `
+	h[155] = ` `
 	return h
 }
 

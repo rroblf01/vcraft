@@ -2290,6 +2290,11 @@ pub fn extra_marker() int {
                 str([w.name for w in (project / "dist").glob("*.tar.gz")]))
         if sdists:
             import tarfile
+            import gzip
+            tar_bytes = gzip.decompress(sdists[0].read_bytes())
+            t.check("sdist tar uses POSIX/PAX magic",
+                    tar_bytes[257:265] == b"ustar\x0000",
+                    repr(tar_bytes[257:265]))
             with tarfile.open(sdists[0]) as tf:
                 members = tf.getnames()
                 top = sdists[0].name[:-len(".tar.gz")]

@@ -5,6 +5,15 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [1.7.1] - 2026-10-28
+
+### Fixed
+
+- **sdist tar magic.** `tar.v` wrote `"ustar"` padded to 8 bytes, producing
+  `ustar\\x00\\x00\\x00`, which is neither the POSIX nor the GNU magic. PyPI,
+  which requires the POSIX.1-2001 pax format (`ustar\\x0000`), rejected such
+  sdists. The header now writes the POSIX magic `"ustar" + NUL + "00"`.
+
 ## [1.7.0] - 2026-10-28
 
 ### Added
