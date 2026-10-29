@@ -5,6 +5,16 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [1.7.2] - 2026-10-29
+
+### Fixed
+
+- **Free-threaded cross-build extension suffix.** `CrossTarget.extension_suffix`
+  ignored `free-threading`, so a `cp315t`-tagged wheel shipped an extension named
+  `.cpython-315-...so` (without the `t`) in cross/manylinux/musllinux builds and
+  could not be imported by a free-threaded interpreter. The suffix now carries
+  the `t` when free-threading is set.
+
 ## [1.7.1] - 2026-10-28
 
 ### Fixed

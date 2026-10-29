@@ -297,14 +297,17 @@ pub fn (t CrossTarget) extension_platform() string {
 // An abi3 extension is `.abi3.so` on Unix, where the loader knows the tag, but plain
 // `.pyd` on Windows: `importlib.machinery.EXTENSION_SUFFIXES` has no `.abi3` entry
 // there, only `.pyd`, so a `.abi3.pyd` installs and then fails to import.
-pub fn (t CrossTarget) extension_suffix(version string, abi3 string) string {
+pub fn (t CrossTarget) extension_suffix(version string, abi3 string, free_threading bool) string {
 	if abi3.len > 0 {
 		if t.os == 'windows' {
 			return '.pyd'
 		}
 		return '.abi3.so'
 	}
-	numeric := version.replace('.', '')
+	mut numeric := version.replace('.', '')
+	if free_threading {
+		numeric += 't'
+	}
 	if t.os == 'windows' {
 		return '.cp${numeric}-win_${t.arch}.pyd'
 	}

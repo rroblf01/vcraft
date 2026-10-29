@@ -636,6 +636,15 @@ pub fn apply(f voidptr, x int) !int {
                 and "$if linux" in (ROOT / "vlib" / "vcraft" / "cpython.c.v").read_text())
         t.check("a dry run writes nothing",
                 not list((project / "dist").glob(f"*{cross_arch}*")))
+        # A free-threaded cross build must carry the `t` in both the wheel tag
+        # and the extension suffix; otherwise the wheel installs and then fails to
+        # import on a free-threaded interpreter.
+        proc = vcraft("build", "--target", "linux-aarch64-gnu", "--free-threading",
+                      "--interpreter", sys.executable, "--dry-run", cwd=project)
+        t.check("a free-threaded cross build carries the t in its tag",
+                proc.returncode == 0 and "-cp314t-" in proc.stdout, proc.stdout)
+        t.check("a free-threaded cross build carries the t in its extension",
+                proc.returncode == 0 and ".cpython-314t-" in proc.stdout, proc.stdout)
         proc = vcraft("build", "--target", cross, "--release",
                       "--dry-run", cwd=project)
         t.check("a release dry run shows the command as it would run",

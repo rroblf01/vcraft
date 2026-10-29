@@ -424,7 +424,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		}
 	}
 	suffix := if explicit {
-		target.extension_suffix(interp_version, p.abi3)
+		target.extension_suffix(interp_version, p.abi3, p.free_threading)
 	} else {
 		interpreter_suffix(python, p.abi3)
 	}
