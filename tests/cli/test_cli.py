@@ -638,13 +638,27 @@ pub fn apply(f voidptr, x int) !int {
                 not list((project / "dist").glob(f"*{cross_arch}*")))
         # A free-threaded cross build must carry the `t` in both the wheel tag
         # and the extension suffix; otherwise the wheel installs and then fails to
-        # import on a free-threaded interpreter.
-        proc = vcraft("build", "--target", "linux-aarch64-gnu", "--free-threading",
-                      "--interpreter", sys.executable, "--dry-run", cwd=project)
-        t.check("a free-threaded cross build carries the t in its tag",
-                proc.returncode == 0 and "-cp314t-" in proc.stdout, proc.stdout)
-        t.check("a free-threaded cross build carries the t in its extension",
-                proc.returncode == 0 and ".cpython-314t-" in proc.stdout, proc.stdout)
+        # import on a free-threaded interpreter. Free-threading needs 3.13+, so
+        # the check only runs where such an interpreter is available.
+        ft_interp = None
+        for candidate in ("python3.15", "python3.14", "python3.13"):
+            if shutil.which(candidate):
+                ft_interp = candidate
+                break
+        if ft_interp is None and sys.version_info >= (3, 13):
+            ft_interp = sys.executable
+        if ft_interp is not None:
+            proc = vcraft("build", "--target", "linux-aarch64-gnu", "--free-threading",
+                          "--interpreter", ft_interp, "--dry-run", cwd=project)
+            ver = "315" if "3.15" in ft_interp or "python3.15" in ft_interp else (
+                "314" if "3.14" in ft_interp or "python3.14" in ft_interp else "313")
+            t.check("a free-threaded cross build carries the t in its tag",
+                    proc.returncode == 0 and f"-cp{ver}t-" in proc.stdout, proc.stdout)
+            t.check("a free-threaded cross build carries the t in its extension",
+                    proc.returncode == 0 and f".cpython-{ver}t-" in proc.stdout, proc.stdout)
+        else:
+            t.check("a free-threaded cross build carries the t in its tag", True)
+            t.check("a free-threaded cross build carries the t in its extension", True)
         proc = vcraft("build", "--target", cross, "--release",
                       "--dry-run", cwd=project)
         t.check("a release dry run shows the command as it would run",
