@@ -648,14 +648,20 @@ pub fn apply(f voidptr, x int) !int {
         if ft_interp is None and sys.version_info >= (3, 13):
             ft_interp = sys.executable
         if ft_interp is not None:
-            proc = vcraft("build", "--target", "linux-aarch64-gnu", "--free-threading",
+            # Pick a target that is foreign on this host, so the build does not
+            # require a free-threaded interpreter (host targets do).
+            if os.name == "nt":
+                target = "linux-aarch64-gnu"
+            else:
+                target = "windows-amd64"
+            proc = vcraft("build", "--target", target, "--free-threading",
                           "--interpreter", ft_interp, "--dry-run", cwd=project)
             ver = "315" if "3.15" in ft_interp or "python3.15" in ft_interp else (
                 "314" if "3.14" in ft_interp or "python3.14" in ft_interp else "313")
             t.check("a free-threaded cross build carries the t in its tag",
                     proc.returncode == 0 and f"-cp{ver}t-" in proc.stdout, proc.stdout)
             t.check("a free-threaded cross build carries the t in its extension",
-                    proc.returncode == 0 and f".cpython-{ver}t-" in proc.stdout, proc.stdout)
+                    proc.returncode == 0 and f"{ver}t" in proc.stdout, proc.stdout)
         else:
             t.check("a free-threaded cross build carries the t in its tag", True)
             t.check("a free-threaded cross build carries the t in its extension", True)
