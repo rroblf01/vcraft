@@ -555,7 +555,21 @@ fn cmd_clean(args Args) {
 	if p := vcraft_project.load('.') {
 		vcraft_project.remove_editable(p)
 	}
-	for dir in ['build', 'dist', '.vcraft'] {
+	mut targets := []string{}
+	if args.flags['all'] || (!args.flags['build'] && !args.flags['wheels'] && !args.flags['cache'] && !args.flags['editable']) {
+		targets = ['build', 'dist', '.vcraft']
+	} else {
+		if args.flags['build'] {
+			targets << 'build'
+		}
+		if args.flags['wheels'] {
+			targets << 'dist'
+		}
+		if args.flags['cache'] {
+			targets << '.vcraft'
+		}
+	}
+	for dir in targets {
 		if os.exists(dir) {
 			os.rmdir_all(dir) or {
 				eprintln('error: cannot remove ${dir}')
