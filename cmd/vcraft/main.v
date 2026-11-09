@@ -25,6 +25,7 @@ usage:
   vcraft info                  show what vcraft resolved for this project
   vcraft generate              regenerate the generated glue and stubs
   vcraft check                 check the project for common problems
+  vcraft doctor                verify the toolchain and environment
   vcraft clean                 remove build output
   vcraft toolchain             show which V compiler vcraft uses
   vcraft toolchain install     build the V compiler vcraft is tested with
@@ -162,6 +163,7 @@ fn main() {
 		'info' { cmd_info(args) }
 		'generate' { cmd_generate(args) }
 		'check' { cmd_check(args) }
+		'doctor' { cmd_doctor(args) }
 		'version' { println(vcraft_project.version) }
 		// Help goes to stdout: it is what someone asked for, not a diagnostic, and
 		// `vcraft help | less` has to work.
@@ -649,6 +651,41 @@ fn cmd_check(args Args) {
 		println('ok: no problems found')
 	} else {
 		eprintln('${problems} problem(s) found')
+		exit(1)
+	}
+}
+
+// cmd_doctor verifies the toolchain and the surrounding environment.
+fn cmd_doctor(args Args) {
+	println('vcraft        ${vcraft_project.version}')
+	v := vcraft_project.v_compiler()
+	println('v compiler    ${v}')
+	if command_exists(v) {
+		reported := vcraft_project.v_reported_commit(v)
+		if reported.len > 0 {
+			println('v commit      ${reported}')
+		}
+		if vcraft_project.v_matches_pin(v) {
+			println('v status      the pinned commit')
+		} else {
+			println('v status      NOT the pinned commit (${vcraft_project.v_commit[..7]})')
+		}
+	} else {
+		println('v compiler    missing; run `vcraft toolchain install`')
+	}
+	pinned := vcraft_project.installed_v()
+	if pinned.len > 0 {
+		println('pinned v      ${pinned}')
+	} else {
+		println('pinned v      not installed')
+	}
+	py := vcraft_project.python_in_environment()
+	println('python        ${py} (${vcraft_project.interpreter_version(py)})')
+	println('vlib          ${vcraft_project.vlib_path()}')
+	if command_exists(py) {
+		println('doctor        ok')
+	} else {
+		println('doctor        python missing')
 		exit(1)
 	}
 }
