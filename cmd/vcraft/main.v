@@ -26,6 +26,7 @@ usage:
   vcraft generate              regenerate the generated glue and stubs
   vcraft check                 check the project for common problems
   vcraft doctor                verify the toolchain and environment
+  vcraft migrate               rewrite deprecated annotations to their current names
   vcraft clean                 remove build output
   vcraft toolchain             show which V compiler vcraft uses
   vcraft toolchain install     build the V compiler vcraft is tested with
@@ -164,6 +165,7 @@ fn main() {
 		'generate' { cmd_generate(args) }
 		'check' { cmd_check(args) }
 		'doctor' { cmd_doctor(args) }
+		'migrate' { cmd_migrate(args) }
 		'version' { println(vcraft_project.version) }
 		// Help goes to stdout: it is what someone asked for, not a diagnostic, and
 		// `vcraft help | less` has to work.
@@ -705,6 +707,30 @@ fn cmd_doctor(args Args) {
 	} else {
 		println('doctor        python missing')
 		exit(1)
+	}
+}
+
+// cmd_migrate rewrites deprecated annotations in the project's V sources.
+fn cmd_migrate(args Args) {
+	root := if args.positional.len > 0 { args.positional[0] } else { '.' }
+	mut changed := 0
+	for path in os.walk_ext(root.trim_right('/') + '/src', '.v') {
+		text := os.read_file(path) or { continue }
+		mut out := text
+		for old, new in vcraft_codegen.deprecated_attrs {
+			out = out.replace('@[' + old + ']', '@[' + new + ']')
+		}
+		if out != text {
+			os.write_file(path, out) or {
+				eprintln('error: cannot write ${path}')
+				exit(1)
+			}
+			println('migrated ${path}')
+			changed++
+		}
+	}
+	if changed == 0 {
+		println('nothing to migrate')
 	}
 }
 
