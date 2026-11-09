@@ -1114,6 +1114,7 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	m.line = decl.line
 	m.column = decl.column
 	m.property = attr_property in block.attrs && m.params.len == 0
+	m.str_method = attr_str in block.attrs
 	m.property_set = (attr_property_set in block.attrs) || (attr_property in block.attrs && m.params.len == 1 && decl.name.starts_with('set_'))
 	if m.property_set {
 		if v := block.args[attr_property_set] {
@@ -1271,6 +1272,9 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	// a field set afterwards is set on the local and the list keeps a copy without it --
 	// which reads as "the annotation was ignored" rather than as a lost assignment.
 	p.classes[target].methods << m
+	if m.str_method {
+		p.classes[target].str_fn = m.trampoline
+	}
 }
 
 

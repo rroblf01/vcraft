@@ -73,6 +73,8 @@ pub fn emit_glue(p Project) string {
 				w.write_string(emit_property_trampoline(p, c, m))
 			} else if m.property_set {
 				w.write_string(emit_property_setter_trampoline(p, c, m))
+			} else if m.str_method {
+				w.write_string(emit_str_trampoline(p, c, m))
 			} else if m.static || m.classmethod {
 				// A classmethod is the static shape with METH_CLASS: `self` is the class
 				// CPython passes, and the V call still carries the receiver by name.
@@ -294,6 +296,8 @@ pub fn render_class_exec(p Project, c Class) string {
 		w.write_string('\t\tunsafe { nil },\n')
 	}
 	w.write_string('\t\tvoidptr(' + c.repr + '),\n')
+	str_arg := if c.str_fn.len > 0 { 'voidptr(' + c.str_fn + ')' } else { 'unsafe { nil }' }
+	w.write_string('\t\t' + str_arg + ',\n')
 	w.write_string('\t\tvoidptr(' + c.richcompare + '),\n')
 	w.write_string('\t\tvoidptr(' + c.hash_fn + '),\n')
 	if c.base_index < 0 {
@@ -848,6 +852,27 @@ pub fn emit_property_setter_trampoline(p Project, c Class, f Func) string {
 		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
 	}
 	w.write_string('\treturn 0\n')
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_str_trampoline renders a method exposed as the class's `tp_str`.
+pub fn emit_str_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${f.trampoline}(self voidptr) voidptr {\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	ret := lookup(f.v_ret)
+	w.write_string('\t${result_decl_of(f, ret)}\n')
+	if f.returns_result {
+		w.write_string('\tresult = state.' + c.self_access() + '${f.name}() or {\n')
+		w.write_string('\t\treturn unsafe { nil }\n')
+		w.write_string('\t}\n')
+	} else {
+		w.write_string('\tresult = state.' + c.self_access() + '${f.name}()\n')
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	w.write_string(emit_tail_return(f, ret, '', false))
 	w.write_string('}\n')
 	return w.str()
 }

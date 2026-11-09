@@ -564,7 +564,7 @@ pub fn type_from_spec(name string, basicsize int, slots voidptr) PyObj {
 // allows only a constant as a default value, and `unsafe { nil }` is an expression.
 // Callers that have nothing to pass write `unsafe { nil }`.
 pub fn new_type(name string, state_size int, doc string, new_ voidptr, init voidptr,
-	dealloc voidptr, methods voidptr, getsets voidptr, repr voidptr, richcompare voidptr,
+	dealloc voidptr, methods voidptr, getsets voidptr, repr voidptr, str_fn voidptr, richcompare voidptr,
 	hash voidptr, bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr,
 	next_fn voidptr, getbuffer voidptr, releasebuffer voidptr, len_fn voidptr,
 	item_fn voidptr, setitem_fn voidptr, contains_fn voidptr, map_getitem_fn voidptr,
@@ -600,6 +600,12 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 		slots << PyTypeSlot{
 			slot:  slot_repr
 			value: repr
+		}
+	}
+	if str_fn != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_str
+			value: str_fn
 		}
 	}
 	if richcompare != unsafe { nil } {
