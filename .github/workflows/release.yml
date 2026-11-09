@@ -459,7 +459,23 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: install the published vcraft
-        run: pip install "vcraft==$VERSION"
+        run: |
+          # PyPI's simple index is eventually consistent: a freshly uploaded
+          # version can take a little while to show up, and a smoke run that
+          # starts in that window fails with "No matching distribution found"
+          # even though the upload itself succeeded. Retry instead of failing
+          # the whole release on a propagation delay.
+          for attempt in $(seq 1 12); do
+            if pip install --no-cache-dir "vcraft==$VERSION"; then
+              break
+            fi
+            if [ "$attempt" -eq 12 ]; then
+              echo "error: vcraft==$VERSION never became available on PyPI" >&2
+              exit 1
+            fi
+            echo "attempt $attempt failed; waiting 30s for PyPI to propagate"
+            sleep 30
+          done
 
       - name: install the V toolchain
         run: vcraft toolchain install
