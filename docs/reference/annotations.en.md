@@ -34,6 +34,7 @@ diagnostic, not a silent omission.
 | `@[vc_raw]` | `pub fn` | Skips marshalling; you receive and return `voidptr`. |
 | `@[vc_nogil]` | `pub fn` | Runs the call with the GIL released. |
 | `@[vc_memoryview]` | `pub fn`, methods | Returns a native slice as a writable `memoryview` (no copy). |
+| `@[vc_str]` | methods | Registers the method as the class's `__str__` (`tp_str`). |
 
 ## Signatures
 
