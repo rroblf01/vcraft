@@ -37,6 +37,8 @@ $ vcraft develop                      # build and install into the active venv
 $ python main.py                      # the example `vcraft new` wrote
 $ python -m unittest                  # the test under tests/
 $ vcraft build --release              # dist/my_extension-0.1.0-cp314-cp314-<platform>.whl
+$ vcraft generate                     # regenerate glue and stubs without compiling
+$ vcraft check                        # detect stale generated files or toolchain drift
 ```
 
 `vcraft new` writes a Python package `my_extension` that re-exports the native module
