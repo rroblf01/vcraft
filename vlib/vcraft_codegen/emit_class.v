@@ -81,6 +81,22 @@ fn emit_class_getsets(c Class) string {
 			count++
 		}
 	}
+	// A setter with no matching getter is a write-only property.
+	for s in c.methods {
+		if !s.property_set {
+			continue
+		}
+		mut has_getter := false
+		for g in c.methods {
+			if g.property && (g.name == s.property_for || g.py_name == s.property_for) {
+				has_getter = true
+				break
+			}
+		}
+		if !has_getter {
+			count++
+		}
+	}
 	if count == 0 && !c.dict {
 		return ''
 	}
@@ -100,11 +116,42 @@ fn emit_class_getsets(c Class) string {
 		if !m.property {
 			continue
 		}
+		// Find a setter for this property, if any.
+		mut set_ptr := 'unsafe { nil }'
+		for s in c.methods {
+			if s.property_set && (s.property_for == m.name || s.property_for == m.py_name) {
+				set_ptr = 'voidptr(${s.trampoline})'
+				break
+			}
+		}
 		w.write_string('\t\tvcraft.PyGetSetDef{\n')
 		w.write_string("\t\t\tname:    voidptr(c'${m.name}')\n")
 		w.write_string("\t\t\tget:     voidptr(${m.trampoline})\n")
-		w.write_string('\t\t\tset:     unsafe { nil }\n')
+		w.write_string('\t\t\tset:     ${set_ptr}\n')
 		w.write_string('\t\t\tdoc:     ' + doc_pointer(m.doc) + '\n')
+		w.write_string('\t\t\tclosure: unsafe { nil }\n')
+		w.write_string('\t\t},\n')
+	}
+	// Write-only properties (setters without a matching getter).
+	for s in c.methods {
+		if !s.property_set {
+			continue
+		}
+		mut has_getter := false
+		for g in c.methods {
+			if g.property && (g.name == s.property_for || g.py_name == s.property_for) {
+				has_getter = true
+				break
+			}
+		}
+		if has_getter {
+			continue
+		}
+		w.write_string('\t\tvcraft.PyGetSetDef{\n')
+		w.write_string("\t\t\tname:    voidptr(c'${s.property_for}')\n")
+		w.write_string('\t\t\tget:     unsafe { nil }\n')
+		w.write_string('\t\t\tset:     voidptr(${s.trampoline})\n')
+		w.write_string('\t\t\tdoc:     ' + doc_pointer(s.doc) + '\n')
 		w.write_string('\t\t\tclosure: unsafe { nil }\n')
 		w.write_string('\t\t},\n')
 	}

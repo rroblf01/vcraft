@@ -53,6 +53,7 @@ pub const attr_memoryview = 'vc_memoryview'
 pub const attr_opaque = 'vc_opaque'
 
 pub const attr_property = 'vc_property'
+pub const attr_property_set = 'vc_property_set'
 
 pub const attr_static = 'vc_static'
 
@@ -287,6 +288,7 @@ pub const known_attrs = [
 	attr_opaque,
 	attr_memoryview,
 	attr_property,
+	attr_property_set,
 	attr_static,
 ]
 
@@ -365,6 +367,11 @@ pub mut:
 	unknown_defaults []string
 	// property marks a method exposed as a Python property rather than a call.
 	property bool
+	// property_set marks a method exposed as the setter of a Python property. The
+	// property it sets is `property_for` (a method name, or the value of
+	// `@[vc_property_set: 'name']`).
+	property_set bool
+	property_for string
 	// static marks a method that takes no receiver.
 	static bool
 	// static_receiver names the class a `@[vc_static]` method belongs to. The V function

@@ -1113,7 +1113,17 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	m.origin = path
 	m.line = decl.line
 	m.column = decl.column
-	m.property = attr_property in block.attrs
+	m.property = attr_property in block.attrs && m.params.len == 0
+	m.property_set = (attr_property_set in block.attrs) || (attr_property in block.attrs && m.params.len == 1 && decl.name.starts_with('set_'))
+	if m.property_set {
+		if v := block.args[attr_property_set] {
+			m.property_for = v.trim_space().trim("'\"")
+		} else if decl.name.starts_with('set_') {
+			m.property_for = decl.name[4..]
+		} else {
+			m.property_for = decl.name
+		}
+	}
 	m.is_iter = attr_iter in block.attrs
 	m.is_next = attr_next in block.attrs
 	m.is_len = attr_len in block.attrs
@@ -1241,6 +1251,18 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 		report(mut p, path, decl,
 			'error: `@[vc_property] ${decl.name}` takes ${m.params.len} argument(s); a property getter takes none')
 		return
+	}
+	if m.property_set {
+		if m.params.len != 1 {
+			report(mut p, path, decl,
+				'error: property setter `${decl.name}` takes ${m.params.len} argument(s); a setter takes one value')
+			return
+		}
+		if m.property_for.len == 0 {
+			report(mut p, path, decl,
+				'error: could not determine the property name for setter `${decl.name}`; use `@[vc_property_set: \'name\']`')
+			return
+		}
 	}
 	// Same rule as for functions: an unsupported parameter or return type is a
 	// diagnostic here, not a compile error in the generated glue.

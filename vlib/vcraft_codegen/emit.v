@@ -71,6 +71,8 @@ pub fn emit_glue(p Project) string {
 			w.write_string(emit_bind_globals(m))
 			if m.property {
 				w.write_string(emit_property_trampoline(p, c, m))
+			} else if m.property_set {
+				w.write_string(emit_property_setter_trampoline(p, c, m))
 			} else if m.static || m.classmethod {
 				// A classmethod is the static shape with METH_CLASS: `self` is the class
 				// CPython passes, and the V call still carries the receiver by name.
@@ -815,6 +817,37 @@ pub fn emit_property_trampoline(p Project, c Class, f Func) string {
 		}
 		w.write_string(emit_tail_return(f, ret, instance_candidates(f, true), false))
 	}
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_property_setter_trampoline renders a method exposed as a Python property setter.
+//
+// A setter is called with the instance and the new value, and returns an int: 0 on
+// success, -1 on failure. It converts the value, calls the user method, and reports
+// any error it raised.
+pub fn emit_property_setter_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${f.trampoline}(self voidptr, value voidptr) int {\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	strat := lookup(f.params[0].v_type)
+	conv := unbox_expr(strat, 'value', f.params[0].v_type)
+	w.write_string('\tif value == unsafe { nil } {\n')
+	w.write_string("\t\tvcraft.raise_attribute_error('${c.name}.${f.property_for} cannot be deleted')\n")
+	w.write_string('\t\treturn -1\n\t}\n')
+	w.write_string('\tmut arg0 := ' + conv + ' or {\n')
+	w.write_string('\t\treturn -1\n')
+	w.write_string('\t}\n')
+	if f.returns_result {
+		w.write_string('\tstate.' + c.self_access() + '${f.name}(arg0) or {\n')
+		w.write_string('\t\treturn -1\n')
+		w.write_string('\t}\n')
+	} else {
+		w.write_string('\tstate.' + c.self_access() + '${f.name}(arg0)\n')
+		w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
+	}
+	w.write_string('\treturn 0\n')
 	w.write_string('}\n')
 	return w.str()
 }
@@ -1721,6 +1754,9 @@ pub fn emit_stubs(p Project) string {
 		for method in c.methods {
 			if method.property {
 				w.write_string('    @property\n')
+			}
+			if method.property_set {
+				w.write_string('    @${method.property_for}.setter\n')
 			}
 			if method.static || method.classmethod {
 				w.write_string(if method.classmethod { '    @classmethod\n' } else { '    @staticmethod\n' })
