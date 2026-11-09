@@ -370,6 +370,10 @@ fn cmd_info(args Args) {
 		eprintln('error: ${err.msg()}')
 		exit(1)
 	}
+	if args.flags['json'] {
+		println('{"name":"${p.name}","version":"${p.version}","module":"${p.module}","v":"${vcraft_project.v_commit}"}')
+		return
+	}
 	println('name             ${p.name}')
 	println('version          ${p.version}')
 	println('module           ${p.module}')
