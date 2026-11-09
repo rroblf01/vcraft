@@ -1,5 +1,18 @@
 # vcraft: limitations vs PyO3
 
+## Build system and PyPI
+
+### Not self-contained for PyPI
+`requires = []` and a local backend mean an sdist cannot be built on a user's machine
+without V and vcraft. This is inherent (V is a host tool, not a Python dependency),
+so only pre-built wheels are distributed. Use `vcraft toolchain install` to get the
+pinned V, or install vcraft from PyPI and let it fetch its own toolchain.
+
+### Editable installs
+`vcraft develop` depends on `dist/build` plus a `.pth`. `vcraft clean` removes them
+and breaks imports until a rebuild. Run `vcraft develop` again, or `vcraft check` to
+detect the drift.
+
 This document records what vcraft **cannot** do today, and why. Each item is either a
 fundamental limitation of the V language or of vcraft's scope, not a bug.
 

@@ -50,6 +50,10 @@ pub mut:
 	requires_python string
 	classifiers     []string
 	requires_dist   []string
+	// console_scripts are `name = module:callable` entries that become the
+	// `[console_scripts]` group of `entry_points.txt`, so pip creates a launcher
+	// for each at install time.
+	console_scripts []string
 }
 
 // editable_pth_name is the file an editable wheel points at build output with.
@@ -145,6 +149,14 @@ pub fn build(input BuildInput) ![]u8 {
 	if input.direct_url.len > 0 {
 		archive.add_file('${escape(name)}-${normalize_version(input.version)}.dist-info/direct_url.json',
 			input.direct_url.bytes())
+	}
+	if input.console_scripts.len > 0 {
+		mut ep := '[console_scripts]\n'
+		for s in input.console_scripts {
+			ep += '${s}\n'
+		}
+		archive.add_file('${escape(name)}-${normalize_version(input.version)}.dist-info/entry_points.txt',
+			ep.bytes())
 	}
 
 	// RECORD lists every file with its hash, and lists itself without one, because a

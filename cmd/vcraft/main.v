@@ -10,6 +10,7 @@ module main
 import os
 
 import vcraft_ci
+import vcraft_codegen
 import vcraft_project
 
 const usage = 'vcraft: Python extensions in V
@@ -22,6 +23,8 @@ usage:
   vcraft generate-ci           emit a GitHub Actions workflow into .github/workflows/
   vcraft publish               upload the built distributions to PyPI
   vcraft info                  show what vcraft resolved for this project
+  vcraft generate              regenerate the generated glue and stubs
+  vcraft check                 check the project for common problems
   vcraft clean                 remove build output
   vcraft toolchain             show which V compiler vcraft uses
   vcraft toolchain install     build the V compiler vcraft is tested with
@@ -157,6 +160,8 @@ fn main() {
 		'build' { cmd_build(args, false) }
 		'develop' { cmd_build(args, true) }
 		'info' { cmd_info(args) }
+		'generate' { cmd_generate(args) }
+		'check' { cmd_check(args) }
 		'version' { println(vcraft_project.version) }
 		// Help goes to stdout: it is what someone asked for, not a diagnostic, and
 		// `vcraft help | less` has to work.
@@ -410,6 +415,12 @@ fn cmd_info(args Args) {
 		'not the pinned commit'
 	}
 	println('v                ${vpath} (${vstatus})')
+	println('v commit (pinned)${vcraft_project.v_commit}')
+	reported := vcraft_project.v_reported_commit(vpath)
+	if reported.len > 0 {
+		println('v commit (reported) ${reported}')
+	}
+	println('vcraft version   ${vcraft_project.version}')
 	println('vlib             ${vcraft_project.vlib_path()}')
 	println('environment      ${vcraft_project.active_environment()}')
 	println('dependencies     ${p.dependencies.str()}')
@@ -550,6 +561,95 @@ fn cmd_clean(args Args) {
 			}
 			println('removed ${dir}')
 		}
+	}
+}
+
+// cmd_generate regenerates the generated glue and stubs without compiling.
+fn cmd_generate(args Args) {
+	root := if args.positional.len > 0 { args.positional[0] } else { '.' }
+	p := vcraft_project.load(root) or {
+		eprintln('error: ${err.msg()}')
+		exit(1)
+	}
+	result := vcraft_codegen.generate(vcraft_codegen.Options{
+		project_root: root
+		module:       p.module
+		package:      p.module
+	})
+	for d in result.diagnostics {
+		eprintln(d.error())
+	}
+	if result.has_errors() {
+		eprintln('error: the code generator reported errors')
+		exit(1)
+	}
+	result.write() or {
+		eprintln('error: ${err.msg()}')
+		exit(1)
+	}
+	println('generated ${p.module}')
+}
+
+// cmd_check reports common project problems without building.
+fn cmd_check(args Args) {
+	root := if args.positional.len > 0 { args.positional[0] } else { '.' }
+	p := vcraft_project.load(root) or {
+		eprintln('error: ${err.msg()}')
+		exit(1)
+	}
+	mut problems := 0
+	// Generated glue must exist; a missing file means the first build has not run.
+	for path in [root.trim_right('/') + '/src/_vcraft_generated.v', root.trim_right('/') + '/python/' + p.module.all_after_last('/') + '.pyi'] {
+		// best-effort: check the module's pyi naming as vcraft writes it.
+		_ = path
+	}
+	gen := root.trim_right('/') + '/src/_vcraft_generated.v'
+	if !os.exists(gen) {
+		eprintln('warning: generated glue missing: ${gen}; run `vcraft generate` or `vcraft build`')
+		problems++
+	}
+	stub := root.trim_right('/') + '/python/' + p.module + '_native.pyi'
+	// vcraft writes `python/<module>.pyi` only when module != package; the common
+	// case is `python/<module>.pyi`. Try both.
+	if !os.exists(stub) {
+		alt := root.trim_right('/') + '/python/' + p.module + '.pyi'
+		if !os.exists(alt) {
+			eprintln('warning: type stub missing under python/; run `vcraft generate` or `vcraft build`')
+			problems++
+		}
+	}
+	// Staleness: generated glue older than any source file.
+	if os.exists(gen) {
+		gen_mtime := os.file_last_mod_unix(gen)
+		mut stale := false
+		for f in os.walk_ext(root.trim_right('/') + '/src', '.v') {
+			if f.ends_with('_vcraft_generated.v') {
+				continue
+			}
+			if os.file_last_mod_unix(f) > gen_mtime {
+				stale = true
+				break
+			}
+		}
+		if stale {
+			eprintln('warning: generated glue is older than the sources; run `vcraft generate`')
+			problems++
+		}
+	}
+	// Toolchain.
+	v := vcraft_project.v_compiler()
+	if !command_exists(v) {
+		eprintln('error: no V compiler found; run `vcraft toolchain install`')
+		problems++
+	} else if !vcraft_project.v_matches_pin(v) {
+		eprintln('warning: V is not the pinned commit ${vcraft_project.v_commit[..7]}')
+		problems++
+	}
+	if problems == 0 {
+		println('ok: no problems found')
+	} else {
+		eprintln('${problems} problem(s) found')
+		exit(1)
 	}
 }
 

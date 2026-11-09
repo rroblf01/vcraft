@@ -22,6 +22,14 @@ import os
 //	[build]
 //	minimum-version = "3.11"
 
+// Script is one console-script entry point declared in `vcraft.toml`: `name` becomes
+// the command on PATH and `target` is `module:callable`.
+pub struct Script {
+pub:
+	name   string
+	target string
+}
+
 // Project is a parsed `vcraft.toml`.
 pub struct Project {
 pub mut:
@@ -50,6 +58,11 @@ pub mut:
 	maintainers []string
 	// urls are `Project-URL` entries, `Label, https://...`, from the `[urls]` table.
 	urls []string
+	// scripts are `console_scripts` entry points, `name = module:callable`, from the
+	// `[scripts]` table. They become the `[console_scripts]` group of
+	// `entry_points.txt` in the wheel, and pip creates the launcher for each at install
+	// time.
+	scripts []Script
 	// minimum_version is the oldest CPython this builds against. It picks the ABI
 	// tag, and it is separate from `requires_python` because one says what the code
 	// needs to run and the other says what it was compiled for.
@@ -179,6 +192,16 @@ pub fn load(root string) !Project {
 			p.urls << '${e.name}, ${e.value.text}'
 		}
 	}
+	// `[scripts]` maps a command name to `module:callable`, as in PEP 621's
+	// `[project.scripts]`. Read in file order so entry_points.txt lists them as written.
+	for e in table.subtable('scripts').entries {
+		if e.value.kind == .string && e.value.text.len > 0 {
+			p.scripts << Script{
+				name:   e.name
+				target: e.value.text
+			}
+		}
+	}
 	// Build settings live in `[build]`. Before 1.0 they were root-level keys, which had
 	// to precede every table: written after `[package]`, TOML makes them keys of that
 	// table, and they were silently ignored. Root-level keys are still read throughout
@@ -280,6 +303,12 @@ pub fn (p Project) render() string {
 		for u in p.urls {
 			label := u.all_before(', ')
 			out += '${label} = ${quote(u.all_after(', '))}\n'
+		}
+	}
+	if p.scripts.len > 0 {
+		out += '\n[scripts]\n'
+		for s in p.scripts {
+			out += '${s.name} = ${quote(s.target)}\n'
 		}
 	}
 	return out

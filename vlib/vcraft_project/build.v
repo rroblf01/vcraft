@@ -746,6 +746,9 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		requires_python: p.requires_python
 		classifiers:     p.classifiers
 		requires_dist:   p.dependencies
+		console_scripts: p.scripts.map(fn (s vcraft_project.Script) string {
+			return '${s.name}=${s.target}'
+		})
 	})!
 	filename := vcraft_wheel.wheel_filename(p.name, p.version, [tag])
 	if !os.exists(opt.out_dir) {
