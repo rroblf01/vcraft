@@ -857,13 +857,17 @@ fn emit_class_new(c Class) string {
 			call_args << name
 			w.write_string('\t${param_reader(param, name, i, c.name, c.ctor_opaque)}\n')
 		}
-	} else {
+	} else if c.init_fn == '' {
 		// `tp_init` is left null, so the arguments land here, and `object.__init__` stays
 		// quiet about extra ones whenever `tp_new` is overridden. Rejecting them here is
 		// what makes `Counter(1)` an error rather than a silently ignored argument.
 		w.write_string('\tif C.vpy_tuple_size(raw_args) != 0 || kwds != unsafe { nil } {\n')
 		w.write_string("\t\tvcraft.raise_type_error('${c.name}() takes no arguments')\n")
 		w.write_string('\t\treturn unsafe { nil }\n\t}\n')
+	} else {
+		// An `@[vc_init]` method takes the arguments in `tp_init`; `tp_new` only
+		// allocates, so it accepts (and ignores) whatever was passed.
+		w.write_string('\t// arguments are consumed by tp_init\n')
 	}
 	w.write_string('\tinstance := vcraft.type_alloc(type_obj)\n')
 	w.write_string('\tif instance == unsafe { nil } {\n\t\treturn vcraft.no_memory()\n\t}\n')

@@ -1121,6 +1121,11 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 		m.trampoline = 'vcraft_generated__bool_${decl.receiver.to_lower()}_${decl.name}'
 		m.py_name = '__bool__'
 	}
+	m.init_method = attr_init in block.attrs
+	if m.init_method {
+		m.trampoline = 'vcraft_generated__init_${decl.receiver.to_lower()}_${decl.name}'
+		m.py_name = '__init__'
+	}
 	if attr_get in block.attrs {
 		m.py_name = '__get__'
 		p.classes[target].get_method = decl.name
@@ -1325,6 +1330,9 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	}
 	if m.bool_method {
 		p.classes[target].bool_fn = m.trampoline
+	}
+	if m.init_method {
+		p.classes[target].init_fn = m.trampoline
 	}
 }
 

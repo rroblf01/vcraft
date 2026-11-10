@@ -77,6 +77,8 @@ pub fn emit_glue(p Project) string {
 				w.write_string(emit_str_trampoline(p, c, m))
 			} else if m.bool_method {
 				w.write_string(emit_bool_trampoline(p, c, m))
+			} else if m.init_method {
+				w.write_string(emit_init_trampoline(p, c, m))
 			} else if m.call_method {
 				w.write_string(emit_call_trampoline(p, c, m))
 			} else if m.static || m.classmethod {
@@ -283,9 +285,9 @@ pub fn render_class_exec(p Project, c Class) string {
 	w.write_string('\t\tint(${c.size_fn}()),\n')
 	w.write_string('\t\t' + vstring_literal(c.doc) + ',\n')
 	w.write_string('\t\tvoidptr(' + c.ctor + '),\n')
-	// `tp_init` is left null: the constructor runs in `tp_new`, so a subclass that
-	// overrides `__init__` still gets a chance to add to it.
-	w.write_string('\t\tunsafe { nil },\n')
+	// `tp_init`, when the class declares an `@[vc_init]` method.
+	init_arg := if c.init_fn.len > 0 { 'voidptr(' + c.init_fn + ')' } else { 'unsafe { nil }' }
+	w.write_string('\t\t' + init_arg + ',\n')
 	w.write_string('\t\tvoidptr(' + c.dealloc + '),\n')
 	// Taking the address of a mutable array element needs an unsafe block, and both
 	// tables are module-level globals that the type borrows for its lifetime.
@@ -1013,6 +1015,47 @@ pub fn emit_descr_set_trampoline(p Project, c Class) string {
 		w.write_string('\tstate.' + c.self_access() + '${c.delete_method}(obj)\n')
 	} else {
 		w.write_string('\treturn 0\n')
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
+	w.write_string('\treturn 0\n')
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_init_trampoline renders a method exposed as the class's `tp_init`.
+pub fn emit_init_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${f.trampoline}(self voidptr, args voidptr, kwargs voidptr) int {\n')
+	w.write_string('\tvcraft.gc_enter()\n')
+	w.write_string('\tif kwargs != unsafe { nil } {\n')
+	w.write_string("\t\tvcraft.raise_type_error('${f.name}() takes no keyword arguments')\n")
+	w.write_string('\t\treturn -1\n')
+	w.write_string('\t}\n')
+	w.write_string('\targs_obj := vcraft.borrow(args)\n')
+	w.write_string('\tnargs := int(args_obj.len())\n')
+	w.write_string('\tif nargs != ${f.params.len} {\n')
+	w.write_string("\t\tvcraft.raise_type_error('${f.name}() expected ${f.params.len} arguments, got ' + nargs.str())\n")
+	w.write_string('\t\treturn -1\n')
+	w.write_string('\t}\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	mut names := []string{}
+	for i, param in f.params {
+		name := local_name(i)
+		names << name
+		strat := lookup(param.v_type)
+		conv := unbox_expr(strat, 'args_obj.item(${i}).ptr', param.v_type)
+		w.write_string('\tmut ${name} := ${conv} or {\n')
+		w.write_string('\t\treturn -1\n')
+		w.write_string('\t}\n')
+	}
+	call := 'state.' + c.self_access() + '${f.name}(${names.join(', ')})'
+	if f.returns_result {
+		w.write_string('\t${call} or {\n')
+		w.write_string('\t\treturn -1\n')
+		w.write_string('\t}\n')
+	} else {
+		w.write_string('\t${call}\n')
 	}
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
 	w.write_string('\treturn 0\n')
