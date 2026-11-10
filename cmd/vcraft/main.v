@@ -342,6 +342,10 @@ fn run_build(args Args, develop bool, target_override string) {
 			eprintln('  reports   commit ${reported}')
 		}
 		eprintln('  builds may fail or differ; run `vcraft toolchain install` to pin it')
+		if os.getenv('VCRAFT_STRICT_TOOLCHAIN') == '1' {
+			eprintln('error: strict toolchain mode; refusing to build with a non-pinned V')
+			exit(1)
+		}
 	}
 	// `develop` installs into the active virtualenv, which is VIRTUAL_ENV. Checked
 	// before the build rather than after: without it the build runs, then the install
