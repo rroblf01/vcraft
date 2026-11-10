@@ -242,7 +242,7 @@ fn cmd_new(args Args) {
 	if args.flags['with-server'] {
 		sdir := root.trim_right('/') + '/server'
 		os.mkdir_all(sdir) or {}
-		os.write_file(sdir + '/app.py', '"""Starlette application for ${p.name}."""\n\nfrom starlette.applications import Starlette\nfrom starlette.responses import JSONResponse\nfrom starlette.routing import Route\n\nasync def health(request):\n    return JSONResponse({"status": "ok"})\n\nroutes = [Route("/health", health, methods=["GET"])]\napp = Starlette(routes=routes)\n') or {}
+		os.write_file(sdir + '/app.py', '"""Starlette application for ${p.name}."""\n\nfrom starlette.applications import Starlette\nfrom starlette.responses import JSONResponse\nfrom starlette.routing import Route\n\nasync def health(request):\n    return JSONResponse({"status": "ok"})\n\nasync def render(request):\n    return JSONResponse({"status": "not implemented"})\n\nroutes = [Route("/health", health, methods=["GET"]),\n          Route("/render", render, methods=["POST"])]\napp = Starlette(routes=routes)\n') or {}
 		os.write_file(sdir + '/run.py', 'import uvicorn\n\nif __name__ == "__main__":\n    uvicorn.run("server.app:app", host="0.0.0.0", port=8000)\n') or {}
 		os.write_file(root.trim_right('/') + '/requirements-server.txt', 'starlette\nuvicorn\n') or {}
 		println('created ${sdir}/app.py')
