@@ -822,6 +822,11 @@ fn cmd_check(args Args) {
 		eprintln('warning: rendered vcraft.toml does not parse')
 		warnings++
 	}
+	// Schema version check.
+	if p.schema_version != 0 && p.schema_version != 1 {
+		eprintln('warning: unsupported vcraft.toml schema version ${p.schema_version}')
+		warnings++
+	}
 	// Toolchain.
 	v := vcraft_project.v_compiler()
 	if !command_exists(v) {
