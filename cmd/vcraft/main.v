@@ -27,6 +27,7 @@ usage:
   vcraft info                  show what vcraft resolved for this project
   vcraft generate              regenerate the generated glue and stubs
   vcraft check                 check the project for common problems
+  vcraft check-docs            check bilingual doc counterparts
   vcraft doctor                verify the toolchain and environment
   vcraft migrate               rewrite deprecated annotations to their current names
   vcraft completions <shell>   print shell completion script (bash, zsh, fish)
@@ -170,6 +171,7 @@ fn main() {
 		'info' { cmd_info(args) }
 		'generate' { cmd_generate(args) }
 		'check' { cmd_check(args) }
+		'check-docs' { cmd_check_docs(args) }
 		'doctor' { cmd_doctor(args) }
 		'migrate' { cmd_migrate(args) }
 		'completions' { cmd_completions(args) }
@@ -1111,6 +1113,23 @@ fn cmd_check_wheel(args Args) {
 	if res.exit_code != 0 {
 		eprintln('error: wheel validation failed')
 		exit(1)
+	}
+}
+
+// cmd_check_docs runs the bilingual documentation counterpart check.
+fn cmd_check_docs(args Args) {
+	root := if args.positional.len > 0 { args.positional[0] } else { '.' }
+	script := root.trim_right('/') + '/scripts/check-docs-i18n.py'
+	if !os.exists(script) {
+		eprintln('error: ${script} not found')
+		exit(2)
+	}
+	res := os.exec(['python3', script])
+	if res.output.len > 0 {
+		print(res.output)
+	}
+	if res.exit_code != 0 {
+		exit(res.exit_code)
 	}
 }
 
