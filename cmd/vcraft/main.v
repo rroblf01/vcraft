@@ -502,6 +502,10 @@ fn cmd_build(args Args, develop bool) {
 // cmd_info prints what vcraft resolved, which is the first thing to look at when a
 // build produces the wrong thing.
 fn cmd_info(args Args) {
+	if args.positional.len > 0 && args.positional[0].contains('..') {
+		eprintln('error: unsafe root path: ${args.positional[0]}')
+		exit(2)
+	}
 	p := vcraft_project.load('.') or {
 		eprintln('error: ${err.msg()}')
 		exit(1)
@@ -749,6 +753,10 @@ fn cmd_generate(args Args) {
 // cmd_check reports common project problems without building.
 fn cmd_check(args Args) {
 	root := if args.positional.len > 0 { args.positional[0] } else { '.' }
+	if root.contains('..') {
+		eprintln('error: unsafe root path: ${root}')
+		exit(2)
+	}
 	p := vcraft_project.load(root) or {
 		eprintln('error: ${err.msg()}')
 		exit(1)
