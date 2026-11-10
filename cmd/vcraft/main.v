@@ -840,6 +840,11 @@ fn cmd_doctor(args Args) {
 	py := vcraft_project.python_in_environment()
 	println('python        ${py} (${vcraft_project.interpreter_version(py)})')
 	println('vlib          ${vcraft_project.vlib_path()}')
+	if command_exists('ffmpeg') {
+		println('ffmpeg        available')
+	} else {
+		println('ffmpeg        not found (needed for video projects)')
+	}
 	if command_exists(py) {
 		println('doctor        ok')
 	} else {
