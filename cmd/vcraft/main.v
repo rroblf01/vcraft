@@ -222,6 +222,17 @@ fn cmd_new(args Args) {
 	for w in written {
 		println('created ${w}')
 	}
+	if args.flags['with-ci'] {
+		if p2 := vcraft_project.load(root) {
+			dir := root.trim_right('/') + '/.github/workflows'
+			os.mkdir_all(dir) or {}
+			text := vcraft_ci.workflow(p2, 'rroblf01/vcraft/actions/vcraft-action@v1', p2.free_threading)
+			os.write_file(dir + '/build.yml', text) or {
+				eprintln('warning: could not write CI workflow')
+			}
+			println('created ${dir}/build.yml')
+		}
+	}
 	println('')
 	println('The importable name is `${vcraft_project.import_name(p)}`.')
 	println('')
