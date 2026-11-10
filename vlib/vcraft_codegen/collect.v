@@ -1146,6 +1146,16 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 		m.trampoline = 'vcraft_generated__init_${decl.receiver.to_lower()}_${decl.name}'
 		m.py_name = '__init__'
 	}
+	m.concat_method = attr_concat in block.attrs
+	if m.concat_method {
+		m.trampoline = 'vcraft_generated__concat_${decl.receiver.to_lower()}_${decl.name}'
+		m.py_name = '__add__'
+	}
+	m.repeat_method = attr_repeat in block.attrs
+	if m.repeat_method {
+		m.trampoline = 'vcraft_generated__repeat_${decl.receiver.to_lower()}_${decl.name}'
+		m.py_name = '__mul__'
+	}
 	if attr_get in block.attrs {
 		m.py_name = '__get__'
 		p.classes[target].get_method = decl.name
@@ -1353,6 +1363,12 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	}
 	if m.init_method {
 		p.classes[target].init_fn = m.trampoline
+	}
+	if m.concat_method {
+		p.classes[target].concat_fn = m.trampoline
+	}
+	if m.repeat_method {
+		p.classes[target].repeat_fn = m.trampoline
 	}
 }
 

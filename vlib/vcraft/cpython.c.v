@@ -508,6 +508,8 @@ pub const slot_sq_item = i32(44)
 
 pub const slot_sq_contains = i32(41)
 pub const slot_sq_ass_item = i32(39)
+pub const slot_sq_concat = i32(40)
+pub const slot_sq_repeat = i32(46)
 pub const slot_mp_length = i32(4)
 pub const slot_mp_subscript = i32(5)
 pub const slot_mp_ass_subscript = i32(3)

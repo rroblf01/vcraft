@@ -58,6 +58,8 @@ pub const attr_str = 'vc_str'
 pub const attr_call = 'vc_call'
 pub const attr_bool = 'vc_bool'
 pub const attr_init = 'vc_init'
+pub const attr_concat = 'vc_concat'
+pub const attr_repeat = 'vc_repeat'
 pub const attr_context = 'vc_context'
 pub const attr_get = 'vc_get'
 pub const attr_set = 'vc_set'
@@ -302,6 +304,8 @@ pub const known_attrs = [
 	attr_context,
 	attr_bool,
 	attr_init,
+	attr_concat,
+	attr_repeat,
 	attr_get,
 	attr_set,
 	attr_delete,
@@ -391,6 +395,10 @@ pub mut:
 	bool_method bool
 	// init_method marks a method exposed as the class's `tp_init`.
 	init_method bool
+	// concat_method marks a method exposed as the class's `sq_concat`.
+	concat_method bool
+	// repeat_method marks a method exposed as the class's `sq_repeat`.
+	repeat_method bool
 	// property_set marks a method exposed as the setter of a Python property. The
 	// property it sets is `property_for` (a method name, or the value of
 	// `@[vc_property_set: 'name']`).
@@ -495,6 +503,9 @@ pub mut:
 	call_fn string
 	// bool_fn is the generated `nb_bool`, empty when the class has none.
 	bool_fn string
+	// concat_fn/repeat_fn are the generated `sq_concat`/`sq_repeat`, empty when none.
+	concat_fn string
+	repeat_fn string
 	// init_fn is the generated `tp_init`, empty when the class has none.
 	init_fn string
 	// get_method/set_method/delete_method are the V methods backing the descriptor

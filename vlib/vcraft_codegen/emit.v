@@ -79,6 +79,10 @@ pub fn emit_glue(p Project) string {
 				w.write_string(emit_bool_trampoline(p, c, m))
 			} else if m.init_method {
 				w.write_string(emit_init_trampoline(p, c, m))
+			} else if m.concat_method {
+				w.write_string(emit_concat_trampoline(p, c, m))
+			} else if m.repeat_method {
+				w.write_string(emit_repeat_trampoline(p, c, m))
 			} else if m.call_method {
 				w.write_string(emit_call_trampoline(p, c, m))
 			} else if m.static || m.classmethod {
@@ -373,6 +377,16 @@ pub fn render_class_exec(p Project, c Class) string {
 	}
 	if c.map_ass_subscript_fn.len > 0 {
 		w.write_string('\t\tvoidptr(' + c.map_ass_subscript_fn + '),\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+	}
+	if c.concat_fn.len > 0 {
+		w.write_string('\t\tvoidptr(' + c.concat_fn + '),\n')
+	} else {
+		w.write_string('\t\tunsafe { nil },\n')
+	}
+	if c.repeat_fn.len > 0 {
+		w.write_string('\t\tvoidptr(' + c.repeat_fn + '),\n')
 	} else {
 		w.write_string('\t\tunsafe { nil },\n')
 	}
@@ -1068,6 +1082,40 @@ pub fn emit_init_trampoline(p Project, c Class, f Func) string {
 	}
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
 	w.write_string('\treturn 0\n')
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_concat_trampoline renders a method exposed as `sq_concat`.
+pub fn emit_concat_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${f.trampoline}(left voidptr, right voidptr) voidptr {\n')
+	w.write_string('\tvcraft.gc_enter()\n')
+	w.write_string(emit_state_pointer(c))
+	// left must be an instance of this class
+	w.write_string('\tif !vcraft.is_instance_of(left, g_vc_type_${c.key}.ptr) {\n')
+	w.write_string('\t\treturn vcraft.richcompare_not_implemented()\n\t}\n')
+	w.write_string(emit_enter_state(p, c))
+	// convert right if needed; here assume same class or int? For concat, other is same sequence type.
+	// We'll pass right as voidptr to the method if its param is voidptr; otherwise unbox.
+	// Simpler: require the method to take a voidptr/PyObj.
+	w.write_string('\tresult := state.' + c.self_access() + '${f.name}(right)\n')
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	w.write_string('\treturn result\n')
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_repeat_trampoline renders a method exposed as `sq_repeat`.
+pub fn emit_repeat_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${f.trampoline}(self voidptr, n isize) voidptr {\n')
+	w.write_string('\tvcraft.gc_enter()\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	w.write_string('\tresult := state.' + c.self_access() + '${f.name}(int(n))\n')
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	w.write_string('\treturn result\n')
 	w.write_string('}\n')
 	return w.str()
 }

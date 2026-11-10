@@ -568,7 +568,7 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 	hash voidptr, bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr,
 	next_fn voidptr, getbuffer voidptr, releasebuffer voidptr, len_fn voidptr,
 	item_fn voidptr, setitem_fn voidptr, contains_fn voidptr, map_getitem_fn voidptr,
-	map_ass_subscript_fn voidptr, weakref bool, dict bool, number_slots []PyTypeSlot) PyObj {
+	map_ass_subscript_fn voidptr, concat_fn voidptr, repeat_fn voidptr, weakref bool, dict bool, number_slots []PyTypeSlot) PyObj {
 	// The instance size is the PyObject header plus this class's state struct. A
 	// subclass's `state_size` includes its base's, so a subclass is never smaller than
 	// its base -- which is what CPython rejects with "tp_basicsize ... too small for
@@ -705,6 +705,18 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 		slots << PyTypeSlot{
 			slot:  slot_sq_contains
 			value: contains_fn
+		}
+	}
+	if concat_fn != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_sq_concat
+			value: concat_fn
+		}
+	}
+	if repeat_fn != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_sq_repeat
+			value: repeat_fn
 		}
 	}
 	// Mapping protocol. The slot ids come from the headers via vpy_slot_mp_*,
