@@ -337,7 +337,7 @@ fn emit_class_methods(c Class) string {
 	w.write_string('\tg_vc_methods_${c.key} = [\n')
 	for m in ordinary {
 		w.write_string('\t\tvcraft.PyMethodDef{\n')
-		w.write_string("\t\t\tname:  voidptr(c'${m.name}')\n")
+		w.write_string("\t\t\tname:  voidptr(c'${if m.py_name.len > 0 { m.py_name } else { m.name } }')\n")
 		w.write_string("\t\t\tmeth:  voidptr(${m.trampoline})\n")
 		w.write_string('\t\t\tflags: ${method_flags(m)}\n')
 		w.write_string('\t\t\tdoc:   ' + doc_pointer(m.doc) + '\n')

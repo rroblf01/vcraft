@@ -1120,6 +1120,13 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 		m.trampoline = 'vcraft_generated__call_${decl.receiver.to_lower()}_${decl.name}'
 	}
 	m.property_set = (attr_property_set in block.attrs) || (attr_property in block.attrs && m.params.len == 1 && decl.name.starts_with('set_'))
+	if p.classes[target].context {
+		if decl.name == 'enter' {
+			m.py_name = '__enter__'
+		} else if decl.name == 'exit' {
+			m.py_name = '__exit__'
+		}
+	}
 	if m.property_set {
 		if v := block.args[attr_property_set] {
 			m.property_for = v.trim_space().trim("'\"")
@@ -1398,6 +1405,7 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 		weakref:   attr_weakref in block.attrs
 		dict:      attr_dict in block.attrs
 		mapping:   attr_mapping in block.attrs
+		context:   attr_context in block.attrs
 		origin:    path
 		line:      decl.line
 		column:    decl.column

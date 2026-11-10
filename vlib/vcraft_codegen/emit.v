@@ -1841,10 +1841,12 @@ pub fn emit_stubs(p Project) string {
 			if method.static || method.classmethod {
 				w.write_string(if method.classmethod { '    @classmethod\n' } else { '    @staticmethod\n' })
 				args := method_params(method).all_after(', ').trim_space()
-				w.write_string('    def ${method.name}(${args}) -> ${result_annotation(method)}: ...\n')
+				py_name := if method.py_name.len > 0 { method.py_name } else { method.name }
+				w.write_string('    def ${py_name}(${args}) -> ${result_annotation(method)}: ...\n')
 				continue
 			}
-			w.write_string('    def ${method.name}(self${method_params(method)}) -> ' +
+			py_name2 := if method.py_name.len > 0 { method.py_name } else { method.name }
+			w.write_string('    def ${py_name2}(self${method_params(method)}) -> ' +
 				'${result_annotation(method)}: ...\n')
 		}
 	}
