@@ -441,6 +441,20 @@ jobs:
 #    Runs after publish so PyPI has the new version. A failure here does not
 #    un-publish (PyPI can't), but it flags a broken release for follow-up.
 # ---------------------------------------------------------------------------
+  verify:
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: check sdist round-trip
+        run: python3 scripts/check-sdist-roundtrip.py
+      - name: check reproducible build
+        run: python3 scripts/check-reproducible.py
+      - name: check bilingual docs
+        run: python3 scripts/check-docs-i18n.py
+
   smoke:
     needs: [publish]
     runs-on: ubuntu-latest
