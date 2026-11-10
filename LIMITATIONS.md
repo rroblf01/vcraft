@@ -13,6 +13,12 @@ pinned V, or install vcraft from PyPI and let it fetch its own toolchain.
 and breaks imports until a rebuild. Run `vcraft develop` again, or `vcraft check` to
 detect the drift.
 
+### V compilation cache
+V has no incremental compilation cache that vcraft can rely on: every build
+recompiles the extension and its glue from scratch. `vcraft`'s own incremental
+build stamp (`.vcraft/build-stamp`) only skips the *whole* build when nothing
+changed; it does not speed up a partial rebuild. Use `--jobs` to parallelise.
+
 This document records what vcraft **cannot** do today, and why. Each item is either a
 fundamental limitation of the V language or of vcraft's scope, not a bug.
 
