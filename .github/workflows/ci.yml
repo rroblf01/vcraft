@@ -681,3 +681,12 @@ jobs:
       - uses: actions/checkout@v5
       - name: check sdist round-trip
         run: python3 scripts/check-sdist-roundtrip.py
+
+
+  perf-baseline:
+    name: performance baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: check performance baseline
+        run: python3 scripts/check-perf-baseline.py
