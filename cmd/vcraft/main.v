@@ -27,6 +27,7 @@ usage:
   vcraft check                 check the project for common problems
   vcraft doctor                verify the toolchain and environment
   vcraft migrate               rewrite deprecated annotations to their current names
+  vcraft completions <shell>   print shell completion script (bash, zsh, fish)
   vcraft clean                 remove build output
   vcraft toolchain             show which V compiler vcraft uses
   vcraft toolchain install     build the V compiler vcraft is tested with
@@ -166,6 +167,7 @@ fn main() {
 		'check' { cmd_check(args) }
 		'doctor' { cmd_doctor(args) }
 		'migrate' { cmd_migrate(args) }
+		'completions' { cmd_completions(args) }
 		'version' { println(vcraft_project.version) }
 		// Help goes to stdout: it is what someone asked for, not a diagnostic, and
 		// `vcraft help | less` has to work.
@@ -731,6 +733,35 @@ fn cmd_migrate(args Args) {
 	}
 	if changed == 0 {
 		println('nothing to migrate')
+	}
+}
+
+// cmd_completions prints a shell completion script.
+fn cmd_completions(args Args) {
+	shell := if args.positional.len > 0 { args.positional[0] } else { 'bash' }
+	match shell {
+		'bash' {
+			println('# bash completion for vcraft')
+			println('_vcraft() {')
+			println(r'  local cur="${COMP_WORDS[COMP_CWORD]}"')
+			println('  COMPREPLY=( $(compgen -W "new build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor" -- "$cur") )')
+			println('}')
+			println('complete -F _vcraft vcraft')
+		}
+		'zsh' {
+			println('#compdef vcraft')
+			println('local -a cmds')
+			println('cmds=(new build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor)')
+			println('_describe "command" cmds')
+		}
+		'fish' {
+			println('complete -c vcraft -f')
+			println('complete -c vcraft -n "__fish_use_subcommand" -a "new build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor"')
+		}
+		else {
+			eprintln('error: unknown shell `${shell}`; use bash, zsh or fish')
+			exit(2)
+		}
 	}
 }
 
