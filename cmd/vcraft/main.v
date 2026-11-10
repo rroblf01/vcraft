@@ -846,6 +846,10 @@ fn cmd_doctor(args Args) {
 		println('ffmpeg        not found (needed for video projects)')
 	}
 	if command_exists(py) {
+		ver := vcraft_project.interpreter_version(py)
+		if ver != '3.14' {
+			println('python version ${ver} (3.14 recommended)')
+		}
 		println('doctor        ok')
 	} else {
 		println('doctor        python missing')
