@@ -805,6 +805,19 @@ fn cmd_check(args Args) {
 			warnings++
 		}
 	}
+	// Round-trip: the rendered manifest should parse back to the same project.
+	rendered := p.render()
+	if reparsed := vcraft_project.parse(rendered) {
+		rpkg := reparsed.subtable('package')
+		if rpkg.string_of('name', '') != p.name || rpkg.string_of('version', '') != p.version ||
+			rpkg.string_of('module', '') != p.module {
+			eprintln('warning: vcraft.toml does not round-trip cleanly')
+			warnings++
+		}
+	} else {
+		eprintln('warning: rendered vcraft.toml does not parse')
+		warnings++
+	}
 	// Toolchain.
 	v := vcraft_project.v_compiler()
 	if !command_exists(v) {
