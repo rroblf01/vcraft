@@ -18,6 +18,7 @@ const usage = 'vcraft: Python extensions in V
 
 usage:
   vcraft new <name>            scaffold a project
+  vcraft new <name> --with-server   also scaffold a Starlette server
   vcraft build [options]       build a wheel
   vcraft develop [options]     build and install into the active virtualenv
   vcraft sdist                 build a source distribution
@@ -233,6 +234,16 @@ fn cmd_new(args Args) {
 			}
 			println('created ${dir}/build.yml')
 		}
+	}
+	if args.flags['with-server'] {
+		sdir := root.trim_right('/') + '/server'
+		os.mkdir_all(sdir) or {}
+		os.write_file(sdir + '/app.py', '"""Starlette application for ${p.name}."""\n\nfrom starlette.applications import Starlette\nfrom starlette.responses import JSONResponse\nfrom starlette.routing import Route\n\nasync def health(request):\n    return JSONResponse({"status": "ok"})\n\nroutes = [Route("/health", health, methods=["GET"])]\napp = Starlette(routes=routes)\n') or {}
+		os.write_file(sdir + '/run.py', 'import uvicorn\n\nif __name__ == "__main__":\n    uvicorn.run("server.app:app", host="0.0.0.0", port=8000)\n') or {}
+		os.write_file(root.trim_right('/') + '/requirements-server.txt', 'starlette\nuvicorn\n') or {}
+		println('created ${sdir}/app.py')
+		println('created ${sdir}/run.py')
+		println('created ${root.trim_right("/")}/requirements-server.txt')
 	}
 	println('')
 	println('The importable name is `${vcraft_project.import_name(p)}`.')
