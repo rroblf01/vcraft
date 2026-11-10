@@ -814,7 +814,59 @@ fn cmd_doctor(args Args) {
 	}
 }
 
-// cmd_migrate rewrites deprecated annotations in the project's V sources.
+// edit_distance is the Levenshtein distance between two strings.
+fn edit_distance(a string, b string) int {
+	if a.len == 0 {
+		return b.len
+	}
+	if b.len == 0 {
+		return a.len
+	}
+	mut prev := []int{len: b.len + 1, init: index}
+	mut cur := []int{len: b.len + 1}
+	for i in 1 .. a.len + 1 {
+		cur[0] = i
+		for j in 1 .. b.len + 1 {
+			mut cost := 1
+			if a[i - 1] == b[j - 1] {
+				cost = 0
+			}
+			mut del := prev[j] + 1
+			mut ins := cur[j - 1] + 1
+			mut sub := prev[j - 1] + cost
+			mut m := del
+			if ins < m {
+				m = ins
+			}
+			if sub < m {
+				m = sub
+			}
+			cur[j] = m
+		}
+		tmp := prev.clone()
+		prev = cur.clone()
+		cur = tmp.clone()
+	}
+	return prev[b.len]
+}
+
+fn closest_attr(name string) string {
+	mut best := ''
+	mut best_dist := 100
+	for k in vcraft_codegen.known_attrs {
+		d := edit_distance(name, k)
+		if d < best_dist {
+			best_dist = d
+			best = k
+		}
+	}
+	if best_dist > 0 && best_dist <= 2 && best != name {
+		return best
+	}
+	return ''
+}
+
+// cmd_migrate rewrites deprecated and misspelled annotations in the project's V sources.
 fn cmd_migrate(args Args) {
 	root := if args.positional.len > 0 { args.positional[0] } else { '.' }
 	mut changed := 0
@@ -823,6 +875,39 @@ fn cmd_migrate(args Args) {
 		mut out := text
 		for old, new in vcraft_codegen.deprecated_attrs {
 			out = out.replace('@[' + old + ']', '@[' + new + ']')
+		}
+		// Detect misspelled vc_ annotations and rewrite them to the closest known one.
+		mut unknowns := []string{}
+		for line in text.split_into_lines() {
+			mut i := 0
+			for i < line.len {
+				if line[i..].starts_with('vc_') {
+					mut j := i
+					for j < line.len {
+						c := line[j]
+						if c.is_letter() || c.is_digit() || c == `_` {
+							j++
+						} else {
+							break
+						}
+					}
+					name := line[i..j]
+					if name !in vcraft_codegen.known_attrs && name !in vcraft_codegen.deprecated_attrs.keys() && name !in unknowns {
+						if closest_attr(name) != '' {
+							unknowns << name
+						}
+					}
+					i = j
+				} else {
+					i++
+				}
+			}
+		}
+		for u in unknowns {
+			c := closest_attr(u)
+			if c != '' {
+				out = out.replace(u, c)
+			}
 		}
 		if out != text {
 			os.write_file(path, out) or {
