@@ -1116,6 +1116,11 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	m.property = attr_property in block.attrs && m.params.len == 0
 	m.str_method = attr_str in block.attrs
 	m.call_method = attr_call in block.attrs
+	m.bool_method = attr_bool in block.attrs
+	if m.bool_method {
+		m.trampoline = 'vcraft_generated__bool_${decl.receiver.to_lower()}_${decl.name}'
+		m.py_name = '__bool__'
+	}
 	if m.call_method {
 		m.trampoline = 'vcraft_generated__call_${decl.receiver.to_lower()}_${decl.name}'
 	}
@@ -1264,6 +1269,18 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 			'error: `@[vc_property] ${decl.name}` takes ${m.params.len} argument(s); a property getter takes none')
 		return
 	}
+	if m.bool_method {
+		if m.params.len != 0 {
+			report(mut p, path, decl,
+				'error: `@[vc_bool] ${decl.name}` takes ${m.params.len} argument(s); `__bool__` takes none')
+			return
+		}
+		if lookup(m.v_ret) != .bool {
+			report(mut p, path, decl,
+				'error: `@[vc_bool] ${decl.name}` returns `${m.v_ret}`; `__bool__` returns a bool')
+			return
+		}
+	}
 	if m.property_set {
 		if m.params.len != 1 {
 			report(mut p, path, decl,
@@ -1288,6 +1305,9 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	}
 	if attr_call in block.attrs {
 		p.classes[target].call_fn = m.trampoline
+	}
+	if m.bool_method {
+		p.classes[target].bool_fn = m.trampoline
 	}
 }
 

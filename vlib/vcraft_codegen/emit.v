@@ -75,6 +75,8 @@ pub fn emit_glue(p Project) string {
 				w.write_string(emit_property_setter_trampoline(p, c, m))
 			} else if m.str_method {
 				w.write_string(emit_str_trampoline(p, c, m))
+			} else if m.bool_method {
+				w.write_string(emit_bool_trampoline(p, c, m))
 			} else if m.call_method {
 				w.write_string(emit_call_trampoline(p, c, m))
 			} else if m.static || m.classmethod {
@@ -928,6 +930,29 @@ pub fn emit_call_trampoline(p Project, c Class, f Func) string {
 	} else {
 		w.write_string('\treturn vcraft.to_py_none().ptr\n')
 	}
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_bool_trampoline renders a method exposed as the class's `nb_bool`.
+pub fn emit_bool_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${f.trampoline}(self voidptr) int {\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	ret := lookup(f.v_ret)
+	if ret != .void {
+		w.write_string('\t${result_decl_of(f, ret)}\n')
+	}
+	if f.returns_result {
+		w.write_string('\tresult = state.' + c.self_access() + '${f.name}() or {\n')
+		w.write_string('\t\treturn 0\n')
+		w.write_string('\t}\n')
+	} else {
+		w.write_string('\tresult = state.' + c.self_access() + '${f.name}()\n')
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn 0\n\t}\n')
+	w.write_string('\treturn if result { 1 } else { 0 }\n')
 	w.write_string('}\n')
 	return w.str()
 }

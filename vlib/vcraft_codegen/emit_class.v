@@ -1301,6 +1301,9 @@ fn numeric_slots_expr(c Class) string {
 		}
 		items << 'vcraft.number_slot(vcraft.${s.nb}, voidptr(vcraft_generated__nb_${s.name}_${c.key}))'
 	}
+	if c.bool_fn.len > 0 {
+		items << 'vcraft.number_slot(vcraft.slot_nb_bool, voidptr(${c.bool_fn}))'
+	}
 	if items.len == 0 {
 		return '[]vcraft.PyTypeSlot{}'
 	}

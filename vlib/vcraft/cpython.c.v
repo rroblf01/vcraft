@@ -475,6 +475,8 @@ pub const slot_new = i32(65)
 
 pub const slot_repr = i32(66)
 
+pub const slot_nb_bool = i32(9)
+
 pub const slot_str = i32(70)
 
 pub const slot_call = i32(50)
