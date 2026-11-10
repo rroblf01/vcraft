@@ -55,6 +55,7 @@ pub const attr_opaque = 'vc_opaque'
 pub const attr_property = 'vc_property'
 pub const attr_property_set = 'vc_property_set'
 pub const attr_str = 'vc_str'
+pub const attr_call = 'vc_call'
 
 pub const attr_static = 'vc_static'
 
@@ -291,6 +292,7 @@ pub const known_attrs = [
 	attr_property,
 	attr_property_set,
 	attr_str,
+	attr_call,
 	attr_static,
 ]
 
@@ -371,6 +373,8 @@ pub mut:
 	property bool
 	// str_method marks a method exposed as the class's `tp_str`.
 	str_method bool
+	// call_method marks a method exposed as the class's `tp_call`.
+	call_method bool
 	// property_set marks a method exposed as the setter of a Python property. The
 	// property it sets is `property_for` (a method name, or the value of
 	// `@[vc_property_set: 'name']`).
@@ -471,6 +475,8 @@ pub mut:
 	repr string
 	// str_fn is the generated `tp_str`, empty when the class has none.
 	str_fn string
+	// call_fn is the generated `tp_call`, empty when the class has none.
+	call_fn string
 	// base is the name of the class this one inherits, empty when it has none.
 	base string
 	// state_fields is every field the instance holds: this class's plus, when it has a

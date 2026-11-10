@@ -477,6 +477,8 @@ pub const slot_repr = i32(66)
 
 pub const slot_str = i32(70)
 
+pub const slot_call = i32(50)
+
 pub const slot_traverse = i32(71)
 
 pub const slot_bases = i32(49)

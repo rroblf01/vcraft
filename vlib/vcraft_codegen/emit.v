@@ -75,6 +75,8 @@ pub fn emit_glue(p Project) string {
 				w.write_string(emit_property_setter_trampoline(p, c, m))
 			} else if m.str_method {
 				w.write_string(emit_str_trampoline(p, c, m))
+			} else if m.call_method {
+				w.write_string(emit_call_trampoline(p, c, m))
 			} else if m.static || m.classmethod {
 				// A classmethod is the static shape with METH_CLASS: `self` is the class
 				// CPython passes, and the V call still carries the receiver by name.
@@ -298,6 +300,8 @@ pub fn render_class_exec(p Project, c Class) string {
 	w.write_string('\t\tvoidptr(' + c.repr + '),\n')
 	str_arg := if c.str_fn.len > 0 { 'voidptr(' + c.str_fn + ')' } else { 'unsafe { nil }' }
 	w.write_string('\t\t' + str_arg + ',\n')
+	call_arg := if c.call_fn.len > 0 { 'voidptr(' + c.call_fn + ')' } else { 'unsafe { nil }' }
+	w.write_string('\t\t' + call_arg + ',\n')
 	w.write_string('\t\tvoidptr(' + c.richcompare + '),\n')
 	w.write_string('\t\tvoidptr(' + c.hash_fn + '),\n')
 	if c.base_index < 0 {
@@ -873,6 +877,57 @@ pub fn emit_str_trampoline(p Project, c Class, f Func) string {
 	}
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	w.write_string(emit_tail_return(f, ret, '', false))
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_call_trampoline renders a method exposed as the class's `tp_call`.
+pub fn emit_call_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${f.trampoline}(self voidptr, args voidptr, kwargs voidptr) voidptr {\n')
+	w.write_string('\tvcraft.gc_enter()\n')
+	w.write_string('\tif kwargs != unsafe { nil } {\n')
+	w.write_string("\t\tvcraft.raise_type_error('${f.name}() takes no keyword arguments')\n")
+	w.write_string('\t\treturn unsafe { nil }\n')
+	w.write_string('\t}\n')
+	w.write_string('\targs_obj := vcraft.borrow(args)\n')
+	w.write_string('\tnargs := int(args_obj.len())\n')
+	w.write_string('\tif nargs != ${f.params.len} {\n')
+	w.write_string("\t\tvcraft.raise_type_error('${f.name}() expected ${f.params.len} arguments, got ' + nargs.str())\n")
+	w.write_string('\t\treturn unsafe { nil }\n')
+	w.write_string('\t}\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	ret := lookup(f.v_ret)
+	if ret != .void {
+		w.write_string('\t${result_decl_of(f, ret)}\n')
+	}
+	mut names := []string{}
+	for i, param in f.params {
+		name := local_name(i)
+		names << name
+		strat := lookup(param.v_type)
+		conv := unbox_expr(strat, 'args_obj.item(${i}).ptr', param.v_type)
+		w.write_string('\tmut ${name} := ${conv} or {\n')
+		w.write_string('\t\treturn unsafe { nil }\n')
+		w.write_string('\t}\n')
+	}
+	call := 'state.' + c.self_access() + '${f.name}(${names.join(', ')})'
+	if f.returns_result {
+		w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n')
+		w.write_string('\t\treturn unsafe { nil }\n')
+		w.write_string('\t}\n')
+	} else if ret != .void {
+		w.write_string('\t${result_target(ret, f.v_ret)} = ${call}\n')
+	} else {
+		w.write_string('\t${call}\n')
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	if ret != .void {
+		w.write_string(emit_tail_return(f, ret, '', f.raw))
+	} else {
+		w.write_string('\treturn vcraft.to_py_none().ptr\n')
+	}
 	w.write_string('}\n')
 	return w.str()
 }
