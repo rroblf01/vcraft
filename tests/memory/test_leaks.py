@@ -66,6 +66,10 @@ SCENARIOS = {
     # is skipped, or run twice, shows up as growth or a crash over this many.
     "native buffers created and freed": ("", "m.Vector(64)", 50_000),
     "native buffers resized": ("v = m.Vector(64)", "v.resize(128)", 50_000),
+    "buffers read as memoryview": ("", "memoryview(m.squares_view(64))", 50_000),
+    "iterators created and freed": ("", "iter(m.Countdown())", 50_000),
+    "pairs created and freed": ("", "m.Pair()", 50_000),
+    "owned boxes created and freed": ("", "m.new_box(7)", 50_000),
     "capsules created and freed": ("", "m.new_box(7)", 50_000),
     "reference cycles": (
         "",
