@@ -727,6 +727,10 @@ fn cmd_clean(args Args) {
 // cmd_generate regenerates the generated glue and stubs without compiling.
 fn cmd_generate(args Args) {
 	root := if args.positional.len > 0 { args.positional[0] } else { '.' }
+	if root.contains('..') {
+		eprintln('error: unsafe root path: ${root}')
+		exit(2)
+	}
 	p := vcraft_project.load(root) or {
 		eprintln('error: ${err.msg()}')
 		exit(1)
@@ -938,6 +942,10 @@ fn closest_attr(name string) string {
 // cmd_migrate rewrites deprecated and misspelled annotations in the project's V sources.
 fn cmd_migrate(args Args) {
 	root := if args.positional.len > 0 { args.positional[0] } else { '.' }
+	if root.contains('..') {
+		eprintln('error: unsafe root path: ${root}')
+		exit(2)
+	}
 	mut changed := 0
 	for path in os.walk_ext(root.trim_right('/') + '/src', '.v') {
 		text := os.read_file(path) or { continue }
