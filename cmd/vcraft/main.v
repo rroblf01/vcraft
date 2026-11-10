@@ -1026,6 +1026,15 @@ fn cmd_migrate(args Args) {
 			changed++
 		}
 	}
+	// Ensure the manifest carries a schema version.
+	if os.exists(root.trim_right('/') + '/vcraft.toml') {
+		text := os.read_file(root.trim_right('/') + '/vcraft.toml') or { '' }
+		if !text.contains('[vcraft]') {
+			os.write_file(root.trim_right('/') + '/vcraft.toml', text + '\n[vcraft]\nversion = 1\n') or {}
+			println('migrated vcraft.toml (added schema version)')
+			changed++
+		}
+	}
 	if changed == 0 {
 		println('nothing to migrate')
 	}
