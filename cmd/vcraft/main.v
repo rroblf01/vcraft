@@ -884,6 +884,7 @@ fn cmd_doctor(args Args) {
 	} else {
 		println('pinned v      not installed')
 	}
+	println('toolchain cache ${vcraft_project.toolchain_root()}')
 	py := vcraft_project.python_in_environment()
 	println('python        ${py} (${vcraft_project.interpreter_version(py)})')
 	println('vlib          ${vcraft_project.vlib_path()}')
