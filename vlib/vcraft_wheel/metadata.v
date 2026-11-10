@@ -17,6 +17,10 @@ pub mut:
 	// `text/markdown`. Without it PyPI renders a Markdown README as plain text.
 	description_content_type string
 	license     string
+	// license_expression is the SPDX expression (PEP 639), written as `License-Expression`.
+	license_expression string
+	// license_files are paths under `.dist-info/licenses/`, written as `License-File`.
+	license_files []string
 	// authors, each `Name <email>` or a bare name, written as `Author`.
 	authors []string
 	// maintainers, written as `Maintainer`.
@@ -47,6 +51,12 @@ pub fn render_metadata(m MetaData) string {
 	}
 	if m.license.len > 0 {
 		out += 'License: ${m.license}\n'
+	}
+	if m.license_expression.len > 0 {
+		out += 'License-Expression: ${m.license_expression}\n'
+	}
+	for f in m.license_files {
+		out += 'License-File: ${f}\n'
 	}
 	if m.authors.len > 0 {
 		out += 'Author: ${m.authors.join(', ')}\n'

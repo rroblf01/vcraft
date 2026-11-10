@@ -44,6 +44,10 @@ pub mut:
 	description string
 	// license is the licence identifier or name.
 	license string
+	// license_expression is the SPDX license expression (PEP 639), e.g. `MIT OR Apache-2.0`.
+	license_expression string
+	// license_files are the license file paths shipped under `.dist-info/licenses/` (PEP 639).
+	license_files []string
 	// requires_python is the `Requires-Python` field.
 	requires_python string
 	// readme is the file, relative to the project root, whose text becomes the long
@@ -167,6 +171,8 @@ pub fn load(root string) !Project {
 	p.module = pkg.string_of('module', p.module)
 	p.description = pkg.string_of('description', p.description)
 	p.license = pkg.string_of('license', p.license)
+	p.license_expression = pkg.string_of('license-expression', p.license_expression)
+	p.license_files = pkg.string_list_of('license-files')
 	p.requires_python = pkg.string_of('requires-python', p.requires_python)
 	mut classifiers := pkg.string_list_of('classifiers')
 	// `[[classifier]]` entries are the same thing written the long way. They were what
@@ -259,6 +265,12 @@ pub fn (p Project) render() string {
 	out += 'module = ${quote(p.module)}\n'
 	out += 'description = ${quote(p.description)}\n'
 	out += 'license = ${quote(p.license)}\n'
+	if p.license_expression.len > 0 {
+		out += 'license-expression = ${quote(p.license_expression)}\n'
+	}
+	if p.license_files.len > 0 {
+		out += 'license-files = [' + p.license_files.map(quote(it)).join(', ') + ']\n'
+	}
 	out += 'requires-python = ${quote(p.requires_python)}\n'
 	if p.readme.len > 0 {
 		out += 'readme = ${quote(p.readme)}\n'

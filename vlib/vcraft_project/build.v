@@ -715,12 +715,18 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	// The licence text travels in the wheel so it is distributed with the code, under
 	// the `.dist-info/licenses/` directory PEP 639 puts it in. The `License:` metadata
 	// field is a separate, human-readable label.
+	mut license_files := p.license_files.clone()
 	if license_path := find_license_file(opt.root) {
 		data := os.read_file(license_path) or { return error('cannot read ${license_path}') }
 		dist_info := '${vcraft_wheel.escape(p.name)}-${vcraft_wheel.normalize_version(p.version)}.dist-info'
+		license_name := license_path.all_after_last('/')
 		extras << vcraft_wheel.ExtraFile{
-			name: dist_info + '/licenses/' + license_path.all_after_last('/')
+			name: dist_info + '/licenses/' + license_name
 			data: data.bytes()
+		}
+		// PEP 639: declare the shipped license file unless the project named one.
+		if license_files.len == 0 {
+			license_files << 'licenses/' + license_name
 		}
 	}
 
@@ -739,6 +745,8 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		description:     long
 		description_content_type: long_type
 		license:         p.license
+		license_expression: p.license_expression
+		license_files:    license_files
 		authors:         p.authors
 		maintainers:     p.maintainers
 		keywords:        p.keywords
