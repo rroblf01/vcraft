@@ -871,6 +871,14 @@ fn cmd_check(args Args) {
 			println(res.output.trim_space())
 		}
 	}
+	// Check bilingual docs if present.
+	if os.exists(root.trim_right('/') + '/docs') {
+		res := os.exec([os.executable(), 'check-docs', root])
+		if res.exit_code != 0 {
+			eprintln('warning: bilingual docs check failed')
+			warnings++
+		}
+	}
 }
 
 // cmd_doctor verifies the toolchain and the surrounding environment.
