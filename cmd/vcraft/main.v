@@ -176,7 +176,13 @@ fn main() {
 		'migrate' { cmd_migrate(args) }
 		'completions' { cmd_completions(args) }
 		'check-wheel' { cmd_check_wheel(args) }
-		'version' { println(vcraft_project.version) }
+		'version' {
+			if args.flags['full'] {
+				println('${vcraft_project.version} (V ${vcraft_project.v_commit[..7]})')
+			} else {
+				println(vcraft_project.version)
+			}
+		}
 		// Help goes to stdout: it is what someone asked for, not a diagnostic, and
 		// `vcraft help | less` has to work.
 		'help', '--help', '-h' { print(usage) }
