@@ -534,6 +534,8 @@ fn check_chain_depth(mut p Project) {
 					column: c.column
 				}, 'error: `${c.name}` inherits ${depth} levels deep; vcraft can publish at most ${max_state_chain}')
 				p.classes[i].base_index = -1
+				p.classes[i].base_indices = []int{}
+				p.classes[i].base = ''
 				break
 			}
 		}
@@ -993,10 +995,14 @@ fn sort_classes(mut p Project) {
 	p.classes = sorted
 	for i in 0 .. p.classes.len {
 		old_base := p.classes[i].base_index
-		if old_base < 0 {
-			continue
+		if old_base >= 0 {
+			p.classes[i].base_index = remap[old_base]
 		}
-		p.classes[i].base_index = remap[old_base]
+		mut new_indices := []int{}
+		for idx in p.classes[i].base_indices {
+			new_indices << remap[idx]
+		}
+		p.classes[i].base_indices = new_indices
 	}
 }
 
