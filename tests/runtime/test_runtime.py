@@ -205,6 +205,22 @@ def main() -> int:
     mv[0] = 7
     t.equal("a write lands in the buffer", list(mv), [7, 1, 4, 9])
     t.check("a zero-length export is an empty view", list(m.export_squares(0)) == [])
+    # Interop: the exported view behaves like any other buffer.
+    mv2 = m.export_squares(8)
+    t.check("slicing keeps the buffer protocol", isinstance(mv2[2:5], memoryview), type(mv2[2:5]))
+    t.equal("sliced contents", list(mv2[2:5]), [4, 9, 16])
+    t.check("tobytes round-trips", mv2.tobytes() == b"".join(x.to_bytes(mv2.itemsize, "little", signed=True) for x in mv2),
+            (mv2.tobytes(), mv2.tolist()))
+    t.check("bytes() copies the buffer", bytes(mv2) == mv2.tobytes(), (bytes(mv2), mv2.tobytes()))
+    # numpy interop, when numpy is installed (optional).
+    try:
+        import numpy as np
+        arr = np.frombuffer(mv2, dtype=mv2.format)
+        t.check("numpy views the buffer without copying", arr.shape == (8,), arr.shape)
+        mv2[3] = 99
+        t.equal("numpy reflects the mutation", int(arr[3]), 99)
+    except ImportError:
+        print("  skip numpy interop (numpy not installed)")
 
     print("layout check")
     major, minor = sys.version_info[:2]
