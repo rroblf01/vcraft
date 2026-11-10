@@ -654,3 +654,12 @@ jobs:
           assert [buf.get(i) for i in range(8)] == [float(i) for i in range(8)], [buf.get(i) for i in range(8)]
           print('free-threaded import and threads ok')
           "
+
+
+  docs-i18n:
+    name: docs (bilingual counterparts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: check bilingual doc counterparts
+        run: python3 scripts/check-docs-i18n.py
