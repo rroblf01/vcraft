@@ -507,8 +507,13 @@ pub mut:
 	// context marks a class whose `enter`/`exit` methods are exposed as
 	// `__enter__`/`__exit__`.
 	context bool
-	// base is the name of the class this one inherits, empty when it has none.
+	// base is the name of the primary class this one inherits, empty when it has none.
 	base string
+	// bases are all the classes this one inherits, in declaration order. The first is
+	// the primary base whose state is embedded; the rest are secondary bases.
+	bases []string
+	// base_indices are the indices in `p.classes` of every base in `bases`.
+	base_indices []int
 	// state_fields is every field the instance holds: this class's plus, when it has a
 	// base, the base's. It is what the state block is laid out from.
 	//

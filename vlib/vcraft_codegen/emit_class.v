@@ -38,7 +38,7 @@ fn emit_class(p Project, c Class) string {
 			params:     c.newstate_params
 		}))
 	}
-	if c.base_index >= 0 {
+	if c.base_indices.len > 0 {
 		w.write_string(emit_class_state_struct(p, c))
 	}
 	w.write_string('fn ${c.size_fn}() usize {\n')
@@ -941,7 +941,7 @@ fn emit_enter_state(p Project, c Class) string {
 	if !p.uses_state_at {
 		return ''
 	}
-	if c.base_index < 0 && !p.uses_state_at_zero {
+	if c.base_indices.len == 0 && !p.uses_state_at_zero {
 		return ''
 	}
 	mut w := new_builder()
@@ -950,7 +950,7 @@ fn emit_enter_state(p Project, c Class) string {
 	// base loads just that class's struct, so there is no room in it for a generation
 	// above: the level stays nil rather than pointing at the receiver, which would be a
 	// type confusion rather than a missing value.
-	if c.base_index >= 0 {
+	if c.base_indices.len > 0 {
 		mut level := 1
 		// Two paths, because a generation's state and its own struct are at different
 		// addresses whenever it has a base of its own: the state is the base followed by
@@ -960,7 +960,7 @@ fn emit_enter_state(p Project, c Class) string {
 		for base := c.base_index; base >= 0; base = p.classes[base].base_index {
 			// Whatever the base's state is, it begins in this class's `base` member.
 			state_path += '.base'
-			if p.classes[base].base_index >= 0 {
+			if p.classes[base].base_indices.len > 0 {
 				struct_path = state_path + '.self'
 			} else {
 				// A base with no base of its own has no state of its own, so its struct
@@ -1167,13 +1167,13 @@ fn emit_class_newstate(p Project, c Class) string {
 	// constructor's value directly: the state type *is* the class's struct, so there is
 	// nothing to zero first and nothing to merge. The general path below keeps the
 	// `mut state` local, which a subclass needs to hold the base and its own half.
-	if c.base_index < 0 && c.ctor_fn != '' {
+	if c.base_indices.len == 0 && c.ctor_fn != '' {
 		w.write_string('\treturn *${c.ctor_fn}(${call_args.join(', ')})\n')
 		w.write_string('}\n\n')
 		return w.str()
 	}
 	w.write_string('\tmut state := ${c.state_type()}{}\n')
-	if c.base_index >= 0 {
+	if c.base_indices.len > 0 {
 		base := p.classes[c.base_index]
 		// An assignment rather than a literal: `BoundedCounterState{}` already holds the
 		// base's zero value, and this is the only thing that replaces it with the base's
@@ -1485,12 +1485,12 @@ fn emit_class_repr(p Project, c Class) string {
 		w.write_string("\t\treturn vcraft.to_py_string('${c.name}(...)').ptr\n\t}\n")
 		w.write_string('\tdefer { vcraft.repr_leave(self) }\n')
 	}
-	w.write_string(emit_state_pointer(c))
-	w.write_string(emit_enter_state(p, c))
-	if c.fields.len == 0 {
+	if c.fields.len == 0 && c.state_fields.len == 0 {
 		w.write_string("\treturn vcraft.to_py_string('${c.name}()').ptr\n}\n\n")
 		return w.str()
 	}
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
 	w.write_string('\tmut parts := []string{}\n')
 	// Every field the instance holds, not just this class's: a repr of a subclass that
 	// left out the inherited fields would print a different shape from the repr of the

@@ -452,27 +452,38 @@ fn collect_operator(path string, lines []string, ast &flat.FlatAst,
 // may be declared later in the file, or in a file that sorts after this one.
 fn link_bases(mut p Project) {
 	for i, c in p.classes {
-		if c.base.len == 0 {
+		if c.bases.len == 0 {
 			continue
 		}
-		owner := class_index(p, c.base)
-		if owner < 0 {
-			report(mut p, c.origin, astquery.Declaration{
-				name: c.name
-				line: c.line
-				column: c.column
-			}, 'error: `${c.name}` inherits `${c.base}`, which is not a class in this project')
+		// Validate every base.
+		mut indices := []int{}
+		mut ok := true
+		for b in c.bases {
+			owner := class_index(p, b)
+			if owner < 0 {
+				report(mut p, c.origin, astquery.Declaration{
+					name: c.name
+					line: c.line
+					column: c.column
+				}, 'error: `${c.name}` inherits `${b}`, which is not a class in this project')
+				ok = false
+				continue
+			}
+			if owner == i {
+				report(mut p, c.origin, astquery.Declaration{
+					name: c.name
+					line: c.line
+					column: c.column
+				}, 'error: `${c.name}` cannot inherit from itself')
+				ok = false
+				continue
+			}
+			indices << owner
+		}
+		if !ok {
 			continue
 		}
-		if owner == i {
-			report(mut p, c.origin, astquery.Declaration{
-				name: c.name
-				line: c.line
-				column: c.column
-			}, 'error: `${c.name}` cannot inherit from itself')
-			continue
-		}
-		if creates_cycle(p, i, owner) {
+		if creates_cycle(p, i, indices[0]) {
 			report(mut p, c.origin, astquery.Declaration{
 				name: c.name
 				line: c.line
@@ -480,7 +491,10 @@ fn link_bases(mut p Project) {
 			}, 'error: the inheritance chain through `${c.base}` is a cycle; Python cannot create the type and would fail at import with no message about which class')
 			continue
 		}
-		p.classes[i].base_index = owner
+		p.classes[i].bases = c.bases
+		p.classes[i].base_indices = indices
+		p.classes[i].base = c.bases[0]
+		p.classes[i].base_index = indices[0]
 	}
 	check_chain_depth(mut p)
 	// The list is reordered before anything reads it, so `base_index` is recomputed after
@@ -1433,20 +1447,28 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 	key := decl.name.to_lower()
 	// `@[vc_base(Name)]` names the class this one inherits. The argument is a name and
 	// not a flag, so the scan keeps arguments as well as annotation names.
-	mut base := ''
+	mut bases := []string{}
 	if attr_base in block.attrs {
-		base = block.args[attr_base]
-		if base.len == 0 {
+		raw := block.args[attr_base]
+		for part in raw.split(',') {
+			name := part.trim_space().trim("'\"")
+			if name.len > 0 {
+				bases << name
+			}
+		}
+		if bases.len == 0 {
 			report(mut p, path, decl,
 				'error: `@[vc_base]` needs the name of the class to inherit, as in `@[vc_base(Base)]`')
 			return
 		}
 	}
+	mut base := if bases.len > 0 { bases[0] } else { '' }
 	mut c := Class{
 		name:      decl.name
 		py_name:   if attr_rename in block.attrs { (block.args[attr_rename] or { decl.name }).trim("'\"") } else { decl.name }
 		doc:       block.doc
 		base:      base
+		bases:     bases
 		weakref:   attr_weakref in block.attrs
 		dict:      attr_dict in block.attrs
 		mapping:   attr_mapping in block.attrs

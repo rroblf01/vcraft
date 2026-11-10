@@ -129,7 +129,7 @@ pub fn glue_module_body(p Project) string {
 	// duration of its call and the type keeps a reference to the base types afterwards. A
 	// local would be freed before the interpreter could subclass anything.
 	for c in p.classes {
-		if c.base_index < 0 {
+		if c.base_indices.len == 0 {
 			continue
 		}
 		w.write_string('\tg_vc_bases_' + c.key + ' = vcraft.PyObj{}\n')
@@ -271,12 +271,21 @@ pub fn render_class_exec(p Project, c Class) string {
 	// here is known now, and a generated `for` over the classes would need its own
 	// interpolation trick for no benefit.
 	mut w := new_builder()
-	if c.base_index >= 0 {
+	if c.base_indices.len > 0 {
 		// Filled here rather than in the global's initialiser, because the base type is
 		// created earlier in this same function and a global initialiser would run before
 		// it exists.
-		w.write_string('\tg_vc_bases_' + c.key + ' = vcraft.tuple_of_one(' +
-			p.classes[c.base_index].ctype + ')\n')
+		if c.base_indices.len == 1 {
+			w.write_string('\tg_vc_bases_' + c.key + ' = vcraft.tuple_of_one(' +
+				p.classes[c.base_indices[0]].ctype + ')\n')
+		} else {
+			mut items := []string{}
+			for idx in c.base_indices {
+				items << p.classes[idx].ctype
+			}
+			w.write_string('\tg_vc_bases_' + c.key + ' = vcraft.tuple_of([' +
+				items.join(', ') + '])\n')
+		}
 	}
 	w.write_string('\t' + c.ctype + ' = vcraft.new_type(')
 	w.write_string(vstring_literal(c.qualified) + ',\n')
@@ -1942,8 +1951,8 @@ pub fn emit_stubs(p Project) string {
 		// The base is in the declaration because it is in the type: a stub that said
 		// `class BoundedCounter:` would type-check `b.value` as an error, since the stub
 		// has no base to inherit the field from.
-		if c.base_index >= 0 {
-			w.write_string('class ${c.name}(${c.base}):\n')
+		if c.base_indices.len > 0 {
+			w.write_string('class ${c.name}(${c.bases.join(', ')}):\n')
 		} else {
 			w.write_string('class ${c.name}:\n')
 		}
