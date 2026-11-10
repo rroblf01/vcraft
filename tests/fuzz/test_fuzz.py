@@ -202,6 +202,43 @@ def main() -> int:
                               capture_output=True, text=True, timeout=900)
         t.check(f"seed {seed}", proc.returncode == 0 and proc.stdout.strip() == "ok",
                 f"exit {proc.returncode}: {(proc.stderr or proc.stdout).strip()[-500:]}")
+    # Hostile project inputs: paths with spaces/unicode, malformed vcraft.toml and
+    # misspelled annotations. Nothing may crash the vcraft binary; a clean failure
+    # (non-zero exit) is the expected answer.
+    print("hostile project inputs")
+    vcraft = ROOT / "bin" / "vcraft"
+    import tempfile, os, shutil
+    cases = [
+        ("spaces and unicode path", "café project"),
+        ("path with spaces", "my project"),
+    ]
+    for label, dirname in cases:
+        base = Path(tempfile.mkdtemp()) / dirname
+        base.mkdir(parents=True, exist_ok=True)
+        proc = subprocess.run([str(vcraft), "new", "demo"], cwd=str(base),
+                              capture_output=True, text=True, timeout=120)
+        t.check(f"new in {label!r}", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-200:])
+        if proc.returncode == 0:
+            proj = base / "demo"
+            # Malformed TOML: an unclosed table must be refused, not crash.
+            (proj / "vcraft.toml").write_text("[package\nname = 'x'\n", encoding="utf-8")
+            proc2 = subprocess.run([str(vcraft), "info"], cwd=str(proj),
+                                   capture_output=True, text=True, timeout=120)
+            t.check(f"malformed toml in {label!r} refused", proc2.returncode != 0,
+                    (proc2.stderr or proc.stdout).strip()[-200:])
+            # Misspelled annotation must not crash the generator.
+            src = proj / "src" / "demo_native.v"
+            if src.exists():
+                src.write_text(src.read_text().replace("@[vc_fn]", "@[vc_func]"), encoding="utf-8")
+            proc3 = subprocess.run([str(vcraft), "build", "--release"], cwd=str(proj),
+                                   capture_output=True, text=True, timeout=300)
+            # build may fail on the misspelling, but must not segfault/crash
+            t.check(f"misspelled annotation in {label!r} no crash",
+                    proc3.returncode in (0, 1, 2) and "Segmentation" not in (proc3.stderr or ""),
+                    (proc3.stderr or proc.stdout).strip()[-200:])
+        shutil.rmtree(base, ignore_errors=True)
+
     print()
     if t.failures:
         print(f"{len(t.failures)} failure(s): {', '.join(t.failures)}")
