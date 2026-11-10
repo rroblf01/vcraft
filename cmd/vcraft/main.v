@@ -30,6 +30,7 @@ usage:
   vcraft doctor                verify the toolchain and environment
   vcraft migrate               rewrite deprecated annotations to their current names
   vcraft completions <shell>   print shell completion script (bash, zsh, fish)
+  vcraft check-wheel [path]    validate a built wheel (METADATA, RECORD, tags)
   vcraft clean                 remove build output
   vcraft toolchain             show which V compiler vcraft uses
   vcraft toolchain install     build the V compiler vcraft is tested with
@@ -170,6 +171,7 @@ fn main() {
 		'doctor' { cmd_doctor(args) }
 		'migrate' { cmd_migrate(args) }
 		'completions' { cmd_completions(args) }
+		'check-wheel' { cmd_check_wheel(args) }
 		'version' { println(vcraft_project.version) }
 		// Help goes to stdout: it is what someone asked for, not a diagnostic, and
 		// `vcraft help | less` has to work.
@@ -957,6 +959,68 @@ fn cmd_completions(args Args) {
 			eprintln('error: unknown shell `${shell}`; use bash, zsh or fish')
 			exit(2)
 		}
+	}
+}
+
+// cmd_check_wheel validates a built wheel.
+fn cmd_check_wheel(args Args) {
+	mut path := ''
+	if args.positional.len > 0 {
+		path = args.positional[0]
+	} else {
+		// pick the newest wheel in dist/
+		if os.exists('dist') {
+			mut newest := ''
+			mut newest_time := i64(0)
+			for f in os.ls('dist') or { []string{} } {
+				if f.ends_with('.whl') {
+					full := 'dist/' + f
+					mtime := os.file_last_mod_unix(full)
+					if mtime > newest_time {
+						newest_time = mtime
+						newest = full
+					}
+				}
+			}
+			path = newest
+		}
+	}
+	if path == '' {
+		eprintln('error: no wheel given and none found in dist/')
+		exit(2)
+	}
+	script := "import sys,zipfile,hashlib,io,re\n" +
+		"path=sys.argv[1]\n" +
+		"z=zipfile.ZipFile(path)\n" +
+		"names=z.namelist()\n" +
+		"assert any(n.endswith('METADATA') for n in names), 'METADATA missing'\n" +
+		"assert any(n.endswith('WHEEL') for n in names), 'WHEEL missing'\n" +
+		"assert any(n.endswith('RECORD') for n in names), 'RECORD missing'\n" +
+		"meta=[n for n in names if n.endswith('METADATA')][0]\n" +
+		"text=z.read(meta).decode()\n" +
+		"assert 'Metadata-Version:' in text\n" +
+		"assert 'Name:' in text\n" +
+		"assert 'Version:' in text\n" +
+		"record=[n for n in names if n.endswith('RECORD')][0]\n" +
+		"for line in z.read(record).decode().splitlines():\n" +
+		"    if not line.strip(): continue\n" +
+		"    parts=line.split(',')\n" +
+		"    if len(parts)<3 or not parts[0]: continue\n" +
+		"    if parts[1]=='' : continue\n" +
+		"    h=parts[1].split('=')[1] if '=' in parts[1] else ''\n" +
+		"    if h: \n" +
+		"        data=z.read(parts[0])\n" +
+		"        import base64\n" +
+		"        calc=base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode()\n" +
+		"        assert calc==h, 'hash mismatch for '+parts[0]\n" +
+		"print('ok: wheel valid ('+str(len(names))+' entries)')\n"
+	res := os.exec(['python3', '-c', script, path])
+	if res.output.len > 0 {
+		print(res.output)
+	}
+	if res.exit_code != 0 {
+		eprintln('error: wheel validation failed')
+		exit(1)
 	}
 }
 
