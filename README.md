@@ -1719,6 +1719,17 @@ in [`vlib/vcraft/README.md`](vlib/vcraft/README.md):
 
 ---
 
+## Build system and PyPI
+
+vcraft's build backend is **not self-contained**: `requires = []` and V is a host
+tool, so an sdist cannot be built on a user's machine without V and vcraft. Only
+pre-built wheels are distributed; use `vcraft toolchain install` to obtain the
+pinned compiler. Editable installs (`vcraft develop`) depend on `dist/build` plus a
+`.pth`; `vcraft clean` removes them and breaks imports until a rebuild. Run
+`vcraft check` (or `vcraft check --strict`) to detect the drift.
+
+---
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
