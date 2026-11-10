@@ -12,6 +12,7 @@ import os
 import vcraft_ci
 import vcraft_codegen
 import vcraft_project
+import vcraft_wheel
 
 const usage = 'vcraft: Python extensions in V
 
@@ -244,9 +245,59 @@ fn cmd_new(args Args) {
 	println('  python -m unittest      # run the tests in tests/')
 }
 
+// source_stamp hashes the project's inputs plus the build options, so an unchanged
+// tree can skip a rebuild. Stored in `.vcraft/build-stamp`.
+fn source_stamp(root string, args Args, develop bool, target_override string) string {
+	mut data := []u8{}
+	for path in [root + '/vcraft.toml', root + '/v.mod'] {
+		if text := os.read_file(path) {
+			data << text.bytes()
+		}
+	}
+	for ext in ['.v', '.py', '.toml', '.md'] {
+		for dir in [root + '/src', root + '/python'] {
+			if os.exists(dir) {
+				for f in os.walk_ext(dir, ext) {
+					if text := os.read_file(f) {
+						data << text.bytes()
+					}
+				}
+			}
+		}
+	}
+	data << '${args.flags.str()}${args.options.str()}${develop}${target_override}'.bytes()
+	return vcraft_wheel.sha256(data)
+}
+
 // run_build builds one wheel (or installs it), optionally for a specific target.
 fn run_build(args Args, develop bool, target_override string) {
 	root := '.'
+	// Incremental build: if the inputs and options are unchanged and the output is still
+	// there, there is nothing to do.
+	if !args.flags['force'] && !args.flags['dry-run'] && !args.flags['editable'] && (args.options['out-dir'] == '' || args.options['out-dir'] == 'dist') {
+		stamp := source_stamp(root, args, develop, target_override)
+		stamp_path := root + '/.vcraft/build-stamp'
+		if os.exists(stamp_path) {
+			if saved := os.read_file(stamp_path) {
+				if saved == stamp {
+					mut artifact_ok := true
+					if develop {
+						if !os.exists(root + '/dist/build') {
+							artifact_ok = false
+						}
+					} else {
+						if !os.exists(root + '/dist') || os.walk_ext(root + '/dist', '.whl').len == 0 {
+							artifact_ok = false
+						}
+					}
+					if artifact_ok {
+						println('up to date')
+						return
+					}
+				}
+			}
+		}
+	}
 	// No compiler is the first thing a new user hits, and V's own "command not found"
 	// says nothing about how to get one. A dry run plans without compiling.
 	v := vcraft_project.v_compiler()
@@ -357,6 +408,11 @@ fn run_build(args Args, develop bool, target_override string) {
 		}
 	}
 	println('built ${result.path}')
+	if !args.flags['dry-run'] {
+		stamp := source_stamp(root, args, develop, target_override)
+		os.mkdir_all(root + '/.vcraft') or {}
+		os.write_file(root + '/.vcraft/build-stamp', stamp) or {}
+	}
 	println('  tag       ${result.tag}')
 	println('  extension ${result.extension}')
 	println('  size      ${result.wheel.len} bytes')
