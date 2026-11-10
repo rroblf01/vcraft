@@ -95,6 +95,8 @@ pub mut:
 	gc_free_space_divisor int
 	// targets are the cross-compilation targets `vcraft build --all-targets` builds.
 	targets []string
+	// schema_version is the `vcraft.toml` schema version, under `[vcraft]`.
+	schema_version int
 	// embed_pyc ships the project's Python files compiled rather than as source.
 	//
 	// A sourceless distribution: the wheel carries `foo.pyc` where a source install would
@@ -243,6 +245,7 @@ pub fn load(root string) !Project {
 	p.embed_pyc = settings.bool_of('embed-pyc', false)
 	p.gc_free_space_divisor = settings.int_of('gc-free-space-divisor', 2)
 	p.targets = build.string_list_of('targets')
+	p.schema_version = table.subtable('vcraft').int_of('version', 1)
 	if p.gc_free_space_divisor < 1 {
 		return error('gc-free-space-divisor is ${p.gc_free_space_divisor}; it must be 1 or more (2 is the default, 1 favours speed over memory)')
 	}
@@ -329,6 +332,8 @@ pub fn (p Project) render() string {
 			out += '${s.name} = ${quote(s.target)}\n'
 		}
 	}
+	out += '\n[vcraft]\n'
+	out += 'version = ${if p.schema_version > 0 { p.schema_version } else { 1 }}\n'
 	return out
 }
 
