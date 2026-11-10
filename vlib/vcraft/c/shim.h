@@ -251,3 +251,5 @@ size_t vpy_size_voidptr(void);
    weakrefs are not available). Sets tp_weaklistoffset to point at the weakref
    list stored at the end of the instance. */
 void vpy_enable_weakref(PyObject *type, Py_ssize_t weaklistoffset);
+void vpy_set_tp_descr_get(PyObject *type, void *fn);
+void vpy_set_tp_descr_set(PyObject *type, void *fn);

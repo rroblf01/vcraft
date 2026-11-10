@@ -56,6 +56,12 @@ fn emit_class(p Project, c Class) string {
 	w.write_string(emit_class_buffer_slots(p, c))
 	w.write_string(emit_class_dealloc(p, c))
 	w.write_string(emit_class_repr(p, c))
+	if c.descr_get_fn.len > 0 {
+		w.write_string(emit_descr_get_trampoline(p, c))
+	}
+	if c.descr_set_fn.len > 0 {
+		w.write_string(emit_descr_set_trampoline(p, c))
+	}
 	w.write_string(emit_class_richcompare(c))
 	w.write_string(emit_class_hash(c))
 	w.write_string(emit_class_numeric(c))

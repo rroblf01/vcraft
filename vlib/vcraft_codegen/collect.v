@@ -1121,6 +1121,23 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 		m.trampoline = 'vcraft_generated__bool_${decl.receiver.to_lower()}_${decl.name}'
 		m.py_name = '__bool__'
 	}
+	if attr_get in block.attrs {
+		m.py_name = '__get__'
+		p.classes[target].get_method = decl.name
+		p.classes[target].descr_get_fn = 'vcraft_generated__descr_get_' + decl.receiver.to_lower()
+	}
+	if attr_set in block.attrs {
+		m.py_name = '__set__'
+		p.classes[target].set_method = decl.name
+		p.classes[target].descr_set_fn = 'vcraft_generated__descr_set_' + decl.receiver.to_lower()
+	}
+	if attr_delete in block.attrs {
+		m.py_name = '__delete__'
+		p.classes[target].delete_method = decl.name
+		if p.classes[target].descr_set_fn == '' {
+			p.classes[target].descr_set_fn = 'vcraft_generated__descr_set_' + decl.receiver.to_lower()
+		}
+	}
 	if m.call_method {
 		m.trampoline = 'vcraft_generated__call_${decl.receiver.to_lower()}_${decl.name}'
 	}

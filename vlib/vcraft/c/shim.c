@@ -1497,3 +1497,11 @@ void vpy_enable_weakref(PyObject *type, Py_ssize_t weaklistoffset) {
 	(void)weaklistoffset;
 #endif
 }
+
+void vpy_set_tp_descr_get(PyObject *type, void *fn) {
+	((PyTypeObject *)type)->tp_descr_get = (descrgetfunc)fn;
+}
+
+void vpy_set_tp_descr_set(PyObject *type, void *fn) {
+	((PyTypeObject *)type)->tp_descr_set = (descrsetfunc)fn;
+}

@@ -58,6 +58,9 @@ pub const attr_str = 'vc_str'
 pub const attr_call = 'vc_call'
 pub const attr_bool = 'vc_bool'
 pub const attr_context = 'vc_context'
+pub const attr_get = 'vc_get'
+pub const attr_set = 'vc_set'
+pub const attr_delete = 'vc_delete'
 
 pub const attr_static = 'vc_static'
 
@@ -297,6 +300,9 @@ pub const known_attrs = [
 	attr_call,
 	attr_context,
 	attr_bool,
+	attr_get,
+	attr_set,
+	attr_delete,
 	attr_static,
 ]
 
@@ -485,6 +491,13 @@ pub mut:
 	call_fn string
 	// bool_fn is the generated `nb_bool`, empty when the class has none.
 	bool_fn string
+	// get_method/set_method/delete_method are the V methods backing the descriptor
+	// protocol, empty when the class has none.
+	get_method    string
+	set_method    string
+	delete_method string
+	descr_get_fn  string
+	descr_set_fn  string
 	// context marks a class whose `enter`/`exit` methods are exposed as
 	// `__enter__`/`__exit__`.
 	context bool

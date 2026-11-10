@@ -564,7 +564,7 @@ pub fn type_from_spec(name string, basicsize int, slots voidptr) PyObj {
 // allows only a constant as a default value, and `unsafe { nil }` is an expression.
 // Callers that have nothing to pass write `unsafe { nil }`.
 pub fn new_type(name string, state_size int, doc string, new_ voidptr, init voidptr,
-	dealloc voidptr, methods voidptr, getsets voidptr, repr voidptr, str_fn voidptr, call voidptr, richcompare voidptr,
+	dealloc voidptr, methods voidptr, getsets voidptr, repr voidptr, str_fn voidptr, call voidptr, descr_get voidptr, descr_set voidptr, richcompare voidptr,
 	hash voidptr, bases voidptr, traverse voidptr, clear voidptr, iter_fn voidptr,
 	next_fn voidptr, getbuffer voidptr, releasebuffer voidptr, len_fn voidptr,
 	item_fn voidptr, setitem_fn voidptr, contains_fn voidptr, map_getitem_fn voidptr,
@@ -612,6 +612,18 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 		slots << PyTypeSlot{
 			slot:  slot_call
 			value: call
+		}
+	}
+	if descr_get != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_descr_get
+			value: descr_get
+		}
+	}
+	if descr_set != unsafe { nil } {
+		slots << PyTypeSlot{
+			slot:  slot_descr_set
+			value: descr_set
 		}
 	}
 	if richcompare != unsafe { nil } {
@@ -751,6 +763,14 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 			slots:     voidptr(&slots[0])
 		}
 		result := steal(C.PyType_FromSpec(voidptr(spec)))
+		if !result.is_null() {
+			if descr_get != unsafe { nil } {
+				C.vpy_set_tp_descr_get(result.ptr, descr_get)
+			}
+			if descr_set != unsafe { nil } {
+				C.vpy_set_tp_descr_set(result.ptr, descr_set)
+			}
+		}
 		if dict && !result.is_null() {
 			C.vpy_enable_managed_dict(result.ptr)
 			// Re-ready the type so the managed dict descriptor is added.

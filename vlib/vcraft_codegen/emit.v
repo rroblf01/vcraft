@@ -304,6 +304,10 @@ pub fn render_class_exec(p Project, c Class) string {
 	w.write_string('\t\t' + str_arg + ',\n')
 	call_arg := if c.call_fn.len > 0 { 'voidptr(' + c.call_fn + ')' } else { 'unsafe { nil }' }
 	w.write_string('\t\t' + call_arg + ',\n')
+	descr_get_arg := if c.descr_get_fn.len > 0 { 'voidptr(' + c.descr_get_fn + ')' } else { 'unsafe { nil }' }
+	w.write_string('\t\t' + descr_get_arg + ',\n')
+	descr_set_arg := if c.descr_set_fn.len > 0 { 'voidptr(' + c.descr_set_fn + ')' } else { 'unsafe { nil }' }
+	w.write_string('\t\t' + descr_set_arg + ',\n')
 	w.write_string('\t\tvoidptr(' + c.richcompare + '),\n')
 	w.write_string('\t\tvoidptr(' + c.hash_fn + '),\n')
 	if c.base_index < 0 {
@@ -953,6 +957,65 @@ pub fn emit_bool_trampoline(p Project, c Class, f Func) string {
 	}
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn 0\n\t}\n')
 	w.write_string('\treturn if result { 1 } else { 0 }\n')
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_descr_get_trampoline renders a descriptor's `tp_descr_get`.
+pub fn emit_descr_get_trampoline(p Project, c Class) string {
+	mut w := new_builder()
+	w.write_string('fn ${c.descr_get_fn}(self voidptr, obj voidptr, typ voidptr) voidptr {\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	method := if c.get_method.len > 0 { c.get_method } else { '__get__' }
+	// call with obj and (optionally) type
+	if c.get_method.len > 0 {
+		// find the method's Func to know param count
+	}
+	mut call_args := 'obj'
+	// append type if method declares a second parameter
+	for m in c.methods {
+		if m.name == c.get_method || m.py_name == '__get__' {
+			if m.params.len >= 2 {
+				call_args = 'obj, typ'
+			}
+			break
+		}
+	}
+	w.write_string('\tresult := state.' + c.self_access() + '${method}(${call_args})\n')
+	// box result if not voidptr; assume int/bool/str handled by to_py? We'll box int.
+	// For simplicity, return the method's result via to_py_int if it is int/bool, else voidptr.
+	w.write_string('\treturn vcraft.to_py_int(result).ptr\n')
+	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_descr_set_trampoline renders a descriptor's `tp_descr_set`.
+pub fn emit_descr_set_trampoline(p Project, c Class) string {
+	mut w := new_builder()
+	w.write_string('fn ${c.descr_set_fn}(self voidptr, obj voidptr, value voidptr) int {\n')
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	if c.set_method.len > 0 {
+		// convert value if needed; here assume int param
+		w.write_string('\tif value == unsafe { nil } {\n')
+		if c.delete_method.len > 0 {
+			w.write_string('\t\tstate.' + c.self_access() + '${c.delete_method}(obj)\n')
+		} else {
+			w.write_string("\t\tvcraft.raise_attribute_error('cannot delete')\n\t\treturn -1\n")
+		}
+		w.write_string('\t\treturn 0\n')
+		w.write_string('\t}\n')
+		w.write_string('\tmut v := vcraft.unbox_int(value, "value") or { return -1 }\n')
+		w.write_string('\tstate.' + c.self_access() + '${c.set_method}(obj, v)\n')
+	} else if c.delete_method.len > 0 {
+		w.write_string('\tif value != unsafe { nil } {\n\t\treturn 0\n\t}\n')
+		w.write_string('\tstate.' + c.self_access() + '${c.delete_method}(obj)\n')
+	} else {
+		w.write_string('\treturn 0\n')
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
+	w.write_string('\treturn 0\n')
 	w.write_string('}\n')
 	return w.str()
 }
