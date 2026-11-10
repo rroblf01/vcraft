@@ -89,6 +89,8 @@ pub mut:
 	// a few percent of allocation-heavy throughput (measured on macOS arm64,
 	// CPython 3.13; see benchmark/README.md). Set 1 to favour speed instead.
 	gc_free_space_divisor int
+	// targets are the cross-compilation targets `vcraft build --all-targets` builds.
+	targets []string
 	// embed_pyc ships the project's Python files compiled rather than as source.
 	//
 	// A sourceless distribution: the wheel carries `foo.pyc` where a source install would
@@ -234,6 +236,7 @@ pub fn load(root string) !Project {
 	p.ldflags = settings.string_of('ldflags', '')
 	p.embed_pyc = settings.bool_of('embed-pyc', false)
 	p.gc_free_space_divisor = settings.int_of('gc-free-space-divisor', 2)
+	p.targets = build.string_list_of('targets')
 	if p.gc_free_space_divisor < 1 {
 		return error('gc-free-space-divisor is ${p.gc_free_space_divisor}; it must be 1 or more (2 is the default, 1 favours speed over memory)')
 	}
@@ -297,6 +300,9 @@ pub fn (p Project) render() string {
 	}
 	if p.ldflags.len > 0 {
 		out += 'ldflags = ${quote(p.ldflags)}\n'
+	}
+	if p.targets.len > 0 {
+		out += 'targets = [' + p.targets.map(quote(it)).join(', ') + ']\n'
 	}
 	if p.urls.len > 0 {
 		out += '\n[urls]\n'

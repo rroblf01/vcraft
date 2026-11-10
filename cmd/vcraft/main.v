@@ -244,8 +244,8 @@ fn cmd_new(args Args) {
 	println('  python -m unittest      # run the tests in tests/')
 }
 
-// cmd_build builds a wheel, or installs it when `develop` was asked for.
-fn cmd_build(args Args, develop bool) {
+// run_build builds one wheel (or installs it), optionally for a specific target.
+fn run_build(args Args, develop bool, target_override string) {
 	root := '.'
 	// No compiler is the first thing a new user hits, and V's own "command not found"
 	// says nothing about how to get one. A dry run plans without compiling.
@@ -318,7 +318,7 @@ fn cmd_build(args Args, develop bool) {
 			''
 		}
 		platform:    args.options['platform']
-		target:      args.options['target']
+		target:      if target_override != '' { target_override } else { args.options['target'] }
 		manylinux:   args.options['manylinux']
 		musllinux:   args.options['musllinux']
 		cc:          args.options['cc']
@@ -376,6 +376,30 @@ fn cmd_build(args Args, develop bool) {
 		exit(1)
 	}
 	println('installed into ${vcraft_project.active_environment()}')
+}
+
+// cmd_build builds a wheel, or installs it when `develop` was asked for.
+fn cmd_build(args Args, develop bool) {
+	if args.flags['all-targets'] {
+		p := vcraft_project.load('.') or {
+			eprintln('error: ${err.msg()}')
+			exit(1)
+		}
+		mut targets := p.targets.clone()
+		if args.options['target'] != '' {
+			targets = [args.options['target']]
+		}
+		if targets.len == 0 {
+			eprintln('error: no targets declared; add `targets = [...]` to [build] in vcraft.toml or pass --target')
+			exit(2)
+		}
+		for t in targets {
+			println('=== target ${t} ===')
+			run_build(args, develop, t)
+		}
+		return
+	}
+	run_build(args, develop, args.options['target'])
 }
 
 // cmd_info prints what vcraft resolved, which is the first thing to look at when a
