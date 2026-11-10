@@ -278,7 +278,14 @@ fn source_stamp(root string, args Args, develop bool, target_override string) st
 			}
 		}
 	}
-	data << '${args.flags.str()}${args.options.str()}${develop}${target_override}'.bytes()
+	mut flag_sig := ''
+	for k, v in args.flags {
+		if k == 'check' || k == 'force' {
+			continue
+		}
+		flag_sig += '${k}=${v};'
+	}
+	data << '${flag_sig}${args.options.str()}${develop}${target_override}'.bytes()
 	return vcraft_wheel.sha256(data)
 }
 
@@ -449,6 +456,21 @@ fn run_build(args Args, develop bool, target_override string) {
 
 // cmd_build builds a wheel, or installs it when `develop` was asked for.
 fn cmd_build(args Args, develop bool) {
+	if args.flags['check'] {
+		root := '.'
+		stamp := source_stamp(root, args, develop, args.options['target'])
+		stamp_path := root + '/.vcraft/build-stamp'
+		if os.exists(stamp_path) {
+			if saved := os.read_file(stamp_path) {
+				if saved == stamp {
+					println('up to date')
+					return
+				}
+			}
+		}
+		println('stale: rebuild required')
+		return
+	}
 	if args.flags['all-targets'] {
 		p := vcraft_project.load('.') or {
 			eprintln('error: ${err.msg()}')
