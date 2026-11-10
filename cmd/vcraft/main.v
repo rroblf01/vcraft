@@ -823,6 +823,20 @@ fn cmd_check(args Args) {
 	} else {
 		println('ok: no problems found')
 	}
+	// Validate any wheel present in dist/ by delegating to `check-wheel`.
+	for f in os.ls(root.trim_right('/') + '/dist') or { []string{} } {
+		if !f.ends_with('.whl') {
+			continue
+		}
+		wpath := root.trim_right('/') + '/dist/' + f
+		res := os.exec([os.executable(), 'check-wheel', wpath])
+		if res.exit_code != 0 {
+			eprintln('warning: wheel validation failed for ${wpath}')
+			warnings++
+		} else {
+			println(res.output.trim_space())
+		}
+	}
 }
 
 // cmd_doctor verifies the toolchain and the surrounding environment.
