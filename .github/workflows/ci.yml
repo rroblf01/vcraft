@@ -672,3 +672,12 @@ jobs:
       - uses: actions/checkout@v5
       - name: check reproducible build
         run: python3 scripts/check-reproducible.py
+
+
+  sdist-roundtrip:
+    name: sdist round-trip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: check sdist round-trip
+        run: python3 scripts/check-sdist-roundtrip.py
