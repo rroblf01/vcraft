@@ -906,6 +906,15 @@ fn cmd_doctor(args Args) {
 		println('pinned v      not installed')
 	}
 	println('toolchain cache ${vcraft_project.toolchain_root()}')
+	script := './scripts/check-docs-i18n.py'
+	if os.exists(script) {
+		res := os.exec(['python3', script])
+		if res.exit_code == 0 {
+			println('docs i18n     ok')
+		} else {
+			println('docs i18n     FAILED')
+		}
+	}
 	py := vcraft_project.python_in_environment()
 	println('python        ${py} (${vcraft_project.interpreter_version(py)})')
 	println('vlib          ${vcraft_project.vlib_path()}')
