@@ -41,6 +41,9 @@ $ vcraft generate                     # regenerate glue and stubs without compil
 $ vcraft check                        # detect stale generated files or toolchain drift
 ```
 
+vcraft targets CPython 3.11-3.15; 3.14 is the recommended stable version, 3.15 is
+supported but still alpha.
+
 `vcraft new` writes a Python package `my_extension` that re-exports the native module
 `my_extension_native`, so `import my_extension` is the public name. Pass
 `--module my_extension` if you would rather have no separate native module at all.

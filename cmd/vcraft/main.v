@@ -723,7 +723,8 @@ fn cmd_check(args Args) {
 		eprintln('error: ${err.msg()}')
 		exit(1)
 	}
-	mut problems := 0
+	mut errors := 0
+	mut warnings := 0
 	// Generated glue must exist; a missing file means the first build has not run.
 	for path in [root.trim_right('/') + '/src/_vcraft_generated.v', root.trim_right('/') + '/python/' + p.module.all_after_last('/') + '.pyi'] {
 		// best-effort: check the module's pyi naming as vcraft writes it.
@@ -732,7 +733,7 @@ fn cmd_check(args Args) {
 	gen := root.trim_right('/') + '/src/_vcraft_generated.v'
 	if !os.exists(gen) {
 		eprintln('warning: generated glue missing: ${gen}; run `vcraft generate` or `vcraft build`')
-		problems++
+		warnings++
 	}
 	stub := root.trim_right('/') + '/python/' + p.module + '_native.pyi'
 	// vcraft writes `python/<module>.pyi` only when module != package; the common
@@ -741,7 +742,7 @@ fn cmd_check(args Args) {
 		alt := root.trim_right('/') + '/python/' + p.module + '.pyi'
 		if !os.exists(alt) {
 			eprintln('warning: type stub missing under python/; run `vcraft generate` or `vcraft build`')
-			problems++
+			warnings++
 		}
 	}
 	// Staleness: generated glue older than any source file.
@@ -759,23 +760,30 @@ fn cmd_check(args Args) {
 		}
 		if stale {
 			eprintln('warning: generated glue is older than the sources; run `vcraft generate`')
-			problems++
+			warnings++
 		}
 	}
 	// Toolchain.
 	v := vcraft_project.v_compiler()
 	if !command_exists(v) {
 		eprintln('error: no V compiler found; run `vcraft toolchain install`')
-		problems++
+		errors++
 	} else if !vcraft_project.v_matches_pin(v) {
 		eprintln('warning: V is not the pinned commit ${vcraft_project.v_commit[..7]}')
-		problems++
+		warnings++
 	}
-	if problems == 0 {
-		println('ok: no problems found')
-	} else {
-		eprintln('${problems} problem(s) found')
+	if errors > 0 {
+		eprintln('${errors} error(s), ${warnings} warning(s)')
 		exit(1)
+	}
+	if warnings > 0 && args.flags['strict'] {
+		eprintln('${warnings} warning(s) (strict mode)')
+		exit(1)
+	}
+	if warnings > 0 {
+		eprintln('${warnings} warning(s)')
+	} else {
+		println('ok: no problems found')
 	}
 }
 
