@@ -199,7 +199,8 @@ fn backend_source() string {
 	out += '    if found:\n'
 	out += '        return found\n'
 	out += '    raise RuntimeError(\n'
-	out += '        "vcraft is not on PATH; put it there, set VCRAFT_BIN, or build from a checkout"\n'
+	out += '        "vcraft is not on PATH; put it there, set VCRAFT_BIN, or build from a checkout. " +
+        "See https://github.com/rroblf01/vcraft for installation instructions."\n'
 	out += '    )\n\n\n'
 	out += 'def _run(*args: str, cwd: str | None = None) -> str:\n'
 	out += '    """Run vcraft and return the last line of its output, which is the path.\n\n'
