@@ -197,6 +197,10 @@ fn cmd_new(args Args) {
 		eprintln('error: `vcraft new` needs a name')
 		exit(2)
 	}
+	if args.positional.len > 1 && args.positional[1].contains('..') {
+		eprintln('error: unsafe target path: ${args.positional[1]}')
+		exit(2)
+	}
 	name := args.positional[0]
 	mut p := vcraft_project.default_project(name)
 	if args.options['module'] != '' {
