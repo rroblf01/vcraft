@@ -34,6 +34,8 @@ usage:
   vcraft clean                 remove build output
   vcraft toolchain             show which V compiler vcraft uses
   vcraft toolchain install     build the V compiler vcraft is tested with
+  vcraft toolchain install --force   reinstall even if present
+  vcraft toolchain install --offline use a cached checkout (no network)
   vcraft version, --version    print the version
 
 build options:
@@ -1078,10 +1080,21 @@ fn cmd_toolchain(args Args) {
 		}
 		'install' {
 			jobs := if args.options['jobs'] != '' { args.options['jobs'].int() } else { 2 }
+			if args.flags['force'] {
+				os.rmdir_all(vcraft_project.toolchain_dir()) or {}
+			}
+			if args.flags['offline'] {
+				if !os.exists(vcraft_project.toolchain_dir()) {
+					eprintln('error: no cached toolchain to use offline')
+					exit(1)
+				}
+				println('using cached toolchain (offline)')
+			}
 			vcraft_project.install_toolchain(if jobs > 0 { jobs } else { 2 }) or {
 				eprintln('error: ${err.msg()}')
 				exit(1)
 			}
+			println('installed into ${vcraft_project.toolchain_dir()}')
 		}
 		else {
 			eprintln('error: unknown toolchain action `${action}`; try `vcraft toolchain install`')
