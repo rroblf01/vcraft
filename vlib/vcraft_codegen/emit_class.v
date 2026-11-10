@@ -55,6 +55,7 @@ fn emit_class(p Project, c Class) string {
 	w.write_string(emit_class_clear(p, c))
 	w.write_string(emit_class_buffer_slots(p, c))
 	w.write_string(emit_class_dealloc(p, c))
+	// index trampoline is emitted in emit.v loop.
 	w.write_string(emit_class_repr(p, c))
 	if c.descr_get_fn.len > 0 {
 		w.write_string(emit_descr_get_trampoline(p, c))
@@ -1314,6 +1315,7 @@ fn numeric_slots_expr(c Class) string {
 	if c.bool_fn.len > 0 {
 		items << 'vcraft.number_slot(vcraft.slot_nb_bool, voidptr(${c.bool_fn}))'
 	}
+
 	if items.len == 0 {
 		return '[]vcraft.PyTypeSlot{}'
 	}

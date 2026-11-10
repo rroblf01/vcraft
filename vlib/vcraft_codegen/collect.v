@@ -1361,6 +1361,7 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	if m.bool_method {
 		p.classes[target].bool_fn = m.trampoline
 	}
+
 	if m.init_method {
 		p.classes[target].init_fn = m.trampoline
 	}
