@@ -64,6 +64,17 @@ pub enum Strategy {
 	// VarArgs is a V variadic parameter, `...T`: Python's `*args`, every positional
 	// argument past the fixed ones, each read as a `T`.
 	var_args
+	// DateTime is `time.Time`, Python's `datetime.datetime` (naive; an aware one is
+	// converted to UTC on the way in). TimeDelta is `time.Duration`, `datetime.timedelta`.
+	datetime
+	timedelta
+	// Decimal is `vcraft.Decimal`, a `decimal.Decimal` kept as its exact text.
+	decimal
+	// BigInt is `big.Integer`, a Python `int` of any size.
+	bigint
+	// JsonAny is `json2.Any`: any JSON value -- None, bool, int, float, str, and lists and
+	// str-keyed dicts of those -- converted recursively both ways.
+	json_any
 	// Unsupported means the generator refuses to emit code for it.
 	unsupported
 }
@@ -88,6 +99,14 @@ pub fn lookup(v_type string) Strategy {
 	}
 	if base.starts_with('...') {
 		return .var_args
+	}
+	match base {
+		'time.Time' { return .datetime }
+		'time.Duration' { return .timedelta }
+		'vcraft.Decimal' { return .decimal }
+		'big.Integer' { return .bigint }
+		'json2.Any' { return .json_any }
+		else {}
 	}
 	if base == 'vcraft.NdArray' || base == 'NdArray' {
 		return .nd_array
@@ -225,6 +244,11 @@ pub fn describe(v_type string) string {
 		// Anything with the buffer protocol; `collections.abc.Buffer` is 3.12+ only.
 		.nd_array { 'Any' }
 		.var_args { describe(v_type.trim_space()[3..]) }
+		.datetime { 'datetime.datetime' }
+		.timedelta { 'datetime.timedelta' }
+		.decimal { 'decimal.Decimal' }
+		.bigint { 'int' }
+		.json_any { 'Any' }
 		.nd_out { 'memoryview' }
 		.unsupported { 'Any' }
 	}
@@ -264,7 +288,7 @@ pub fn is_plain_value(v_type string) bool {
 // valid shape. A multi-value type, a bare object and a void are not elements.
 pub fn is_element_type(v_type string) bool {
 	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str, .bytes, .seq, .optional,
-		.dict, .enum_type, .struct_type, .sum_type]
+		.dict, .enum_type, .struct_type, .sum_type, .datetime, .timedelta, .decimal, .bigint, .json_any]
 }
 
 // tuple_parts splits a multi-value type, `(int, string)`, into its element types.

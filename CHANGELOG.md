@@ -71,6 +71,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **`__match_args__` on every class** (its exposed fields, a base's first), so instances
   destructure in a `match` statement, and **`@[vc_getattr]`** for `__getattr__`: called with
   the name only when the ordinary lookup fails.
+- **Dates, decimals, big integers and JSON.** `time.Time` crosses as `datetime.datetime`,
+  `time.Duration` as `datetime.timedelta`, `vcraft.Decimal` as an exact
+  `decimal.Decimal`, `big.Integer` as an `int` of any size, and `json2.Any` as any
+  JSON-shaped value, recursively; the glue imports `time`, `math.big` or `json2` only when
+  a signature uses them, and the stub names `datetime`/`decimal`.
+- **Logging into Python.** `vcraft.log_debug/info/warning/error` write through
+  `logging.getLogger(<module>)` from any thread, the GIL taken for the call.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.

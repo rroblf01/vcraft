@@ -2,6 +2,8 @@
 # Regenerate with `vcraft build`.
 
 from typing import Any, NamedTuple, Sequence
+import datetime
+import decimal
 
 class Point(NamedTuple):
     x: int
@@ -219,6 +221,24 @@ def tag(name: str, **opts: str) -> str: ...
 	the variadic parameter last, so the keyword map comes just before it and is named.
 """
 def both(prefix: str, *items: str, **weights: int) -> str: ...
+
+"""next_day moves a datetime forward a day: `time.Time` is Python's `datetime`."""
+def next_day(t: datetime.datetime) -> datetime.datetime: ...
+
+"""twice doubles a `timedelta`."""
+def twice(d: datetime.timedelta) -> datetime.timedelta: ...
+
+"""price_text sees a `decimal.Decimal` exactly, as its text."""
+def price_text(d: decimal.Decimal) -> decimal.Decimal: ...
+
+"""big_square squares a Python int of any size."""
+def big_square(n: int) -> int: ...
+
+"""json_keys takes any JSON value and returns it with a `seen` key added to a dict."""
+def json_tag(v: Any) -> Any: ...
+
+"""log_twice writes to Python's logging from V."""
+def log_twice(msg: str) -> None: ...
 
 """raise_os raises the OSError subclass an errno value stands for, with `context` as the
 	part after the colon in its message.

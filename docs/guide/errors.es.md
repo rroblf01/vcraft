@@ -36,6 +36,11 @@ C fallida, `vcraft.raise_last_errno('contexto')` lanza la subclase que CPython e
 `errno` actual (ECONNREFUSED es `ConnectionRefusedError`), con `errno` y `strerror`
 definidos; `vcraft.raise_errno(codigo, 'contexto')` recibe el número explícitamente.
 
+## Logging
+
+`vcraft.log_debug/info/warning/error(mensaje)` escribe en el `logging` de Python mediante el
+logger con el nombre del módulo, desde cualquier hilo, tomando el GIL para la llamada.
+
 ## Tipos de excepción propios
 
 `@[vc_error]` sobre un struct lo hace utilizable como el error de una función `!T`.

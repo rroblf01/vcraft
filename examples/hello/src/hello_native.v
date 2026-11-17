@@ -1,6 +1,8 @@
 module hello_native
 
+import math.big
 import math.complex
+import json2
 import time
 import vcraft
 
@@ -836,6 +838,48 @@ pub fn (c &Config) setting(name string) !string {
 		return 'value of ${name}'
 	}
 	return error('no setting ${name}')
+}
+
+// next_day moves a datetime forward a day: `time.Time` is Python's `datetime`.
+@[vc_fn]
+pub fn next_day(t time.Time) time.Time {
+	return t.add_days(1)
+}
+
+// twice doubles a `timedelta`.
+@[vc_fn]
+pub fn twice(d time.Duration) time.Duration {
+	return d * 2
+}
+
+// price_text sees a `decimal.Decimal` exactly, as its text.
+@[vc_fn]
+pub fn price_text(d vcraft.Decimal) vcraft.Decimal {
+	return vcraft.decimal(d.text + '0')
+}
+
+// big_square squares a Python int of any size.
+@[vc_fn]
+pub fn big_square(n big.Integer) big.Integer {
+	return n * n
+}
+
+// json_keys takes any JSON value and returns it with a `seen` key added to a dict.
+@[vc_fn]
+pub fn json_tag(v json2.Any) json2.Any {
+	if v is map[string]json2.Any {
+		mut m := v.clone()
+		m['seen'] = json2.Any(true)
+		return json2.Any(m)
+	}
+	return v
+}
+
+// log_twice writes to Python's logging from V.
+@[vc_fn]
+pub fn log_twice(msg string) {
+	vcraft.log_info(msg)
+	vcraft.log_warning(msg + '!')
 }
 
 // raise_os raises the OSError subclass an errno value stands for, with `context` as the

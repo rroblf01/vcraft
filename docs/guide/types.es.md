@@ -70,6 +70,15 @@ Un sumtype (`type Shape = int | string | Point`) cruza como la variante que cont
 probando las variantes: un `bool` solo para un `bool` real, los enteros antes que los
 flotantes y después el orden declarado. El stub lo tipa como una unión.
 
+## Fechas, decimales, enteros grandes y JSON
+
+`time.Time` es un `datetime.datetime` (naive en ambos sentidos; uno con zona horaria se
+convierte a UTC al entrar) y `time.Duration` un `datetime.timedelta`. `vcraft.Decimal` es un
+`decimal.Decimal` guardado exactamente como su texto. `big.Integer` es un `int` de Python de
+cualquier tamaño. `json2.Any` acepta cualquier valor con forma de JSON -- None, bool, int,
+float, str, listas y dicts con claves str -- de forma recursiva, en ambos sentidos. El glue
+importa `time`, `math.big` o `json2` solo cuando una firma los usa.
+
 ## NumPy y arrays N-dimensionales
 
 `vcraft.NdArray` como parámetro acepta cualquier exportador de buffer (un array de NumPy,

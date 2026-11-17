@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 56,
+            glue.count("add_function_owned") == 62,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -509,6 +509,45 @@ def main() -> int:
     t.check("the stub declares both",
             "    __match_args__ = ('value', 'step')" in STUBS.read_text()
             and "def __getattr__(self, name: str) -> str: ..." in STUBS.read_text())
+
+    print("dates, decimals, big ints, JSON and logging")
+    import datetime as pydt
+    import decimal as pydec
+    import logging
+    t.equal("a naive datetime crosses both ways", h.next_day(pydt.datetime(2024, 2, 28, 23, 30, 5, 123456)),
+            pydt.datetime(2024, 2, 29, 23, 30, 5, 123456))
+    aware = pydt.datetime(2024, 1, 1, 12, 0, tzinfo=pydt.timezone(pydt.timedelta(hours=2)))
+    t.equal("an aware one is read as UTC", h.next_day(aware), pydt.datetime(2024, 1, 2, 10, 0))
+    t.equal("a timedelta crosses both ways", h.twice(pydt.timedelta(days=1, seconds=3, microseconds=7)),
+            pydt.timedelta(days=2, seconds=6, microseconds=14))
+    t.raises("a date where a datetime is expected is refused", TypeError, "datetime.datetime",
+             lambda: h.next_day(pydt.date(2024, 1, 1)))
+    t.equal("a Decimal crosses exactly", h.price_text(pydec.Decimal("12.345")), pydec.Decimal("12.3450"))
+    t.equal("an int of any size crosses", h.big_square(10**40 + 7), (10**40 + 7) ** 2)
+    t.equal("any JSON value crosses", h.json_tag({"a": [1, 2.5, None, "x"], "b": {"c": False}}),
+            {"a": [1, 2.5, None, "x"], "b": {"c": False}, "seen": True})
+    t.equal("a JSON scalar too", h.json_tag(["only", 1]), ["only", 1])
+    t.raises("a value JSON cannot hold is refused", TypeError, "not a JSON value",
+             lambda: h.json_tag({"s": {1, 2}}))
+    records = []
+
+    class Keep(logging.Handler):
+        def emit(self, record):
+            records.append((record.name, record.levelname, record.getMessage()))
+
+    handler = Keep()
+    logging.getLogger("hello_native").addHandler(handler)
+    logging.getLogger("hello_native").setLevel(logging.INFO)
+    h.log_twice("hi")
+    logging.getLogger("hello_native").removeHandler(handler)
+    t.equal("V logs through Python's logging, under the module's name", records,
+            [("hello_native", "INFO", "hi"), ("hello_native", "WARNING", "hi!")])
+    stub_text = STUBS.read_text()
+    t.check("the stub names the Python types",
+            "def next_day(t: datetime.datetime) -> datetime.datetime: ..." in stub_text
+            and "def price_text(d: decimal.Decimal) -> decimal.Decimal: ..." in stub_text
+            and "import datetime" in stub_text and "import decimal" in stub_text,
+            [l for l in stub_text.splitlines() if "next_day" in l or "price_text" in l or "import" in l])
 
     print("system errors")
     import errno

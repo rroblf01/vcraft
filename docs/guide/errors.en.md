@@ -36,6 +36,11 @@ C call, `vcraft.raise_last_errno('context')` raises the subclass CPython picks f
 current `errno` (ECONNREFUSED is `ConnectionRefusedError`), with `errno` and `strerror`
 set; `vcraft.raise_errno(code, 'context')` takes the number explicitly.
 
+## Logging
+
+`vcraft.log_debug/info/warning/error(message)` writes to Python's `logging` through the
+logger named after the module, from any thread, taking the GIL for the call.
+
 ## Custom exception types
 
 `@[vc_error]` on a struct makes it usable as the error of a `!T` function. It needs a

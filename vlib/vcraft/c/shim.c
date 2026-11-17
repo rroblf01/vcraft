@@ -1411,6 +1411,51 @@ PyObject *vpy_structseq_pack(PyObject *type, PyObject **items, Py_ssize_t count)
 	return seq;
 }
 
+// vpy_cached_module returns `datetime` (0) or `decimal` (1), imported once and kept, as a
+// borrowed reference.
+PyObject *vpy_cached_module(int which) {
+	static PyObject *mods[2] = {NULL, NULL};
+	static const char *names[2] = {"datetime", "decimal"};
+	if (which < 0 || which > 1) {
+		return NULL;
+	}
+	if (mods[which] == NULL) {
+		mods[which] = PyImport_ImportModule(names[which]);
+	}
+	return mods[which];
+}
+
+// The logger `vcraft.log_*` writes to: `logging.getLogger(<module name>)`, looked up once
+// and kept. The name is set by the module initialiser before any V code can log.
+static char vpy_logger_name[256] = "vcraft";
+static PyObject *vpy_logger_obj = NULL;
+
+void vpy_set_logger_name(const char *name) {
+	size_t n = strlen(name);
+	if (n >= sizeof(vpy_logger_name)) {
+		n = sizeof(vpy_logger_name) - 1;
+	}
+	memcpy(vpy_logger_name, name, n);
+	vpy_logger_name[n] = '\0';
+}
+
+// vpy_logger returns a new reference to the logger, or NULL with an exception set.
+PyObject *vpy_logger(void) {
+	if (vpy_logger_obj == NULL) {
+		PyObject *logging = PyImport_ImportModule("logging");
+		if (logging == NULL) {
+			return NULL;
+		}
+		vpy_logger_obj = PyObject_CallMethod(logging, "getLogger", "s", vpy_logger_name);
+		Py_DECREF(logging);
+		if (vpy_logger_obj == NULL) {
+			return NULL;
+		}
+	}
+	Py_INCREF(vpy_logger_obj);
+	return vpy_logger_obj;
+}
+
 // vpy_running_loop returns `asyncio.get_running_loop()` (a new reference), or NULL with
 // the RuntimeError asyncio raises outside a running loop.
 PyObject *vpy_running_loop(void) {

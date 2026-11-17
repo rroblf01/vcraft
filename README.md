@@ -281,6 +281,11 @@ generic value tree.
 | a plain `struct` the project declares  | `dict`                       | Field names as keys; in, also a tuple or an object with the fields |
 | a `@[vc_structseq]` struct             | its struct sequence type     | A tuple with named fields, like `os.stat_result`   |
 | a sumtype the project declares         | the variant it holds         | `int \| str \| ...` in the stub; read by trying each variant |
+| `time.Time`                            | `datetime.datetime`          | Naive both ways; an aware one is converted to UTC on the way in |
+| `time.Duration`                        | `datetime.timedelta`         | Microsecond precision                              |
+| `vcraft.Decimal`                       | `decimal.Decimal`            | Exact: kept as its text (`d.text`, `vcraft.decimal('1.50')`) |
+| `big.Integer`                          | `int`                        | Any size                                           |
+| `json2.Any`                            | any JSON-shaped value        | None, bool, int, float, str, list, dict, recursively |
 | `void`, `!void`                       | `None`                       |                                                    |
 | `!T`                                  | `T`, or raises               | See [Errors and panics](#errors-and-panics)        |
 
@@ -1358,6 +1363,11 @@ pages = await asyncio.gather(*(m.fetch_page(u) for u in urls))
 The arguments are read on the calling thread and copied where they only borrow from
 Python (`str`, `bytes`, a `list[str]`), so the parameters are scalars, strings, bytes,
 enums and lists of those. The stub declares the function `async def`.
+
+**Logging.** `vcraft.log_debug`, `log_info`, `log_warning` and `log_error` write to
+Python's `logging` through the logger named after the module, so a V message goes
+wherever the application's logging configuration sends Python's own. They take the GIL
+for the call, so a `@[vc_nogil]` or `@[vc_async]` function may log too.
 
 **Allocating from any thread.** Every generated entry point registers the calling thread
 with V's collector before it runs any V code, so V code may allocate on whatever Python

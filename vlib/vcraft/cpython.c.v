@@ -158,6 +158,11 @@ fn C.Py_ReprEnter(o voidptr) int
 fn C.PyType_IsSubtype(a voidptr, b voidptr) int
 
 fn C.PyObject_Str(o voidptr) voidptr
+fn C.PyObject_IsInstance(o voidptr, cls voidptr) int
+fn C.PyLong_FromString(s voidptr, end voidptr, base int) voidptr
+fn C.vpy_logger() voidptr
+fn C.vpy_cached_module(which int) voidptr
+fn C.vpy_set_logger_name(name voidptr)
 
 fn C.PyObject_Repr(o voidptr) voidptr
 
