@@ -49,6 +49,8 @@ Issues = "https://github.com/me/my-extension/issues"
 | `gc-markers` | `0` | Hilos marcadores del colector; `0` es uno por núcleo, `1` no arranca ninguno (Linux, macOS) |
 | `cflags` | sin definir | Flags extra para el compilador C, p. ej. `-march=x86-64-v2` |
 | `ldflags` | sin definir | Flags extra para el enlazador C |
+| `python-source` | `"python"` | Directorio de los ficheros Python que viajan junto a la extensión (y del stub); `src` o `.` para un layout existente |
+| `python-packages` | sin definir | Empaqueta solo estos paquetes/módulos de `python-source`, más el stub |
 
 Un wheel construido con `-march` arrastra ese requisito de CPU, así que va en un build
 privado o en una línea base de plataforma deliberada, no en un wheel para cualquier x86-64.

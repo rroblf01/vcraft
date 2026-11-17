@@ -498,6 +498,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		project_root: opt.root
 		module:       p.module
 		package:      p.module
+		stubs_dir:    p.python_source
 	})
 	for d in generate_result.diagnostics {
 		eprintln(d.error())
@@ -705,11 +706,12 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	}
 	binary := os.read_file(output) or { return error('cannot read ${output}') }
 
-	// Hand-written Python travels with a wheel from the project's `python/` directory.
-	// That is where generated stubs live and where a shim belongs, so it is the one
-	// place worth looking. An editable wheel does not copy it: the wheel's `.pth` points
-	// at the source tree, so a change is picked up without reinstalling.
-	python_root := os.join_path(opt.root, 'python')
+	// Hand-written Python travels with a wheel from the project's Python directory,
+	// `python/` unless `python-source` names another. That is where generated stubs live
+	// and where a shim belongs, so it is the one place worth looking. An editable wheel
+	// does not copy it: the wheel's `.pth` points at the source tree, so a change is
+	// picked up without reinstalling.
+	python_root := p.python_root(opt.root)
 	mut extras := []vcraft_wheel.ExtraFile{}
 	mut editable_paths := []string{}
 	if opt.editable {
@@ -718,7 +720,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 			editable_paths << absolute(python_root)
 		}
 	} else if os.exists(python_root) {
-		for name in python_files(python_root) {
+		for name in p.python_tree(opt.root) {
 			source_path := python_root.trim_right('/') + '/' + name
 			source := os.read_file(source_path) or {
 				return error('cannot read ${source_path}')
@@ -874,6 +876,26 @@ fn direct_url_json(root string) string {
 // ignores them, and there is nothing to compile. A `.py` under `embed-pyc` becomes a
 // `.pyc` instead. Sorted, because a wheel whose contents move between builds is a wheel
 // nobody can reproduce.
+// python_root is the directory the project's Python tree lives in.
+pub fn (p Project) python_root(root string) string {
+	if p.python_source == '.' {
+		return root
+	}
+	return os.join_path(root, p.python_source)
+}
+
+// python_tree lists the Python files that ship, relative to `python_root`: all of them,
+// or, when `python-packages` is set, those packages and modules plus the generated stub.
+pub fn (p Project) python_tree(root string) []string {
+	all := python_files(p.python_root(root))
+	if p.python_packages.len == 0 {
+		return all
+	}
+	stub := p.module + '.pyi'
+	return all.filter(it == stub || it.all_before('/') in p.python_packages
+		|| (!it.contains('/') && it.all_before_last('.') in p.python_packages))
+}
+
 fn python_files(dir string) []string {
 	mut out := []string{}
 	collect_files_with_suffixes(dir, '', mut out, ['.py', '.pyi', 'py.typed'])

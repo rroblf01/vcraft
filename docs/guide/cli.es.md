@@ -7,8 +7,10 @@ $ vcraft --help
 | Comando | Qué hace |
 | --- | --- |
 | `vcraft new <nombre>` | Crea un proyecto: manifiesto, fuente V, demo, test, README |
+| `vcraft init [dir]` | Añade vcraft a un proyecto Python existente (ver abajo) |
 | `vcraft build` | Ejecuta el generador, compila la extensión y escribe un wheel |
 | `vcraft develop` | Construye e instala en el virtualenv activo, editable por defecto |
+| `vcraft develop --watch` | Lo mismo, y otra vez con cada cambio en un fichero V, C o de manifiesto (`--interval <ms>`, 500 por defecto) |
 | `vcraft info` | Muestra lo que resolvería un build: módulo, sufijo, tag, toolchain |
 | `vcraft clean` | Borra `dist/` y la salida del build editable |
 | `vcraft generate-ci` | Escribe un workflow de GitHub Actions que construye y comprueba los wheels |
@@ -37,6 +39,26 @@ $ vcraft --help
 `vcraft info` es planificación pura: nombra el SO, la arquitectura, el tag y el compilador
 sin tocar ningún toolchain, así que funciona en todas partes, incluso para un target cuyo
 compilador no está instalado.
+
+## Un proyecto Python existente: `vcraft init`
+
+```console
+$ cd mylib            # pyproject.toml, src/mylib/__init__.py, tests/...
+$ vcraft init
+$ vcraft develop --watch
+```
+
+`init` escribe `vcraft.toml`, `v.mod`, `src/<nombre>_native.v` y `vcraft_build.py`, y
+nunca sobrescribe uno que ya exista. En `pyproject.toml` solo sustituye `[build-system]`,
+nombrando el backend que reemplaza; `[project]` sigue siendo la fuente de los metadatos.
+Encuentra el paquete Python en `python/`, `src/<pkg>` o un `<pkg>/` plano y registra los
+dos últimos como `python-source` y `python-packages`, así que el wheel lleva ese paquete,
+la extensión y su stub, y no los tests ni los scripts de al lado. `--name` y `--module`
+cambian los nombres derivados.
+
+`develop --watch` sigue en marcha: cada cambio recompila y reinstala, de modo que el
+siguiente `import` en un proceso nuevo lo ve. Un build fallido se muestra y la vigilancia
+continúa. Los ficheros Python de una instalación editable no necesitan recompilar.
 
 ## Ejemplos
 

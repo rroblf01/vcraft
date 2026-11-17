@@ -1390,9 +1390,11 @@ would do, and without it each thread needs its own.
 
 ```
 vcraft new <name>            scaffold a V project ready for Python
+vcraft init [dir]            add vcraft to an existing Python project
 vcraft build [options]       build a distributable wheel
 vcraft develop [options]     build and install an editable pointer by default
 vcraft develop --copy        install a plain extension copy instead
+vcraft develop --watch       rebuild and reinstall on every source change
 vcraft sdist                 build a source distribution
 vcraft generate-ci           emit a GitHub Actions workflow into .github/workflows/
 vcraft publish               upload the built distributions to PyPI
@@ -1436,6 +1438,21 @@ $ vcraft develop
 $ python -c "import mypkg as m; print(m.greet('world'))"
 Hello, world!
 ```
+
+### Adding vcraft to an existing Python project
+
+```console
+$ cd mylib            # pyproject.toml, src/mylib/__init__.py, tests/...
+$ vcraft init
+$ vcraft develop --watch
+```
+
+`vcraft init` writes `vcraft.toml`, `v.mod`, `src/<name>_native.v` and the build backend,
+points `[build-system]` at it (naming the backend it replaced) and leaves every other table
+of `pyproject.toml` alone. A `src/<pkg>` or flat `<pkg>/` layout is recorded as
+`python-source`/`python-packages`, so the wheel carries that package next to the extension
+and nothing else. `develop --watch` rebuilds and reinstalls whenever a V, C or manifest
+file changes; a failed build is printed and the watch continues.
 
 Packaging configuration lives in `vcraft.toml`, not in `v.mod`. `v.mod` is V's
 manifest and names the V module; a wheel also needs a distribution name, a version,
@@ -1675,6 +1692,8 @@ The keys of `[build]`:
 | `gc-markers`      | `0`       | Collector marker threads; `0` is one per core, `1` starts none (Linux, macOS) |
 | `cflags`          | unset     | Extra flags for the C compiler, e.g. `-march=x86-64-v2`        |
 | `ldflags`         | unset     | Extra flags for the C linker                                   |
+| `python-source`   | `"python"` | Directory of the Python files shipped beside the extension (and of the stub); `src` or `.` for an existing layout |
+| `python-packages` | unset     | Ship only these packages/modules from `python-source`, plus the stub |
 
 A wheel built with `-march` carries that CPU requirement, so it belongs in a private build
 or a deliberate platform baseline, not in a wheel meant to run on any x86-64.

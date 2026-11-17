@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import venv
 import zipfile
 from pathlib import Path
@@ -3053,6 +3054,109 @@ pub fn c_marker() int {
                 proc.returncode == 0 and "win_amd64" in proc.stdout
                 and "mypkg_native" in proc.stdout and ".pyd" in proc.stdout,
                 (proc.stderr or proc.stdout).strip()[-300:])
+
+        print("init in an existing Python project")
+        existing = tmp / "existing"
+        (existing / "src" / "mylib").mkdir(parents=True)
+        (existing / "tests").mkdir()
+        (existing / "pyproject.toml").write_text(
+            '[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n\n'
+            '[project]\nname = "mylib"\nversion = "0.3.0"\ndescription = "An existing library"\n'
+            'requires-python = ">=3.11"\n\n# kept\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n')
+        (existing / "src" / "mylib" / "__init__.py").write_text(
+            "from mylib_native import add\n\ndef double_add(a, b):\n    return 2 * add(a, b)\n")
+        (existing / "tests" / "test_mylib.py").write_text("def test_nothing():\n    pass\n")
+        (existing / ".gitignore").write_text("*.egg-info")
+        proc = vcraft("init", cwd=existing)
+        t.check("init succeeds", proc.returncode == 0, (proc.stderr or proc.stdout).strip())
+        t.check("init names the backend it replaced", "hatchling.build" in proc.stdout,
+                proc.stdout)
+        manifest = (existing / "vcraft.toml").read_text()
+        t.check("init records the src layout",
+                'python-source = "src"' in manifest and 'python-packages = ["mylib"]' in manifest,
+                manifest)
+        t.check("init takes the version from [project]", 'version = "0.3.0"' in manifest,
+                manifest)
+        pyproject = (existing / "pyproject.toml").read_text()
+        t.check("init points [build-system] at vcraft and keeps the rest",
+                'build-backend = "vcraft_build"' in pyproject and "hatchling" not in pyproject
+                and "# kept" in pyproject and "testpaths" in pyproject, pyproject)
+        ignore = (existing / ".gitignore").read_text()
+        t.check("init appends to .gitignore", ignore.startswith("*.egg-info\n")
+                and "/src/_vcraft_generated.v" in ignore, ignore)
+        t.check("init writes the V source", (existing / "src" / "mylib_native.v").exists())
+        proc = vcraft("init", cwd=existing)
+        t.check("a second init is refused", proc.returncode != 0
+                and "already" in proc.stderr, proc.stderr.strip())
+        proc = vcraft("build", "--skip-audit", cwd=existing)
+        t.check("an initialised project builds", proc.returncode == 0,
+                (proc.stderr or proc.stdout).strip()[-400:])
+        wheels = list((existing / "dist").glob("mylib-0.3.0-*.whl"))
+        names = zipfile.ZipFile(wheels[0]).namelist() if wheels else []
+        t.check("the wheel ships the package, the stub and the extension, not the tests",
+                "mylib/__init__.py" in names and "mylib_native.pyi" in names
+                and any(n.startswith("mylib_native.") and n.endswith(LIB_EXT) for n in names)
+                and not any(n.startswith("tests/") for n in names), str(names))
+        flat = tmp / "flat"
+        (flat / "flatpkg").mkdir(parents=True)
+        (flat / "tests").mkdir()
+        (flat / "tests" / "__init__.py").write_text("")
+        (flat / "flatpkg" / "__init__.py").write_text("")
+        (flat / "setup.py").write_text("")
+        proc = vcraft("init", "--module", "flat_ext", cwd=flat)
+        flat_manifest = (flat / "vcraft.toml").read_text() if proc.returncode == 0 else ""
+        t.check("init finds a flat layout and takes --module with a space",
+                'python-source = "."' in flat_manifest and 'module = "flat_ext"' in flat_manifest
+                and (flat / "src" / "flat_ext.v").exists(), proc.stderr + flat_manifest)
+
+        flat_toml = flat / "vcraft.toml"
+        if flat_toml.exists():
+            flat_toml.write_text(flat_toml.read_text().replace('python-source = "."', 'python-source = "../x"'))
+            proc = vcraft("build", "--dry-run", cwd=flat)
+            t.check("a python-source outside the project is refused",
+                    proc.returncode != 0 and "python-source" in proc.stderr, proc.stderr.strip())
+
+        print("develop --watch")
+        watch_env = dict(os.environ, VIRTUAL_ENV=str(tmp / "venv-watch"))
+        make_venv(tmp / "venv-watch")
+        watcher = subprocess.Popen([str(VCRAFT), "develop", "--watch", "--interval", "200"],
+                                   cwd=existing, env=watch_env, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True)
+
+        def wait_for(text: str, limit: float = 300) -> str:
+            seen = ""
+            end = time.time() + limit
+            while time.time() < end:
+                line = watcher.stdout.readline()
+                if not line:
+                    break
+                seen += line
+                if text in line:
+                    return seen
+            return seen + "<timeout>"
+
+        def run_add() -> str:
+            return subprocess.run([str(venv_python(tmp / "venv-watch")), "-c",
+                                   "import mylib; print(mylib.double_add(2, 3))"],
+                                  capture_output=True, text=True, cwd=tmp).stdout.strip()
+
+        try:
+            first = wait_for("watching")
+            t.check("develop --watch builds and installs first",
+                    "installed into" in first and run_add() == "10", first[-400:])
+            source = existing / "src" / "mylib_native.v"
+            original = source.read_text()
+            source.write_text(original.replace("return a + b", "return a + b + 100"))
+            rebuilt = wait_for("change detected")
+            rebuilt += wait_for("watching")
+            t.check("an edit is rebuilt and reinstalled", run_add() == "210", rebuilt[-400:])
+            source.write_text(original.replace("return a + b", "return a +"))
+            broken = wait_for("watching")
+            t.check("a broken edit is reported and the watch goes on",
+                    "build failed" in broken and watcher.poll() is None, broken[-400:])
+        finally:
+            watcher.terminate()
+            watcher.wait()
 
         print("errors")
         proc = vcraft("build", "--out-dir", cwd=project)

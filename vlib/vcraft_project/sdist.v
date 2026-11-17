@@ -77,12 +77,13 @@ pub fn sdist(p Project, root string) ![]u8 {
 	// Project Python travels as source: the wheel builder compiles it when `embed-pyc`
 	// is set, so an sdist that omits it builds a wheel without the helpers. Type stubs
 	// travel as well, because they are the interface a type checker reads.
-	python_root := root.trim_right('/') + '/python'
+	python_root := p.python_root(root).trim_right('/')
+	prefix := if p.python_source == '.' { '' } else { p.python_source + '/' }
 	if os.exists(python_root) {
-		for name in python_files(python_root) {
+		for name in p.python_tree(root) {
 			path := python_root + '/' + name
 			data := os.read_file(path) or { return error('cannot read ${path}') }
-			tar.add_file('${base_name(p)}/python/' + name, data.bytes()) or { return err }
+			tar.add_file('${base_name(p)}/' + prefix + name, data.bytes()) or { return err }
 		}
 	}
 	// Gzipped, because that is what the `.tar.gz` in the file name promises and what

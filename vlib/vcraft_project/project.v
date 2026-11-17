@@ -108,6 +108,14 @@ pub mut:
 	// carry `foo.py`, and CPython imports that directly. It is smaller, and it keeps the
 	// wheel's contents from being the one thing in it a reader can read.
 	embed_pyc bool
+	// python_source is the directory, relative to the project root, holding the Python
+	// files that ship beside the extension: `python` by default, `src` or `.` for a Python
+	// project vcraft was added to (`vcraft init`). The generated stub goes there too.
+	python_source string = 'python'
+	// python_packages, when set, limits what ships from `python_source` to these top-level
+	// packages or modules (and the generated stub), so a `src` or flat layout does not
+	// pack its tests, scripts or virtualenv.
+	python_packages []string
 }
 
 // module_name is the Python and V module base derived from a distribution name.
@@ -251,6 +259,14 @@ pub fn load(root string) !Project {
 	p.gc_free_space_divisor = settings.int_of('gc-free-space-divisor', 2)
 	p.gc_markers = settings.int_of('gc-markers', 0)
 	p.targets = build.string_list_of('targets')
+	p.python_source = settings.string_of('python-source', 'python').trim_right('/')
+	if p.python_source == '' {
+		p.python_source = '.'
+	}
+	if p.python_source.starts_with('/') || p.python_source.split('/').contains('..') {
+		return error('python-source is `${p.python_source}`; it must be a directory inside the project')
+	}
+	p.python_packages = build.string_list_of('python-packages')
 	p.schema_version = table.subtable('vcraft').int_of('version', 1)
 	apply_pyproject(mut p, root, pkg)
 	if p.gc_markers < 0 || p.gc_markers > 256 {
@@ -269,7 +285,7 @@ pub fn load(root string) !Project {
 // with a comma in it is not a bare word and a classifier with a `::` looks like one.
 // build_keys are the settings read from `[build]`.
 pub const build_keys = ['minimum-version', 'abi3', 'free-threading', 'strip', 'embed-pyc',
-	'gc-free-space-divisor', 'gc-markers', 'cflags', 'ldflags']
+	'gc-free-space-divisor', 'gc-markers', 'cflags', 'ldflags', 'python-source']
 
 pub fn (p Project) render() string {
 	mut out := '[package]\n'
@@ -331,6 +347,12 @@ pub fn (p Project) render() string {
 	}
 	if p.targets.len > 0 {
 		out += 'targets = [' + p.targets.map(quote(it)).join(', ') + ']\n'
+	}
+	if p.python_source != '' && p.python_source != 'python' {
+		out += 'python-source = ${quote(p.python_source)}\n'
+	}
+	if p.python_packages.len > 0 {
+		out += 'python-packages = [' + p.python_packages.map(quote(it)).join(', ') + ']\n'
 	}
 	if p.urls.len > 0 {
 		out += '\n[urls]\n'

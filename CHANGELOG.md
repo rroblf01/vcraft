@@ -84,6 +84,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **`%load_ext vcraft_tool.jupyter`**: a `%%vcraft` cell magic that compiles a V cell and
   defines its exported functions and classes in the notebook; re-running an edited cell
   loads the new code.
+- **`vcraft init`** adds vcraft to an existing Python project: `vcraft.toml` (metadata
+  from `[project]`), `v.mod`, a V source and the backend, with only `[build-system]` of
+  `pyproject.toml` replaced. A `src/<pkg>` or flat layout is recorded in the new
+  `[build]` keys **`python-source`** and **`python-packages`**, which the wheel, the sdist,
+  editable installs and the stub all follow.
+- **`vcraft develop --watch`** rebuilds and reinstalls on every change to a V, C or
+  manifest file; a failed build is reported and the watch goes on.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.
@@ -142,6 +149,9 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 - **`develop` labels the wheel's size as the wheel's**, noting an editable one is a
   pointer, instead of an unlabelled `size` that read as the extension's.
+- **`--module <name>` with a space** (as the docs write it) was read as a flag plus a
+  positional argument, so `vcraft new pkg --module ext` created the project in `ext/`
+  with the default module.
 - **Negative integers in `vcraft.toml`.** The parser read `-1` as a bare word, so a
   negative setting silently fell back to its default instead of being refused.
 - **The sdist carries the project's C code.** Only `.v` files under `src/` were packed,

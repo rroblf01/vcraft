@@ -304,3 +304,181 @@ pub fn write_scaffold(root string, p Project) ![]string {
 	}
 	return written
 }
+
+// InitPlan is what `vcraft init` found in an existing Python project and will write.
+pub struct InitPlan {
+pub mut:
+	project Project
+	// package is the existing Python package the extension is added to, '' when none
+	// was found.
+	package string
+	// files are the new files; none of them exists yet.
+	files []ScaffoldFile
+	// pyproject is the merged `pyproject.toml`, and replaced_backend the backend its old
+	// `[build-system]` named ('' when it had none).
+	pyproject        string
+	replaced_backend string
+	// gitignore is the `.gitignore` with vcraft's lines appended.
+	gitignore string
+}
+
+// plan_init looks at an existing Python project and plans what `vcraft init` adds.
+//
+// The project's name comes from `[project].name` in `pyproject.toml`, else from
+// `name_override`, else from the directory. Its Python stays where it is: a `python/`
+// tree is vcraft's default, a `src/<package>` or a flat `<package>/` layout is recorded
+// as `python-source` and `python-packages` in `[build]`, so the wheel ships that package
+// beside the extension and nothing else from the directory. The V source goes in `src/`
+// either way; V compiles only the `.v` files there.
+pub fn plan_init(root string, name_override string, module_override string) !InitPlan {
+	if os.exists(os.join_path(root, 'vcraft.toml')) {
+		return error('${os.join_path(root, 'vcraft.toml')} already exists; this is already a vcraft project')
+	}
+	pyproject_path := os.join_path(root, 'pyproject.toml')
+	existing := os.read_file(pyproject_path) or { '' }
+	mut name := name_override
+	mut backend := ''
+	if existing.len > 0 {
+		if name.len == 0 && existing.contains('[project]') {
+			table := parse(pyproject_section(existing)) or { Table{} }
+			name = table.subtable('project').string_of('name', '')
+		}
+		backend = pyproject_backend(existing)
+	}
+	if name.len == 0 {
+		name = os.file_name(os.real_path(root))
+	}
+	mut p := default_project(name)
+	if module_override.len > 0 {
+		p.module = module_override
+	}
+	if !is_valid_module(p.module) || p.module.ends_with('_test') {
+		return error('`${p.module}` cannot be the native module name; pass --module with letters, digits and underscores, not ending in `_test`')
+	}
+	pkg := module_name(name)
+	mut found := ''
+	if os.is_dir(os.join_path(root, 'python')) {
+		p.python_source = 'python'
+	} else if os.exists(os.join_path(root, 'src', pkg, '__init__.py')) {
+		p.python_source = 'src'
+		found = pkg
+	} else if os.exists(os.join_path(root, pkg, '__init__.py')) {
+		p.python_source = '.'
+		found = pkg
+	} else if candidate := package_under(os.join_path(root, 'src')) {
+		p.python_source = 'src'
+		found = candidate
+	} else if candidate := package_under(root) {
+		p.python_source = '.'
+		found = candidate
+	}
+	if found.len > 0 {
+		p.python_packages = [found]
+		if found == p.module {
+			return error('the Python package and the native module are both `${found}`; pass --module to name the extension')
+		}
+	}
+	if !os.exists(os.join_path(root, 'README.md')) {
+		p.readme = ''
+	}
+	// The metadata `[project]` already states is copied, so the two files agree.
+	apply_pyproject(mut p, root, Table{})
+	mut plan := InitPlan{
+		project:          p
+		package:          found
+		replaced_backend: backend
+	}
+	plan.files << ScaffoldFile{
+		path:    'vcraft.toml'
+		content: p.render()
+	}
+	plan.files << ScaffoldFile{
+		path:    'v.mod'
+		content: 'Module {\n\tname: "${p.module}"\n\tbase_url: "src"\n\trequires: ["vcraft"]\n}\n'
+	}
+	plan.files << ScaffoldFile{
+		path:    'src/${p.module}.v'
+		content: example_source(p)
+	}
+	plan.files << ScaffoldFile{
+		path:    backend_py()
+		content: backend_source()
+	}
+	for f in plan.files {
+		if os.exists(os.join_path(root, f.path)) {
+			return error('${os.join_path(root, f.path)} already exists; nothing was written')
+		}
+	}
+	plan.pyproject = if existing.len > 0 { merge_pyproject(existing) } else { pyproject_toml() }
+	mut ignore := os.read_file(os.join_path(root, '.gitignore')) or { '' }
+	mut lines := ignore.split_into_lines()
+	for line in ['/build/', '/dist/', '/.vcraft/', '/src/_vcraft_generated.v',
+		(if p.python_source == '.' { '/' } else { '/' + p.python_source + '/' }) + p.module + '.pyi',
+		'*.so'] {
+		if line !in lines {
+			if ignore.len > 0 && !ignore.ends_with('\n') {
+				ignore += '\n'
+			}
+			ignore += line + '\n'
+			lines << line
+		}
+	}
+	plan.gitignore = ignore
+	return plan
+}
+
+// package_under is the one Python package directly under `dir`, skipping the
+// directories that hold tests, docs, build output or an environment.
+fn package_under(dir string) ?string {
+	mut entries := os.ls(dir) or { return none }
+	entries.sort()
+	for entry in entries {
+		if entry.starts_with('.') || entry.starts_with('_')
+			|| entry in ['tests', 'test', 'docs', 'build', 'dist', 'venv', 'examples', 'benchmarks'] {
+			continue
+		}
+		if os.exists(os.join_path(dir, entry, '__init__.py')) {
+			return entry
+		}
+	}
+	return none
+}
+
+// pyproject_backend is the `build-backend` an existing `pyproject.toml` names.
+fn pyproject_backend(text string) string {
+	mut inside := false
+	for line in text.split_into_lines() {
+		t := line.trim_space()
+		if t.starts_with('[') {
+			inside = t == '[build-system]'
+			continue
+		}
+		if inside && t.starts_with('build-backend') {
+			return t.all_after('=').trim_space().trim('"\'')
+		}
+	}
+	return ''
+}
+
+// write_init writes a plan made by `plan_init` and returns the paths it touched.
+pub fn write_init(root string, plan InitPlan) ![]string {
+	mut written := []string{}
+	for f in plan.files {
+		target := os.join_path(root, f.path)
+		dir := os.dir(target)
+		if dir != '' && !os.exists(dir) {
+			os.mkdir_all(dir) or { return error('cannot create ${dir}') }
+		}
+		os.write_file(target, f.content) or { return error('cannot write ${target}') }
+		written << target
+	}
+	for name, content in {
+		'pyproject.toml': plan.pyproject
+		'.gitignore':     plan.gitignore
+	} {
+		target := os.join_path(root, name)
+		os.write_file(target, content) or { return error('cannot write ${target}') }
+		written << target
+	}
+	return written
+}

@@ -8,6 +8,7 @@ module main
 // arguments and prints, so that each of those stays testable on its own.
 
 import os
+import time
 
 import vcraft_ci
 import vcraft_codegen
@@ -19,6 +20,8 @@ const usage = 'vcraft: Python extensions in V
 usage:
   vcraft new <name>            scaffold a project
   vcraft new <name> --with-server   also scaffold a Starlette server
+  vcraft init [dir]            add vcraft to an existing Python project
+  vcraft develop --watch       rebuild and reinstall whenever a source changes
   vcraft build [options]       build a wheel
   vcraft develop [options]     build and install into the active virtualenv
   vcraft sdist                 build a source distribution
@@ -133,7 +136,8 @@ fn parse_args(argv []string) !Args {
 // takes_value reports whether an option is followed by a value.
 fn takes_value(name string) bool {
 	return name in ['abi3', 'interpreter', 'out-dir', 'platform', 'jobs', 'python',
-		'action', 'target', 'manylinux', 'musllinux', 'cc', 'cflags', 'ldflags']
+		'action', 'target', 'manylinux', 'musllinux', 'cc', 'cflags', 'ldflags', 'module',
+		'name', 'interval']
 }
 
 fn main() {
@@ -170,8 +174,15 @@ fn main() {
 			exit(0)
 		}
 		'new' { cmd_new(args) }
+		'init' { cmd_init(args) }
 		'build' { cmd_build(args, false) }
-		'develop' { cmd_build(args, true) }
+		'develop' {
+			if args.flags['watch'] {
+				cmd_watch(args)
+			} else {
+				cmd_build(args, true)
+			}
+		}
 		'info' { cmd_info(args) }
 		'generate' { cmd_generate(args) }
 		'check' { cmd_check(args) }
@@ -276,6 +287,139 @@ fn cmd_new(args Args) {
 	println('  python -m unittest      # run the tests in tests/')
 }
 
+// cmd_init adds vcraft to an existing Python project: a manifest, a V source, the build
+// backend in `pyproject.toml`, and nothing that already exists overwritten -- the one
+// exception is `[build-system]`, which has to name vcraft for `pip install .` to build
+// the extension, and the backend it replaces is named in the output.
+fn cmd_init(args Args) {
+	root := if args.positional.len > 0 { args.positional[0] } else { '.' }
+	if root.contains('..') {
+		eprintln('error: unsafe target path: ${root}')
+		exit(2)
+	}
+	if !os.is_dir(root) {
+		eprintln('error: ${root} is not a directory; `vcraft new` creates a project from nothing')
+		exit(2)
+	}
+	plan := vcraft_project.plan_init(root, args.options['name'], args.options['module']) or {
+		eprintln('error: ${err.msg()}')
+		exit(1)
+	}
+	written := vcraft_project.write_init(root, plan) or {
+		eprintln('error: ${err.msg()}')
+		exit(1)
+	}
+	for w in written {
+		println('wrote ${w}')
+	}
+	p := plan.project
+	if plan.replaced_backend.len > 0 && plan.replaced_backend != 'vcraft_build' {
+		println('')
+		println('note: [build-system] named `${plan.replaced_backend}`; it now names vcraft_build, which')
+		println('      builds the extension and ships your Python package with it.')
+	}
+	println('')
+	if plan.package.len > 0 {
+		where := if p.python_source == '.' { plan.package } else { '${p.python_source}/${plan.package}' }
+		println('The extension module is `${p.module}`; your package `${where}` ships beside it.')
+		println('Use it from Python with:')
+		println('')
+		println('    from ${p.module} import greet, add')
+	} else {
+		println('The extension module is `${p.module}`. No Python package was found; put one under')
+		println('python/ to ship it in the same wheel.')
+	}
+	println('')
+	println('Next:')
+	println('  vcraft develop          # build and install into the active virtualenv')
+	println('  vcraft develop --watch  # and again on every change')
+}
+
+// watch_stamp hashes what a rebuild depends on: the manifests, the V and C sources and
+// the Python tree. The generated glue and stub are left out, since a build rewrites them.
+fn watch_stamp(root string) string {
+	mut data := []u8{}
+	for path in [root + '/vcraft.toml', root + '/v.mod'] {
+		if text := os.read_file(path) {
+			data << text.bytes()
+		}
+	}
+	mut dirs := [root + '/src', root + '/c']
+	if p := vcraft_project.load(root) {
+		dirs << p.python_root(root)
+		for name in p.python_tree(root) {
+			if !name.ends_with('.pyi') {
+				data << name.bytes()
+			}
+		}
+	}
+	for dir in dirs[..2] {
+		if !os.is_dir(dir) {
+			continue
+		}
+		for ext in ['.v', '.c', '.h'] {
+			mut files := os.walk_ext(dir, ext)
+			files.sort()
+			for f in files {
+				if f.ends_with('_vcraft_generated.v') {
+					continue
+				}
+				data << f.bytes()
+				if text := os.read_file(f) {
+					data << text.bytes()
+				}
+			}
+		}
+	}
+	return vcraft_wheel.sha256(data)
+}
+
+// cmd_watch is `vcraft develop --watch`: build and install, then poll the sources and
+// do it again whenever one changes, until interrupted. Each build runs as its own
+// `vcraft develop`, so a compile error is printed and the watch goes on.
+//
+// An editable install points the environment at the build, so the next `import` in a
+// new process gets the new code; a running interpreter keeps the module it loaded.
+// Python files in the package need no rebuild, the editable path already reads them.
+fn cmd_watch(args Args) {
+	if !os.exists('vcraft.toml') {
+		eprintln('error: no vcraft.toml here; run `vcraft develop --watch` in a project')
+		exit(1)
+	}
+	mut command := [os.executable(), 'develop']
+	for k, v in args.flags {
+		if v && k != 'watch' {
+			command << '--${k}'
+		}
+	}
+	for k, v in args.options {
+		if k != 'interval' {
+			command << '--${k}=${v}'
+		}
+	}
+	interval := if args.options['interval'] != '' { args.options['interval'].int() } else { 500 }
+	mut last := watch_stamp('.')
+	os.system_args(command)
+	println('watching for changes (Ctrl-C to stop)')
+	flush_stdout()
+	for {
+		time.sleep(interval * time.millisecond)
+		now := watch_stamp('.')
+		if now == last {
+			continue
+		}
+		last = now
+		println('change detected, rebuilding')
+		flush_stdout()
+		code := os.system_args(command)
+		if code != 0 {
+			println('build failed; fix the error and save again')
+		}
+		println('watching for changes (Ctrl-C to stop)')
+		flush_stdout()
+	}
+}
+
 // source_stamp hashes the project's inputs plus the build options, so an unchanged
 // tree can skip a rebuild. Stored in `.vcraft/build-stamp`.
 fn source_stamp(root string, args Args, develop bool, target_override string) string {
@@ -285,8 +429,9 @@ fn source_stamp(root string, args Args, develop bool, target_override string) st
 			data << text.bytes()
 		}
 	}
+	python_dir := if p := vcraft_project.load(root) { p.python_root(root) } else { root + '/python' }
 	for ext in ['.v', '.py', '.toml', '.md'] {
-		for dir in [root + '/src', root + '/python'] {
+		for dir in [root + '/src', python_dir] {
 			if os.exists(dir) {
 				for f in os.walk_ext(dir, ext) {
 					if text := os.read_file(f) {
@@ -861,6 +1006,7 @@ fn cmd_generate(args Args) {
 		project_root: root
 		module:       p.module
 		package:      p.module
+		stubs_dir:    p.python_source
 	})
 	for d in result.diagnostics {
 		eprintln(d.error())
@@ -890,24 +1036,15 @@ fn cmd_check(args Args) {
 	mut errors := 0
 	mut warnings := 0
 	// Generated glue must exist; a missing file means the first build has not run.
-	for path in [root.trim_right('/') + '/src/_vcraft_generated.v', root.trim_right('/') + '/python/' + p.module.all_after_last('/') + '.pyi'] {
-		// best-effort: check the module's pyi naming as vcraft writes it.
-		_ = path
-	}
 	gen := root.trim_right('/') + '/src/_vcraft_generated.v'
 	if !os.exists(gen) {
 		eprintln('warning: generated glue missing: ${gen}; run `vcraft generate` or `vcraft build`')
 		warnings++
 	}
-	stub := root.trim_right('/') + '/python/' + p.module + '_native.pyi'
-	// vcraft writes `python/<module>.pyi` only when module != package; the common
-	// case is `python/<module>.pyi`. Try both.
+	stub := p.python_root(root).trim_right('/') + '/' + p.module + '.pyi'
 	if !os.exists(stub) {
-		alt := root.trim_right('/') + '/python/' + p.module + '.pyi'
-		if !os.exists(alt) {
-			eprintln('warning: type stub missing under python/; run `vcraft generate` or `vcraft build`')
-			warnings++
-		}
+		eprintln('warning: type stub missing: ${stub}; run `vcraft generate` or `vcraft build`')
+		warnings++
 	}
 	// Staleness: generated glue older than any source file.
 	if os.exists(gen) {
@@ -1175,19 +1312,19 @@ fn cmd_completions(args Args) {
 			println('# bash completion for vcraft')
 			println('_vcraft() {')
 			println(r'  local cur="${COMP_WORDS[COMP_CWORD]}"')
-			println('  COMPREPLY=( $(compgen -W "new build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor" -- "$cur") )')
+			println('  COMPREPLY=( $(compgen -W "new init build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor" -- "$cur") )')
 			println('}')
 			println('complete -F _vcraft vcraft')
 		}
 		'zsh' {
 			println('#compdef vcraft')
 			println('local -a cmds')
-			println('cmds=(new build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor)')
+			println('cmds=(new init build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor)')
 			println('_describe "command" cmds')
 		}
 		'fish' {
 			println('complete -c vcraft -f')
-			println('complete -c vcraft -n "__fish_use_subcommand" -a "new build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor"')
+			println('complete -c vcraft -n "__fish_use_subcommand" -a "new init build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor"')
 		}
 		else {
 			eprintln('error: unknown shell `${shell}`; use bash, zsh or fish')

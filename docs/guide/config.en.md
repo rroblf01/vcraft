@@ -49,6 +49,8 @@ Issues = "https://github.com/me/my-extension/issues"
 | `gc-markers` | `0` | Collector marker threads; `0` is one per core, `1` starts none (Linux, macOS) |
 | `cflags` | unset | Extra flags for the C compiler, e.g. `-march=x86-64-v2` |
 | `ldflags` | unset | Extra flags for the C linker |
+| `python-source` | `"python"` | Directory of the Python files shipped beside the extension (and of the stub); `src` or `.` for an existing layout |
+| `python-packages` | unset | Ship only these packages/modules from `python-source`, plus the stub |
 
 A wheel built with `-march` carries that CPU requirement, so it belongs in a private build
 or a deliberate platform baseline, not in a wheel meant to run on any x86-64.

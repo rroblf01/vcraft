@@ -7,8 +7,10 @@ $ vcraft --help
 | Command | What it does |
 | --- | --- |
 | `vcraft new <name>` | Scaffolds a project: manifest, V source, demo, test, README |
+| `vcraft init [dir]` | Adds vcraft to an existing Python project (see below) |
 | `vcraft build` | Runs the generator, compiles the extension and writes a wheel |
 | `vcraft develop` | Builds and installs into the active virtualenv, editable by default |
+| `vcraft develop --watch` | The same, then again on every change to a V, C or manifest file (`--interval <ms>`, default 500) |
 | `vcraft info` | Prints what a build would resolve: module, suffix, tag, toolchain |
 | `vcraft clean` | Removes `dist/` and the editable build output |
 | `vcraft generate-ci` | Writes a GitHub Actions workflow that builds and checks the wheels |
@@ -37,6 +39,26 @@ $ vcraft --help
 `vcraft info` is pure planning: it names the OS, architecture, tag and compiler without
 touching a toolchain, so it works everywhere, including for a target whose compiler is not
 installed.
+
+## An existing Python project: `vcraft init`
+
+```console
+$ cd mylib            # pyproject.toml, src/mylib/__init__.py, tests/...
+$ vcraft init
+$ vcraft develop --watch
+```
+
+`init` writes `vcraft.toml`, `v.mod`, `src/<name>_native.v` and `vcraft_build.py`, and
+never overwrites one that exists. In `pyproject.toml` it replaces `[build-system]` only,
+naming the backend it replaced; `[project]` stays the source of the metadata. It finds the
+Python package under `python/`, `src/<pkg>` or a flat `<pkg>/` and records the last two
+as `python-source` and `python-packages`, so the wheel carries that package, the
+extension and its stub, and not the tests or scripts beside them. `--name` and
+`--module` override the derived names.
+
+`develop --watch` keeps running: each change rebuilds and reinstalls, so the next
+`import` in a new process sees it. A failed build is printed and the watch continues.
+Python files of an editable install need no rebuild.
 
 ## Examples
 
