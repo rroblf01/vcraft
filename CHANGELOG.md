@@ -38,6 +38,11 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   pickles and copies through a generated `__reduce__` and the module's `_vcraft_rebuild`,
   which rebuilds it without running the constructor; a Python subclass's own attributes
   come along.
+- **`@[vc_async]`: V functions Python can await.** The call returns an asyncio future on
+  the running loop; the V function runs on a thread of its own without the GIL, and the
+  loop settles the future with the result, the error's exception or a panic's
+  RuntimeError. Gathered calls overlap, a cancelled future is left alone, and the stub
+  declares the function `async def`.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.

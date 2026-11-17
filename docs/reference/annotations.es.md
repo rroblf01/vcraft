@@ -34,6 +34,7 @@ Todas las anotaciones a las que reacciona el generador. Cualquier otra cosa en e
 | `@[vc_defaults]` | `pub fn`, métodos | Valores por defecto: `@[vc_defaults: 'step=1, name="x"']`. |
 | `@[vc_raw]` | `pub fn` | Sin marshalling; recibes y devuelves `voidptr`. |
 | `@[vc_nogil]` | `pub fn` | Ejecuta la llamada con el GIL liberado. |
+| `@[vc_async]` | `pub fn` | Devuelve un future de asyncio; la función se ejecuta en su propio hilo sin el GIL. |
 | `@[vc_memoryview]` | `pub fn`, métodos | Devuelve un slice nativo como `memoryview` escribible (sin copia). |
 
 ## Firmas

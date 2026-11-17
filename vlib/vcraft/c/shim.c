@@ -1357,6 +1357,72 @@ PyObject *vpy_structseq_pack(PyObject *type, PyObject **items, Py_ssize_t count)
 	return seq;
 }
 
+// vpy_running_loop returns `asyncio.get_running_loop()` (a new reference), or NULL with
+// the RuntimeError asyncio raises outside a running loop.
+PyObject *vpy_running_loop(void) {
+	static PyObject *get_running_loop = NULL;
+	if (get_running_loop == NULL) {
+		PyObject *asyncio = PyImport_ImportModule("asyncio");
+		if (asyncio == NULL) {
+			return NULL;
+		}
+		get_running_loop = PyObject_GetAttrString(asyncio, "get_running_loop");
+		Py_DECREF(asyncio);
+		if (get_running_loop == NULL) {
+			return NULL;
+		}
+	}
+	return PyObject_CallNoArgs(get_running_loop);
+}
+
+// vpy_async_settle is the callable `call_soon_threadsafe` runs on the loop's thread:
+// `settle(future, ok, value)` sets the result or the exception, unless the future is
+// already done -- cancelled while the V function ran.
+static PyObject *vpy_async_settle(PyObject *self, PyObject *const *args, Py_ssize_t nargs) {
+	(void)self;
+	if (nargs != 3) {
+		PyErr_SetString(PyExc_TypeError, "settle(future, ok, value)");
+		return NULL;
+	}
+	PyObject *done = PyObject_CallMethod(args[0], "done", NULL);
+	if (done == NULL) {
+		return NULL;
+	}
+	int is_done = PyObject_IsTrue(done);
+	Py_DECREF(done);
+	if (is_done < 0) {
+		return NULL;
+	}
+	if (!is_done) {
+		int ok = PyObject_IsTrue(args[1]);
+		PyObject *r = PyObject_CallMethod(args[0], ok ? "set_result" : "set_exception", "O", args[2]);
+		if (r == NULL) {
+			return NULL;
+		}
+		Py_DECREF(r);
+	}
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
+static PyMethodDef vpy_async_settle_def = {"_vcraft_settle",
+	(PyCFunction)(void (*)(void))vpy_async_settle, METH_FASTCALL, NULL};
+
+// vpy_async_settle_fn returns the settle callable, made once (a borrowed reference).
+PyObject *vpy_async_settle_fn(void) {
+	static PyObject *fn = NULL;
+	if (fn == NULL) {
+		fn = PyCFunction_NewEx(&vpy_async_settle_def, NULL, NULL);
+	}
+	return fn;
+}
+
+// vpy_new_runtime_error is a fallback exception for an async call whose failure left no
+// exception to report.
+PyObject *vpy_new_runtime_error(void) {
+	return PyObject_CallFunction(PyExc_RuntimeError, "s", "the V function failed");
+}
+
 // The buffer-protocol slot ids, read from the headers.
 //
 // PEP 820 renumbered these in CPython 3.15: `Py_bf_getbuffer` was 1 and is 88, and the

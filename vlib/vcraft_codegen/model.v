@@ -219,6 +219,10 @@ pub const attr_hash = 'vc_hash'
 // hashing per field, and still `p.x` by name.
 pub const attr_structseq = 'vc_structseq'
 
+// attr_async makes a `@[vc_fn]` awaitable: the V function runs on a thread of its own,
+// without the GIL, and the call returns an asyncio future the loop settles.
+pub const attr_async = 'vc_async'
+
 // known_attrs is every annotation the generator reacts to. Anything else in a
 // `vc.` namespace is a typo and is reported rather than ignored, because a
 // silently ignored annotation means a function quietly missing from the module.
@@ -245,6 +249,7 @@ pub const known_attrs = [
 	attr_eq,
 	attr_hash,
 	attr_structseq,
+	attr_async,
 	attr_lt,
 	attr_le,
 	attr_gt,
@@ -370,6 +375,9 @@ pub mut:
 	pass_module bool
 	// nogil marks a pure V function the wrapper may call with the GIL released.
 	nogil bool
+	// is_async is `@[vc_async]`: the call returns a future and the function runs on a
+	// thread of its own.
+	is_async bool
 	// opaque marks a function whose `voidptr` result is a native pointer, not a borrowed
 	// `PyObject`: the wrapper hands it to Python in a capsule.
 	opaque bool

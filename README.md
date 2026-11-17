@@ -236,6 +236,8 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_defaults]`| `pub fn`, methods | Default values: `@[vc_defaults: 'step=1, name="x"']`     |
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
 | `@[vc_nogil]`     | `pub fn`        | Runs the call with the GIL released                         |
+| `@[vc_async]`     | `pub fn`        | Makes the function awaitable; it runs on its own thread     |
+| `@[vc_structseq]` | `pub struct`    | A plain struct crosses out as a struct sequence, not a dict |
 | `@[vc_memoryview]`| `pub fn`, methods | Returns a native slice as a writable `memoryview` (no copy) |
 | `@[vc_iter]`    | methods         | Makes the instance its own iterator (`__iter__`)            |
 | `@[vc_next]`    | methods         | Produces one item per call (`__next__`)                     |
@@ -1275,6 +1277,30 @@ otherwise points at memory Python frees as soon as the last reference to the `st
 and reads garbage later with nothing pointing at the store. Under `@[vc_nogil]` one more
 case applies: the items of a list that another Python thread mutates during the call can
 be freed mid-call, so clone them before relying on them if the list is shared.
+
+**Awaitable functions.** `@[vc_async]` turns a `@[vc_fn]` into something `await` takes:
+the call returns an asyncio future on the running loop, the V function runs on a thread
+of its own without the GIL, and the loop settles the future with the result, the error's
+exception or a panic's RuntimeError. Calls gathered together overlap, and a future
+cancelled in the meantime is left alone. No executor or runtime crate is involved.
+
+<!-- readme-test: skip -->
+```v
+@[vc_fn]
+@[vc_async]
+pub fn fetch_page(url string) !string {
+	// Runs without the GIL: report a failure through the error's code, not raise_domain.
+	return http_get(url) or { error_with_code(err.msg(), int(vcraft.PyExc.connection_error)) }
+}
+```
+
+```python
+pages = await asyncio.gather(*(m.fetch_page(u) for u in urls))
+```
+
+The arguments are read on the calling thread and copied where they only borrow from
+Python (`str`, `bytes`, a `list[str]`), so the parameters are scalars, strings, bytes,
+enums and lists of those. The stub declares the function `async def`.
 
 **Allocating from any thread.** Every generated entry point registers the calling thread
 with V's collector before it runs any V code, so V code may allocate on whatever Python

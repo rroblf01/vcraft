@@ -245,6 +245,9 @@ PyObject *vpy_exc_interrupted_error(void);
 PyObject *vpy_exc_child_process_error(void);
 PyObject *vpy_exc_process_lookup_error(void);
 void vpy_raise_errno(int code, const char *context, Py_ssize_t len);
+PyObject *vpy_running_loop(void);
+PyObject *vpy_async_settle_fn(void);
+PyObject *vpy_new_runtime_error(void);
 PyObject *vpy_structseq_type(const char *name, const char *const *fields, int count,
 	const char *doc);
 PyObject *vpy_structseq_new(PyObject *type);

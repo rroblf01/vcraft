@@ -54,12 +54,6 @@ Level with PyO3 since the collector stopped reading `/proc/self/maps` at start-u
 
 ## Language-level limitations
 
-### No native async functions
-PyO3 supports `async fn` that returns a future. vcraft has `run_coroutine` and
-`call_async` for calling Python async from V, but no V async that Python can await.
-
-**Mitigation:** Wrap the sync function in a Python `async def` in the package's
-`__init__.py`, or use `vcraft.run_coroutine` in reverse (V calls Python async).
 
 ### No freelist
 PyO3 supports `#[pyo3(freelist)]`. vcraft does not, by decision (see `DECISIONS.md`):
@@ -102,7 +96,6 @@ vcraft.released(fn [ptr] () { unsafe { *ptr = ... } })
 - `#[pyo3(get_all)]` / `#[pyo3(set_all)]` — redundant with `@[vc_field]`.
 
 ### Not implemented (complex, V-level)
-- Native async functions.
 - Object freelist.
 - Smart pointers.
 

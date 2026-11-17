@@ -184,6 +184,15 @@ def shape_kind(s: float | int | str | bool | dict[str, Any]) -> str: ...
 
 def make_shape(kind: int) -> float | int | str | bool | dict[str, Any]: ...
 
+"""slow_square is awaitable: it runs on a thread of its own, without the GIL, so several
+	calls gathered together overlap. It runs without the GIL, so it reports a failure
+	through the error's code rather than `raise_domain`, which would touch Python.
+"""
+async def slow_square(n: int, label: str) -> str: ...
+
+"""async_boom panics on its worker thread; the future gets the RuntimeError."""
+async def async_boom(i: int) -> int: ...
+
 """raise_os raises the OSError subclass an errno value stands for, with `context` as the
 	part after the colon in its message.
 """

@@ -77,6 +77,7 @@ fuente produce un stub `.pyi`, así que `help()` y un type checker ven lo mismo.
 | `@[vc_handle]` | campos de struct | Estado nativo del que la clase es dueña: un puntero y su liberador, liberado en dealloc |
 | `@[vc_opaque]` | `pub fn` | Un resultado `voidptr` viaja en cápsula, y cada parámetro `voidptr` se desenvuelve de una |
 | `@[vc_nogil]` | `pub fn` | Se ejecuta con el GIL liberado (métodos incluidos) |
+| `@[vc_async]` | `pub fn` | Awaitable: devuelve un future de asyncio y se ejecuta en su propio hilo sin el GIL |
 | `@[vc_raw]` | `pub fn` | Sin marshalling; tú manejas `PyObject *` |
 | `@[vc_mapping]` | `pub struct` | Activa el protocolo de mapeo (`obj[key]`, `obj[key] = v`, `del obj[key]`) |
 | `@[vc_pass_module]` | `pub fn` | Pasa el objeto módulo como primer argumento |

@@ -283,6 +283,70 @@ fn emit_rebuild(p Project) string {
 		'}\n\n'
 }
 
+// emit_async_dispatch renders the rest of a `@[vc_async]` trampoline: copy what the
+// arguments only borrow from Python, take a future on the running loop, start the worker
+// on a thread of its own, and return the future. The future is referenced before the
+// thread starts, because the worker releases its own reference when it settles it.
+fn emit_async_dispatch(f Func, names []string) string {
+	mut w := new_builder()
+	mut owned := []string{}
+	for i, param in f.params {
+		t := param.v_type.trim_space()
+		n := names[i]
+		copy := match lookup(t) {
+			.str, .bytes { '${n}.clone()' }
+			.seq { if lookup(element_type(t)) == .str { '${n}.map(it.clone())' } else { n } }
+			else { n }
+		}
+		w.write_string('\t${n}_owned := ${copy}\n')
+		owned << '${n}_owned'
+	}
+	w.write_string('\tcall := vcraft.async_begin() or { return unsafe { nil } }\n')
+	w.write_string('\tfuture := call.future.new_ref()\n')
+	args := if owned.len > 0 { ', ' + owned.join(', ') } else { '' }
+	w.write_string('\tspawn vcraft_generated__async_${f.name}(call${args})\n')
+	w.write_string('\treturn future.ptr\n')
+	return w.str()
+}
+
+// emit_async_worker renders the function a `@[vc_async]` call runs on its own thread.
+// It runs the V function without the GIL, behind the usual panic guard, and settles the
+// future through the runtime, which takes the GIL to box the result or the exception.
+fn emit_async_worker(f Func) string {
+	mut w := new_builder()
+	mut params := ['call vcraft.AsyncCall']
+	mut names := []string{}
+	for i, param in f.params {
+		params << '${local_name(i)} ${param.v_type.trim_space()}'
+		names << local_name(i)
+	}
+	w.write_string('fn vcraft_generated__async_${f.name}(${params.join(', ')}) {\n')
+	ret := lookup(f.v_ret)
+	has_value := ret != .void
+	if has_value {
+		w.write_string('\t${result_decl_of(f, ret)}\n')
+	}
+	w.write_string('\tdefer {\n\t\tif message := recover() {\n\t\t\tvcraft.async_panic(call, message)\n\t\t}\n\t}\n')
+	call := '${f.name}(${names.join(', ')})'
+	target := if has_value { '${result_target(ret, f.v_ret)} = ' } else { '' }
+	if f.returns_result {
+		w.write_string('\t${target}${call} or {\n\t\tvcraft.async_fail(call, err)\n\t\treturn\n\t}\n')
+	} else {
+		w.write_string('\t${target}${call}\n')
+	}
+	boxed := if has_value {
+		r := return_expr(ret, 'result', false, f.v_ret, false, false, '')
+		'vcraft.steal(' + r + ')'
+	} else {
+		'vcraft.to_py_none()'
+	}
+	w.write_string('\tstate := vcraft.gil_ensure()\n')
+	w.write_string('\tvcraft.async_succeed(call, ${boxed})\n')
+	w.write_string('\tvcraft.gil_release(state)\n')
+	w.write_string('}\n\n')
+	return w.str()
+}
+
 // pyinterp renders a `${name}` the way it must appear in generated V source.
 //
 // V has no spelling for a literal `${` inside a double-quoted string, so a generator
@@ -1243,6 +1307,13 @@ pub fn emit_trampoline(f Func) string {
 	}
 
 
+	if f.is_async {
+		w.write_string(emit_async_dispatch(f, names))
+		w.write_string('}\n\n')
+		w.write_string(emit_async_worker(f))
+		return w.str()
+	}
+
 	ret := lookup(f.v_ret)
 	has_value := f.raw || ret != .void
 
@@ -2152,7 +2223,7 @@ pub fn emit_stubs(p Project) string {
 		if f.doc.len > 0 {
 			w.write_string('${indent_doc(f.doc)}\n')
 		}
-		w.write_string('def ${f.name}(${param_list(f)}) -> ${result_annotation(f)}: ...\n')
+		w.write_string('${if f.is_async { 'async def' } else { 'def' }} ${f.name}(${param_list(f)}) -> ${result_annotation(f)}: ...\n')
 	}
 	for c in p.classes {
 		w.write_string('\n')

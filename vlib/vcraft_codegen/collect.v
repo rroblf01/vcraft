@@ -195,6 +195,7 @@ fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 		raw:           attr_raw in block.attrs
 		pass_module:   attr_pass_module in block.attrs
 		nogil:         attr_nogil in block.attrs
+		is_async:      attr_async in block.attrs
 		export_buffer: attr_memoryview in block.attrs
 		opaque:         attr_opaque in block.attrs
 		opaque_destructor: (block.args[attr_opaque] or { '' }).trim("'\"")
@@ -2310,8 +2311,44 @@ pub fn default_fits(strategy Strategy, value string) bool {
 	}
 }
 
+// async_param_ok reports whether a parameter type can be handed to the worker thread of a
+// `@[vc_async]` call: a value V owns once read, or a borrowed one the trampoline copies (a
+// `string`, `[]u8`, the strings of a `[]string`).
+fn async_param_ok(v_type string) bool {
+	t := v_type.trim_space()
+	return match lookup(t) {
+		.bool, .int, .uint, .float, .str, .bytes, .complex, .enum_type { true }
+		.seq { lookup(element_type(t)) in [.bool, .int, .uint, .float, .str] }
+		else { false }
+	}
+}
+
+// validate_async rejects what a `@[vc_async]` function cannot be.
+fn validate_async(mut p Project, path string, decl astquery.Declaration, f Func) bool {
+	if f.raw || f.nogil || f.pass_module || f.opaque || f.from_py.len > 0 || f.into_py.len > 0
+		|| f.export_buffer {
+		report(mut p, path, decl, 'error: `@[vc_async] ${decl.name}` cannot also be raw, nogil, opaque, pass the module or convert through a custom function: it already runs without the GIL on a thread of its own')
+		return false
+	}
+	for param in f.params {
+		if !async_param_ok(param.v_type) {
+			report(mut p, path, decl, 'error: `@[vc_async] ${decl.name}` parameter `${param.name}` is `${param.v_type}`; an awaitable function takes scalars, strings, bytes, enums and lists of those, which can be handed to another thread')
+			return false
+		}
+	}
+	ret := lookup(f.v_ret)
+	if ret in [.pyobj, .pyref] || f.instance_result.len > 0 {
+		report(mut p, path, decl, 'error: `@[vc_async] ${decl.name}` returns `${f.v_ret}`; an awaitable function returns a value vcraft converts, not a Python object or an instance')
+		return false
+	}
+	return true
+}
+
 // validate rejects a declaration the generator cannot honour, with a position.
 fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
+	if f.is_async && !validate_async(mut p, path, decl, f) {
+		return
+	}
 	if f.opaque {
 		if f.v_ret.trim_space() != 'voidptr' && !f.params.any(it.v_type.trim_space() == 'voidptr') {
 			report(mut p, path, decl,

@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 47,
+            glue.count("add_function_owned") == 49,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -394,6 +394,49 @@ def main() -> int:
              lambda: pickle.dumps(h.Registry()))
     t.raises("the rebuild only builds the module's classes", TypeError,
              "not a class of this module", lambda: h._vcraft_rebuild(int, {}, None))
+
+    print("awaitable functions")
+    import asyncio
+    import time as pytime
+
+    async def gathered():
+        start = pytime.perf_counter()
+        results = await asyncio.gather(*(h.slow_square(n, f"t{n}") for n in range(4)))
+        return results, pytime.perf_counter() - start
+
+    results, elapsed = asyncio.run(gathered())
+    t.equal("an awaitable V function returns its result", results, ["t0:0", "t1:1", "t2:4", "t3:9"])
+    t.check("calls gathered together overlap (each runs without the GIL)", elapsed < 0.2,
+            f"{elapsed:.3f}s for four 60 ms calls")
+
+    async def failing():
+        return await h.slow_square(-1, "x")
+
+    t.raises("its error becomes the exception the code names", ValueError, "negative input",
+             lambda: asyncio.run(failing()))
+
+    async def panicking():
+        return await h.async_boom(9)
+
+    t.raises("a panic on the worker is a RuntimeError", RuntimeError, "panic in V code",
+             lambda: asyncio.run(panicking()))
+
+    async def boom_ok():
+        return await h.async_boom(1)
+
+    t.equal("the same function returns normally", asyncio.run(boom_ok()), 2)
+    t.raises("outside a running loop it says so", RuntimeError, "no running event loop",
+             lambda: h.slow_square(1, "x"))
+
+    async def cancelled():
+        fut = h.slow_square(2, "c")
+        fut.cancel()
+        await asyncio.sleep(0.15)
+        return fut.cancelled()
+
+    t.check("a cancelled call is left alone when it finishes", asyncio.run(cancelled()))
+    t.check("the stub declares it async",
+            "async def slow_square(n: int, label: str) -> str: ..." in STUBS.read_text())
 
     print("system errors")
     import errno
