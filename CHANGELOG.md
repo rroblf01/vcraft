@@ -104,6 +104,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   It builds instrumented, runs the script, and rebuilds with the profile. On the benchmark
   22 of 26 workloads got 4-31% faster, while the sieve (1.64x) and recursive `fib`
   (1.17x) got slower, so it is opt-in and documented as a trade to measure.
+- **A V panic's traceback names its V function, file and line**: a frame
+  `File "src/lib.v", line 42, in parse` (the function's declaration), with the V source
+  line shown when the file is readable. Works under abi3; costs only the panic path.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.

@@ -212,6 +212,17 @@ def main() -> int:
     t.raises("a method can panic", RuntimeError, "failed after writing",
              lambda: tally.add_then_fail(5))
     t.equal("a method works in place, so a write before a panic stays", tally.sum, 5)
+    import traceback as _tb
+    source_lines = (ROOT / "examples" / "hello" / "src" / "hello_native.v").read_text().splitlines()
+    decl_line = next(i + 1 for i, l in enumerate(source_lines) if "fn (mut t Tally) add_then_fail" in l)
+    try:
+        tally.add_then_fail(1)
+    except RuntimeError as exc:
+        frames = [(f.filename, f.lineno, f.name) for f in _tb.extract_tb(exc.__traceback__)]
+    else:
+        frames = []
+    t.check("a panic's traceback names the V source and line",
+            ("src/hello_native.v", decl_line, "add_then_fail") in frames, str(frames))
 
     print("collector")
     # Enough allocation to run V's collector some five hundred times: `repeat` builds

@@ -2102,6 +2102,8 @@ fn link_classes(mut p Project) {
 		for f in p.funcs {
 			if f.name.to_lower().replace('_', '') == wanted {
 				p.classes[i].ctor_fn = f.name
+				p.classes[i].ctor_origin = f.origin
+				p.classes[i].ctor_line = f.line
 				p.classes[i].ctor_params = f.params
 				p.classes[i].ctor_opaque = f.opaque
 				p.classes[i].ctor_literal = constructor_literal(f, c.name)

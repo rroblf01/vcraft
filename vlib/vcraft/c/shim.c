@@ -14,6 +14,68 @@
 
 #include <string.h>
 
+// vpy_add_v_frame adds a traceback frame naming V source -- `File "src/lib.v", line 42,
+// in parse` -- to the exception being raised, so a panic in V code says where it
+// happened the way a Python error does.
+//
+// A frame cannot be made by hand under the stable ABI, so Python makes it: a one-line
+// function `def parse(): raise exc`, compiled with the V file's name and placed on the
+// V line, is called and re-raises the pending exception, and the interpreter appends its
+// own frame for it. `traceback` then also prints that V line when the file is readable.
+// Only the panic path pays for it. Any failure leaves the exception as it was.
+void vpy_add_v_frame(const char *file, int line, const char *func) {
+	PyObject *type = NULL, *value = NULL, *tb = NULL;
+	PyErr_Fetch(&type, &value, &tb);
+	if (type == NULL) {
+		return;
+	}
+	PyErr_NormalizeException(&type, &value, &tb);
+	if (value == NULL || line < 1 || line > 1000000) {
+		PyErr_Restore(type, value, tb);
+		return;
+	}
+	if (tb != NULL) {
+		PyException_SetTraceback(value, tb);
+	}
+	PyObject *source = PyUnicode_FromFormat("def %s(): raise __vcraft_exc\n", func);
+	PyObject *padded = NULL, *code = NULL, *globals = NULL, *ran = NULL, *fn = NULL, *res = NULL;
+	if (source != NULL) {
+		PyObject *newlines = PyUnicode_FromString("\n");
+		PyObject *lead = newlines ? PySequence_Repeat(newlines, line - 1) : NULL;
+		Py_XDECREF(newlines);
+		padded = lead ? PyUnicode_Concat(lead, source) : NULL;
+		Py_XDECREF(lead);
+	}
+	const char *text = padded ? PyUnicode_AsUTF8AndSize(padded, NULL) : NULL;
+	code = text ? Py_CompileString(text, file, Py_file_input) : NULL;
+	globals = code ? PyDict_New() : NULL;
+	if (globals != NULL && PyDict_SetItemString(globals, "__builtins__", PyEval_GetBuiltins()) == 0
+		&& PyDict_SetItemString(globals, "__vcraft_exc", value) == 0) {
+		ran = PyEval_EvalCode(code, globals, globals);
+		fn = ran ? PyDict_GetItemString(globals, func) : NULL;
+	}
+	if (fn != NULL) {
+		Py_INCREF(fn);
+		res = PyObject_CallNoArgs(fn);
+		Py_DECREF(fn);
+	}
+	Py_XDECREF(source);
+	Py_XDECREF(padded);
+	Py_XDECREF(code);
+	Py_XDECREF(ran);
+	Py_XDECREF(globals);
+	if (fn != NULL && res == NULL && PyErr_Occurred()) {
+		// The re-raise is the exception now pending, with the V frame on its traceback.
+		Py_DECREF(type);
+		Py_DECREF(value);
+		Py_XDECREF(tb);
+		return;
+	}
+	Py_XDECREF(res);
+	PyErr_Clear();
+	PyErr_Restore(type, value, tb);
+}
+
 int vpy_python_api_version(void) {
 	return PYTHON_API_VERSION;
 }

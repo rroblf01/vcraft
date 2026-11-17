@@ -525,6 +525,10 @@ pub mut:
 	// ctor_fn is the user's `new_*` function, run by `tp_new`. Empty when the class
 	// has none, in which case instances can only be built from V.
 	ctor_fn string
+	// ctor_origin and ctor_line are where the constructor is declared, for the traceback
+	// frame a panic in it gets (see `locate_panics`).
+	ctor_origin string
+	ctor_line   int
 	// ctor_literal is the struct literal the constructor returns, `Name{...}` with the
 	// `&` dropped, when its whole body is `return &Name{...}`; empty otherwise. `newstate`
 	// evaluates it in place of calling the constructor, which saves the heap block the

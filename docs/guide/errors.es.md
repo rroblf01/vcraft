@@ -67,6 +67,22 @@ pánico se convierta en una excepción Python en vez de tumbar el intérprete. E
 un constructor a medio construir reservó se libera al salir, así que una construcción
 fallida no filtra.
 
+El traceback nombra la función V donde ocurrió el pánico, con su fichero y su línea, y
+muestra la línea de V cuando el fichero se puede leer desde el directorio de trabajo:
+
+```text
+Traceback (most recent call last):
+  File "app.py", line 6, in <module>
+    t.add_then_fail(3)
+  File "src/hello_native.v", line 1030, in add_then_fail
+    pub fn (mut t Tally) add_then_fail(by i64) {
+RuntimeError: panic in V code: failed after writing
+```
+
+La línea es la de la declaración de la función: V da el mensaje del pánico pero no en qué
+punto del cuerpo ocurrió. Un pánico cuesta unos 40 µs más por el frame; las llamadas
+normales y los `error()` no cambian.
+
 ## Siguiente
 
 - [La línea de comandos](cli.md)

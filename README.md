@@ -1283,6 +1283,10 @@ RuntimeError: panic in V code: substr(0, 1) out of bounds (len=0) s=
 5
 ```
 
+The traceback also gains a frame for the V function, `File "src/mylib.v", line 42, in
+first_char`, with the V line printed when the file is readable: the function's
+declaration, since V reports a panic's message but not its line within the body.
+
 A recovered panic is raised rather than reaching Python as a half-written result,
 which is what the wrapper's `error_is_set` check after the call is for. The real
 wrapper also clears a local flag on every normal return (after evaluating what it

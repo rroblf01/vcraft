@@ -212,6 +212,19 @@ pub fn raise_runtime_error(message string) {
 // A panic V raises because an allocation failed becomes MemoryError, as a failed
 // allocation does anywhere else in CPython; every other panic is a RuntimeError naming
 // the V message. Both keep the "panic in V code" prefix, so the origin is visible.
+fn C.vpy_add_v_frame(file &char, line int, func &char)
+
+// raise_panic_at is `raise_panic` plus a traceback frame naming the V function's source
+// file and line, which the generated glue passes. See `vpy_add_v_frame`.
+pub fn raise_panic_at(message string, file string, line int, func string) {
+	raise_panic(message)
+	f := cstring(file)
+	n := cstring(func)
+	C.vpy_add_v_frame(f, line, n)
+	free_cstring(f)
+	free_cstring(n)
+}
+
 pub fn raise_panic(message string) {
 	if message == 'memory allocation failure' {
 		raise(.memory_error, 'panic in V code: ${message}')

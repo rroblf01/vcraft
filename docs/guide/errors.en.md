@@ -66,6 +66,22 @@ A V panic calls `exit(1)` by default; a trampoline wraps the call so a panic bec
 Python exception instead of taking the interpreter down. The object a half-built
 constructor allocated is released on the way out, so a failed construction does not leak.
 
+The traceback names the V function where the panic happened, with its file and line, and
+shows the V line when the file is readable from the working directory:
+
+```text
+Traceback (most recent call last):
+  File "app.py", line 6, in <module>
+    t.add_then_fail(3)
+  File "src/hello_native.v", line 1030, in add_then_fail
+    pub fn (mut t Tally) add_then_fail(by i64) {
+RuntimeError: panic in V code: failed after writing
+```
+
+The line is the function's declaration: V reports a panic's message but not where in
+the body it happened. A panic costs about 40 µs more for the frame; ordinary calls and
+`error()` returns are unchanged.
+
 ## Next
 
 - [The command line](cli.md)

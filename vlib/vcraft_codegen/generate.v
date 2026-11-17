@@ -61,7 +61,8 @@ pub fn generate(opt Options) Generated {
 
 	return Generated{
 		glue_path:    os.join_path(src, '_vcraft_generated.v')
-		glue:         skip_recover_on_return(enter_collector(emit_glue(p)))
+		glue:         locate_panics(skip_recover_on_return(enter_collector(emit_glue(p))), p,
+			opt.project_root)
 		stub_path:    os.join_path(opt.project_root, opt.stubs_dir, opt.package + '.pyi')
 		stub:         emit_stubs(p)
 		diagnostics: p.diagnostics
@@ -253,6 +254,70 @@ fn cannot_panic(expr string) bool {
 	}
 	return expr.len > 0 && (expr[0].is_letter() || expr[0] == `_`)
 		&& expr.bytes().all(it.is_letter() || it.is_digit() || it == `_`)
+}
+
+// locate_panics makes each trampoline report where its V function lives when it turns
+// a panic into an exception: `vcraft.raise_panic(message)` becomes
+// `vcraft.raise_panic_at(message, 'src/lib.v', 42, 'parse')`, which adds a traceback frame
+// for that line. Done over the finished text, like `enter_collector`, so every emitter's
+// guard gets it; a trampoline the map does not know keeps the plain call.
+fn locate_panics(glue string, p Project, root string) string {
+	mut where := map[string]string{}
+	for f in p.funcs {
+		panic_location(mut where, f, root)
+	}
+	for c in p.classes {
+		for m in c.methods {
+			panic_location(mut where, m, root)
+			// `tp_iter` and `tp_iternext` are named after the class, not the method.
+			if m.is_iter || m.is_next {
+				mut slot := m
+				slot.trampoline = if m.is_iter { c.iter_fn } else { c.next_fn }
+				panic_location(mut where, slot, root)
+			}
+		}
+		if c.ctor_fn.len > 0 {
+			panic_location(mut where, Func{
+				name:       c.ctor_fn
+				trampoline: 'vcraft_generated__new_${c.key}'
+				origin:     c.ctor_origin
+				line:       c.ctor_line
+			}, root)
+		}
+	}
+	mut out := []string{cap: glue.len / 32}
+	mut current := ''
+	for line in glue.split_into_lines() {
+		if line.starts_with('fn ') {
+			current = line[3..].all_before('(')
+		}
+		if line.ends_with('vcraft.raise_panic(message)') {
+			if loc := where[current] {
+				out << line.replace('vcraft.raise_panic(message)', 'vcraft.raise_panic_at(message, ${loc})')
+				continue
+			}
+		}
+		out << line
+	}
+	return out.join('\n') + '\n'
+}
+
+// panic_location records where `f` is declared, keyed by its trampoline, in the form
+// `raise_panic_at` takes: the file relative to the project, the line and the name.
+fn panic_location(mut where map[string]string, f Func, root string) {
+	if f.trampoline.len == 0 || f.origin.len == 0 || f.line < 1 {
+		return
+	}
+	mut file := f.origin
+	prefix := root.trim_right('/') + '/'
+	if file.starts_with(prefix) {
+		file = file[prefix.len..]
+	}
+	if file.starts_with('./') {
+		file = file[2..]
+	}
+	name := if f.name.len > 0 { f.name } else { f.py_name }
+	where[f.trampoline] = "'${file}', ${f.line}, '${name}'"
 }
 
 // enter_collector starts every function in the glue by registering the calling thread
