@@ -78,6 +78,12 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   a signature uses them, and the stub names `datetime`/`decimal`.
 - **Logging into Python.** `vcraft.log_debug/info/warning/error` write through
   `logging.getLogger(<module>)` from any thread, the GIL taken for the call.
+- **`import vcraft_tool.auto`**: an import hook that builds a `.v` file found on
+  `sys.path` on first import, cached by source, interpreter and vcraft version — no
+  project, `vcraft.toml` or wheel needed.
+- **`%load_ext vcraft_tool.jupyter`**: a `%%vcraft` cell magic that compiles a V cell and
+  defines its exported functions and classes in the notebook; re-running an edited cell
+  loads the new code.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.

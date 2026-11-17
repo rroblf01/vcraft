@@ -116,6 +116,7 @@ to publish to PyPI. See [Continuous integration](#continuous-integration).
 - [Classes and properties](#classes-and-properties)
 - [Errors and panics](#errors-and-panics)
 - [The command line](#the-command-line)
+- [Without a project: `.v` imports and notebooks](#without-a-project-v-imports-and-notebooks)
 - [Wheels](#wheels)
 - [Generated project layout](#generated-project-layout)
 - [Continuous integration](#continuous-integration)
@@ -1442,6 +1443,31 @@ a licence and a `Requires-Python`, and none of those are V's business.
 
 See [`vlib/vcraft_project/README.md`](vlib/vcraft_project/README.md) for the TOML
 subset that is parsed, and for the compiler constraints that shaped it.
+
+## Without a project: `.v` imports and notebooks
+
+```python
+import vcraft_tool.auto   # installs an import hook
+import fastmath           # builds fastmath.v from sys.path, cached, then imports it
+```
+
+```python
+%load_ext vcraft_tool.jupyter
+```
+
+<!-- readme-test: skip -->
+```v
+%%vcraft
+@[vc_fn]
+pub fn add(a int, b int) int {
+	return a + b
+}
+```
+
+Both come with `pip install vcraft`. The hook builds a single `.v` file (the file is the
+module) into a cache keyed by its source, the interpreter and the vcraft version; the
+magic does the same for a notebook cell and defines what it exports in the notebook.
+Details in [the guide](docs/guide/import-hook.en.md).
 
 ---
 

@@ -346,6 +346,41 @@ def main() -> int:
             produced = list((project / "dist").glob("*.whl"))
             t.check("the installed tool wrote a wheel", len(produced) == 1,
                     str([p.name for p in (project / "dist").glob("*")]))
+            # `import vcraft_tool.auto` makes a `.v` file importable with no project, and
+            # the Jupyter magic builds a cell the same way; IPython itself is stood in for.
+            scripts_dir = tmp / "auto-import"
+            scripts_dir.mkdir()
+            (scripts_dir / "fastmath.v").write_text(
+                "@[vc_fn]\npub fn square(x int) int {\n\treturn x * x\n}\n")
+            auto_env = dict(env, VCRAFT_HOME=str(tmp / "auto-cache"))
+            auto_env.pop("VCRAFT_BIN", None)
+            python = str(vcraft_build.venv_python(venv_dir))
+            proc = subprocess.run(
+                [python, "-c",
+                 "import vcraft_tool.auto, fastmath\n"
+                 "print(fastmath.square(12))\n"
+                 "from vcraft_tool import jupyter\n"
+                 "class IP:\n"
+                 "    user_ns = {}\n"
+                 "    magics = {}\n"
+                 "    def register_magic_function(self, fn, kind, name):\n"
+                 "        self.magics[(kind, name)] = fn\n"
+                 "ip = IP()\n"
+                 "jupyter.load_ipython_extension(ip)\n"
+                 "ip.magics[('cell', 'vcraft')]('', '@[vc_fn]\\npub fn add(a int, b int) int {\\n\\treturn a + b\\n}\\n')\n"
+                 "print(ip.user_ns['add'](2, 40))\n"],
+                cwd=scripts_dir, env=auto_env, capture_output=True, text=True)
+            t.check("import vcraft_tool.auto builds and imports a .v file",
+                    proc.returncode == 0 and proc.stdout.split()[:1] == ["144"],
+                    (proc.stderr or proc.stdout).strip()[-400:])
+            t.check("the %%vcraft cell magic defines the cell's functions",
+                    proc.stdout.split()[1:2] == ["42"], (proc.stderr or proc.stdout).strip()[-400:])
+            (scripts_dir / "fastmath.v").write_text(
+                "@[vc_fn]\npub fn square(x int) int {\n\treturn x * x + 1\n}\n")
+            proc = subprocess.run([python, "-c", "import vcraft_tool.auto, fastmath\nprint(fastmath.square(12))"],
+                                  cwd=scripts_dir, env=auto_env, capture_output=True, text=True)
+            t.check("an edited .v file is rebuilt", proc.stdout.strip() == "145",
+                    (proc.stderr or proc.stdout).strip()[-300:])
         else:
             print("  skip no built binary for the real payload")
     except _Abort:
