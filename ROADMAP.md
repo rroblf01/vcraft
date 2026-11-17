@@ -95,6 +95,11 @@ Additions that do not change anything 1.x promises.
 - [x] **A real project** published to PyPI with vcraft: [`vqubit`](https://pypi.org/project/vqubit/),
       a dependency-free quantum computing framework whose linear algebra, gate matrices and
       simulators are written in V, shipped as one abi3 wheel per platform. Ships in 1.4.0.
+- [x] **Easier to adopt:** `import vcraft_tool.auto` and a `%%vcraft` Jupyter magic,
+      `vcraft init` for an existing Python project (`python-source`), `vcraft develop
+      --watch`, `*args`/`**kwargs`, `__getattr__`/`__setattr__`, dates, decimals, big
+      integers, JSON values and logging, an examples gallery, a guide for PyO3 users, a
+      benchmarks page, and trusted publishing from `vcraft generate-ci`. Ships in 1.8.0.
 
 ## Platforms and toolchain
 

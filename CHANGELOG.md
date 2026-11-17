@@ -158,6 +158,8 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 - **`develop` labels the wheel's size as the wheel's**, noting an editable one is a
   pointer, instead of an unlabelled `size` that read as the extension's.
+- **`scripts/check-perf-baseline.py` ran at all.** A stray line left at the end of the
+  file made it fail with a `NameError` before measuring anything, in CI too.
 - **The CI guide promised a release step the generated workflow did not have**; it has
   one now (see Added).
 - **`--module <name>` with a space** (as the docs write it) was read as a flag plus a

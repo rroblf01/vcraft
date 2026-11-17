@@ -42,4 +42,3 @@ if ops < limit:
     print(f"REGRESSION: {ops:,.0f} < {limit:,.0f} (baseline {baseline['greet_ops_per_sec']:,.0f})")
     sys.exit(1)
 print("ok: no regression")
-PY
