@@ -58,6 +58,18 @@ Un `&T` donde `T` es un `@[vc_class]` pasa la instancia misma, no una copia: un 
 entrega a la función V un puntero al estado vivo de la instancia, y un resultado se empareja
 de vuelta con la instancia a la que apunta. Ver [Clases y propiedades](classes.md).
 
+## Structs, secuencias de struct y sumtypes
+
+Un `struct` plano sale como `dict`. Al entrar, también acepta un namedtuple o cualquier
+tupla con sus campos en orden, y un objeto que los guarde como atributos (una dataclass, un
+`SimpleNamespace`). `@[vc_structseq]` sobre el struct hace que salga como una secuencia de
+struct -- una tupla con campos con nombre, como `os.stat_result` -- que es más barata que un
+dict y aparece como `NamedTuple` en el stub.
+
+Un sumtype (`type Shape = int | string | Point`) cruza como la variante que contiene y se lee
+probando las variantes: un `bool` solo para un `bool` real, los enteros antes que los
+flotantes y después el orden declarado. El stub lo tipa como una unión.
+
 ## Strings prestados
 
 Un `str` no se copia al entrar. Un parámetro `string`, los elementos de un `[]string`, las

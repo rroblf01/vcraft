@@ -143,7 +143,24 @@ pub fn glue_module_body(p Project) string {
 	for e in p.enums {
 		w.write_string('\tg_vc_enum_' + e.key + ' = vcraft.PyObj{}\n')
 	}
+	// The struct sequence types, for the same reason: the boxers run after `exec`. A
+	// dict struct's field names are interned once here rather than built per boxing.
+	for s in p.structs {
+		if s.structseq {
+			w.write_string('\tg_vc_structseq_' + s.key + ' = vcraft.PyObj{}\n')
+		} else {
+			for i, _ in s.fields {
+				w.write_string('\tg_vc_skey_${s.key}_${i} = vcraft.PyObj{}\n')
+			}
+		}
+	}
+	if p.classes.len > 0 {
+		w.write_string('\tg_vc_rebuild = vcraft.PyObj{}\n')
+	}
 	w.write_string(')\n\n')
+	if p.classes.len > 0 {
+		w.write_string(emit_rebuild(p))
+	}
 	w.write_string("@[export: 'PyInit_${p.package}']\n")
 	w.write_string('fn vcraft_generated__pyinit() voidptr {\n')
 	// The mirrors of CPython's structs are checked before anything is built with
@@ -175,6 +192,10 @@ pub fn glue_module_body(p Project) string {
 		w.write_string('\tg_vc_module.add_function_owned(' + vstring_literal(f.py_name) +
 			', voidptr(' + f.trampoline + '), ' + flags + ',\n')
 		w.write_string('\t\t${vstring_literal(python_signature(f))})\n')
+	}
+	if p.classes.len > 0 {
+		w.write_string("\tg_vc_module.add_function_owned('_vcraft_rebuild', voidptr(vcraft_generated__rebuild), vcraft.meth_fastcall_keywords,\n")
+		w.write_string("\t\t'_vcraft_rebuild(cls, fields, extra)')\n")
 	}
 	w.write_string('\tg_vc_module.set_exec(voidptr(vcraft_generated__exec))\n')
 	w.write_string('\tmodule := g_vc_module.seal()\n')
@@ -220,9 +241,46 @@ pub fn glue_module_body(p Project) string {
 		w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(e.py_name) +
 			', g_vc_enum_' + e.key + ')\n')
 	}
+	for s in p.structs {
+		if !s.structseq {
+			for i, f in s.fields {
+				w.write_string('\tg_vc_skey_${s.key}_${i} = vcraft.interned(${vstring_literal(f.name)})\n')
+			}
+			continue
+		}
+		names := s.fields.map(vstring_literal(it.name)).join(', ')
+		w.write_string('\tg_vc_structseq_' + s.key + ' = vcraft.structseq_type(' +
+			vstring_literal(p.package + '.' + s.py_name) + ', [' + names + '], \'\')\n')
+		w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(s.py_name) +
+			', g_vc_structseq_' + s.key + ')\n')
+	}
+	if p.classes.len > 0 {
+		w.write_string("\tg_vc_rebuild = vcraft.getattr(module, '_vcraft_rebuild')\n")
+	}
 	w.write_string('\t_ = module\n')
 	w.write_string('\treturn 0\n}\n')
 	return w.str()
+}
+
+// emit_rebuild renders the module's `_vcraft_rebuild(cls, fields, extra)`, the other half
+// of every class's `__reduce__`. It only builds a class of this module: pickle data can
+// name any callable's arguments, and allocating some other type without running its
+// constructor would hand Python a broken object.
+fn emit_rebuild(p Project) string {
+	mut checks := []string{}
+	for c in p.classes {
+		checks << 'vcraft.is_class_of(cls, ${c.ctype}.ptr)'
+	}
+	return 'fn vcraft_generated__rebuild(_self voidptr, raw_args voidptr, nargs isize, kwnames voidptr) voidptr {\n' +
+		'\tif nargs != 3 || kwnames != unsafe { nil } {\n' +
+		"\t\tvcraft.raise_type_error('_vcraft_rebuild() takes exactly 3 positional arguments')\n" +
+		'\t\treturn unsafe { nil }\n\t}\n' +
+		'\tcls := vcraft.arg_at(raw_args, 0).ptr\n' +
+		'\tif !(${checks.join(' || ')}) {\n' +
+		"\t\tvcraft.raise_type_error('_vcraft_rebuild: not a class of this module')\n" +
+		'\t\treturn unsafe { nil }\n\t}\n' +
+		'\treturn vcraft.rebuild_fields(cls, vcraft.arg_at(raw_args, 1).ptr, vcraft.arg_at(raw_args, 2).ptr).ptr\n' +
+		'}\n\n'
 }
 
 // pyinterp renders a `${name}` the way it must appear in generated V source.
@@ -304,7 +362,7 @@ pub fn render_class_exec(p Project, c Class) string {
 	w.write_string('\t\tvoidptr(' + c.dealloc + '),\n')
 	// Taking the address of a mutable array element needs an unsafe block, and both
 	// tables are module-level globals that the type borrows for its lifetime.
-	if c.methods.any(it.property == false) {
+	if true {
 		w.write_string('\t\tunsafe { voidptr(&g_vc_methods_' + c.key + '[0]) },\n')
 	} else {
 		w.write_string('\t\tunsafe { nil },\n')
@@ -1425,6 +1483,22 @@ pub fn reader_fn(v_type string) string {
 			'\t\treturn unsafe { ${t}(v) }\n' +
 			'\t}'
 	}
+	if is_sumtype(t) {
+		info := sumtype_info(t) or { return '' }
+		mut body := ''
+		for variant in sum_variant_order(info.variants) {
+			if lookup(variant) == .bool {
+				body += '\t\tif o.type_is(vcraft.bool_type()) {\n\t\t\treturn ${t}(o.is_true())\n\t\t}\n'
+				continue
+			}
+			body += '\t\tif v := ${reader_fn(variant)}(o, name) {\n\t\t\treturn ${t}(v)\n\t\t}\n' +
+				'\t\tvcraft.clear_error()\n'
+		}
+		expected := info.variants.map(describe(it)).join(' | ')
+		return 'fn (o vcraft.PyObj, name string) !${t} {\n${body}' +
+			"\t\tvcraft.raise_type_error(name + ': expected ${expected}, got ' + o.type_name())\n" +
+			'\t\treturn error(name)\n\t}'
+	}
 	if is_struct(t) {
 		lines := struct_read_lines(t, 'o', 'name', 's', ' or { return error(name) }')
 		mut body := ''
@@ -1480,8 +1554,46 @@ pub fn box_value_expr(value string, v_type string) string {
 		.optional, .dict, .fixed { composite_boxed_expr(lookup(v_type), value, v_type) }
 		.enum_type { enum_member_expr(value, v_type) }
 		.struct_type { struct_box_expr(value, v_type) }
+		.sum_type { sum_box_expr(value, v_type) }
 		else { boxed_expr(lookup(v_type), value) }
 	}
+}
+
+// sum_box_expr boxes a sumtype as whichever variant it holds. V narrows `s` to the
+// variant inside each arm of a match on its type.
+pub fn sum_box_expr(value string, v_type string) string {
+	info := sumtype_info(v_type) or { return 'vcraft.to_py_none()' }
+	t := v_type.trim_space()
+	mut arms := ''
+	// `sv`, not `s`: a struct variant boxes through a closure whose parameter is `s`, and
+	// V would carry the narrowing of an outer `s` into it.
+	for variant in info.variants {
+		arms += '\t\t\t${variant} { ${box_value_expr('sv', variant)} }\n'
+	}
+	return 'fn (sv ${t}) vcraft.PyObj {\n\t\treturn match sv {\n${arms}\t\t}\n\t}(${value})'
+}
+
+// sum_variant_order is the order a sumtype's variants are tried when reading one: a
+// `bool` first and only for a real bool (truthiness would accept anything), the
+// integers before the floats (a float reader accepts an int), the rest as declared.
+fn sum_variant_order(variants []string) []string {
+	mut out := []string{}
+	for v in variants {
+		if lookup(v) == .bool {
+			out << v
+		}
+	}
+	for v in variants {
+		if lookup(v) in [.int, .uint] {
+			out << v
+		}
+	}
+	for v in variants {
+		if lookup(v) !in [.bool, .int, .uint] {
+			out << v
+		}
+	}
+	return out
 }
 
 // enum_members_expr renders the `{name: value}` table an enum's `IntEnum` is built from.
@@ -1503,9 +1615,17 @@ pub fn enum_member_expr(value string, v_type string) string {
 pub fn struct_box_expr(value string, v_type string) string {
 	info := struct_info(v_type) or { return 'vcraft.to_py_none()' }
 	t := v_type.trim_space()
+	if info.structseq {
+		mut sets := ''
+		for i, f in info.fields {
+			sets += '\t\tvcraft.structseq_set(seq, ${i}, ${box_value_expr('s.' + f.name, f.v_type)})\n'
+		}
+		return 'fn (s ${t}) vcraft.PyObj {\n\t\tseq := vcraft.structseq_new(g_vc_structseq_${info.key})\n' +
+			'${sets}\t\treturn vcraft.structseq_done(seq)\n\t}(${value})'
+	}
 	mut body := 'fn (s ${t}) vcraft.PyObj {\n\t\td := vcraft.new_dict()\n'
-	for f in info.fields {
-		body += '\t\tvcraft.dict_set_owned(d, vcraft.to_py_string(${vstring_literal(f.name)}), ' +
+	for i, f in info.fields {
+		body += '\t\tvcraft.dict_set_key(d, g_vc_skey_${info.key}_${i}, ' +
 			'${box_value_expr('s.' + f.name, f.v_type)})\n'
 	}
 	body += '\t\treturn d\n\t}(${value})'
@@ -1523,6 +1643,10 @@ pub fn type_marshalable(v_type string) bool {
 		.struct_type {
 			info := struct_info(t) or { return false }
 			info.fields.all(type_marshalable(it.v_type))
+		}
+		.sum_type {
+			info := sumtype_info(t) or { return false }
+			info.variants.all(lookup(it) != .sum_type && type_marshalable(it))
 		}
 		.seq { type_marshalable(element_type(t)) }
 		.optional { type_marshalable(t[1..]) }
@@ -1548,8 +1672,8 @@ pub fn struct_read_lines(v_type string, obj string, name_expr string, local stri
 	mut inits := []string{}
 	for i, f in info.fields {
 		fl := '${local}_f${i}'
-		lines << '${fl} := ${reader_fn(f.v_type)}(vcraft.dict_get(${obj}, ' +
-			'${vstring_literal(f.name)}, ${name_expr})${fail}, ${name_expr})${fail}'
+		lines << '${fl} := ${reader_fn(f.v_type)}(vcraft.struct_field(${obj}, ' +
+			'${vstring_literal(f.name)}, ${i}, ${info.fields.len}, ${name_expr})${fail}, ${name_expr})${fail}'
 		inits << '${f.name}: ${fl}'
 	}
 	lines << '${local} := ${t}{ ${inits.join(', ')} }'
@@ -1623,6 +1747,7 @@ pub fn element_box_fn(element string) string {
 		.optional, .dict, .fixed { composite_boxed_expr(lookup(element), 'x', element) }
 		.enum_type { enum_member_expr('x', element) }
 		.struct_type { struct_box_expr('x', element) }
+		.sum_type { sum_box_expr('x', element) }
 		else { 'vcraft.to_py_none()' }
 	}
 	return 'fn (x ${element}) vcraft.PyObj { return ${boxed} }'
@@ -1691,6 +1816,12 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 		// cast to an enum an unsafe operation.
 		.enum_type { 'unsafe { ${v_type.trim_space()}(0) }' }
 		.struct_type { '${v_type.trim_space()}{}' }
+		// The first variant's zero value, which any value the function returns replaces.
+		.sum_type {
+			info := sumtype_info(v_type) or { return 'unsafe { nil }' }
+			first := info.variants[0]
+			'${v_type.trim_space()}(${zero_value(lookup(first), first)})'
+		}
 		// Never declared as one local: `result_decl` declares one per element.
 		.tuple { 'unsafe { nil }' }
 		.pyobj, .unsupported { 'unsafe { nil }' }
@@ -1733,6 +1864,9 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 		return '${local}_enum := vcraft.enum_value(g_vc_enum_${info.key}.ptr, vcraft.required_arg(args, ${index}, ' +
 			"'${func}', '${param}') or { return unsafe { nil } }, ${vstring_literal(param)}) or { return unsafe { nil } }\n" +
 			'\t${local} := unsafe { ${param_type.trim_space()}(${local}_enum) }'
+	}
+	if strategy == .sum_type {
+		return "${local} := ${reader_fn(param_type)}(vcraft.required_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }, ${vstring_literal(param)}) or { return unsafe { nil } }"
 	}
 	if strategy == .struct_type {
 		obj := "vcraft.required_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }"
@@ -1886,6 +2020,8 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 		.enum_type { 'vcraft.to_py_none()' }
 		// A plain struct boxes through `box_value_expr`, which has the type. Unreachable.
 		.struct_type { 'vcraft.to_py_none()' }
+		// So does a sumtype. Unreachable.
+		.sum_type { 'vcraft.to_py_none()' }
 		.unsupported { 'unsafe { nil }' }
 	}
 }
@@ -1970,9 +2106,27 @@ pub fn emit_stubs(p Project) string {
 	mut w := new_builder()
 	w.write_string('# Generated by vcraft. Do not edit.\n')
 	w.write_string('# Regenerate with `vcraft build`.\n\n')
-	w.write_string('from typing import Any, Sequence\n')
+	if p.structs.any(it.structseq) {
+		w.write_string('from typing import Any, NamedTuple, Sequence\n')
+	} else {
+		w.write_string('from typing import Any, Sequence\n')
+	}
 	if p.enums.len > 0 {
 		w.write_string('import enum\n')
+	}
+	// A struct sequence reads like a NamedTuple to a type checker: a tuple with a named,
+	// typed field per struct field.
+	for s in p.structs {
+		if !s.structseq {
+			continue
+		}
+		w.write_string('\nclass ${s.py_name}(NamedTuple):\n')
+		for f in s.fields {
+			w.write_string('    ${f.name}: ${describe(f.v_type)}\n')
+		}
+		if s.fields.len == 0 {
+			w.write_string('    ...\n')
+		}
 	}
 	// Module-level constants, declared with their Python type so a type checker sees them.
 	for cn in p.consts {

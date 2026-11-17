@@ -775,13 +775,14 @@ fn collect_sumtype(path string, lines []string, decl astquery.Declaration, mut p
 		report(mut p, path, decl, 'error: sumtype `${name}` has no variants')
 		return
 	}
-	p.sumtypes << SumtypeInfo{
+	info := SumtypeInfo{
 		name:     name
 		py_name:  name
 		key:      name.to_lower()
 		variants: variants
 	}
-	known_sumtypes[name] = true
+	p.sumtypes << info
+	known_sumtypes[name] = info
 }
 
 // collect_plain_struct records a plain `struct` (no `@[vc_class]`, no `@[vc_error]`),
@@ -817,11 +818,13 @@ fn collect_plain_struct(path string, lines []string, decl astquery.Declaration, 
 			}
 		}
 	}
+	block := read_above(lines, decl.line)
 	info := StructInfo{
-		name:    decl.name
-		py_name: decl.name
-		key:     decl.name.to_lower()
-		fields: fields
+		name:      decl.name
+		py_name:   renamed(block, decl.name)
+		key:       decl.name.to_lower()
+		fields:    fields
+		structseq: attr_structseq in block.attrs
 	}
 	// Registered immediately so a signature written before the struct is a `lookup` hit.
 	// Whether every field actually crosses is checked recursively at the point of use,
@@ -1522,6 +1525,15 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 		key:       key
 	}
 	c.fields = collect_fields(path, lines, ast, decl.name, mut p, false)
+	// Whether pickling can rebuild the state from the exposed attributes alone: every
+	// declared field has to be one, and none may be native memory or a handle.
+	exposed := c.fields.filter(!it.buffer && !it.handle).map(it.name)
+	for f in collect_fields(path, lines, ast, decl.name, mut p, true) {
+		if f.name !in exposed {
+			c.pickle_blocker = 'field `${f.name}` is not an exposed attribute'
+			break
+		}
+	}
 	p.classes << c
 }
 

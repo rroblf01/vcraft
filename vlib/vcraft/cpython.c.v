@@ -247,6 +247,10 @@ fn C.PyDict_GetItemString(d voidptr, key voidptr) voidptr
 fn C.PyDict_SetItem(d voidptr, key voidptr, value voidptr) int
 
 fn C.PyDict_Next(d voidptr, pos &isize, key &voidptr, value &voidptr) int
+fn C.PyObject_IsSubclass(derived voidptr, cls voidptr) int
+fn C.PyObject_SetAttr(o voidptr, name voidptr, value voidptr) int
+fn C.PyDict_Update(a voidptr, b voidptr) int
+fn C.PyObject_Type(o voidptr) voidptr
 
 fn C.PyObject_GetAttrString(o voidptr, name voidptr) voidptr
 fn C.PyObject_GetItem(o voidptr, key voidptr) voidptr
@@ -407,6 +411,12 @@ fn C.vpy_exc_child_process_error() voidptr
 fn C.vpy_exc_process_lookup_error() voidptr
 fn C.vpy_raise_errno(code i32, context &u8, len isize)
 fn C.vpy_last_errno() int
+fn C.vpy_structseq_type(name &char, fields &&char, count int, doc &char) voidptr
+fn C.vpy_structseq_new(typ voidptr) voidptr
+fn C.PyUnicode_InternFromString(s voidptr) voidptr
+fn C.vpy_structseq_set(seq voidptr, i isize, value voidptr)
+fn C.vpy_structseq_pack(typ voidptr, items voidptr, count isize) voidptr
+fn C.vpy_struct_field(obj voidptr, key &char, index isize, count isize, name &u8, name_len isize) voidptr
 
 // vpy_set_error_utf8 raises an exception with a message given as a pointer and a length,
 // so the runtime does not copy a V string into a NUL-terminated buffer first.

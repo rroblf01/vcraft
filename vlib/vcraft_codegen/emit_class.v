@@ -47,6 +47,7 @@ fn emit_class(p Project, c Class) string {
 	w.write_string(emit_class_newstate(p, c))
 	w.write_string(emit_class_getsets(c))
 	w.write_string(emit_class_methods(c))
+	w.write_string(emit_class_reduce(p, c))
 	w.write_string(emit_field_accessors(p, c))
 	w.write_string(emit_class_new(c))
 	w.write_string(emit_class_iterators(p, c))
@@ -333,12 +334,10 @@ fn emit_ref_type_check(p Project, c Class, f Field) string {
 	return w.str()
 }
 
-// emit_class_methods renders the method table of the ordinary methods.
+// emit_class_methods renders the method table of the ordinary methods, closed by the
+// `__reduce__` every class gets for pickling (see `emit_class_reduce`).
 fn emit_class_methods(c Class) string {
 	ordinary := c.methods.filter(it.property == false)
-	if ordinary.len == 0 {
-		return ''
-	}
 	mut w := new_builder()
 	w.write_string('__global (\n')
 	w.write_string('\tg_vc_methods_${c.key} = [\n')
@@ -350,9 +349,71 @@ fn emit_class_methods(c Class) string {
 		w.write_string('\t\t\tdoc:   ' + doc_pointer(m.doc) + '\n')
 		w.write_string('\t\t},\n')
 	}
+	w.write_string('\t\tvcraft.PyMethodDef{\n')
+	w.write_string("\t\t\tname:  voidptr(c'__reduce__')\n")
+	w.write_string('\t\t\tmeth:  voidptr(vcraft_generated__reduce_${c.key})\n')
+	w.write_string('\t\t\tflags: vcraft.meth_noargs\n')
+	w.write_string('\t\t\tdoc:   unsafe { nil }\n')
+	w.write_string('\t\t},\n')
 	w.write_string('\t\tvcraft.PyMethodDef{},\n')
 	w.write_string('\t]\n')
 	w.write_string(')\n\n')
+	return w.str()
+}
+
+// pickle_blocker_of is why an instance of `c` cannot be rebuilt from its attributes --
+// its own state or any base's -- or '' when it can.
+fn pickle_blocker_of(p Project, c Class) string {
+	mut cur := c
+	for {
+		if cur.pickle_blocker.len > 0 {
+			return if cur.name == c.name { cur.pickle_blocker } else { 'its base `${cur.name}`\'s ${cur.pickle_blocker}' }
+		}
+		if cur.base_index < 0 {
+			return ''
+		}
+		cur = p.classes[cur.base_index]
+	}
+	return ''
+}
+
+// pickle_fields is every attribute that makes up an instance of `c`: its own exposed
+// fields and each base's, by their Python names.
+fn pickle_fields(p Project, c Class) []string {
+	mut names := []string{}
+	mut cur := c
+	for {
+		for f in cur.scalar_fields() {
+			names << if f.py_name.len > 0 { f.py_name } else { f.name }
+		}
+		if cur.base_index < 0 {
+			break
+		}
+		cur = p.classes[cur.base_index]
+	}
+	return names
+}
+
+// emit_class_reduce renders `__reduce__`.
+//
+// A class whose whole state is exposed attributes pickles (and copies) as the module's
+// `_vcraft_rebuild(cls, fields, extra)`. One that holds anything else -- a native buffer,
+// a handle, a field Python cannot see -- refuses with a TypeError naming it, rather than
+// letting the default `__reduce__` rebuild it through its constructor and silently drop
+// the state.
+fn emit_class_reduce(p Project, c Class) string {
+	mut w := new_builder()
+	blocker := pickle_blocker_of(p, c)
+	receiver := if blocker.len > 0 { '_self' } else { 'self' }
+	w.write_string('fn vcraft_generated__reduce_${c.key}(${receiver} voidptr, _args voidptr) voidptr {\n')
+	if blocker.len > 0 {
+		message := "cannot pickle '${p.package}.${c.py_name}': ${blocker}"
+		w.write_string('\tvcraft.raise_type_error(${vstring_literal(message)})\n')
+		w.write_string('\treturn unsafe { nil }\n}\n\n')
+		return w.str()
+	}
+	names := pickle_fields(p, c).map(vstring_literal(it)).join(', ')
+	w.write_string('\treturn vcraft.reduce_by_fields(self, g_vc_rebuild.ptr, [${names}]).ptr\n}\n\n')
 	return w.str()
 }
 

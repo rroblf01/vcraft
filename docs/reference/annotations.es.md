@@ -22,6 +22,7 @@ Todas las anotaciones a las que reacciona el generador. Cualquier otra cosa en e
 | `@[vc_contains]` | métodos | `__contains__` (`x in instance`). Un argumento, resultado bool. |
 | `@[vc_iter]` | métodos | Hace de la instancia su propio iterador (`__iter__`). |
 | `@[vc_next]` | métodos | Un ítem por llamada (`__next__`). |
+| `@[vc_structseq]` | `pub struct` (plano) | Sale como secuencia de struct (una tupla con campos con nombre) en vez de un dict. |
 | `@[vc_eq]` | `pub fn` | `__eq__` / `__ne__`. |
 | `@[vc_lt]`, `@[vc_le]`, `@[vc_gt]`, `@[vc_ge]` | `pub fn` | El operador de orden correspondiente. |
 | `@[vc_hash]` | `pub fn` | `__hash__`. |

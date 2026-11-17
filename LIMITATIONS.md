@@ -62,11 +62,10 @@ PyO3 supports `async fn` that returns a future. vcraft has `run_coroutine` and
 `__init__.py`, or use `vcraft.run_coroutine` in reverse (V calls Python async).
 
 ### No freelist
-PyO3 supports `#[pyo3(freelist)]` for fast object allocation. V's allocator does
-not support freelists.
-
-**Mitigation:** Not available. Object construction is fast enough for most use
-cases (vcraft's `Counter()` is 92 ns vs PyO3's 96 ns).
+PyO3 supports `#[pyo3(freelist)]`. vcraft does not, by decision (see `DECISIONS.md`):
+construction is already ahead of PyO3 (`Counter()` 73 ns against 91), and reusing
+instance memory by hand means reproducing CPython's GC and managed-dict headers, which
+change between versions.
 
 ### No smart pointers
 PyO3 has `Py<T>` smart pointers with automatic refcounting. V has no trait
@@ -82,13 +81,6 @@ a Python reference when it goes out of scope.
 **Mitigation:** `vcraft.with_py_scope` tracks temporaries and releases them on
 exit. For instance fields, `@[vc_handle]`/`Owned` provides managed native state.
 
-### No sumtype marshalling
-V has sumtypes (`type Foo = int | string | []Foo`), but vcraft has no marshalling
-rule for them. The user must convert manually or use `vcraft.PyObj` (which crosses
-as a Python object and is handled at runtime).
-
-**Mitigation:** Declare the parameter/result as `vcraft.PyObj` and do the
-conversion in V with `is` checks.
 
 ### Closures capture by value
 V closures capture variables by value, even `mut` ones. A mutable outer variable
@@ -123,12 +115,6 @@ This matters for servers (vlambda) where the request body arrives as a V string.
 Mitigation: keep bodies as `[]u8` (native-backed) where possible, or accept the
 copy for small bodies.
 
-## Sumtype marshalling
-
-V has sumtypes (`type Foo = int | string | []Foo`), but vcraft has no
-marshalling rule for them: a parameter or result of sumtype type is reported
-as unsupported. Declare it as `vcraft.PyObj` and do the conversion in V with
-`is` checks, the same way `vjson` handled `json2.Any`.
 
 ## Where vcraft stands against PyO3
 

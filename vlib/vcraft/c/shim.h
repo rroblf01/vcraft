@@ -245,6 +245,13 @@ PyObject *vpy_exc_interrupted_error(void);
 PyObject *vpy_exc_child_process_error(void);
 PyObject *vpy_exc_process_lookup_error(void);
 void vpy_raise_errno(int code, const char *context, Py_ssize_t len);
+PyObject *vpy_structseq_type(const char *name, const char *const *fields, int count,
+	const char *doc);
+PyObject *vpy_structseq_new(PyObject *type);
+void vpy_structseq_set(PyObject *seq, Py_ssize_t i, PyObject *value);
+PyObject *vpy_structseq_pack(PyObject *type, PyObject **items, Py_ssize_t count);
+PyObject *vpy_struct_field(PyObject *obj, const char *key, Py_ssize_t index, Py_ssize_t count,
+	const char *name, Py_ssize_t name_len);
 int vpy_last_errno(void);
 void vpy_set_error_utf8(PyObject *exc, const char *msg, Py_ssize_t len);
 int vpy_is_complex(void *o);

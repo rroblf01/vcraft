@@ -639,6 +639,77 @@ pub fn (r &Registry) lookup(name string) int {
 	return s.names[name] or { -1 }
 }
 
+// Span is a plain struct: it crosses out as a dict, and in from a dict, a tuple of its
+// fields (a namedtuple) or any object carrying them (a dataclass).
+pub struct Span {
+pub:
+	start int
+	end   int
+	label string
+}
+
+// span_len reads a Span from whatever Python passes.
+@[vc_fn]
+pub fn span_len(s Span) string {
+	return '${s.label}:${s.end - s.start}'
+}
+
+// make_span returns a Span, which Python receives as a dict.
+@[vc_fn]
+pub fn make_span(n int) Span {
+	return Span{
+		start: 1
+		end:   1 + n
+		label: 'span'
+	}
+}
+
+// Point crosses out as a struct sequence: a tuple with named fields.
+@[vc_structseq]
+pub struct Point {
+pub:
+	x int
+	y int
+}
+
+@[vc_fn]
+pub fn make_point(x int, y int) Point {
+	return Point{
+		x: x
+		y: y
+	}
+}
+
+@[vc_fn]
+pub fn point_sum(p Point) int {
+	return p.x + p.y
+}
+
+// Shape is a sumtype: it crosses as whichever variant it holds.
+pub type Shape = f64 | int | string | bool | Span
+
+@[vc_fn]
+pub fn shape_kind(s Shape) string {
+	return match s {
+		int { 'int ${s}' }
+		f64 { 'f64 ${s}' }
+		string { 'string ${s}' }
+		bool { 'bool ${s}' }
+		Span { 'span ${s.label}' }
+	}
+}
+
+@[vc_fn]
+pub fn make_shape(kind int) Shape {
+	return match kind {
+		0 { Shape(7) }
+		1 { Shape('seven') }
+		2 { Shape(7.5) }
+		3 { Shape(true) }
+		else { Shape(Span{ start: 0, end: 2, label: 's' }) }
+	}
+}
+
 // raise_os raises the OSError subclass an errno value stands for, with `context` as the
 // part after the colon in its message.
 @[vc_fn]

@@ -57,6 +57,18 @@ A `&T` where `T` is a `@[vc_class]` passes the instance itself, not a copy: a pa
 hands the V function a pointer into the instance's live state, and a result is matched back
 to the instance it points into. See [Classes and properties](classes.md).
 
+## Structs, struct sequences and sumtypes
+
+A plain `struct` crosses out as a `dict`. In, it also accepts a namedtuple or any tuple of
+its fields in order, and an object that stores them as attributes (a dataclass, a
+`SimpleNamespace`). `@[vc_structseq]` on the struct makes it cross out as a struct sequence
+-- a tuple with named fields, like `os.stat_result` -- which is cheaper than a dict and is
+typed as a `NamedTuple` in the stub.
+
+A sumtype (`type Shape = int | string | Point`) crosses as the variant it holds and is read
+by trying the variants: a `bool` only for a real `bool`, integers before floats, then the
+declared order. The stub types it as a union.
+
 ## Borrowed strings
 
 A `str` is not copied on the way in. A `string` parameter, the items of a `[]string`, the

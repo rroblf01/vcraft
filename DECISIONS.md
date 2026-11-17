@@ -83,3 +83,21 @@ is plain Markdown and moves to another generator with little more than a config 
 Left open: `tests/docs/test_readme.py` still compiles only `README.md`. Extending it to
 compile the ` ```v ` blocks of the `docs/` pages, so every claim on the site is backed by a
 test the way the README's are, is a follow-up.
+
+## Object freelist: not implemented
+
+Decided 2026-11-17.
+
+PyO3's `#[pyclass(freelist = N)]` keeps freed instances for reuse. vcraft could do the same
+in its C shim -- the instances are CPython allocations, not V ones -- but does not:
+
+- **The gain is small.** `Counter()` costs 73 ns against PyO3's 91 without one. Allocation
+  and release through pymalloc, which is itself a size-class free list, is ~15-20 ns of
+  that; a freelist would save perhaps half.
+- **The risk is not.** Every vcraft class is a GC type, so a reused block has to be put
+  back exactly as `PyType_GenericAlloc` leaves one: the GC header, the managed-dict and
+  weakref pre-header that 3.11, 3.12 and 3.13 lay out differently, and the free-threaded
+  header with its per-object lock. A mistake there is a memory corruption that shows up
+  far from its cause, on one CPython version.
+
+Revisit if a workload shows construction dominating and the layouts stop moving.

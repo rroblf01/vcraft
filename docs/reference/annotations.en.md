@@ -22,6 +22,7 @@ diagnostic, not a silent omission.
 | `@[vc_contains]` | methods | `__contains__` (`x in instance`). One argument, bool result. |
 | `@[vc_iter]` | methods | Makes the instance its own iterator (`__iter__`). |
 | `@[vc_next]` | methods | One item per call (`__next__`). |
+| `@[vc_structseq]` | `pub struct` (plain) | Crosses out as a struct sequence (a tuple with named fields) instead of a dict. |
 | `@[vc_eq]` | `pub fn` | `__eq__` / `__ne__`. |
 | `@[vc_lt]`, `@[vc_le]`, `@[vc_gt]`, `@[vc_ge]` | `pub fn` | The matching ordering operator. |
 | `@[vc_hash]` | `pub fn` | `__hash__`. |

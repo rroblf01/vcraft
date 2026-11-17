@@ -1008,3 +1008,87 @@ pub fn tuple_of_one(t PyObj) PyObj {
 		}
 	}
 }
+
+// Pickling.
+//
+// A class whose whole state is exposed attributes pickles as `_vcraft_rebuild(cls,
+// fields, extra)`: `__reduce__` reads each attribute, and the rebuild allocates an
+// instance without running the constructor -- whose arguments pickle has no way to know
+// -- and assigns the attributes back through the generated setters, which check every
+// value as an assignment from Python would. `extra` is the instance `__dict__` of a
+// Python subclass, so its own attributes survive too. `copy.copy` and `copy.deepcopy`
+// go through the same `__reduce__`.
+
+// reduce_by_fields is a `__reduce__` for an instance whose state is the attributes
+// `names`: `(rebuild, (type(self), {name: value}, self.__dict__ or None))`.
+pub fn reduce_by_fields(self voidptr, rebuild voidptr, names []string) PyObj {
+	fields := new_dict()
+	if fields.is_null() {
+		return fields
+	}
+	for name in names {
+		value := getattr(self, name)
+		if value.is_null() {
+			fields.decref()
+			return value
+		}
+		dict_set_owned(fields, to_py_string(name), value)
+	}
+	mut extra := getattr(self, '__dict__')
+	if extra.is_null() {
+		clear_error()
+		extra = to_py_none()
+	}
+	return tuple_of([borrow(rebuild).new_ref(), tuple_of([steal(C.PyObject_Type(self)),
+		fields, extra])])
+}
+
+// rebuild_fields is the other half: an instance of `cls` made without its constructor,
+// with every attribute in `fields` assigned and `extra` merged into its `__dict__`.
+// The caller has checked that `cls` is one of the module's classes.
+pub fn rebuild_fields(cls voidptr, fields voidptr, extra voidptr) PyObj {
+	if !borrow(fields).type_is(dict_type()) {
+		raise_type_error('_vcraft_rebuild: the fields must be a dict')
+		return PyObj{}
+	}
+	instance := type_alloc(cls)
+	if instance == unsafe { nil } {
+		return no_memory_obj()
+	}
+	mut pos := isize(0)
+	mut key := voidptr(nil)
+	mut value := voidptr(nil)
+	for C.PyDict_Next(fields, &pos, &key, &value) != 0 {
+		if C.PyObject_SetAttr(instance, key, value) < 0 {
+			C.Py_DecRef(instance)
+			return PyObj{}
+		}
+	}
+	if extra != unsafe { nil } && borrow(extra).type_is(dict_type()) {
+		target := getattr(instance, '__dict__')
+		if target.is_null() || C.PyDict_Update(target.ptr, extra) < 0 {
+			target.decref()
+			C.Py_DecRef(instance)
+			return PyObj{}
+		}
+		target.decref()
+	}
+	return steal(instance)
+}
+
+// is_class_of reports whether `cls` is `typ` or a subclass of it, without raising for a
+// `cls` that is not a class at all.
+pub fn is_class_of(cls voidptr, typ voidptr) bool {
+	r := C.PyObject_IsSubclass(cls, typ)
+	if r < 0 {
+		clear_error()
+		return false
+	}
+	return r == 1
+}
+
+// no_memory_obj raises MemoryError and returns the null object.
+fn no_memory_obj() PyObj {
+	C.PyErr_NoMemory()
+	return PyObj{}
+}

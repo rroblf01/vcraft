@@ -25,6 +25,19 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **`gc-markers` in `[build]`.** The collector starts one marker thread per core in every
   process that imports an extension able to create threads; `gc-markers = 1` starts none
   (Linux and macOS).
+- **Struct parameters accept more than a dict.** A namedtuple or any tuple of the fields
+  in order, and an object storing them as attributes (a dataclass, a `SimpleNamespace`),
+  read without copying; an attribute computed on access is refused with a TypeError.
+- **`@[vc_structseq]`.** A plain struct marked with it crosses out as a struct sequence of
+  its own -- a tuple with named fields, like `os.stat_result`, typed as a `NamedTuple` in
+  the stub -- instead of a dict, and builds about twice as fast.
+- **Sumtypes cross automatically.** `type Shape = int | string | Point` is boxed as the
+  variant it holds and read by trying the variants (`bool` only for a real bool, integers
+  before floats, then as declared); the stub types it as `int | str | dict[str, Any]`.
+- **Pickling and copying classes.** An instance whose whole state is exposed attributes
+  pickles and copies through a generated `__reduce__` and the module's `_vcraft_rebuild`,
+  which rebuilds it without running the constructor; a Python subclass's own attributes
+  come along.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.
@@ -39,6 +52,8 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   every exit, so each call paid a `recover()` call and a thread-local lookup to learn no
   panic was in flight. The generated guard now clears a local flag on every normal
   return (after evaluating what it returns), and only a landed panic calls `recover()`.
+- **A struct returned as a dict builds about 40% faster**: its keys are interned strings
+  made once at import instead of new strings per call.
 - **Instance state is reached inline.** `sizeof(PyObject)` and the state copy were calls
   into another C unit on every method, property, comparison and construction; both are
   inline in the header now.
@@ -69,6 +84,9 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Changed
 
+- **Pickling a class with native state raises `TypeError`.** The default `__reduce__`
+  rebuilt it through its constructor and silently dropped the state; a class holding a
+  `@[vc_buffer]`, a `@[vc_handle]` or a field Python cannot see now refuses, naming it.
 - **`next()` on an exhausted vcraft iterator raises a bare `StopIteration`**, as CPython's
   own iterators and PyO3's do, rather than one carrying the text passed to
   `raise_domain(.stop_iteration, ...)`. `for` and `list()` never saw the text. Anywhere

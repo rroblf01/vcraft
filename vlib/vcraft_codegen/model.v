@@ -214,6 +214,11 @@ pub const attr_next = 'vc_next'
 
 pub const attr_hash = 'vc_hash'
 
+// attr_structseq makes a plain struct cross out as a struct sequence -- a tuple subclass
+// with named fields, like `os.stat_result` -- instead of a `dict`: one allocation and no
+// hashing per field, and still `p.x` by name.
+pub const attr_structseq = 'vc_structseq'
+
 // known_attrs is every annotation the generator reacts to. Anything else in a
 // `vc.` namespace is a typo and is reported rather than ignored, because a
 // silently ignored annotation means a function quietly missing from the module.
@@ -239,6 +244,7 @@ pub const known_attrs = [
 	attr_into_py,
 	attr_eq,
 	attr_hash,
+	attr_structseq,
 	attr_lt,
 	attr_le,
 	attr_gt,
@@ -451,6 +457,11 @@ pub mut:
 // Class is one struct the generator will expose as a Python type.
 pub struct Class {
 pub mut:
+	// pickle_blocker names what keeps the instance's own state from being rebuilt out of
+	// its exposed attributes -- a field that is not `@[vc_field]`/`@[vc_ref]`, a native
+	// buffer, a handle -- or is empty when every field is an exposed attribute. Bases are
+	// checked at emission (`pickle_blocker_of`).
+	pickle_blocker string
 	name    string
 	py_name string
 	doc     string
@@ -872,6 +883,16 @@ pub:
 	py_name string
 	key     string
 	fields []StructField
+	// structseq is set by `@[vc_structseq]`: the struct crosses out as a struct sequence
+	// type of its own rather than as a dict.
+	structseq bool
+}
+
+// struct_stub_type is how a plain struct appears in a stub: its own class when it is a
+// struct sequence, a dict of heterogeneous fields otherwise.
+pub fn struct_stub_type(name string) string {
+	info := known_structs[name] or { return 'dict[str, Any]' }
+	return if info.structseq { info.py_name } else { 'dict[str, Any]' }
 }
 
 // known_enums is every enum the current project declares, keyed by the name as written in
@@ -881,7 +902,7 @@ pub:
 __global (
 	known_enums    map[string]EnumInfo    = map[string]EnumInfo{}
 	known_structs  map[string]StructInfo  = map[string]StructInfo{}
-	known_sumtypes map[string]bool        = map[string]bool{}
+	known_sumtypes map[string]SumtypeInfo = map[string]SumtypeInfo{}
 )
 
 // reset_type_registry clears the enum and struct registries before a project is
@@ -889,7 +910,7 @@ __global (
 pub fn reset_type_registry() {
 	known_enums = map[string]EnumInfo{}
 	known_structs = map[string]StructInfo{}
-	known_sumtypes = map[string]bool{}
+	known_sumtypes = map[string]SumtypeInfo{}
 }
 
 // is_enum reports whether `v_type` names an enum the project declares.
@@ -914,6 +935,11 @@ pub fn is_struct(v_type string) bool {
 pub fn enum_py_name(name string) string {
 	info := known_enums[name] or { return name }
 	return if info.py_name.len > 0 { info.py_name } else { name }
+}
+
+// sumtype_info returns the sumtype `v_type` names.
+pub fn sumtype_info(v_type string) ?SumtypeInfo {
+	return known_sumtypes[v_type.trim_space()] or { return none }
 }
 
 // is_sumtype reports whether `v_type` names a sumtype the project declares.

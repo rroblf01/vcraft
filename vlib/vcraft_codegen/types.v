@@ -51,6 +51,10 @@ pub enum Strategy {
 	// StructType is a plain V `struct` the project declares. It crosses as a Python
 	// `dict` of its fields.
 	struct_type
+	// SumType is a V sumtype the project declares, `type Shape = int | string | Point`.
+	// It crosses as whichever variant the value holds, and is read back by trying the
+	// variants; the stub calls it `int | str | ...`.
+	sum_type
 	// Unsupported means the generator refuses to emit code for it.
 	unsupported
 }
@@ -88,12 +92,9 @@ pub fn lookup(v_type string) Strategy {
 		return .struct_type
 	}
 	if base in known_sumtypes {
-		// Sumtypes are not marshalled automatically: declare the parameter or
-		// result as `vcraft.PyObj` and do the conversion in V. The sumtype is
-		// registered so `lookup` recognises the name, but the strategy is
-		// unsupported, which makes the generator report it rather than emit
-		// glue that does not compile.
-		return .unsupported
+		// Whether every variant crosses is checked where the type is used
+		// (`type_marshalable`), as for a plain struct's fields.
+		return .sum_type
 	}
 	// The composite types are recognised by their shape before the scalar names, and
 	// only over element types that are themselves plain values: anything else stays
@@ -201,7 +202,8 @@ pub fn describe(v_type string) string {
 		// The enum's own name is its Python class name.
 		.enum_type { enum_py_name(v_type.trim_space()) }
 		// A plain struct is a dict of heterogeneous fields.
-		.struct_type { 'dict[str, Any]' }
+		.struct_type { struct_stub_type(v_type.trim_space()) }
+		.sum_type { sum_stub_type(v_type) }
 		.unsupported { 'Any' }
 	}
 }
@@ -240,7 +242,7 @@ pub fn is_plain_value(v_type string) bool {
 // valid shape. A multi-value type, a bare object and a void are not elements.
 pub fn is_element_type(v_type string) bool {
 	return lookup(v_type) in [Strategy.bool, .int, .uint, .float, .str, .bytes, .seq, .optional,
-		.dict, .enum_type, .struct_type]
+		.dict, .enum_type, .struct_type, .sum_type]
 }
 
 // tuple_parts splits a multi-value type, `(int, string)`, into its element types.
@@ -279,4 +281,10 @@ pub fn map_parts(v_type string) (string, string) {
 pub fn fixed_element(v_type string) string {
 	_, element := fixed_parts(v_type)
 	return element
+}
+
+// sum_stub_type is how a sumtype appears in a stub: the union of its variants.
+fn sum_stub_type(v_type string) string {
+	info := sumtype_info(v_type) or { return 'Any' }
+	return info.variants.map(describe(it)).join(' | ')
 }

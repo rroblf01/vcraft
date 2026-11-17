@@ -953,7 +953,8 @@ pub fn spawn_once() int {
                          "import os, sys\n"
                          "sys.path.insert(0, sys.argv[1])\n"
                          "import mypkg_native as m\n"
-                         "m.spawn_once()\n"
+                         # Counted right after import, where the markers start: a
+                         # thread the extension spawns could still be exiting later.
                          "print(len(os.listdir('/proc/self/task')))\n",
                          str(built[0].parent)], capture_output=True, text=True)
                     threads[label] = probe.stdout.strip()

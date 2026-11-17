@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 40,
+            glue.count("add_function_owned") == 47,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -300,6 +300,100 @@ def main() -> int:
     del regs
     gc.collect()
     t.equal("releasing them leaves the extension working", h.add(1, 2), 3)
+
+    print("plain structs, struct sequences and sumtypes")
+    import collections
+    import dataclasses
+    import types as pytypes
+    t.equal("a struct crosses out as a dict", h.make_span(3), {"start": 1, "end": 4, "label": "span"})
+    t.equal("and in from a dict", h.span_len({"start": 2, "end": 7, "label": "d"}), "d:5")
+    SpanT = collections.namedtuple("SpanT", "start end label")
+    t.equal("a namedtuple is read by position", h.span_len(SpanT(1, 4, "n")), "n:3")
+
+    @dataclasses.dataclass
+    class SpanD:
+        start: int
+        end: int
+        label: str
+
+    t.equal("a dataclass is read by attribute", h.span_len(SpanD(0, 9, "dc")), "dc:9")
+    t.equal("so is a SimpleNamespace",
+            h.span_len(pytypes.SimpleNamespace(start=1, end=2, label="ns")), "ns:1")
+
+    class Computed:
+        start = 0
+        end = 1
+
+        @property
+        def label(self):
+            # Built at call time: a constant would be kept alive by the code object.
+            return "x" * (self.end + 2)
+
+    t.raises("an attribute computed on access is refused", TypeError, "computed on access",
+             lambda: h.span_len(Computed()))
+    t.raises("a missing field is named", TypeError, "'label'",
+             lambda: h.span_len(pytypes.SimpleNamespace(start=1, end=2)))
+    t.raises("a tuple of the wrong length is refused", TypeError, "3 items",
+             lambda: h.span_len((1, 2)))
+    p = h.make_point(3, 4)
+    t.check("a struct sequence is a tuple with named fields",
+            isinstance(p, tuple) and tuple(p) == (3, 4) and p.x == 3 and p.y == 4, repr(p))
+    t.check("its type is in the module", type(p) is h.Point and "hello_native.Point" in repr(type(p)),
+            repr(type(p)))
+    t.equal("and it reads back in", h.point_sum(p), 7)
+    import pickle
+    t.equal("a struct sequence pickles", pickle.loads(pickle.dumps(p)), p)
+    t.equal("a sumtype int crosses in as int", h.shape_kind(5), "int 5")
+    t.equal("a float as f64", h.shape_kind(2.5), "f64 2.5")
+    t.equal("a bool as bool, not int", h.shape_kind(True), "bool true")
+    t.equal("a str as string", h.shape_kind("hi"), "string hi")
+    t.equal("a struct variant from a dict", h.shape_kind({"start": 0, "end": 1, "label": "L"}), "span L")
+    t.raises("no variant matches", TypeError, "expected float | int | str | bool | dict",
+             lambda: h.shape_kind([1]))
+    t.equal("a sumtype crosses out as its variant",
+            [h.make_shape(k) for k in range(5)],
+            [7, "seven", 7.5, True, {"start": 0, "end": 2, "label": "s"}])
+    t.check("the stub types the struct sequence and the union",
+            "class Point(NamedTuple):" in STUBS.read_text()
+            and "def shape_kind(s: float | int | str | bool | dict[str, Any]) -> str: ..." in STUBS.read_text(),
+            [l for l in STUBS.read_text().splitlines() if "shape" in l or "Point" in l])
+
+    print("pickling and copying classes")
+    import copy
+    c = h.Counter()
+    c.increment()
+    c.increment()
+    c.step = 5
+    back = pickle.loads(pickle.dumps(c))
+    t.check("a class whose state is its fields pickles",
+            type(back) is h.Counter and back.value == 2 and back.step == 5,
+            f"{back!r}")
+    back.increment()
+    t.equal("and the copy is independent", (c.value, back.value), (2, 7))
+    b = h.BoundedCounter()
+    b.limit = 9
+    b.increment()
+    bb = copy.deepcopy(b)
+    t.check("a subclass carries its base's fields", (bb.limit, bb.value) == (9, 1),
+            f"{bb.limit} {bb.value}")
+
+    class Tagged(h.Counter):
+        pass
+
+    tagged = Tagged()
+    tagged.increment()
+    tagged.tag = "kept"
+    # deepcopy goes through the same __reduce__; pickle cannot name a class local to a function.
+    tb = copy.deepcopy(tagged)
+    t.check("a Python subclass keeps its own attributes",
+            type(tb) is Tagged and tb.value == 1 and tb.tag == "kept",
+            f"{type(tb)} {getattr(tb, 'tag', None)}")
+    t.raises("native state refuses to pickle instead of losing it", TypeError,
+             "cannot pickle 'hello_native.Vector'", lambda: pickle.dumps(h.Vector(3)))
+    t.raises("so does a handle", TypeError, "cannot pickle 'hello_native.Registry'",
+             lambda: pickle.dumps(h.Registry()))
+    t.raises("the rebuild only builds the module's classes", TypeError,
+             "not a class of this module", lambda: h._vcraft_rebuild(int, {}, None))
 
     print("system errors")
     import errno

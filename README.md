@@ -274,7 +274,9 @@ generic value tree.
 | `vcraft.PyObj` (result)               | any object                   | Owned; the reference goes to the caller            |
 | `&T`, where `T` is a `@[vc_class]`    | `T`                          | An instance reference; accepts a subclass          |
 | an `enum` the project declares         | that `enum.IntEnum`          | Members keep their names and values                |
-| a plain `struct` the project declares  | `dict`                       | Field names as keys                                |
+| a plain `struct` the project declares  | `dict`                       | Field names as keys; in, also a tuple or an object with the fields |
+| a `@[vc_structseq]` struct             | its struct sequence type     | A tuple with named fields, like `os.stat_result`   |
+| a sumtype the project declares         | the variant it holds         | `int \| str \| ...` in the stub; read by trying each variant |
 | `void`, `!void`                       | `None`                       |                                                    |
 | `!T`                                  | `T`, or raises               | See [Errors and panics](#errors-and-panics)        |
 
@@ -282,7 +284,29 @@ Fields of a `@[vc_class]` struct and method parameters follow the same table.
 Composites nest, so `?[]int`, `[][]int` and `map[string][]int` cross both ways as
 nested `list`/`dict`/`None`. An `enum` the project declares becomes an
 `enum.IntEnum` of the same name, so a value reads back as the member, and a
-plain `struct` becomes a `dict` of its fields. V function types are not
+plain `struct` becomes a `dict` of its fields. A struct parameter also accepts a
+namedtuple or any tuple of its fields in order, and an object that stores them as
+attributes -- a dataclass, a `SimpleNamespace` -- so Python code need not build a dict;
+an attribute computed on access (a property) is refused, because the value it returns
+would not outlive the read. `@[vc_structseq]` on the struct makes it cross out as a
+struct sequence of its own instead of a dict: a tuple with named fields, built without
+hashing a key per field, typed as a `NamedTuple` in the stub, and in the module under the
+struct's name.
+
+A sumtype (`type Shape = int | string | Point`) crosses as whichever variant the value
+holds, and a parameter of one is read by trying the variants: a `bool` only for a real
+`bool`, the integers before the floats, then the rest in the order declared. The stub
+types it as `int | str | dict[str, Any]`.
+
+Instances of a `@[vc_class]` pickle and copy (`pickle`, `copy.copy`, `copy.deepcopy`)
+when their whole state is exposed attributes: the generated `__reduce__` saves them and
+the module's `_vcraft_rebuild` assigns them back through the setters, without running
+the constructor. A Python subclass's own attributes come along. A class holding native
+state -- a `@[vc_buffer]`, a `@[vc_handle]`, a field Python cannot see -- refuses with a
+`TypeError` naming it, instead of being rebuilt through its constructor with the state
+silently lost.
+
+V function types are not
 supported yet; they are on the
 [roadmap](ROADMAP.md). An instance reference (`&T`) is supported; see
 [Instance references](#instance-references). A `@[vc_class]` is constructed from

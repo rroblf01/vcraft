@@ -715,6 +715,71 @@ pub fn dict_get(obj PyObj, key string, name string) !PyObj {
 	return borrow(item)
 }
 
+// struct_field reads field `key`, the `index`-th of `count`, from whatever was passed for
+// a plain V struct: a dict by key, a tuple of `count` items by position (a namedtuple, a
+// struct sequence), any other object by attribute (a dataclass, a SimpleNamespace). The
+// reference is borrowed and stays valid while the source object does; see
+// `vpy_struct_field` for why an attribute computed on access is refused.
+pub fn struct_field(obj PyObj, key string, index int, count int, name string) !PyObj {
+	keyp := cstring(key)
+	item := unsafe { C.vpy_struct_field(obj.ptr, &char(keyp), isize(index), isize(count), name.str,
+		isize(name.len)) }
+	free_cstring(keyp)
+	if item == unsafe { nil } {
+		return error(name)
+	}
+	return borrow(item)
+}
+
+// structseq_type creates the struct sequence type a `@[vc_structseq]` struct crosses as:
+// a tuple subclass with a named field per struct field, the kind `os.stat_result` is.
+// `name` is qualified (`module.Point`), which is what its repr and pickle use.
+pub fn structseq_type(name string, fields []string, doc string) PyObj {
+	mut cfields := []voidptr{cap: fields.len}
+	for f in fields {
+		cfields << cstring(f)
+	}
+	cname := cstring(name)
+	cdoc := cstring(doc)
+	typ := unsafe { C.vpy_structseq_type(&char(cname), &&char(cfields.data), fields.len, &char(cdoc)) }
+	for f in cfields {
+		free_cstring(f)
+	}
+	free_cstring(cname)
+	free_cstring(cdoc)
+	return steal(typ)
+}
+
+// structseq_new and structseq_set build a struct sequence field by field (`set` takes
+// the value's reference). `structseq_done` returns the sequence, or null when a field
+// failed to box and left its exception pending.
+pub fn structseq_new(typ PyObj) PyObj {
+	return steal(C.vpy_structseq_new(typ.ptr))
+}
+
+pub fn structseq_set(seq PyObj, i int, value PyObj) {
+	C.vpy_structseq_set(seq.ptr, isize(i), value.ptr)
+}
+
+pub fn structseq_done(seq PyObj) PyObj {
+	if error_is_set() {
+		seq.decref()
+		return PyObj{}
+	}
+	return seq
+}
+
+// structseq_pack builds an instance of a struct sequence type from boxed values, whose
+// references it takes. A value that failed to box makes the result null, with the
+// exception it set still pending.
+pub fn structseq_pack(typ PyObj, items []PyObj) PyObj {
+	mut raw := []voidptr{cap: items.len}
+	for item in items {
+		raw << item.ptr
+	}
+	return steal(C.vpy_structseq_pack(typ.ptr, raw.data, isize(raw.len)))
+}
+
 // new_dict returns a new empty `dict`, owned by the caller.
 pub fn new_dict() PyObj {
 	return steal(C.PyDict_New())
@@ -729,6 +794,24 @@ pub fn dict_set_owned(d PyObj, key PyObj, value PyObj) {
 	}
 	key.decref()
 	value.decref()
+}
+
+// dict_set_key stores `value` under a key the caller keeps (a module-level interned
+// string), releasing only the caller's reference to the value.
+pub fn dict_set_key(d PyObj, key PyObj, value PyObj) {
+	if !value.is_null() {
+		C.PyDict_SetItem(d.ptr, key.ptr, value.ptr)
+	}
+	value.decref()
+}
+
+// interned returns an interned `str` for a name the module keeps for its whole life:
+// a struct's field names, built once rather than on every boxing.
+pub fn interned(name string) PyObj {
+	p := cstring(name)
+	out := steal(C.PyUnicode_InternFromString(p))
+	free_cstring(p)
+	return out
 }
 
 // tuple_of builds a `tuple` from owned items; the tuple steals each reference.

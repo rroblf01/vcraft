@@ -1207,6 +1207,156 @@ int vpy_complex_parts_slow(void *o, double *re, double *im) {
 	return 1;
 }
 
+// vpy_struct_field returns field `key` (position `index` of `count`) of whatever was
+// passed for a plain V struct, as a borrowed reference, or NULL with an exception set.
+//
+// A dict is read by key, as it always was. A tuple of exactly `count` items -- a
+// namedtuple, a struct sequence, a plain tuple -- is read by position. Any other object
+// is read by attribute: from its `__dict__` when it has one (a dataclass, a
+// SimpleNamespace), else through `getattr` (`__slots__`, a structseq-like type).
+//
+// Every one of those hands back a reference the source object keeps alive, which is what
+// the caller relies on: a V string read from it aliases the str's buffer for the call.
+// The one exception is an attribute computed on access -- a property -- whose value only
+// the caller would hold; reading it would leave the alias dangling, so it is refused
+// with a TypeError naming the field rather than copied silently.
+PyObject *vpy_struct_field(PyObject *obj, const char *key, Py_ssize_t index, Py_ssize_t count,
+	const char *name, Py_ssize_t name_len) {
+	if (PyDict_Check(obj)) {
+		PyObject *item = PyDict_GetItemString(obj, key);
+		if (item == NULL && !PyErr_Occurred()) {
+			PyErr_Format(PyExc_KeyError, "%.*s: missing key %s", (int)name_len, name, key);
+		}
+		return item;
+	}
+	if (PyTuple_Check(obj)) {
+		if (PyTuple_Size(obj) == count) {
+			return PyTuple_GetItem(obj, index);
+		}
+		PyErr_Format(PyExc_TypeError, "%.*s: expected a tuple of %zd items, got %zd",
+			(int)name_len, name, count, PyTuple_Size(obj));
+		return NULL;
+	}
+	PyObject *dict = PyObject_GetAttrString(obj, "__dict__");
+	if (dict != NULL) {
+		PyObject *item = PyDict_Check(dict) ? PyDict_GetItemString(dict, key) : NULL;
+		// The instance owns its `__dict__`, so the item stays alive after this release.
+		Py_DECREF(dict);
+		if (item != NULL) {
+			return item;
+		}
+	} else {
+		PyErr_Clear();
+	}
+	PyObject *value = PyObject_GetAttrString(obj, key);
+	if (value == NULL) {
+		if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+			PyErr_Clear();
+			// `PyType_GetName`, not `tp_name`: the struct is opaque under the limited API.
+			PyObject *type_name = PyType_GetName(Py_TYPE(obj));
+			PyErr_Format(PyExc_TypeError,
+				"%.*s: expected a dict, a tuple or an object with a field '%s', got %U",
+				(int)name_len, name, key, type_name);
+			Py_XDECREF(type_name);
+		}
+		return NULL;
+	}
+	if (Py_REFCNT(value) > 1) {
+		// Someone else -- the object, a slot, a cache -- holds it too.
+		Py_DECREF(value);
+		return value;
+	}
+	Py_DECREF(value);
+	PyErr_Format(PyExc_TypeError,
+		"%.*s: field '%s' is computed on access; pass a dict or an object that stores it",
+		(int)name_len, name, key);
+	return NULL;
+}
+
+// vpy_structseq_type creates a struct sequence type -- a named tuple in C, the kind
+// `os.stat_result` is -- named `name` (qualified, `module.Point`) with `count` fields.
+//
+// `PyStructSequence_NewType` keeps pointers into the description for the life of the
+// type, so the description, the field table and the names are copied to memory that is
+// never freed: one per `@[vc_structseq]` struct, made once at import.
+PyObject *vpy_structseq_type(const char *name, const char *const *fields, int count,
+	const char *doc) {
+	PyStructSequence_Field *table =
+		(PyStructSequence_Field *)PyMem_Calloc((size_t)count + 1, sizeof(PyStructSequence_Field));
+	PyStructSequence_Desc *desc = (PyStructSequence_Desc *)PyMem_Calloc(1, sizeof(PyStructSequence_Desc));
+	if (table == NULL || desc == NULL) {
+		PyMem_Free(table);
+		PyMem_Free(desc);
+		PyErr_NoMemory();
+		return NULL;
+	}
+	for (int i = 0; i < count; i++) {
+		size_t len = strlen(fields[i]);
+		char *copy = (char *)PyMem_Malloc(len + 1);
+		if (copy == NULL) {
+			PyErr_NoMemory();
+			return NULL;
+		}
+		memcpy(copy, fields[i], len + 1);
+		table[i].name = copy;
+		table[i].doc = NULL;
+	}
+	size_t name_len = strlen(name);
+	char *name_copy = (char *)PyMem_Malloc(name_len + 1);
+	size_t doc_len = strlen(doc);
+	char *doc_copy = (char *)PyMem_Malloc(doc_len + 1);
+	if (name_copy == NULL || doc_copy == NULL) {
+		PyErr_NoMemory();
+		return NULL;
+	}
+	memcpy(name_copy, name, name_len + 1);
+	memcpy(doc_copy, doc, doc_len + 1);
+	desc->name = name_copy;
+	desc->doc = doc_len > 0 ? doc_copy : NULL;
+	desc->fields = table;
+	desc->n_in_sequence = count;
+	return (PyObject *)PyStructSequence_NewType(desc);
+}
+
+// vpy_structseq_new and vpy_structseq_set build a struct sequence field by field, the
+// way the generated boxers do it: no array of items to allocate first. `set` steals the
+// value; a null value (a failed boxing, its exception set) is skipped, and the boxer
+// checks for the pending exception once at the end.
+PyObject *vpy_structseq_new(PyObject *type) {
+	return PyStructSequence_New((PyTypeObject *)type);
+}
+
+void vpy_structseq_set(PyObject *seq, Py_ssize_t i, PyObject *value) {
+	if (seq != NULL && value != NULL) {
+		PyStructSequence_SetItem(seq, i, value);
+	} else {
+		Py_XDECREF(value);
+	}
+}
+
+// vpy_structseq_pack builds an instance of a struct sequence type from `count` new
+// references, which it steals whatever happens. A null item (a value that failed to box,
+// with its exception set) makes the whole result null.
+PyObject *vpy_structseq_pack(PyObject *type, PyObject **items, Py_ssize_t count) {
+	int failed = 0;
+	for (Py_ssize_t i = 0; i < count; i++) {
+		if (items[i] == NULL) {
+			failed = 1;
+		}
+	}
+	PyObject *seq = failed ? NULL : PyStructSequence_New((PyTypeObject *)type);
+	if (seq == NULL) {
+		for (Py_ssize_t i = 0; i < count; i++) {
+			Py_XDECREF(items[i]);
+		}
+		return NULL;
+	}
+	for (Py_ssize_t i = 0; i < count; i++) {
+		PyStructSequence_SetItem(seq, i, items[i]);
+	}
+	return seq;
+}
+
 // The buffer-protocol slot ids, read from the headers.
 //
 // PEP 820 renumbered these in CPython 3.15: `Py_bf_getbuffer` was 1 and is 88, and the

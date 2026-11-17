@@ -61,6 +61,15 @@ El estado se recupera con `unsafe { &Hub(s.hub.get()) }`.
 Cuando Python mismo tiene que ver el handle, una cápsula en un campo `@[vc_ref]` hace el
 mismo trabajo al coste de un objeto Python por handle (ver `vlib/vcraft/README.md`).
 
+## Pickle y copia
+
+Una instancia cuyo estado son todo atributos expuestos se puede serializar y copiar
+(`pickle`, `copy.copy`, `copy.deepcopy`): el `__reduce__` generado guarda los atributos y el
+`_vcraft_rebuild` del módulo los vuelve a asignar mediante los setters sin ejecutar el
+constructor. Los atributos propios de una subclase Python se conservan. Una clase con un
+buffer nativo, un handle o un campo que Python no ve lo rechaza con un `TypeError` que lo
+nombra.
+
 ## Constructores
 
 
