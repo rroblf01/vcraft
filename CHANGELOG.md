@@ -96,6 +96,10 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   server), `csv_parser` (checked against `csv`), `numpy_kernel` (`NdArray`/`NdOut`,
   strided views, in-place writes) and `with_c` (a C file of the project's own), each
   with a test that the new `tests/examples/test_examples.py` suite runs in CI.
+- **`vcraft generate-ci` publishes on a tag.** A `v*` tag now builds an sdist next to the
+  wheel matrix and a `publish` job uploads both to PyPI through trusted publishing
+  (`id-token: write`, a `pypi` environment, no token or secret); the rest of the
+  workflow runs with `contents: read`.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.
@@ -154,6 +158,8 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 - **`develop` labels the wheel's size as the wheel's**, noting an editable one is a
   pointer, instead of an unlabelled `size` that read as the extension's.
+- **The CI guide promised a release step the generated workflow did not have**; it has
+  one now (see Added).
 - **`--module <name>` with a space** (as the docs write it) was read as a flag plus a
   positional argument, so `vcraft new pkg --module ext` created the project in `ext/`
   with the default module.

@@ -1636,6 +1636,11 @@ inside one of the images instead. Linux, macOS and Windows runners are supported
     args: build --release
 ```
 
+A `v*` tag also builds an sdist and publishes everything to PyPI through trusted
+publishing (OIDC, `id-token: write`), with no API token stored anywhere: register the
+repository, `build.yml` and the `pypi` environment as a trusted publisher on PyPI once,
+then `git tag v0.1.0 && git push origin v0.1.0`.
+
 vcraft is also a PEP 517 build backend (`pip install .` works), so other
 wheel-building tools can drive it, but only the workflow above is tested.
 

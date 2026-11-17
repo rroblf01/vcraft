@@ -26,9 +26,22 @@ wheel por plataforma que cubre todos los CPython desde el suelo. Free-threading 
 
 ## Publicar desde la CI
 
-El workflow generado está listo para publicar. Añade un token (un secreto
-`PYPI_API_TOKEN` o trusted publishing) y el paso de release sube los wheels que produjo la
-matriz.
+Al subir un tag `v*` se ejecuta la matriz, se construye un sdist y después el job
+`publish` sube los wheels y el sdist a PyPI con
+[trusted publishing](https://docs.pypi.org/trusted-publishers/): el job obtiene un token
+OIDC de GitHub (`permissions: id-token: write`) y PyPI lo cambia por una credencial de
+corta duración, así que no se guarda ningún token ni secreto. El resto del workflow es de
+solo lectura (`contents: read`).
+
+Configuración única, en PyPI: en los ajustes de *Publishing* del proyecto (o como
+publicador pendiente antes de la primera versión) añade un publicador de GitHub con tu
+repositorio, el workflow `build.yml` y el entorno `pypi`. Crea el entorno `pypi` en los
+ajustes del repositorio y añade revisores obligatorios ahí si una publicación debe esperar
+una aprobación. Después:
+
+```console
+$ git tag v0.1.0 && git push origin v0.1.0
+```
 
 ## Ejecutar las suites del propio proyecto
 

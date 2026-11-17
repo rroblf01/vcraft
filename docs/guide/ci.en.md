@@ -25,8 +25,22 @@ threading adds `3.13t`, `3.14t` and `3.15t` cells.
 
 ## Publishing from CI
 
-The generated workflow is ready to publish. Add a token (a `PYPI_API_TOKEN` secret or
-trusted publishing) and the release step uploads the wheels the matrix produced.
+Pushing a `v*` tag runs the matrix, builds an sdist, and then the `publish` job uploads
+the wheels and the sdist to PyPI with
+[trusted publishing](https://docs.pypi.org/trusted-publishers/): the job gets an OIDC
+token from GitHub (`permissions: id-token: write`) and PyPI exchanges it for a
+short-lived credential, so no API token or secret is stored anywhere. The rest of the
+workflow is read-only (`contents: read`).
+
+One-time setup, on PyPI's side: in the project's *Publishing* settings (or as a pending
+publisher before the first release) add a GitHub publisher with your repository, the
+workflow `build.yml` and the environment `pypi`. Create the `pypi` environment in the
+repository settings, and add required reviewers there if a release should wait for an
+approval. Then:
+
+```console
+$ git tag v0.1.0 && git push origin v0.1.0
+```
 
 ## Running the tool's own suites
 

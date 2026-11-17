@@ -62,8 +62,13 @@ pub fn workflow(p vcraft_project.Project, vcraft_action string, free_threading b
 	w.write_string('on:\n')
 	w.write_string('  push:\n')
 	w.write_string('    branches: [main]\n')
+	// A `v*` tag builds the same matrix and then publishes it (the `publish` job).
+	w.write_string("    tags: ['v*']\n")
 	w.write_string('  pull_request:\n')
 	w.write_string('  workflow_dispatch:\n\n')
+	// Read-only by default; only the publish job is granted more.
+	w.write_string('permissions:\n')
+	w.write_string('  contents: read\n\n')
 	w.write_string('jobs:\n')
 	w.write_string('  build:\n')
 	w.write_string('    name: ' + gha('matrix.target') + ' on ' + gha('matrix.os') + '\n')
@@ -152,6 +157,55 @@ pub fn workflow(p vcraft_project.Project, vcraft_action string, free_threading b
 	w.write_string('          & "$env:CHECK" -m venv "$env:RUNNER_TEMP\\check"\n')
 	w.write_string('          & "$env:RUNNER_TEMP\\check\\Scripts\\python.exe" -m pip install (Get-ChildItem dist/*.whl).FullName\n')
 	w.write_string('          & "$env:RUNNER_TEMP\\check\\Scripts\\python.exe" -c "import ' + p.module + '; print(' + p.module + '.__name__)"\n')
+	w.write_string(publish_jobs(vcraft_action))
+	return w.str()
+}
+
+// publish_jobs renders the sdist job and the publish job.
+//
+// Publishing uses PyPI's trusted publishing: the job asks GitHub for an OIDC token
+// (`id-token: write`) and PyPI exchanges it for a short-lived upload credential, so the
+// repository holds no API token at all. It runs only for a `v*` tag, after every cell of
+// the matrix passed, inside a `pypi` environment that can require a reviewer. The one
+// setup step is on PyPI's side: add this repository, `build.yml` and the `pypi`
+// environment as a trusted publisher of the project. Third-party actions are pinned by
+// commit, the way this repository's own release workflow pins them.
+fn publish_jobs(vcraft_action string) string {
+	mut w := new_builder()
+	w.write_string('\n  sdist:\n')
+	w.write_string('    runs-on: ubuntu-latest\n')
+	w.write_string('    steps:\n')
+	w.write_string('      - uses: actions/checkout@v5\n\n')
+	w.write_string('      - uses: actions/setup-python@v6\n')
+	w.write_string('        with:\n')
+	w.write_string('          python-version: "3.13"\n\n')
+	w.write_string('      - name: source distribution\n')
+	w.write_string('        uses: ' + vcraft_action + '\n')
+	w.write_string('        with:\n')
+	w.write_string('          args: sdist\n\n')
+	w.write_string('      - name: upload\n')
+	w.write_string('        uses: actions/upload-artifact@v6\n')
+	w.write_string('        with:\n')
+	w.write_string('          name: sdist\n')
+	w.write_string('          path: dist/*.tar.gz\n')
+	w.write_string('\n  publish:\n')
+	w.write_string('    needs: [build, sdist]\n')
+	w.write_string("    if: " + gha("startsWith(github.ref, 'refs/tags/v')") + '\n')
+	w.write_string('    runs-on: ubuntu-latest\n')
+	w.write_string('    environment: pypi\n')
+	w.write_string('    permissions:\n')
+	w.write_string('      id-token: write\n')
+	w.write_string('    steps:\n')
+	w.write_string('      - name: download the wheels and the sdist\n')
+	w.write_string('        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7\n')
+	w.write_string('        with:\n')
+	w.write_string('          path: dist\n')
+	w.write_string('          merge-multiple: true\n\n')
+	w.write_string('      # Trusted publishing: PyPI checks the OIDC identity of the job; no secret is stored.\n')
+	w.write_string('      - name: publish to PyPI\n')
+	w.write_string('        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1\n')
+	w.write_string('        with:\n')
+	w.write_string('          packages-dir: dist\n')
 	return w.str()
 }
 

@@ -18,6 +18,14 @@ If `pyproject.toml` has a `[project]` table, its fields now win over `vcraft.tom
 `[package]`; a build that finds the two disagreeing says which field. Remove the copy you
 do not want to keep.
 
+A workflow written by an older `vcraft generate-ci` keeps working; run it again to get the
+tag-triggered `publish` job (trusted publishing, no token) and the sdist job. A workflow
+that already uploads with a `PYPI_API_TOKEN` secret of its own needs no change.
+
+`--module` and `--name` now take their value after a space as well as after `=`. A script
+that relied on `vcraft new pkg --module ext` creating the project in `ext/` (the old,
+unintended reading) should pass the directory as the second argument instead.
+
 ---
 
 # Migrating from 0.x to 1.0
