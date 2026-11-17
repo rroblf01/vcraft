@@ -48,6 +48,22 @@ MiB more than PyO3 (`make_range` 2-3 MiB against 0.9).
 **Mitigation:** `gc.collect()` where memory matters, or `gc-free-space-divisor` to
 collect more often.
 
+**Large temporaries peak higher.** A function that allocates a large block on every call
+(`count_primes(10M)`, a 10 MB `[]bool`) peaks at two or three blocks where PyO3 peaks at
+one: measured with 1.8.0, five calls peak at +29 to +38 MiB against PyO3's +9.7. This is
+not a stale pointer vcraft could clear -- collecting at the end of the call, wiping the
+stack, and even `free()`ing the block explicitly all leave it the same, and a plain V
+program without vcraft behaves identically. V runs Boehm with `all_interior_pointers`
+(a slice points into the middle of its array), so a large block is retained, or its
+pages are black-listed for reuse, whenever any word in the roots happens to fall inside
+it; which run that hits depends on address-space randomisation. Boehm's remedy for
+large objects (`GC_malloc_ignore_off_page`) would make a V slice that outlives its array
+a use-after-free, so vcraft does not apply it.
+
+**Mitigation:** keep a large scratch buffer across calls instead of allocating one per
+call (a `@[vc_buffer]` field, or state behind `vcraft.own_gc`); `gc-free-space-divisor =
+8` caps the five-call case at two blocks, for some allocation throughput.
+
 ### Import time
 Level with PyO3 since the collector stopped reading `/proc/self/maps` at start-up
 (0.58 ms against 0.59).

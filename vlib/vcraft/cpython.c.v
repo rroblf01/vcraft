@@ -13,9 +13,11 @@ module vcraft
 // The include path is not known at authoring time, so vcraft passes it with
 // `-cflags -I<sysconfig include>` when it invokes the compiler.
 
-// Pulled into the extension by the driver. Accessors for CPython data symbols.
-#flag @VMODROOT/c/shim.c
-#include "c/shim.h"
+// Accessors for CPython data symbols, and the C halves of the runtime. Included as a
+// source file rather than compiled on its own (`#flag .../shim.c`), so it is part of the
+// same translation unit as the generated glue and the C compiler can inline its small
+// functions into the call path; as a separate object every one was an opaque call.
+#include "c/shim.c"
 // glibc declares `struct dl_phdr_info` and `dl_iterate_phdr` only with
 // `_GNU_SOURCE`, which the header below needs for its Linux root walk. A `#define`
 // there comes too late (system headers precede it in the generated TU), so it

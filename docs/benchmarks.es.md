@@ -48,6 +48,34 @@ vcraft es más rápido en 20 de las 26 filas, empata en tres y es más lento en 
 (2 ns). Las ventajas grandes están en las conversiones (`sum_floats`, `minmax`,
 `echo_bytes`, `join_strings`) y en el `fib` recursivo.
 
+## Memoria
+
+RSS del proceso en MiB, cada escenario en un proceso nuevo (`ab.py --memory`, misma
+máquina): *peak* es el máximo y *kept* lo que sigue residente tras el escenario y
+`gc.collect()`.
+
+| scenario | PyO3 peak · kept | vcraft peak · kept |
+|---|---|---|
+| greet x2M | 29.6 · 0.0 | 29.6 · 0.2 |
+| make_range(100k) x200 | 34.1 · 0.0 | 36.7 · 3.0 |
+| count_primes(10M) x5 | 39.0 · 9.5 | 48.3 · 9.6 |
+| sum_floats(new 10k list) x500 | 29.9 · 0.5 | 30.9 · 1.0 |
+| checksum(new 100kB) x500 | 29.3 · 0.1 | 29.6 · 0.1 |
+| echo_bytes(new 100kB) x500 | 29.1 · 0.3 | 29.2 · 0.2 |
+| join_strings(new 1k strs) x500 | 29.4 · 0.0 | 29.7 · 0.4 |
+| histogram(new 1k words) x500 | 29.9 · 0.2 | 30.0 · 0.7 |
+| Counter() x1M | 29.4 · 0.0 | 29.7 · 0.0 |
+| Vector(1000) x500 | 29.8 · 0.0 | 29.3 · 0.0 |
+| expect_positive(-1) x500k | 29.7 · 0.0 | 29.5 · 0.2 |
+
+La mayoría de escenarios empatan. Las excepciones son los que reservan bloques grandes:
+el colector de V es conservador y trata los punteros interiores como referencias, así que
+un temporal de 10 MB puede seguir residente unas cuantas llamadas cuando Rust lo libera al
+instante (`count_primes`, +9 MiB de pico), y un bucle que reserva mucho conserva unos MiB
+hasta la siguiente recolección (`make_range`, 3 MiB). Por qué vcraft no puede liberarlos
+sin más, y qué hacer en código que reserva bloques grandes en cada llamada, está en
+[LIMITATIONS.md](https://github.com/rroblf01/vcraft/blob/main/LIMITATIONS.md).
+
 ## Cómo leer una diferencia
 
 Dos builds del mismo código difieren hasta un 5 % en llamadas cortas y un 10 % en bucles

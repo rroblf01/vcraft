@@ -1,8 +1,8 @@
 // Accessors for CPython symbols that are data rather than functions.
 //
 // V cannot name a C global, so every CPython singleton the runtime needs gets a
-// one-line accessor here. This file is compiled into the extension by the
-// `#flag @VMODROOT/c/shim.c` directive in vlib/vcraft/cpython.c.v.
+// one-line accessor here. vlib/vcraft/cpython.c.v `#include`s this file, so it is part
+// of the extension's own translation unit and its small functions can be inlined.
 //
 // Every accessor that would touch a concrete object struct has a `Py_LIMITED_API`
 // variant. Under the stable ABI CPython hides `PyTypeObject` and friends behind

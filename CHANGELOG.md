@@ -137,6 +137,11 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   one Python runs itself) now runs a full V collection that returns freed pages to the
   system, so temporaries of earlier calls no longer stay resident until the extension
   allocates again.
+- **The runtime's C is compiled with the extension, not beside it.** `c/shim.c` is now
+  `#include`d into the extension's own translation unit instead of being a separate
+  object, so gcc inlines its small accessors into the call path: `add` 0.90×,
+  `c.add(1)` 0.87×, `join_strings` 0.89×, `histogram` 0.92× against 1.8.0's previous
+  build, nothing measurably slower (`ab.py`, five rounds).
 - **Release builds align loops to 64 bytes** (`-falign-loops=64`, gcc and clang, not on
   Windows). Without it a tight loop's speed depended on where unrelated code happened to
   end: the benchmark's sieve moved by 10% between builds that did not touch it.
@@ -177,6 +182,9 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   run with a warning. `benchmark/ab.py` compares builds by interleaving them.
 
 ### Documentation
+
+- **Why large temporaries peak higher than with PyO3**, measured and explained in
+  LIMITATIONS.md and on the benchmarks page, with the 1.8.0 memory table.
 
 - **A guide for PyO3 and maturin users** (English and Spanish) mapping commands,
   configuration, attributes, error handling, classes and common crates to vcraft.

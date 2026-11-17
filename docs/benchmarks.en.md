@@ -47,6 +47,33 @@ the noise of long loops) and the `c.is_zero` property read (2 ns). The large lea
 the conversion paths (`sum_floats`, `minmax`, `echo_bytes`, `join_strings`) and on the
 recursive `fib`.
 
+## Memory
+
+Process RSS in MiB, each scenario in a fresh process (`ab.py --memory`, same machine):
+*peak* is the maximum, *kept* what stays resident after the scenario and `gc.collect()`.
+
+| scenario | PyO3 peak · kept | vcraft peak · kept |
+|---|---|---|
+| greet x2M | 29.6 · 0.0 | 29.6 · 0.2 |
+| make_range(100k) x200 | 34.1 · 0.0 | 36.7 · 3.0 |
+| count_primes(10M) x5 | 39.0 · 9.5 | 48.3 · 9.6 |
+| sum_floats(new 10k list) x500 | 29.9 · 0.5 | 30.9 · 1.0 |
+| checksum(new 100kB) x500 | 29.3 · 0.1 | 29.6 · 0.1 |
+| echo_bytes(new 100kB) x500 | 29.1 · 0.3 | 29.2 · 0.2 |
+| join_strings(new 1k strs) x500 | 29.4 · 0.0 | 29.7 · 0.4 |
+| histogram(new 1k words) x500 | 29.9 · 0.2 | 30.0 · 0.7 |
+| Counter() x1M | 29.4 · 0.0 | 29.7 · 0.0 |
+| Vector(1000) x500 | 29.8 · 0.0 | 29.3 · 0.0 |
+| expect_positive(-1) x500k | 29.7 · 0.0 | 29.5 · 0.2 |
+
+Most scenarios are level. The exceptions are the ones that allocate large blocks: V's
+collector is conservative and treats interior pointers as references, so a 10 MB
+temporary can stay resident for a few calls where Rust frees it at once
+(`count_primes`, +9 MiB peak), and an allocation-heavy loop keeps a few MiB until the
+next collection (`make_range`, 3 MiB). Why vcraft cannot simply free them, and what to
+do in code that allocates large blocks per call, is in
+[LIMITATIONS.md](https://github.com/rroblf01/vcraft/blob/main/LIMITATIONS.md).
+
 ## How to read a difference
 
 Two builds of the same code differ by up to about 5% on short calls and about 10% on long
