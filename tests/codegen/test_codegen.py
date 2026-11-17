@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 53,
+            glue.count("add_function_owned") == 56,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -464,6 +464,51 @@ def main() -> int:
              lambda: h.nd_scale([1.0, 2.0], 1.0))
     t.check("the stub types them", "def nd_scale(a: Any, k: float) -> memoryview: ..." in STUBS.read_text(),
             [l for l in STUBS.read_text().splitlines() if "nd_scale" in l])
+
+    print("*args and **kwargs")
+    t.equal("a variadic parameter takes the extra positionals", h.sum_all(1, 2, 3, 4), 10)
+    t.equal("and none at all", h.sum_all(5), 5)
+    t.equal("fixed parameters still bind by name", h.sum_all(base=7), 7)
+    t.raises("a wrong item type names the parameter", TypeError, "xs",
+             lambda: h.sum_all(1, 2, "x"))
+    t.equal("@[vc_kwargs] collects unknown keywords", h.tag("a", z="1", b="2"), "a b=2 z=1")
+    t.equal("a fixed parameter by name is not collected", h.tag(name="n", k="v"), "n k=v")
+    t.raises("a repeated keyword is refused", TypeError, "multiple values",
+             lambda: h.tag("a", name="b"))
+    t.raises("extra positionals without *args are refused", TypeError, "positional",
+             lambda: h.tag("a", "b"))
+    t.equal("*args and **kwargs together", h.both("p", "x", "y", a=1, b=2), "p:x,y:3")
+    t.raises("an unknown keyword without **kwargs is still refused", TypeError,
+             "unexpected keyword", lambda: h.sum_all(1, nope=2))
+    stub_text = STUBS.read_text()
+    t.check("the stub declares *args and **kwargs",
+            "def sum_all(base: int, *xs: int) -> int: ..." in stub_text
+            and "def tag(name: str, **opts: str) -> str: ..." in stub_text
+            and "def both(prefix: str, *items: str, **weights: int) -> str: ..." in stub_text,
+            [l for l in stub_text.splitlines() if "def sum_all" in l or "def tag" in l or "def both" in l])
+
+    print("dynamic attributes and pattern matching")
+    cfg = h.Config()
+    t.equal("an ordinary field is found first", cfg.version, 3)
+    t.equal("a missing attribute reaches @[vc_getattr]", cfg.opt_level, "value of opt_level")
+    t.raises("its plain error is an AttributeError", AttributeError, "no attribute 'nope'",
+             lambda: cfg.nope)
+    t.check("hasattr and getattr with a default work", not hasattr(cfg, "nope")
+            and getattr(cfg, "nope", 7) == 7 and hasattr(cfg, "opt_x"))
+    t.equal("__match_args__ lists the fields", h.Counter.__match_args__, ("value", "step"))
+    t.equal("a subclass's start with its base's", h.BoundedCounter.__match_args__,
+            ("value", "step", "limit"))
+    mc = h.Counter()
+    mc.increment()
+    match mc:
+        case h.Counter(v, s):
+            matched = (v, s)
+        case _:
+            matched = None
+    t.equal("an instance destructures in a match statement", matched, (1, 1))
+    t.check("the stub declares both",
+            "    __match_args__ = ('value', 'step')" in STUBS.read_text()
+            and "def __getattr__(self, name: str) -> str: ..." in STUBS.read_text())
 
     print("system errors")
     import errno

@@ -77,6 +77,8 @@ pub fn emit_glue(p Project) string {
 				w.write_string(emit_str_trampoline(p, c, m))
 			} else if m.bool_method {
 				w.write_string(emit_bool_trampoline(p, c, m))
+			} else if m.is_getattr {
+				w.write_string(emit_getattr_trampoline(p, c, m))
 			} else if m.init_method {
 				w.write_string(emit_init_trampoline(p, c, m))
 			} else if m.concat_method {
@@ -529,7 +531,34 @@ pub fn render_class_exec(p Project, c Class) string {
 	w.write_string('\t}\n')
 	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.py_name) + ', ' +
 		c.ctype + ')\n')
+	// `__match_args__`: the exposed fields in order, a base's before the class's own, so
+	// `case Point(x, y):` destructures an instance the way it does a dataclass.
+	match_args := match_fields(p, c)
+	if match_args.len > 0 {
+		w.write_string('\tvcraft.set_match_args(${c.ctype}, [${match_args.map(vstring_literal(it)).join(', ')}])\n')
+	}
 	return w.str()
+}
+
+// match_fields is a class's `__match_args__`: the exposed fields of its base chain from
+// the root down, each class's in declaration order.
+fn match_fields(p Project, c Class) []string {
+	mut chain := []Class{}
+	mut cur := c
+	for {
+		chain.insert(0, cur)
+		if cur.base_index < 0 {
+			break
+		}
+		cur = p.classes[cur.base_index]
+	}
+	mut names := []string{}
+	for k in chain {
+		for f in k.scalar_fields() {
+			names << if f.py_name.len > 0 { f.py_name } else { f.name }
+		}
+	}
+	return names
 }
 
 // emit_error_raiser renders the raiser for one `@[vc_error]` type.
@@ -645,8 +674,17 @@ fn emit_bind_globals(f Func) string {
 	if f.params.len == 0 {
 		return ''
 	}
-	names := f.params.map(vstring_literal(it.name)).join(', ')
-	optional := f.params.map(if it.optional() { 'true' } else { 'false' }).join(', ')
+	// Only the parameters bound by position or name: `*args` and `**kwargs` collect the
+	// rest (`split_call`). `[]string{}`/`[]bool{}` when every parameter collects.
+	fixed := f.fixed_params()
+	names := if fixed.len > 0 { fixed.map(vstring_literal(it.name)).join(', ') } else { '' }
+	optional := if fixed.len > 0 { fixed.map(if it.optional() { 'true' } else { 'false' }).join(', ') } else { '' }
+	if fixed.len == 0 {
+		return '__global (\n' +
+			'\tg_vc_names_${f.trampoline} = []string{}\n' +
+			'\tg_vc_optional_${f.trampoline} = []bool{}\n' +
+			')\n\n'
+	}
 	return '__global (\n' +
 		'\tg_vc_names_${f.trampoline} = [${names}]\n' +
 		'\tg_vc_optional_${f.trampoline} = [${optional}]\n' +
@@ -661,6 +699,16 @@ fn emit_bind_globals(f Func) string {
 // whether each index was passed, so a call that leaves out trailing parameters no longer
 // builds a slot array either.
 fn emit_bind(f Func) string {
+	if f.has_var_args() {
+		// `*args`/`**kwargs`: the call is taken apart once. Without keywords the fixed
+		// parameters stay where they are in `raw_args`, so the ordinary readers work on
+		// it unchanged; with keywords they read the slots, exactly as after `bind_args`.
+		var_pos := f.params.any(it.variadic())
+		var_kw := f.kwargs_param.len > 0
+		return '\tmut args := unsafe { raw_args }\n' +
+			'\tsplit := vcraft.split_call(raw_args, nargs, kwnames, g_vc_names_${f.trampoline}, g_vc_optional_${f.trampoline}, ${var_pos}, ${var_kw}, ${vstring_literal(f.name)}) or { return unsafe { nil } }\n' +
+			'\tif kwnames != unsafe { nil } {\n\t\targs = unsafe { voidptr(split.slots.data) }\n\t}\n'
+	}
 	n := f.params.len
 	// `unsafe` because V reports `raw_args` as immutable otherwise, and it prints that
 	// notice once per wrapper on every compile that has an error to report: a project with
@@ -684,7 +732,37 @@ fn emit_bind(f Func) string {
 // that pin a buffer until the end of the call. A required parameter is checked present
 // first, so a positional-only call that stops short is a missing-argument error rather
 // than a read past the argument array.
+// call_args renders the arguments of the V call: the locals in order, a variadic one
+// spread with `...` as V requires.
+fn call_args(f Func, names []string) string {
+	mut out := []string{}
+	for i, name in names {
+		if i < f.params.len && f.params[i].variadic() {
+			out << '...' + name
+		} else {
+			out << name
+		}
+	}
+	return out.join(', ')
+}
+
 fn param_reader(param Param, local string, index int, func string, opaque bool) string {
+	// `*args`: every positional argument past the fixed ones, from `split_call`.
+	if param.variadic() {
+		elem := param.v_type.trim_space()[3..]
+		return 'mut ${local} := []${elem}{cap: split.rest.len}\n' +
+			'\tfor vc_item in split.rest {\n' +
+			'\t\t${local} << ${reader_fn(elem)}(vc_item, ${vstring_literal(param.name)}) or { return unsafe { nil } }\n' +
+			'\t}'
+	}
+	// `**kwargs`: the keywords no other parameter took, each read as the map's value type.
+	if param.collects_kwargs {
+		_, val := map_parts(param.v_type)
+		return 'mut ${local} := ${param.v_type.trim_space()}{}\n' +
+			'\tfor vc_k, vc_name in split.kw_names {\n' +
+			'\t\t${local}[vc_name] = ${reader_fn(val)}(split.kw_values[vc_k], vc_name) or { return unsafe { nil } }\n' +
+			'\t}'
+	}
 	// A `&T` parameter is an instance reference: the argument must be an instance of `T`,
 	// and the function receives a pointer into that instance's state. The object read is
 	// kept in `${local}_obj` so a `&T` result of the same call can be resolved back to it.
@@ -795,7 +873,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
-	call := if f.params.len == 0 { 'state.' + c.self_access() + '${f.name}()' } else { 'state.' + c.self_access() + '${f.name}(${names.join(', ')})' }
+	call := if f.params.len == 0 { 'state.' + c.self_access() + '${f.name}()' } else { 'state.' + c.self_access() + '${f.name}(${call_args(f, names)})' }
 	if f.returns_result {
 		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
 		if has_value {
@@ -879,7 +957,7 @@ pub fn emit_static_trampoline(f Func) string {
 		w.write_string('\t\t}\n')
 		w.write_string('\t}\n')
 	}
-	call := '${f.static_receiver}.${f.name}(${names.join(', ')})'
+	call := '${f.static_receiver}.${f.name}(${call_args(f, names)})'
 	if f.returns_result {
 		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
 		if has_value {
@@ -1031,6 +1109,37 @@ pub fn emit_str_trampoline(p Project, c Class, f Func) string {
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	w.write_string(emit_tail_return(f, ret, '', false))
 	w.write_string('}\n')
+	return w.str()
+}
+
+// emit_getattr_trampoline renders the `tp_getattro` of a class with `@[vc_getattr]`.
+//
+// The ordinary lookup runs first -- fields, methods, properties, a subclass's `__dict__`
+// -- so an attribute that exists costs nothing extra; only an AttributeError reaches the
+// V method, with the name. Its error becomes the exception: one the code chose, or an
+// AttributeError for a plain `error(...)`, which is what "no such attribute" means here.
+pub fn emit_getattr_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${f.trampoline}(self voidptr, name voidptr) voidptr {\n')
+	w.write_string('\tfound := vcraft.generic_getattr(self, name)\n')
+	w.write_string('\tif !found.is_null() || !vcraft.attribute_error_pending() {\n\t\treturn found.ptr\n\t}\n')
+	w.write_string('\tvcraft.clear_error()\n')
+	w.write_string("\tattr := vcraft.from_py_string(vcraft.borrow(name), 'name') or { return unsafe { nil } }\n")
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	ret := lookup(f.v_ret)
+	w.write_string('\t${result_decl_of(f, ret)}\n')
+	call := 'state.' + c.self_access() + '${f.name}(attr)'
+	if f.returns_result {
+		w.write_string('\tresult = ${call} or {\n')
+		w.write_string('\t\tvcraft.raise_attribute_miss(err, ${vstring_literal(c.py_name)}, attr)\n')
+		w.write_string('\t\treturn unsafe { nil }\n\t}\n')
+	} else {
+		w.write_string('\tresult = ${call}\n')
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
+	w.write_string(emit_tail_return(f, ret, '', false))
+	w.write_string('}\n\n')
 	return w.str()
 }
 
@@ -1342,7 +1451,7 @@ pub fn emit_trampoline(f Func) string {
 		w.write_string('\t}\n')
 	}
 
-	call := if f.params.len == 0 { '${f.name}()' } else { '${f.name}(${names.join(', ')})' }
+	call := if f.params.len == 0 { '${f.name}()' } else { '${f.name}(${call_args(f, names)})' }
 
 	if f.returns_result {
 		// V has no `is` test for a Result, so error propagation is the mechanism:
@@ -2064,10 +2173,22 @@ pub fn result_annotation(f Func) string {
 
 fn param_list(f Func) string {
 	mut parts := []string{}
+	// Python's order whatever V's: the fixed parameters, then `*args`, then `**kwargs`.
+	mut tail := []string{}
 	for param in f.params {
+		if param.variadic() {
+			tail.insert(0, '*${param.name}: ${describe(param.v_type)}')
+			continue
+		}
+		if param.collects_kwargs {
+			_, val := map_parts(param.v_type)
+			tail << '**${param.name}: ${describe(val)}'
+			continue
+		}
 		default := python_default(param)
 		parts << '${param.name}: ${describe(param.v_type)}' + if default.len > 0 { ' = ${default}' } else { '' }
 	}
+	parts << tail
 	return parts.join(', ')
 }
 
@@ -2253,6 +2374,11 @@ pub fn emit_stubs(p Project) string {
 		// declaration already accounts for the inherited ones.
 		for field in c.scalar_fields() {
 			w.write_string('    ${field.name}: ${describe(field.v_type)}\n')
+		}
+		match_args := match_fields(p, c)
+		if match_args.len > 0 {
+			quoted := match_args.map("'" + it + "'").join(', ') + if match_args.len == 1 { ',' } else { '' }
+			w.write_string('    __match_args__ = (${quoted})\n')
 		}
 		// A native buffer is not an attribute, so it has no field line; it is reachable
 		// through `memoryview(instance)` and through methods.

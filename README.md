@@ -237,6 +237,8 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
 | `@[vc_nogil]`     | `pub fn`        | Runs the call with the GIL released                         |
 | `@[vc_async]`     | `pub fn`        | Makes the function awaitable; it runs on its own thread     |
+| `@[vc_kwargs]`    | `pub fn`, methods | A `map[string]T` parameter collects the extra keywords (`**kwargs`) |
+| `@[vc_getattr]`   | methods         | `__getattr__`: answers attribute names the class lacks      |
 | `@[vc_structseq]` | `pub struct`    | A plain struct crosses out as a struct sequence, not a dict |
 | `@[vc_memoryview]`| `pub fn`, methods | Returns a native slice as a writable `memoryview` (no copy) |
 | `@[vc_iter]`    | methods         | Makes the instance its own iterator (`__iter__`)            |
@@ -320,6 +322,29 @@ file, line and column, not a runtime surprise.
 ---
 
 ## Keyword arguments and defaults
+
+A V variadic parameter is Python's `*args`, and `@[vc_kwargs]` makes a `map[string]T`
+parameter Python's `**kwargs`. V wants the variadic one last, so when a function has both
+the map sits just before it and the annotation names it; Python sees the usual order:
+
+<!-- readme-test: skip -->
+```v
+@[vc_fn]
+@[vc_kwargs: 'weights']
+pub fn mix(prefix string, weights map[string]int, items ...string) string {
+	return '${prefix}:${items.join(",")}:${weights.len}'
+}
+```
+
+```python
+>>> m.mix("p", "x", "y", a=1, b=2)      # def mix(prefix: str, *items: str, **weights: int)
+'p:x,y:2'
+```
+
+Every class gets `__match_args__` from its exposed fields, a base's first, so
+`case Point(x, y):` destructures an instance; and a method marked `@[vc_getattr]` answers
+the attribute names the ordinary lookup does not find (a plain `error(...)` from it is an
+AttributeError).
 
 Every parameter can be passed by position or by name, as in a Python function. A `?T`
 parameter may be left out and arrives as `none`; any other parameter gets a default

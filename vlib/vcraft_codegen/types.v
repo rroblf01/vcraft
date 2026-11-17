@@ -61,6 +61,9 @@ pub enum Strategy {
 	// NdOut is `vcraft.NdOut`, a result: a native buffer with a shape, returned as an
 	// N-dimensional `memoryview` that `numpy.asarray` wraps without copying.
 	nd_out
+	// VarArgs is a V variadic parameter, `...T`: Python's `*args`, every positional
+	// argument past the fixed ones, each read as a `T`.
+	var_args
 	// Unsupported means the generator refuses to emit code for it.
 	unsupported
 }
@@ -82,6 +85,9 @@ pub fn lookup(v_type string) Strategy {
 	// is the same type written out.
 	if base == 'PyObj' || base == 'vcraft.PyObj' {
 		return .pyref
+	}
+	if base.starts_with('...') {
+		return .var_args
 	}
 	if base == 'vcraft.NdArray' || base == 'NdArray' {
 		return .nd_array
@@ -218,6 +224,7 @@ pub fn describe(v_type string) string {
 		.sum_type { sum_stub_type(v_type) }
 		// Anything with the buffer protocol; `collections.abc.Buffer` is 3.12+ only.
 		.nd_array { 'Any' }
+		.var_args { describe(v_type.trim_space()[3..]) }
 		.nd_out { 'memoryview' }
 		.unsupported { 'Any' }
 	}

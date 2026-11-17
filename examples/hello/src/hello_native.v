@@ -778,6 +778,66 @@ pub fn nd_shape(a vcraft.NdArray) string {
 	return '${a.shape} ${a.kind.ascii_str()} ${a.readonly} ${a.c_contiguous}'
 }
 
+// sum_all adds `base` and any number of further ints: Python's `sum_all(1, 2, 3)`.
+@[vc_fn]
+pub fn sum_all(base int, xs ...int) int {
+	mut t := base
+	for x in xs {
+		t += x
+	}
+	return t
+}
+
+// tag renders `name` with whatever keyword arguments it was given, sorted by name.
+@[vc_fn]
+@[vc_kwargs]
+pub fn tag(name string, opts map[string]string) string {
+	mut keys := opts.keys()
+	keys.sort()
+	mut out := name
+	for k in keys {
+		out += ' ${k}=${opts[k]}'
+	}
+	return out
+}
+
+// both takes a prefix, any number of strings and any keyword arguments as ints. V wants
+// the variadic parameter last, so the keyword map comes just before it and is named.
+@[vc_fn]
+@[vc_kwargs: 'weights']
+pub fn both(prefix string, weights map[string]int, items ...string) string {
+	mut sum := 0
+	for _, w in weights {
+		sum += w
+	}
+	return '${prefix}:${items.join(",")}:${sum}'
+}
+
+// Config answers attribute lookups it has no field for: `cfg.anything` reads a setting
+// by name, while `cfg.version` is still the ordinary field.
+@[vc_class]
+pub struct Config {
+mut:
+	@[vc_field] version int
+}
+
+@[vc_fn]
+pub fn new_config() &Config {
+	return &Config{
+		version: 3
+	}
+}
+
+// setting is the class's `__getattr__`: called only for names the class does not have.
+@[vc_method]
+@[vc_getattr]
+pub fn (c &Config) setting(name string) !string {
+	if name.starts_with('opt_') {
+		return 'value of ${name}'
+	}
+	return error('no setting ${name}')
+}
+
 // raise_os raises the OSError subclass an errno value stands for, with `context` as the
 // part after the colon in its message.
 @[vc_fn]

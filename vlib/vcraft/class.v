@@ -1092,3 +1092,47 @@ fn no_memory_obj() PyObj {
 	C.PyErr_NoMemory()
 	return PyObj{}
 }
+
+// generic_getattr is the ordinary attribute lookup (`object.__getattribute__`), which a
+// `@[vc_getattr]` class runs before falling back to its V method.
+pub fn generic_getattr(self voidptr, name voidptr) PyObj {
+	return steal(C.PyObject_GenericGetAttr(self, name))
+}
+
+// attribute_error_pending reports whether the pending exception is an AttributeError.
+pub fn attribute_error_pending() bool {
+	return C.PyErr_ExceptionMatches(pyexc_obj(.attribute_error).ptr) != 0
+}
+
+// raise_attribute_miss reports what a `@[vc_getattr]` method's error means: the exception
+// it chose, or for a plain `error(...)` the AttributeError Python would raise for a
+// missing attribute, naming the type and the attribute.
+pub fn raise_attribute_miss(err IError, type_name string, attr string) {
+	if error_is_set() {
+		return
+	}
+	if err.code() == 0 {
+		raise(.attribute_error, "'${type_name}' object has no attribute '${attr}'")
+		return
+	}
+	raise_from_error(err)
+}
+
+// set_match_args sets a class's `__match_args__`, the field order `case Point(x, y):`
+// destructures by. A failure leaves the class without it, which only costs positional
+// patterns, so it is cleared rather than reported.
+pub fn set_match_args(typ PyObj, names []string) {
+	mut items := []PyObj{cap: names.len}
+	for n in names {
+		items << to_py_string(n)
+	}
+	tuple := tuple_of(items)
+	if tuple.is_null() {
+		clear_error()
+		return
+	}
+	if C.PyObject_SetAttrString(typ.ptr, voidptr(c'__match_args__'), tuple.ptr) < 0 {
+		clear_error()
+	}
+	tuple.decref()
+}

@@ -35,6 +35,8 @@ diagnostic, not a silent omission.
 | `@[vc_raw]` | `pub fn` | Skips marshalling; you receive and return `voidptr`. |
 | `@[vc_nogil]` | `pub fn` | Runs the call with the GIL released. |
 | `@[vc_async]` | `pub fn` | Returns an asyncio future; the function runs on its own thread without the GIL. |
+| `@[vc_kwargs]` / `@[vc_kwargs: 'name']` | `pub fn`, methods | The last (or named) `map[string]T` parameter collects extra keywords. |
+| `@[vc_getattr]` | methods | `__getattr__` through `tp_getattro`, after the ordinary lookup. |
 | `@[vc_memoryview]` | `pub fn`, methods | Returns a native slice as a writable `memoryview` (no copy). |
 | `@[vc_str]` | methods | Registers the method as the class's `__str__` (`tp_str`). |
 

@@ -337,7 +337,9 @@ fn emit_ref_type_check(p Project, c Class, f Field) string {
 // emit_class_methods renders the method table of the ordinary methods, closed by the
 // `__reduce__` every class gets for pickling (see `emit_class_reduce`).
 fn emit_class_methods(c Class) string {
-	ordinary := c.methods.filter(it.property == false)
+	// `@[vc_getattr]` fills `tp_getattro` instead: CPython does not call a `__getattr__`
+	// found in the method table of a type made from a spec.
+	ordinary := c.methods.filter(it.property == false && !it.is_getattr)
 	mut w := new_builder()
 	w.write_string('__global (\n')
 	w.write_string('\tg_vc_methods_${c.key} = [\n')
@@ -1391,6 +1393,9 @@ fn numeric_slots_expr(c Class) string {
 	}
 	if c.bool_fn.len > 0 {
 		items << 'vcraft.number_slot(vcraft.slot_nb_bool, voidptr(${c.bool_fn}))'
+	}
+	if c.getattr_fn.len > 0 {
+		items << 'vcraft.number_slot(vcraft.slot_getattro, voidptr(${c.getattr_fn}))'
 	}
 
 	if items.len == 0 {

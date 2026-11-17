@@ -64,6 +64,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `--find-interpreter` builds one for every supported CPython on `PATH`.
 - **`--debug` and `--sanitize`** for `build` and `develop`: V line numbers in gdb and
   crash reports, and ASan/UBSan with the command to run Python under them.
+- **`*args` and `**kwargs`.** A V variadic parameter (`xs ...int`) collects the extra
+  positional arguments, and `@[vc_kwargs]` makes a `map[string]T` parameter collect the
+  extra keywords, with Python's own errors for the rest; the stub declares `*xs: int` and
+  `**opts: str`. Functions, methods and static methods.
+- **`__match_args__` on every class** (its exposed fields, a base's first), so instances
+  destructure in a `match` statement, and **`@[vc_getattr]`** for `__getattr__`: called with
+  the name only when the ordinary lookup fails.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.

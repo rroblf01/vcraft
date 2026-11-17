@@ -223,6 +223,14 @@ pub const attr_structseq = 'vc_structseq'
 // without the GIL, and the call returns an asyncio future the loop settles.
 pub const attr_async = 'vc_async'
 
+// attr_kwargs makes the function's last parameter, a `map[string]T`, collect the keyword
+// arguments no other parameter takes: Python's `**kwargs`.
+pub const attr_kwargs = 'vc_kwargs'
+
+// attr_getattr makes a method `(c &T) name(attr string) !R` the class's `__getattr__`:
+// called with the attribute's name only when the ordinary lookup found nothing.
+pub const attr_getattr = 'vc_getattr'
+
 // known_attrs is every annotation the generator reacts to. Anything else in a
 // `vc.` namespace is a typo and is reported rather than ignored, because a
 // silently ignored annotation means a function quietly missing from the module.
@@ -250,6 +258,8 @@ pub const known_attrs = [
 	attr_hash,
 	attr_structseq,
 	attr_async,
+	attr_kwargs,
+	attr_getattr,
 	attr_lt,
 	attr_le,
 	attr_gt,
@@ -327,6 +337,9 @@ pub const known_attrs = [
 pub struct Param {
 pub mut:
 	name string
+	// collects_kwargs marks the `map[string]T` parameter `@[vc_kwargs]` fills with the
+	// keyword arguments no other parameter takes.
+	collects_kwargs bool
 	// v_type is the type as written, which for a parameter is never a result
 	// type and so needs no splitting.
 	v_type string
@@ -349,6 +362,22 @@ pub mut:
 // it is `?T`, which defaults to None.
 pub fn (p Param) optional() bool {
 	return p.default.len > 0 || p.v_type.trim_space().starts_with('?')
+}
+
+// variadic reports a V variadic parameter, `xs ...T`: Python's `*xs`.
+pub fn (p Param) variadic() bool {
+	return p.v_type.trim_space().starts_with('...')
+}
+
+// fixed_params are the parameters bound by position or name: all but a trailing `*args`
+// and `**kwargs`.
+pub fn (f Func) fixed_params() []Param {
+	return f.params.filter(!it.variadic() && it.name != f.kwargs_param)
+}
+
+// has_var_args reports whether the function takes `*args` or `**kwargs`.
+pub fn (f Func) has_var_args() bool {
+	return f.params.any(it.variadic()) || f.kwargs_param.len > 0
 }
 
 // Func is one function the generator will export. It is filled in piecewise as the
@@ -378,6 +407,11 @@ pub mut:
 	// is_async is `@[vc_async]`: the call returns a future and the function runs on a
 	// thread of its own.
 	is_async bool
+	// kwargs_param names the last parameter, a `map[string]T`, when `@[vc_kwargs]` makes it
+	// collect the keyword arguments no other parameter takes (Python's `**kwargs`).
+	kwargs_param string
+	// is_getattr is `@[vc_getattr]`: the method answers attribute lookups that failed.
+	is_getattr bool
 	// opaque marks a function whose `voidptr` result is a native pointer, not a borrowed
 	// `PyObject`: the wrapper hands it to Python in a capsule.
 	opaque bool
@@ -527,6 +561,8 @@ pub mut:
 	call_fn string
 	// bool_fn is the generated `nb_bool`, empty when the class has none.
 	bool_fn string
+	// getattr_fn is the generated `tp_getattro`, empty when the class has no `@[vc_getattr]`.
+	getattr_fn string
 	// concat_fn/repeat_fn are the generated `sq_concat`/`sq_repeat`, empty when none.
 	concat_fn string
 	repeat_fn string

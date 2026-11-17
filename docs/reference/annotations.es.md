@@ -35,6 +35,8 @@ Todas las anotaciones a las que reacciona el generador. Cualquier otra cosa en e
 | `@[vc_raw]` | `pub fn` | Sin marshalling; recibes y devuelves `voidptr`. |
 | `@[vc_nogil]` | `pub fn` | Ejecuta la llamada con el GIL liberado. |
 | `@[vc_async]` | `pub fn` | Devuelve un future de asyncio; la función se ejecuta en su propio hilo sin el GIL. |
+| `@[vc_kwargs]` / `@[vc_kwargs: 'nombre']` | `pub fn`, métodos | El último parámetro `map[string]T` (o el nombrado) recoge las palabras clave sobrantes. |
+| `@[vc_getattr]` | métodos | `__getattr__` mediante `tp_getattro`, tras la búsqueda normal. |
 | `@[vc_memoryview]` | `pub fn`, métodos | Devuelve un slice nativo como `memoryview` escribible (sin copia). |
 
 ## Firmas

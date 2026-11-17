@@ -112,6 +112,87 @@ pub fn bind_args(args voidptr, nargs isize, kwnames voidptr, out voidptr, names 
 	return true
 }
 
+// CallSplit is a call to a function with `*args` or `**kwargs` taken apart: one slot per
+// fixed parameter (filled only when the caller passed keywords, as `bind_args` does), the
+// positional arguments past them, and the keywords no fixed parameter takes. Every object
+// is borrowed from the call.
+pub struct CallSplit {
+pub mut:
+	slots     []voidptr
+	rest      []PyObj
+	kw_names  []string
+	kw_values []PyObj
+}
+
+// split_call binds a call to a function whose V parameters end with a variadic `...T`
+// (`var_pos`) and/or a `map[string]T` collecting the remaining keywords (`var_kw`).
+// `names` and `optional` describe the fixed parameters only. It raises the TypeError
+// Python would -- too many positional arguments without `*args`, an unknown keyword
+// without `**kwargs`, a repeated one, a missing required one -- and fails.
+pub fn split_call(args voidptr, nargs isize, kwnames voidptr, names []string, optional []bool,
+	var_pos bool, var_kw bool, func string) !CallSplit {
+	n := names.len
+	mut out := CallSplit{}
+	if kwnames != unsafe { nil } {
+		out.slots = []voidptr{len: n, init: unsafe { nil }}
+	}
+	for i in 0 .. int(nargs) {
+		item := unsafe { *(&voidptr(args) + i) }
+		if i < n {
+			if kwnames != unsafe { nil } {
+				out.slots[i] = item
+			}
+			continue
+		}
+		if !var_pos {
+			raise(.type_error, '${func}() takes at most ${n} positional argument${if n == 1 { '' } else { 's' }} (${nargs} given)')
+			return error(func)
+		}
+		out.rest << borrow(item)
+	}
+	if kwnames == unsafe { nil } {
+		return out
+	}
+	count := int(C.PyTuple_Size(kwnames))
+	for k in 0 .. count {
+		key := borrow(C.PyTuple_GetItem(kwnames, isize(k)))
+		data, size := utf8_of(key)
+		if data == unsafe { nil } {
+			return error(func)
+		}
+		keyword := unsafe { tos(&u8(data), size) }
+		value := unsafe { *(&voidptr(args) + int(nargs) + k) }
+		mut slot := -1
+		for j, name in names {
+			if name == keyword {
+				slot = j
+				break
+			}
+		}
+		if slot < 0 {
+			if !var_kw {
+				unexpected_kwarg(func, keyword.clone())
+				return error(func)
+			}
+			out.kw_names << keyword.clone()
+			out.kw_values << borrow(value)
+			continue
+		}
+		if out.slots[slot] != unsafe { nil } {
+			raise(.type_error, "${func}() got multiple values for argument '${keyword}'")
+			return error(func)
+		}
+		out.slots[slot] = value
+	}
+	for j in 0 .. n {
+		if out.slots[j] == unsafe { nil } && !optional[j] {
+			raise(.type_error, "${func}() missing required argument: '${names[j]}'")
+			return error(func)
+		}
+	}
+	return out
+}
+
 // unexpected_kwarg reports an unknown keyword argument.
 pub fn unexpected_kwarg(name string, keyword string) {
 	raise(.type_error, "${name}() got an unexpected keyword argument '${keyword}'")

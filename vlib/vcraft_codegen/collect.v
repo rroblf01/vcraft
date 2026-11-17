@@ -205,6 +205,20 @@ fn build_func(decl astquery.Declaration, ast &flat.FlatAst, block AttrBlock,
 			flat.empty_node
 		}, is_method)
 	}
+	// `@[vc_kwargs]` names the map that collects the extra keywords, or means the last
+	// parameter. V wants a variadic parameter last, so with both the map sits just before
+	// it: `fn f(a int, opts map[string]int, xs ...int)` is Python's `f(a, *xs, **opts)`.
+	if attr_kwargs in block.attrs && f.params.len > 0 {
+		named := (block.args[attr_kwargs] or { '' }).trim("'\"")
+		target := if named.len > 0 { named } else { f.params.last().name }
+		// Recorded even when nothing matches, so `validate` can say so.
+		f.kwargs_param = target
+		for mut param in f.params {
+			if param.name == target {
+				param.collects_kwargs = true
+			}
+		}
+	}
 	defaults := parse_defaults(block.args[attr_defaults] or { '' })
 	for name, value in defaults {
 		mut found := false
@@ -1156,6 +1170,11 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 		m.trampoline = 'vcraft_generated__bool_${decl.receiver.to_lower()}_${decl.name}'
 		m.py_name = '__bool__'
 	}
+	m.is_getattr = attr_getattr in block.attrs
+	if m.is_getattr {
+		m.trampoline = 'vcraft_generated__getattro_${decl.receiver.to_lower()}_${decl.name}'
+		m.py_name = '__getattr__'
+	}
 	m.init_method = attr_init in block.attrs
 	if m.init_method {
 		m.trampoline = 'vcraft_generated__init_${decl.receiver.to_lower()}_${decl.name}'
@@ -1336,6 +1355,11 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 			'error: `@[vc_property] ${decl.name}` takes ${m.params.len} argument(s); a property getter takes none')
 		return
 	}
+	if m.is_getattr && (m.params.len != 1 || lookup(m.params[0].v_type) != .str) {
+		report(mut p, path, decl,
+			'error: `@[vc_getattr] ${decl.name}` has to take exactly one `string`, the name Python looked up')
+		return
+	}
 	if m.bool_method {
 		if m.params.len != 0 {
 			report(mut p, path, decl,
@@ -1375,6 +1399,9 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	}
 	if m.bool_method {
 		p.classes[target].bool_fn = m.trampoline
+	}
+	if m.is_getattr {
+		p.classes[target].getattr_fn = m.trampoline
 	}
 
 	if m.init_method {
@@ -2323,6 +2350,53 @@ fn async_param_ok(v_type string) bool {
 	}
 }
 
+// validate_var_args checks where `*args` (a variadic `...T`) and `**kwargs` (the
+// `@[vc_kwargs]` map) may sit: last, with the variadic one just before the map when both
+// are there, as Python orders them.
+fn validate_var_args(mut p Project, path string, decl astquery.Declaration, f Func) bool {
+	if !f.has_var_args() {
+		return true
+	}
+	if f.raw || f.is_async || f.from_py.len > 0 {
+		report(mut p, path, decl, 'error: `${decl.name}` takes *args or **kwargs, which raw, async and custom-converter functions cannot')
+		return false
+	}
+	for i, param in f.params {
+		if param.collects_kwargs {
+			trailing := i == f.params.len - 1
+				|| (i == f.params.len - 2 && f.params[f.params.len - 1].variadic())
+			if !trailing {
+				report(mut p, path, decl, 'error: `@[vc_kwargs] ${decl.name}`: the map `${param.name}` has to come last, or just before the variadic parameter')
+				return false
+			}
+		}
+		if param.variadic() {
+			elem := param.v_type.trim_space()[3..]
+			if !is_element_type(elem) || !type_marshalable(elem) {
+				report(mut p, path, decl, 'error: `${decl.name}`: `${param.name} ${param.v_type}` collects *args, so each item needs a marshalling rule, and `${elem}` has none')
+				return false
+			}
+		}
+		if param.default.len > 0 && (param.variadic() || param.collects_kwargs) {
+			report(mut p, path, decl, 'error: `${decl.name}`: `${param.name}` collects extra arguments and cannot have a default')
+			return false
+		}
+	}
+	if f.kwargs_param.len > 0 && !f.params.any(it.collects_kwargs) {
+		report(mut p, path, decl, 'error: `@[vc_kwargs] ${decl.name}` names `${f.kwargs_param}`, which is not a parameter of the function')
+		return false
+	}
+	if f.kwargs_param.len > 0 {
+		kw := f.params.filter(it.collects_kwargs)[0]
+		key, val := map_parts(kw.v_type)
+		if lookup(kw.v_type) != .dict || key != 'string' || !is_element_type(val) {
+			report(mut p, path, decl, 'error: `@[vc_kwargs] ${decl.name}`: the last parameter collects the keyword arguments, so it has to be a `map[string]T`, not `${kw.v_type}`')
+			return false
+		}
+	}
+	return true
+}
+
 // validate_async rejects what a `@[vc_async]` function cannot be.
 fn validate_async(mut p Project, path string, decl astquery.Declaration, f Func) bool {
 	if f.raw || f.nogil || f.pass_module || f.opaque || f.from_py.len > 0 || f.into_py.len > 0
@@ -2347,6 +2421,9 @@ fn validate_async(mut p Project, path string, decl astquery.Declaration, f Func)
 // validate rejects a declaration the generator cannot honour, with a position.
 fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 	if f.is_async && !validate_async(mut p, path, decl, f) {
+		return
+	}
+	if !validate_var_args(mut p, path, decl, f) {
 		return
 	}
 	if lookup(f.v_ret) == .nd_array {
@@ -2424,14 +2501,17 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 		}
 		// The check is recursive: a struct whose field, or a composite whose element,
 		// has no rule is a diagnostic here rather than glue that does not compile.
-		if !type_marshalable(param.v_type) {
+		// A variadic parameter is checked by its element (`validate_var_args`).
+		checked := if param.variadic() { param.v_type.trim_space()[3..] } else { param.v_type }
+		if !type_marshalable(checked) {
 			report(mut p, path, decl,
 				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule')
 			return
 		}
 		// A map or a nested composite reads through the generic converter helpers, which
-		// are emitted into the generated file on demand.
-		if param_needs_helpers(param.v_type) {
+		// are emitted into the generated file on demand. Every *args item goes through
+		// the generic reader too.
+		if param_needs_helpers(checked) || param.variadic() || param.collects_kwargs {
 			p.needs_converters = true
 		}
 	}
