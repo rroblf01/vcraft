@@ -377,6 +377,16 @@ class Config:
     def __init__(self) -> None: ...
     def __getattr__(self, name: str) -> str: ...
 
+"""Record stores assignments to names it has no field for: `r.anything = 3` goes to
+	`put`, while `r.size` stays the ordinary field.
+"""
+class Record:
+    size: int
+    __match_args__ = ('size',)
+    def __init__(self) -> None: ...
+    def __setattr__(self, name: str, value: int) -> None: ...
+    def __getattr__(self, name: str) -> int: ...
+
 """A countdown that yields its values one at a time.
 
 	The instance is its own iterator: `@[vc_iter]` runs for its side effects and the

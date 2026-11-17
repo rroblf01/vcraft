@@ -231,6 +231,11 @@ pub const attr_kwargs = 'vc_kwargs'
 // called with the attribute's name only when the ordinary lookup found nothing.
 pub const attr_getattr = 'vc_getattr'
 
+// attr_setattr makes a method `(mut c T) name(attr string, value V) !` the class's
+// `__setattr__` for names the class does not define: its fields and properties are still
+// set the ordinary way, every other assignment reaches the method.
+pub const attr_setattr = 'vc_setattr'
+
 // known_attrs is every annotation the generator reacts to. Anything else in a
 // `vc.` namespace is a typo and is reported rather than ignored, because a
 // silently ignored annotation means a function quietly missing from the module.
@@ -260,6 +265,7 @@ pub const known_attrs = [
 	attr_async,
 	attr_kwargs,
 	attr_getattr,
+	attr_setattr,
 	attr_lt,
 	attr_le,
 	attr_gt,
@@ -412,6 +418,8 @@ pub mut:
 	kwargs_param string
 	// is_getattr is `@[vc_getattr]`: the method answers attribute lookups that failed.
 	is_getattr bool
+	// is_setattr is `@[vc_setattr]`: the method takes assignments the class has no slot for.
+	is_setattr bool
 	// opaque marks a function whose `voidptr` result is a native pointer, not a borrowed
 	// `PyObject`: the wrapper hands it to Python in a capsule.
 	opaque bool
@@ -563,6 +571,8 @@ pub mut:
 	bool_fn string
 	// getattr_fn is the generated `tp_getattro`, empty when the class has no `@[vc_getattr]`.
 	getattr_fn string
+	// setattr_fn is the generated `tp_setattro`, empty when the class has no `@[vc_setattr]`.
+	setattr_fn string
 	// concat_fn/repeat_fn are the generated `sq_concat`/`sq_repeat`, empty when none.
 	concat_fn string
 	repeat_fn string

@@ -80,6 +80,7 @@ fuente produce un stub `.pyi`, así que `help()` y un type checker ven lo mismo.
 | `@[vc_async]` | `pub fn` | Awaitable: devuelve un future de asyncio y se ejecuta en su propio hilo sin el GIL |
 | `@[vc_kwargs]` | `pub fn`, métodos | Un parámetro `map[string]T` recoge las palabras clave sobrantes (`**kwargs`); un variádico `...T` es `*args` |
 | `@[vc_getattr]` | métodos | `__getattr__`: se llama con el nombre cuando la búsqueda normal falla |
+| `@[vc_setattr]` | métodos | `__setattr__`: se llama con el nombre y el valor convertido para nombres que la clase no define |
 | `@[vc_raw]` | `pub fn` | Sin marshalling; tú manejas `PyObject *` |
 | `@[vc_mapping]` | `pub struct` | Activa el protocolo de mapeo (`obj[key]`, `obj[key] = v`, `del obj[key]`) |
 | `@[vc_pass_module]` | `pub fn` | Pasa el objeto módulo como primer argumento |

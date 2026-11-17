@@ -339,7 +339,7 @@ fn emit_ref_type_check(p Project, c Class, f Field) string {
 fn emit_class_methods(c Class) string {
 	// `@[vc_getattr]` fills `tp_getattro` instead: CPython does not call a `__getattr__`
 	// found in the method table of a type made from a spec.
-	ordinary := c.methods.filter(it.property == false && !it.is_getattr)
+	ordinary := c.methods.filter(it.property == false && !it.is_getattr && !it.is_setattr)
 	mut w := new_builder()
 	w.write_string('__global (\n')
 	w.write_string('\tg_vc_methods_${c.key} = [\n')
@@ -1396,6 +1396,9 @@ fn numeric_slots_expr(c Class) string {
 	}
 	if c.getattr_fn.len > 0 {
 		items << 'vcraft.number_slot(vcraft.slot_getattro, voidptr(${c.getattr_fn}))'
+	}
+	if c.setattr_fn.len > 0 {
+		items << 'vcraft.number_slot(vcraft.slot_setattro, voidptr(${c.setattr_fn}))'
 	}
 
 	if items.len == 0 {

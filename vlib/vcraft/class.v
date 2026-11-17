@@ -1099,6 +1099,21 @@ pub fn generic_getattr(self voidptr, name voidptr) PyObj {
 	return steal(C.PyObject_GenericGetAttr(self, name))
 }
 
+// generic_setattr is the ordinary attribute assignment (`object.__setattr__`), which a
+// `@[vc_setattr]` class keeps for the names it defines and for deletions.
+pub fn generic_setattr(self voidptr, name voidptr, value voidptr) int {
+	return C.PyObject_GenericSetAttr(self, name, value)
+}
+
+// type_defines reports whether the type of `self` (or a base) has an attribute `name`:
+// a field, property or method, which assignment must reach the ordinary way.
+pub fn type_defines(self voidptr, name voidptr) bool {
+	typ := C.PyObject_Type(self)
+	r := C.PyObject_HasAttr(typ, name)
+	C.Py_DecRef(typ)
+	return r == 1
+}
+
 // attribute_error_pending reports whether the pending exception is an AttributeError.
 pub fn attribute_error_pending() bool {
 	return C.PyErr_ExceptionMatches(pyexc_obj(.attribute_error).ptr) != 0

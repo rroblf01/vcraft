@@ -219,6 +219,8 @@ pub fn emit_glue(p Project) string {
 				w.write_string(emit_bool_trampoline(p, c, m))
 			} else if m.is_getattr {
 				w.write_string(emit_getattr_trampoline(p, c, m))
+			} else if m.is_setattr {
+				w.write_string(emit_setattr_trampoline(p, c, m))
 			} else if m.init_method {
 				w.write_string(emit_init_trampoline(p, c, m))
 			} else if m.concat_method {
@@ -1282,6 +1284,36 @@ pub fn emit_getattr_trampoline(p Project, c Class, f Func) string {
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn unsafe { nil }\n\t}\n')
 	w.write_string(emit_tail_return(f, ret, '', false))
 	w.write_string('}\n\n')
+	return w.str()
+}
+
+// emit_setattr_trampoline renders the `tp_setattro` of a class with `@[vc_setattr]`.
+//
+// A name the type defines -- a field, a property, a method -- and every deletion take the
+// ordinary path, so the class's own attributes behave as before; any other assignment
+// converts the value to the method's parameter type and calls it. A plain `error(...)`
+// becomes the AttributeError Python raises for an attribute that cannot be set.
+pub fn emit_setattr_trampoline(p Project, c Class, f Func) string {
+	mut w := new_builder()
+	w.write_string('fn ${f.trampoline}(self voidptr, name voidptr, value voidptr) int {\n')
+	w.write_string('\tif value == unsafe { nil } || vcraft.type_defines(self, name) {\n')
+	w.write_string('\t\treturn vcraft.generic_setattr(self, name, value)\n\t}\n')
+	w.write_string("\tattr := vcraft.from_py_string(vcraft.borrow(name), 'name') or { return -1 }\n")
+	w.write_string(emit_state_pointer(c))
+	w.write_string(emit_enter_state(p, c))
+	strat := lookup(f.params[1].v_type)
+	conv := unbox_expr(strat, 'value', f.params[1].v_type)
+	w.write_string('\tmut arg1 := ' + conv + ' or {\n\t\treturn -1\n\t}\n')
+	call := 'state.' + c.self_access() + '${f.name}(attr, arg1)'
+	if f.returns_result {
+		w.write_string('\t${call} or {\n')
+		w.write_string('\t\tvcraft.raise_attribute_miss(err, ${vstring_literal(c.py_name)}, attr)\n')
+		w.write_string('\t\treturn -1\n\t}\n')
+	} else {
+		w.write_string('\t${call}\n')
+	}
+	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
+	w.write_string('\treturn 0\n}\n\n')
 	return w.str()
 }
 

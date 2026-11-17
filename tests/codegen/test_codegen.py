@@ -495,6 +495,20 @@ def main() -> int:
              lambda: cfg.nope)
     t.check("hasattr and getattr with a default work", not hasattr(cfg, "nope")
             and getattr(cfg, "nope", 7) == 7 and hasattr(cfg, "opt_x"))
+    rec = h.Record()
+    rec.alpha = 5
+    rec.beta = 7
+    t.equal("@[vc_setattr] takes names the class does not define", (rec.alpha, rec.beta), (5, 7))
+    t.equal("and a field is still set the ordinary way", rec.size, 2)
+    rec.size = 10
+    t.equal("assigning the field does not reach the method", rec.size, 10)
+    t.raises("the value is converted to the method's type", TypeError, "",
+             lambda: setattr(rec, "gamma", "x"))
+    t.raises("its plain error is an AttributeError", AttributeError, "_hidden",
+             lambda: setattr(rec, "_hidden", 1))
+    t.check("the stub declares __setattr__",
+            "def __setattr__(self, name: str, value: int) -> None: ..." in STUBS.read_text(),
+            [l for l in STUBS.read_text().splitlines() if "__setattr__" in l])
     t.equal("__match_args__ lists the fields", h.Counter.__match_args__, ("value", "step"))
     t.equal("a subclass's start with its base's", h.BoundedCounter.__match_args__,
             ("value", "step", "limit"))

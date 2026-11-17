@@ -1175,6 +1175,11 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 		m.trampoline = 'vcraft_generated__getattro_${decl.receiver.to_lower()}_${decl.name}'
 		m.py_name = '__getattr__'
 	}
+	m.is_setattr = attr_setattr in block.attrs
+	if m.is_setattr {
+		m.trampoline = 'vcraft_generated__setattro_${decl.receiver.to_lower()}_${decl.name}'
+		m.py_name = '__setattr__'
+	}
 	m.init_method = attr_init in block.attrs
 	if m.init_method {
 		m.trampoline = 'vcraft_generated__init_${decl.receiver.to_lower()}_${decl.name}'
@@ -1360,6 +1365,12 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 			'error: `@[vc_getattr] ${decl.name}` has to take exactly one `string`, the name Python looked up')
 		return
 	}
+	if m.is_setattr && (m.params.len != 2 || lookup(m.params[0].v_type) != .str
+		|| lookup(m.v_ret) != .void) {
+		report(mut p, path, decl,
+			'error: `@[vc_setattr] ${decl.name}` has to take a `string`, the attribute name, and the value, and return nothing (or `!`)')
+		return
+	}
 	if m.bool_method {
 		if m.params.len != 0 {
 			report(mut p, path, decl,
@@ -1402,6 +1413,9 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	}
 	if m.is_getattr {
 		p.classes[target].getattr_fn = m.trampoline
+	}
+	if m.is_setattr {
+		p.classes[target].setattr_fn = m.trampoline
 	}
 
 	if m.init_method {

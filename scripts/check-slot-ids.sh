@@ -32,6 +32,7 @@ int main(void) {
 	printf("slot_richcompare %d\n", Py_tp_richcompare);
 	printf("slot_hash %d\n", Py_tp_hash);
 	printf("slot_getattro %d\n", Py_tp_getattro);
+	printf("slot_setattro %d\n", Py_tp_setattro);
 	printf("slot_sq_length %d\n", Py_sq_length);
 	printf("slot_sq_item %d\n", Py_sq_item);
 	printf("slot_sq_contains %d\n", Py_sq_contains);
@@ -81,6 +82,7 @@ slot_iter 62
 slot_iternext 63
 slot_hash 59
 slot_getattro 58
+slot_setattro 69
 slot_sq_length 45
 slot_sq_item 44
 slot_sq_contains 41

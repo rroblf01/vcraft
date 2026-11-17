@@ -840,6 +840,49 @@ pub fn (c &Config) setting(name string) !string {
 	return error('no setting ${name}')
 }
 
+// RecordState holds a Record's dynamic attributes, collector-managed through `own_gc`.
+struct RecordState {
+mut:
+	extra map[string]int
+}
+
+// Record stores assignments to names it has no field for: `r.anything = 3` goes to
+// `put`, while `r.size` stays the ordinary field.
+@[vc_class]
+pub struct Record {
+mut:
+	@[vc_field] size int
+	@[vc_handle] state vcraft.Owned
+}
+
+@[vc_fn]
+pub fn new_record() &Record {
+	return &Record{
+		state: vcraft.own_gc(&RecordState{})
+	}
+}
+
+// put is the class's `__setattr__` for the names it does not define. The name is
+// borrowed from Python, so it is cloned before the map keeps it.
+@[vc_method]
+@[vc_setattr]
+pub fn (mut r Record) put(name string, value int) ! {
+	if name.starts_with('_') {
+		return error('private name ${name}')
+	}
+	mut s := unsafe { &RecordState(r.state.get()) }
+	s.extra[name.clone()] = value
+	r.size = s.extra.len
+}
+
+// lookup is the matching `__getattr__`.
+@[vc_method]
+@[vc_getattr]
+pub fn (r &Record) lookup(name string) !int {
+	s := unsafe { &RecordState(r.state.get()) }
+	return s.extra[name] or { return error('no ${name}') }
+}
+
 // next_day moves a datetime forward a day: `time.Time` is Python's `datetime`.
 @[vc_fn]
 pub fn next_day(t time.Time) time.Time {

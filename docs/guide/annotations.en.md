@@ -79,6 +79,7 @@ the marshalled signature becomes `__text_signature__`, and the same source produ
 | `@[vc_async]` | `pub fn` | Awaitable: returns an asyncio future, runs on its own thread without the GIL |
 | `@[vc_kwargs]` | `pub fn`, methods | A `map[string]T` parameter collects the extra keyword arguments (`**kwargs`); a variadic `...T` is `*args` |
 | `@[vc_getattr]` | methods | `__getattr__`: called with the name when the ordinary lookup fails |
+| `@[vc_setattr]` | methods | `__setattr__`: called with the name and the converted value for names the class does not define |
 | `@[vc_raw]` | `pub fn` | Skips marshalling; you handle `PyObject *` |
 | `@[vc_mapping]` | `pub struct` | Enables the mapping protocol (`obj[key]`, `obj[key] = v`, `del obj[key]`) |
 | `@[vc_pass_module]` | `pub fn` | Passes the module object as the first argument |

@@ -70,7 +70,8 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   `**opts: str`. Functions, methods and static methods.
 - **`__match_args__` on every class** (its exposed fields, a base's first), so instances
   destructure in a `match` statement, and **`@[vc_getattr]`** for `__getattr__`: called with
-  the name only when the ordinary lookup fails.
+  the name only when the ordinary lookup fails, with **`@[vc_setattr]`** as its
+  `__setattr__` counterpart for names the class does not define.
 - **Dates, decimals, big integers and JSON.** `time.Time` crosses as `datetime.datetime`,
   `time.Duration` as `datetime.timedelta`, `vcraft.Decimal` as an exact
   `decimal.Decimal`, `big.Integer` as an `int` of any size, and `json2.Any` as any

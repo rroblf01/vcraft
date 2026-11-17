@@ -240,6 +240,7 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_async]`     | `pub fn`        | Makes the function awaitable; it runs on its own thread     |
 | `@[vc_kwargs]`    | `pub fn`, methods | A `map[string]T` parameter collects the extra keywords (`**kwargs`) |
 | `@[vc_getattr]`   | methods         | `__getattr__`: answers attribute names the class lacks      |
+| `@[vc_setattr]`   | methods         | `__setattr__` for names the class does not define           |
 | `@[vc_structseq]` | `pub struct`    | A plain struct crosses out as a struct sequence, not a dict |
 | `@[vc_memoryview]`| `pub fn`, methods | Returns a native slice as a writable `memoryview` (no copy) |
 | `@[vc_iter]`    | methods         | Makes the instance its own iterator (`__iter__`)            |
@@ -350,7 +351,9 @@ pub fn mix(prefix string, weights map[string]int, items ...string) string {
 Every class gets `__match_args__` from its exposed fields, a base's first, so
 `case Point(x, y):` destructures an instance; and a method marked `@[vc_getattr]` answers
 the attribute names the ordinary lookup does not find (a plain `error(...)` from it is an
-AttributeError).
+AttributeError). Its counterpart `@[vc_setattr]`, on `(mut self T) name(attr string, value V) !`,
+takes every assignment to a name the class does not define, the value converted to `V`;
+fields, properties and deletions keep the ordinary path.
 
 Every parameter can be passed by position or by name, as in a Python function. A `?T`
 parameter may be left out and arrives as `none`; any other parameter gets a default

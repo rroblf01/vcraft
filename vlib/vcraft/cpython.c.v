@@ -338,6 +338,8 @@ fn C.PyErr_Clear()
 
 fn C.PyErr_ExceptionMatches(exc voidptr) int
 fn C.PyObject_GenericGetAttr(o voidptr, name voidptr) voidptr
+fn C.PyObject_GenericSetAttr(o voidptr, name voidptr, value voidptr) int
+fn C.PyObject_HasAttr(o voidptr, name voidptr) int
 
 fn C.PyErr_Fetch(t voidptr, v voidptr, tb voidptr)
 
@@ -534,6 +536,9 @@ pub const slot_nb_bool = i32(9)
 
 // slot_getattro is `Py_tp_getattro`, filled by `@[vc_getattr]`.
 pub const slot_getattro = i32(58)
+
+// slot_setattro is `Py_tp_setattro`, filled by `@[vc_setattr]`.
+pub const slot_setattro = i32(69)
 
 pub const slot_str = i32(70)
 
