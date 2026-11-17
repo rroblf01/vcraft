@@ -535,9 +535,17 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	} else {
 		''
 	}
+	// Hot loops start on a 32-byte boundary in a release build. gcc's default leaves a
+	// loop wherever the code before it ends, so a tight loop of 40-60 bytes straddled a
+	// 64-byte line in one build and not in the next: an unrelated change elsewhere in the
+	// extension moved a user's loop by 10% either way (benchmark/HISTORY.md). gcc and
+	// clang both take the flag; tcc and MSVC, which a debug or Windows build may use, do
+	// not, so it is only given where neither can be the compiler. The binary grows by
+	// well under 1%.
+	align_flag := if opt.release && target.os != 'windows' { '-falign-loops=32' } else { '' }
 	// The manifest's flags come first and the CLI's after, so `--cflags` adds to what the
 	// project already asks for rather than replacing it.
-	extra_cflags := (p.cflags + ' ' + opt.cflags).trim_space()
+	extra_cflags := (align_flag + ' ' + p.cflags + ' ' + opt.cflags).trim_space()
 	mut link_extra := (p.ldflags + ' ' + opt.ldflags).trim_space()
 	mut args := [
 		opt.v,
