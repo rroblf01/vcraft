@@ -262,7 +262,7 @@ generic value tree.
 | `u8`, `u16`, `u32`, `u64`, `usize`    | `int`                        | Negative or out of range raises OverflowError      |
 | `f32`, `f64`                          | `float`                      | An `int` is accepted too                           |
 | `rune`                                | `int`                        | The code point                                     |
-| `string`                              | `str`                        | UTF-8                                              |
+| `string`                              | `str`                        | UTF-8; borrowed in, valid for the call (see below) |
 | `[]u8`                                | `bytes`                      | Any bytes-like object in, without copying it       |
 | `[]T` of the types above, or `string` | `list`                       | Any sequence in (a list, a tuple); a list out      |
 | `[N]T` of the types above             | `list`                       | Any sequence of exactly N items in; a list out     |
@@ -1083,7 +1083,10 @@ The instance is its own iterator: `@[vc_iter]` runs for its side effects and the
 slot returns the instance itself. `@[vc_next]` produces one item per call, and a V
 error ends the iteration -- cleanly for `StopIteration`, loudly for anything else,
 which is CPython's own contract for the slot rather than something vcraft
-invented.
+invented. The clean end builds no exception object: `raise_domain(.stop_iteration, ...)`
+reaching `@[vc_next]` returns null with nothing set, so `for` and `list()` pay nothing
+for it and an explicit `next()` raises a bare `StopIteration`, as CPython's own
+iterators do. The message is kept wherever else the error ends up.
 
 ---
 
@@ -1172,7 +1175,11 @@ RuntimeError: panic in V code: substr(0, 1) out of bounds (len=0) s=
 ```
 
 A recovered panic is raised rather than reaching Python as a half-written result,
-which is what the wrapper's `error_is_set` check after the call is for. Panic state
+which is what the wrapper's `error_is_set` check after the call is for. The real
+wrapper also clears a local flag on every normal return (after evaluating what it
+returns), and the deferred block only calls `recover()` while that flag is set: V
+runs a deferred block on every exit, and asking for a panic that is not there was a
+measurable share of a short call. Panic state
 is thread-local in V, so this stays correct under free threading. A method works on
 the instance in place, as a PyO3 method does, so one that panics halfway keeps the
 fields it had already written.
@@ -1215,6 +1222,26 @@ interpreter state rather than reporting anything. A `!T` function fails with a p
 `error(...)` instead, and the wrapper turns it into an exception after it holds the
 GIL again. `@[vc_nogil]` on a `@[vc_raw]` function is refused outright: raw means the
 function handles `PyObject *` itself, which is the opposite of pure.
+
+**A `str` argument is borrowed, not copied.** Every `str` that reaches V through the
+glue - a `string` parameter, the items of a `[]string`, the keys and values of a
+`map[string]T`, the value given to a property setter or to `__setitem__` - is a V
+`string` pointing into the `str` object's own UTF-8 buffer. That makes a call cheap, and it
+is safe for exactly the call: the caller holds the `str`, so the bytes stay put even while
+`@[vc_nogil]` has the GIL released. Anything kept past the call has to be copied first,
+with `.clone()`: a `string` stored in a map, a struct field, a global or a channel
+otherwise points at memory Python frees as soon as the last reference to the `str` goes,
+and reads garbage later with nothing pointing at the store. Under `@[vc_nogil]` one more
+case applies: the items of a list that another Python thread mutates during the call can
+be freed mid-call, so clone them before relying on them if the list is shared.
+
+**Allocating from any thread.** Every generated entry point registers the calling thread
+with V's collector before it runs any V code, so V code may allocate on whatever Python
+thread called it, with the GIL held or released. A thread started with `spawn` is
+registered by V itself. A thread a C library created and calls you back on is neither:
+call `vcraft.gc_enter()` at the top of such a callback before allocating, and
+`vcraft.with_gil` before touching Python (see
+[`vlib/vcraft/README.md`](vlib/vcraft/README.md#acquiring-the-gil-from-a-thread-v-created)).
 
 The pairing is exact on every path -- success, `!T` failure, and panic -- because an
 unbalanced release corrupts the GIL count and crashes the next thread switch inside
@@ -1670,7 +1697,10 @@ file of accessors with a header, pulled in with `#flag @VMODROOT/c/...`.
 default. It is statically linked into the extension, it does not replace the C
 allocator, so it never interferes with CPython's own memory management, and V
 0.5.2 already calls `GC_allow_register_threads()` during initialisation, which is
-precisely the case of a host-created thread entering V code.
+precisely the case of a host-created thread entering V code. The collector runs on
+allocation pressure, and it also follows Python's: every full `gc.collect()` (and the
+full collections Python runs on its own) runs a full V collection that returns the
+pages it freed to the system, so a process that collects sees the V heap shrink too.
 
 **Extension modules are process-scoped.** `PyInit_` is the single-phase
 initialisation API, so a module loaded in one interpreter is shared by all of

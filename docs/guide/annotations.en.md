@@ -103,6 +103,13 @@ for the syscalls pattern - a `@[vc_nogil]` function that does the blocking call,
 V-only work wrapped in `released` around it - so a long operation does not stall every
 other Python thread. The block passed to `released` must not call Python.
 
+A `str` argument is borrowed for the call, not copied: `.clone()` anything kept past it
+(see [Borrowed strings](types.md#borrowed-strings)). V code may allocate on any Python
+thread that called it, GIL held or not, because every generated entry point registers the
+calling thread with V's collector first; a thread started with `spawn` is registered by V.
+A thread a C library created and calls back on is not: call `vcraft.gc_enter()` at the top
+of the callback before allocating, and `vcraft.with_gil` before touching Python.
+
 ## Next
 
 - [Type marshalling](types.md)

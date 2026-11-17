@@ -11,7 +11,7 @@ surprise.
 | `u8`, `u16`, `u32`, `u64`, `usize` | `int` | Negative or out of range raises `OverflowError` |
 | `f32`, `f64` | `float` | An `int` is accepted too |
 | `rune` | `int` | The code point |
-| `string` | `str` | UTF-8 |
+| `string` | `str` | UTF-8; borrowed in, valid for the call |
 | `[]u8` | `bytes` | Any bytes-like object in, without copying it |
 | `[]T` | `list` | Any sequence in (a list, a tuple); a list out |
 | `[N]T` | `list` | Any sequence of exactly N items in; a list out |
@@ -57,10 +57,21 @@ A `&T` where `T` is a `@[vc_class]` passes the instance itself, not a copy: a pa
 hands the V function a pointer into the instance's live state, and a result is matched back
 to the instance it points into. See [Classes and properties](classes.md).
 
+## Borrowed strings
+
+A `str` is not copied on the way in. A `string` parameter, the items of a `[]string`, the
+keys and values of a `map[string]T` and the value a property setter or `__setitem__`
+receives all point into the `str` object's own UTF-8 buffer. They are valid for the call,
+including while `@[vc_nogil]` has the GIL released, because the caller holds the `str`.
+Anything kept past the call - in a map, a struct field, a global, a channel - has to be
+copied with `.clone()` first, or it points at memory Python frees once the `str` goes.
+Under `@[vc_nogil]`, the items of a list another thread mutates during the call can also
+go away mid-call.
+
 ## Zero-copy helpers
 
-The marshalling rules above copy. Three helpers exist for the hot path where a copy is
-not acceptable:
+The other rules above copy numbers and build new containers. Three helpers exist for the
+hot path where a copy of a buffer is not acceptable:
 
 - `vcraft.bytes_arg` (for a `[]u8` parameter) aliases the argument without copying: exact
   `bytes` costs nothing, anything else goes through a view whose reference pins the

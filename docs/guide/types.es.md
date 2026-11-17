@@ -11,7 +11,7 @@ una sorpresa en ejecución.
 | `u8`, `u16`, `u32`, `u64`, `usize` | `int` | Negativo o fuera de rango lanza `OverflowError` |
 | `f32`, `f64` | `float` | También acepta un `int` |
 | `rune` | `int` | El punto de código |
-| `string` | `str` | UTF-8 |
+| `string` | `str` | UTF-8; prestado al entrar, válido durante la llamada |
 | `[]u8` | `bytes` | Cualquier objeto bytes-like al entrar, sin copiarlo |
 | `[]T` | `list` | Cualquier secuencia al entrar (lista, tupla); una `list` al salir |
 | `[N]T` | `list` | Exactamente N ítems al entrar; una `list` al salir |
@@ -58,10 +58,21 @@ Un `&T` donde `T` es un `@[vc_class]` pasa la instancia misma, no una copia: un 
 entrega a la función V un puntero al estado vivo de la instancia, y un resultado se empareja
 de vuelta con la instancia a la que apunta. Ver [Clases y propiedades](classes.md).
 
+## Strings prestados
+
+Un `str` no se copia al entrar. Un parámetro `string`, los elementos de un `[]string`, las
+claves y valores de un `map[string]T` y el valor que recibe un setter de propiedad o
+`__setitem__` apuntan al buffer UTF-8 del propio objeto `str`. Son válidos durante la
+llamada, también mientras `@[vc_nogil]` tiene el GIL liberado, porque el llamador mantiene
+el `str`. Todo lo que se guarde más allá de la llamada - en un mapa, un campo de struct, un
+global, un canal - hay que copiarlo antes con `.clone()`, o apunta a memoria que Python
+libera en cuanto desaparece el `str`. Con `@[vc_nogil]`, los elementos de una lista que
+otro hilo modifica durante la llamada también pueden desaparecer a mitad de la llamada.
+
 ## Helpers sin copia
 
-Las reglas de marshalling anteriores copian. Tres helpers existen para el camino caliente
-donde una copia no es aceptable:
+Las demás reglas anteriores copian los números y construyen contenedores nuevos. Tres
+helpers existen para el camino caliente donde copiar un buffer no es aceptable:
 
 - `vcraft.bytes_arg` (para un parámetro `[]u8`) aliasa el argumento sin copiar: un `bytes`
   exacto no cuesta nada; cualquier otra cosa va por una vista cuya referencia fija al

@@ -104,6 +104,14 @@ para el patrón de syscalls - una función `@[vc_nogil]` que hace la llamada blo
 trabajo V puro envuelto en `released` alrededor - para que una operación larga no bloquee
 a los demás hilos Python. El bloque pasado a `released` no debe llamar a Python.
 
+Un argumento `str` se presta durante la llamada, no se copia: aplica `.clone()` a lo que
+se guarde más allá (ver [Strings prestados](types.md#strings-prestados)). El código V puede
+asignar memoria en cualquier hilo Python que lo llame, con el GIL o sin él, porque cada
+punto de entrada generado registra antes el hilo con el colector de V; un hilo lanzado con
+`spawn` lo registra V. Un hilo creado por una biblioteca C que te llama de vuelta no está
+registrado: llama a `vcraft.gc_enter()` al principio del callback antes de asignar, y a
+`vcraft.with_gil` antes de tocar Python.
+
 ## Siguiente
 
 - [Tipos](types.md)

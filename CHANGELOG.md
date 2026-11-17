@@ -5,6 +5,72 @@ All notable changes to vcraft are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor releases could change the
 annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
+## [Unreleased]
+
+### Performance
+
+Every change below is picked up by rebuilding with the new vcraft: no annotation, API or
+`vcraft.toml` key changed. Measured with the new interleaved A/B harness
+(`benchmark/ab.py`) against 1.7.2 and PyO3 0.29; see `benchmark/HISTORY.md`.
+
+- **The panic guard skips `recover()` on a normal return.** V runs a deferred block on
+  every exit, so each call paid a `recover()` call and a thread-local lookup to learn no
+  panic was in flight. The generated guard now clears a local flag on every normal
+  return (after evaluating what it returns), and only a landed panic calls `recover()`.
+- **Instance state is reached inline.** `sizeof(PyObject)` and the state copy were calls
+  into another C unit on every method, property, comparison and construction; both are
+  inline in the header now.
+- **A constructor that is one `return &T{...}` no longer allocates.** `newstate`
+  evaluates the same literal under the constructor's own parameter names instead of
+  calling it and copying out of the collector block the `&` allocated. Constructors that
+  do anything else are still called.
+- **The end of an iteration builds no exception.** `raise_domain(.stop_iteration, ...)`
+  reaching a `@[vc_next]` method now ends the iteration by returning null with nothing
+  set, CPython's contract for `tp_iternext`, instead of building a `StopIteration` per
+  loop. `list(iterator)` of a short iterator is about 40% faster.
+- **Fixed-size `int`/`i64` arrays cross without a heap slice**, in both directions.
+- **Complex arguments are read in one step**, straight from the object on a full build.
+- **Import is about a quarter faster on Linux.** The collector's start-up asked glibc for
+  the main thread's stack, which reads `/proc/self/maps` line by line; the bound is now
+  taken from `__libc_stack_end`, which the collector itself uses when built without
+  `pthread_getattr_np`.
+- **V's heap follows Python's collector.** A full Python collection (`gc.collect()`, or
+  one Python runs itself) now runs a full V collection that returns freed pages to the
+  system, so temporaries of earlier calls no longer stay resident until the extension
+  allocates again.
+- **Release builds align loops to 32 bytes** (`-falign-loops=32`, gcc and clang, not on
+  Windows). Without it a tight loop's speed depended on where unrelated code happened to
+  end: the benchmark's sieve moved by 10% between builds that did not touch it.
+- **Wheels and sdists are about 13% smaller.** The DEFLATE writer now writes each block
+  with a dynamic Huffman code when that is smaller than the fixed one, and matches
+  lazily, landing within 1% of zlib level 6.
+
+### Changed
+
+- **`next()` on an exhausted vcraft iterator raises a bare `StopIteration`**, as CPython's
+  own iterators and PyO3's do, rather than one carrying the text passed to
+  `raise_domain(.stop_iteration, ...)`. `for` and `list()` never saw the text. Anywhere
+  else the error ends up, it is still raised with its message.
+
+### Fixed
+
+- **The sdist carries the project's C code.** Only `.v` files under `src/` were packed,
+  so a project with its own header or C source (for example `c/` reached through
+  `#flag -I @VMODROOT/c`) built in `vcraft develop` but failed at the C compiler when
+  installed from the sdist. Every `.c` and `.h` under the project root now travels,
+  skipping hidden directories, build output and virtual environments.
+
+- **`benchmark/run.sh` no longer fails without zig 0.16**: zig-maturin is left out of the
+  run with a warning. `benchmark/ab.py` compares builds by interleaving them.
+
+### Documentation
+
+- **`str` arguments are borrowed.** A `string` parameter, `[]string` items, `map[string]T`
+  keys and values, and setter/`__setitem__` values point into the `str`'s own UTF-8
+  buffer and are valid for the call only; anything kept past it needs `.clone()`. The
+  guide claimed the marshalling rules copy, which was wrong for strings. Also documented:
+  which threads may allocate V memory, and `vcraft.gc_enter()` for C-library threads.
+
 ## [1.7.2] - 2026-10-29
 
 ### Fixed
