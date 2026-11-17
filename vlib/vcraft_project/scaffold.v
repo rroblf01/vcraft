@@ -71,7 +71,7 @@ pub fn scaffold(p Project) []ScaffoldFile {
 		path:    '.gitignore'
 		// Only the generated stub is ignored, not every `.pyi`: a project may keep a
 		// hand-written top-level stub under `python/`.
-		content: '/build/\n/dist/\n/.vcraft/\n/src/_vcraft_generated.v\npython/${p.module}.pyi\n*.so\n__pycache__/\n*.pyc\n.pytest_cache/\n'
+		content: '/build/\n/dist/\n/.vcraft/\n/.venv/\n/src/_vcraft_generated.v\npython/${p.module}.pyi\n*.so\n__pycache__/\n*.pyc\n.pytest_cache/\n'
 	}
 	// The PEP 517 backend, so that `pip install .` works from a fresh checkout without
 	// the project having to know anything about it.
@@ -481,4 +481,45 @@ pub fn write_init(root string, plan InitPlan) ![]string {
 		written << target
 	}
 	return written
+}
+
+// devcontainer_json is `.devcontainer/devcontainer.json`, written by `vcraft new
+// --devcontainer` and `vcraft init --devcontainer`: opening the repository in GitHub
+// Codespaces or a VS Code dev container gives a ready environment with no local install.
+//
+// The image is the Dev Containers Python one. On creation a virtualenv is made in the
+// workspace, vcraft is installed into it with the V compiler it pins (a prebuilt download
+// where one is published), and the project is built and installed editable, so the first
+// thing the person sees is a working `import`. The virtualenv is put first on `PATH` and
+// named in `VIRTUAL_ENV` for every terminal, which is what `vcraft develop` looks for.
+pub fn devcontainer_json(p Project) string {
+	return '{
+  "name": "${p.name} (vcraft)",
+  "image": "mcr.microsoft.com/devcontainers/python:3.13",
+  "remoteEnv": {
+    "VIRTUAL_ENV": "\${containerWorkspaceFolder}/.venv",
+    "PATH": "\${containerWorkspaceFolder}/.venv/bin:\${containerEnv:PATH}"
+  },
+  "postCreateCommand": "python -m venv .venv && .venv/bin/pip install -q vcraft && .venv/bin/vcraft toolchain install && VIRTUAL_ENV=\$PWD/.venv .venv/bin/vcraft develop",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "vlanguage.vscode-vlang"],
+      "settings": {"python.defaultInterpreterPath": ".venv/bin/python"}
+    }
+  }
+}
+'
+}
+
+// write_devcontainer writes `.devcontainer/devcontainer.json` under `root`, refusing to
+// replace one that exists.
+pub fn write_devcontainer(root string, p Project) !string {
+	dir := os.join_path(root, '.devcontainer')
+	target := os.join_path(dir, 'devcontainer.json')
+	if os.exists(target) {
+		return error('${target} already exists; it was left as it is')
+	}
+	os.mkdir_all(dir) or { return error('cannot create ${dir}') }
+	os.write_file(target, devcontainer_json(p)) or { return error('cannot write ${target}') }
+	return target
 }

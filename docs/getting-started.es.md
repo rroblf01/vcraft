@@ -7,6 +7,14 @@
   instalaciones de Python ya incluyen.
 - **git y make**, una vez, para construir el compilador de V con el que vcraft se prueba.
 
+## O pruébalo sin instalar nada
+
+`vcraft new mipaquete --devcontainer` (o `vcraft init --devcontainer` en un proyecto
+existente) añade `.devcontainer/devcontainer.json`. Sube el repositorio y ábrelo en GitHub
+Codespaces, o en VS Code con *Reopen in Container*: el contenedor crea un virtualenv,
+instala vcraft y el compilador de V y construye el proyecto, así que lo primero que tienes
+es un `import` que funciona. Los pasos de abajo son lo mismo en tu propia máquina.
+
 ## 1. Instalar vcraft
 
 ```console

@@ -3198,6 +3198,27 @@ pub fn c_marker() int {
             t.check("a python-source outside the project is refused",
                     proc.returncode != 0 and "python-source" in proc.stderr, proc.stderr.strip())
 
+        print("dev containers")
+        proc = vcraft("new", "dcpkg", "--devcontainer", cwd=tmp)
+        dc_path = tmp / "dcpkg" / ".devcontainer" / "devcontainer.json"
+        try:
+            dc = json.loads(dc_path.read_text())
+        except (OSError, ValueError) as exc:
+            dc = {"error": str(exc)}
+        t.check("new --devcontainer writes a valid dev container",
+                proc.returncode == 0 and "vcraft develop" in dc.get("postCreateCommand", "")
+                and "toolchain install" in dc.get("postCreateCommand", "")
+                and dc.get("remoteEnv", {}).get("VIRTUAL_ENV", "").endswith("/.venv"), str(dc))
+        t.check("and the scaffold ignores the virtualenv it makes",
+                "/.venv/" in (tmp / "dcpkg" / ".gitignore").read_text())
+        dcinit = tmp / "dcinit"
+        (dcinit / "dcinitpkg").mkdir(parents=True)
+        (dcinit / "dcinitpkg" / "__init__.py").write_text("")
+        proc = vcraft("init", "--devcontainer", cwd=dcinit)
+        t.check("init --devcontainer adds one to an existing project",
+                proc.returncode == 0 and (dcinit / ".devcontainer" / "devcontainer.json").exists(),
+                proc.stderr + proc.stdout)
+
         print("develop --watch")
         watch_env = dict(os.environ, VIRTUAL_ENV=str(tmp / "venv-watch"))
         make_venv(tmp / "venv-watch")

@@ -20,6 +20,7 @@ const usage = 'vcraft: Python extensions in V
 usage:
   vcraft new <name>            scaffold a project
   vcraft new <name> --with-server   also scaffold a Starlette server
+  vcraft new <name> --devcontainer  also write a dev container (Codespaces, VS Code)
   vcraft init [dir]            add vcraft to an existing Python project
   vcraft develop --watch       rebuild and reinstall whenever a source changes
   vcraft test [-- args]        develop, then run the tests (pytest, else unittest)
@@ -258,6 +259,15 @@ fn cmd_new(args Args) {
 	for w in written {
 		println('created ${w}')
 	}
+	if args.flags['devcontainer'] {
+		written_dc := vcraft_project.write_devcontainer(root, p) or {
+			eprintln('warning: ${err.msg()}')
+			''
+		}
+		if written_dc.len > 0 {
+			println('created ${written_dc}')
+		}
+	}
 	if args.flags['with-ci'] {
 		if p2 := vcraft_project.load(root) {
 			dir := root.trim_right('/') + '/.github/workflows'
@@ -316,6 +326,15 @@ fn cmd_init(args Args) {
 		println('wrote ${w}')
 	}
 	p := plan.project
+	if args.flags['devcontainer'] {
+		written_dc := vcraft_project.write_devcontainer(root, p) or {
+			eprintln('warning: ${err.msg()}')
+			''
+		}
+		if written_dc.len > 0 {
+			println('wrote ${written_dc}')
+		}
+	}
 	if plan.replaced_backend.len > 0 && plan.replaced_backend != 'vcraft_build' {
 		println('')
 		println('note: [build-system] named `${plan.replaced_backend}`; it now names vcraft_build, which')

@@ -1398,6 +1398,7 @@ would do, and without it each thread needs its own.
 ```
 vcraft new <name>            scaffold a V project ready for Python
 vcraft init [dir]            add vcraft to an existing Python project
+vcraft new <name> --devcontainer   also write a dev container (Codespaces, VS Code)
 vcraft test [-- args]        rebuild if needed, then run the tests (pytest, else unittest)
 vcraft build [options]       build a distributable wheel
 vcraft develop [options]     build and install an editable pointer by default

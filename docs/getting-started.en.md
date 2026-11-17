@@ -7,6 +7,14 @@
   already include.
 - **git and make**, once, to build the V compiler vcraft is tested with.
 
+## Or try it without installing anything
+
+`vcraft new mypkg --devcontainer` (or `vcraft init --devcontainer` in an existing project)
+adds `.devcontainer/devcontainer.json`. Push the repository and open it in GitHub
+Codespaces, or in VS Code's *Reopen in Container*: the container makes a virtualenv,
+installs vcraft and the V compiler, and builds the project, so a working `import` is
+the first thing you get. The steps below are the same thing on your own machine.
+
 ## 1. Install vcraft
 
 ```console

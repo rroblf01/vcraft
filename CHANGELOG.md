@@ -123,6 +123,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   through its backend with `pip wheel`, `python -m build` (sdist, then a wheel from it) and
   `uv build`, installs each wheel and imports it; it runs in CI. The wheels guide shows
   the cibuildwheel configuration with the published vcraft-manylinux image.
+- **`--devcontainer` for `vcraft new` and `vcraft init`** writes a dev container: opened
+  in GitHub Codespaces or VS Code, it makes a virtualenv, installs vcraft and V, and builds
+  the project, so trying vcraft needs no local install. New projects ignore `/.venv/`.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.
