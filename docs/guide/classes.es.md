@@ -36,6 +36,28 @@ mut:
 }
 ```
 
+El estado que gestiona el recolector - un struct de V con mapas, arrays, un mutex o un
+canal - va en el mismo tipo de campo mediante `vcraft.own_gc`, que registra el puntero
+como raíz del recolector hasta que se libera la instancia. Cada instancia tiene el suyo,
+así que un proceso puede tener cuantas quiera:
+
+```v
+@[vc_class]
+pub struct Server {
+mut:
+	@[vc_handle] hub vcraft.Owned
+}
+
+@[vc_fn]
+pub fn new_server() &Server {
+	return &Server{
+		hub: vcraft.own_gc(&Hub{})
+	}
+}
+```
+
+El estado se recupera con `unsafe { &Hub(s.hub.get()) }`.
+
 Cuando Python mismo tiene que ver el handle, una cápsula en un campo `@[vc_ref]` hace el
 mismo trabajo al coste de un objeto Python por handle (ver `vlib/vcraft/README.md`).
 

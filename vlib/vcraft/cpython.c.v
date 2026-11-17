@@ -101,6 +101,8 @@ fn C.vpy_buffer_export(data voidptr, owner voidptr, nbytes isize, itemsize isize
 fn C.vpy_buffer_fill_typed(view voidptr, exporter voidptr, data voidptr, nbytes isize, itemsize isize, kind int, readonly int, flags int) int
 fn C.vpy_state_init()
 fn C.vpy_gc_hook_python()
+fn C.vpy_gc_pin(ptr voidptr) voidptr
+fn C.vpy_gc_unpin(root voidptr)
 fn C.vpy_enter_state(block voidptr) voidptr
 fn C.vpy_leave_state(previous voidptr)
 fn C.vpy_publish_state(level int, ptr voidptr)
@@ -385,6 +387,26 @@ fn C.vpy_exc_overflow_error() voidptr
 fn C.vpy_exc_zero_division_error() voidptr
 fn C.vpy_exc_arithmetic_error() voidptr
 fn C.vpy_exc_buffer_error() voidptr
+fn C.vpy_exc_lookup_error() voidptr
+fn C.vpy_exc_eof_error() voidptr
+fn C.vpy_exc_os_error() voidptr
+fn C.vpy_exc_file_not_found_error() voidptr
+fn C.vpy_exc_file_exists_error() voidptr
+fn C.vpy_exc_permission_error() voidptr
+fn C.vpy_exc_is_a_directory_error() voidptr
+fn C.vpy_exc_not_a_directory_error() voidptr
+fn C.vpy_exc_timeout_error() voidptr
+fn C.vpy_exc_connection_error() voidptr
+fn C.vpy_exc_connection_refused_error() voidptr
+fn C.vpy_exc_connection_reset_error() voidptr
+fn C.vpy_exc_connection_aborted_error() voidptr
+fn C.vpy_exc_broken_pipe_error() voidptr
+fn C.vpy_exc_blocking_io_error() voidptr
+fn C.vpy_exc_interrupted_error() voidptr
+fn C.vpy_exc_child_process_error() voidptr
+fn C.vpy_exc_process_lookup_error() voidptr
+fn C.vpy_raise_errno(code i32, context &u8, len isize)
+fn C.vpy_last_errno() int
 
 // vpy_set_error_utf8 raises an exception with a message given as a pointer and a length,
 // so the runtime does not copy a V string into a NUL-terminated buffer first.

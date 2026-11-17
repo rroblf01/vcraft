@@ -232,6 +232,7 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_neg]`, `@[vc_pos]`, `@[vc_abs]`, `@[vc_invert]` | `pub fn` | The function is the unary operator |
 | `@[vc_hash]`    | `pub fn`        | The function is `__hash__`                                  |
 | `@[vc_const]`   | `pub const`     | Exposes the constant as a module attribute                  |
+| `@[vc_rename: 'Name']` | `pub fn`, `pub struct`, fields, `pub const`, `pub enum` | The Python-side name, e.g. `EV_CONNECT` for a V constant `ev_connect` |
 | `@[vc_defaults]`| `pub fn`, methods | Default values: `@[vc_defaults: 'step=1, name="x"']`     |
 | `@[vc_raw]`     | `pub fn`        | Skips marshalling; you receive and return `voidptr` yourself |
 | `@[vc_nogil]`     | `pub fn`        | Runs the call with the GIL released                         |
@@ -1140,6 +1141,22 @@ returns an error, and the wrapper's `error_is_set` check stops the value from
 reaching Python as a result. A wrapper never overwrites an exception that is already
 set, so the choice survives.
 
+`PyExc` covers the common built-ins and the whole `OSError` family
+(`.os_error`, `.file_not_found_error`, `.permission_error`, `.timeout_error`,
+`.connection_refused_error`, ...). For a failed system call, `raise_errno` lets CPython
+pick the subclass from the errno, exactly as for its own calls:
+
+<!-- readme-test: skip -->
+```v
+if C.bind(fd, addr, addr_len) != 0 {
+	// ConnectionRefusedError, PermissionError, ... with errno, strerror and the context.
+	return vcraft.raise_last_errno('bind ${host}:${port}')
+}
+```
+
+`raise_errno(code, context)` takes the number explicitly; both set `exc.errno` and
+`exc.strerror` and show `context` after the colon.
+
 A custom V error struct cannot carry the choice. V 0.5.2 rejects a value whose type
 is not `IError`, and a struct that implements `msg()` is not one, so the exception
 travels out of band through the pending Python exception instead of inside the error
@@ -1490,6 +1507,7 @@ free-threading = false       # true: build for a free-threaded CPython (3.13t+)
 strip = false
 embed-pyc = false
 gc-free-space-divisor = 2    # Boehm heap growth: 1 favours speed, 2 memory
+gc-markers = 0               # collector marker threads: 0 = one per core, 1 = none extra
 cflags = "-march=x86-64-v2"  # extra C compiler flags, passed to V as -cflags
 # ldflags = ""               # extra C linker flags, passed as -ldflags
 
@@ -1511,6 +1529,7 @@ The keys of `[build]`:
 | `strip`           | `false`   | Strip the extension                                             |
 | `embed-pyc`       | `false`   | Ship sourceless `.pyc` files instead of the project's `.py`     |
 | `gc-free-space-divisor` | `2` | Boehm heap growth divisor; `1` trades memory for speed       |
+| `gc-markers`      | `0`       | Collector marker threads; `0` is one per core, `1` starts none (Linux, macOS) |
 | `cflags`          | unset     | Extra flags for the C compiler, e.g. `-march=x86-64-v2`        |
 | `ldflags`         | unset     | Extra flags for the C linker                                   |
 
@@ -1723,7 +1742,7 @@ an empty shared object.
 
 ### Compiler constraints
 
-Building the first extension uncovered seven V compiler behaviours that produce a
+Building the first extension uncovered eight V compiler behaviours that produce a
 wrong answer rather than an error. They shaped the runtime and are written up in full
 in [`vlib/vcraft/README.md`](vlib/vcraft/README.md):
 
@@ -1746,6 +1765,10 @@ in [`vlib/vcraft/README.md`](vlib/vcraft/README.md):
    mirrored from a header has two shapes. The wrong one imports on a GIL
    interpreter and segfaults on a free-threaded one with nothing pointing at the
    mirror.
+8. V's `int` is 64 bits and C's is 32. A scalar argument is converted at the call,
+   but a `fn C.f(out &int)` that C fills with 32-bit ints, or an `int` field in a
+   `struct C.x` mirror, is not: it works by accident for one element. Declare `&i32`
+   (or `C.int`); the generator warns on the declarations it finds.
 
 ---
 

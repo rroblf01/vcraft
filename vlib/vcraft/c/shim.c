@@ -1052,6 +1052,102 @@ PyObject *vpy_exc_buffer_error(void) {
 	return PyExc_BufferError;
 }
 
+PyObject *vpy_exc_lookup_error(void) {
+	return PyExc_LookupError;
+}
+
+PyObject *vpy_exc_eof_error(void) {
+	return PyExc_EOFError;
+}
+
+PyObject *vpy_exc_os_error(void) {
+	return PyExc_OSError;
+}
+
+PyObject *vpy_exc_file_not_found_error(void) {
+	return PyExc_FileNotFoundError;
+}
+
+PyObject *vpy_exc_file_exists_error(void) {
+	return PyExc_FileExistsError;
+}
+
+PyObject *vpy_exc_permission_error(void) {
+	return PyExc_PermissionError;
+}
+
+PyObject *vpy_exc_is_a_directory_error(void) {
+	return PyExc_IsADirectoryError;
+}
+
+PyObject *vpy_exc_not_a_directory_error(void) {
+	return PyExc_NotADirectoryError;
+}
+
+PyObject *vpy_exc_timeout_error(void) {
+	return PyExc_TimeoutError;
+}
+
+PyObject *vpy_exc_connection_error(void) {
+	return PyExc_ConnectionError;
+}
+
+PyObject *vpy_exc_connection_refused_error(void) {
+	return PyExc_ConnectionRefusedError;
+}
+
+PyObject *vpy_exc_connection_reset_error(void) {
+	return PyExc_ConnectionResetError;
+}
+
+PyObject *vpy_exc_connection_aborted_error(void) {
+	return PyExc_ConnectionAbortedError;
+}
+
+PyObject *vpy_exc_broken_pipe_error(void) {
+	return PyExc_BrokenPipeError;
+}
+
+PyObject *vpy_exc_blocking_io_error(void) {
+	return PyExc_BlockingIOError;
+}
+
+PyObject *vpy_exc_interrupted_error(void) {
+	return PyExc_InterruptedError;
+}
+
+PyObject *vpy_exc_child_process_error(void) {
+	return PyExc_ChildProcessError;
+}
+
+PyObject *vpy_exc_process_lookup_error(void) {
+	return PyExc_ProcessLookupError;
+}
+
+// vpy_raise_errno raises the OSError subclass errno `code` stands for, with `context` as
+// its filename part when it is not empty. `PyErr_SetFromErrno*` reads the C `errno`, picks
+// the subclass from it (ECONNREFUSED -> ConnectionRefusedError) and fills `strerror`, so
+// the value is put there first.
+void vpy_raise_errno(int code, const char *context, Py_ssize_t len) {
+	if (len > 0) {
+		PyObject *name = PyUnicode_DecodeUTF8(context, len, "surrogateescape");
+		if (name == NULL) {
+			return;
+		}
+		errno = code;
+		PyErr_SetFromErrnoWithFilenameObject(PyExc_OSError, name);
+		Py_DECREF(name);
+		return;
+	}
+	errno = code;
+	PyErr_SetFromErrno(PyExc_OSError);
+}
+
+// vpy_last_errno returns the calling thread's `errno`. V cannot read the macro itself.
+int vpy_last_errno(void) {
+	return errno;
+}
+
 // vpy_set_error_utf8 raises `exc` with a message that is not NUL-terminated.
 //
 // A V string carries its length and no terminator, so `PyErr_SetString` would need a

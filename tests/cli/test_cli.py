@@ -465,6 +465,10 @@ pub const limit = 7
 @[vc_const]
 pub const label = 'deck'
 
+@[vc_const]
+@[vc_rename: 'EV_CONNECT']
+pub const ev_connect = 3
+
 @[vc_fn]
 pub fn apply(f voidptr, x int) !int {
 	args := [vcraft.to_py_int(i64(x))]
@@ -496,6 +500,7 @@ pub fn apply(f voidptr, x int) !int {
                  "m.Deck(4) > m.Deck(5))\n"
                  "print(m.Deck.named(3), m.Deck(0).named(4))\n"
                  "print(m.limit, m.label)\n"
+                 "print(m.EV_CONNECT, hasattr(m, 'ev_connect'))\n"
                  "print(m.apply(lambda v: v + 1, 41))\n"
                  "print((m.Deck(4) + 2).n, (2 + m.Deck(4)).n, (m.Deck(4) * 3).n)\n"
                  "print(m.Deck(4) - m.Deck(1), m.Deck(4) / 2.0, (-m.Deck(4)).n, "
@@ -512,11 +517,13 @@ pub fn apply(f voidptr, x int) !int {
             t.check("a classmethod is callable on the class and an instance",
                     lines[4:5] == ["30 40"], probe.stdout)
             t.check("module constants are attributes", lines[5:6] == ["7 deck"], probe.stdout)
-            t.check("a V function calls back into Python", lines[6:7] == ["42"], probe.stdout)
+            t.check("vc_rename gives a constant its Python name",
+                    lines[6:7] == ["3 False"], probe.stdout)
+            t.check("a V function calls back into Python", lines[7:8] == ["42"], probe.stdout)
             t.check("numeric operators build a new instance, reflected included",
-                    lines[7:8] == ["6 6 12"], probe.stdout)
+                    lines[8:9] == ["6 6 12"], probe.stdout)
             t.check("an instance operand and a float operand, and the unaries",
-                    lines[8:9] == ["3 2.0 -4 -5"], probe.stdout)
+                    lines[9:10] == ["3 2.0 -4 -5"], probe.stdout)
             stub = (proto / "python" / "proto_native.pyi").read_text()
             t.check("the stub declares a constant", "limit: int" in stub, stub)
             t.check("the stub marks a classmethod", "@classmethod" in stub, stub)
@@ -902,6 +909,89 @@ pub fn apply(f voidptr, x int) !int {
                     proc.returncode == 0, (proc.stderr or proc.stdout).strip()[-300:])
         finally:
             flags_path.write_text(flags_saved)
+
+        print("collector marker threads")
+        # `gc-markers` reaches the collector's pre-initialiser as a define. The collector
+        # starts its parallel markers, one per core, once the extension can create threads
+        # of its own; with 1 it starts none. Counted from /proc, so Linux only.
+        markers_src = project / "src" / "markers.v"
+        try:
+            flags_path.write_text(flags_saved.replace('[build]\n', '[build]\ngc-markers = -1\n'))
+            proc = vcraft("build", "--dry-run", cwd=project)
+            t.check("a negative gc-markers is refused",
+                    proc.returncode != 0 and "gc-markers" in (proc.stderr + proc.stdout),
+                    (proc.stderr or proc.stdout).strip()[-300:])
+            flags_path.write_text(flags_saved.replace('[build]\n', '[build]\ngc-markers = 1\n'))
+            proc = vcraft("build", "--dry-run", cwd=project)
+            t.check("gc-markers reaches the C compiler",
+                    "-DVCRAFT_GC_MARKERS=1" in proc.stdout, proc.stdout[-400:])
+            if sys.platform.startswith("linux") and (os.cpu_count() or 1) > 2:
+                markers_src.write_text("""module mypkg_native
+
+@[vc_fn]
+pub fn spawn_once() int {
+	t := spawn fn () int {
+		return 1
+	}()
+	return t.wait()
+}
+""", encoding="utf-8")
+                threads = {}
+                for label, manifest in (("default", flags_saved),
+                                        ("one", flags_saved.replace(
+                                            '[build]\n', '[build]\ngc-markers = 1\n'))):
+                    flags_path.write_text(manifest)
+                    out_dir = tmp / f"out-markers-{label}"
+                    proc = vcraft("build", "--out-dir", str(out_dir), cwd=project)
+                    built = sorted(out_dir.glob(f"build/*{LIB_EXT}"))
+                    if proc.returncode != 0 or not built:
+                        t.check(f"a build with gc-markers ({label}) succeeds", False,
+                                (proc.stderr or proc.stdout).strip()[-300:])
+                        continue
+                    probe = subprocess.run(
+                        [sys.executable, "-c",
+                         "import os, sys\n"
+                         "sys.path.insert(0, sys.argv[1])\n"
+                         "import mypkg_native as m\n"
+                         "m.spawn_once()\n"
+                         "print(len(os.listdir('/proc/self/task')))\n",
+                         str(built[0].parent)], capture_output=True, text=True)
+                    threads[label] = probe.stdout.strip()
+                t.check("the collector starts marker threads by default",
+                        threads.get("default", "1") not in ("", "1"), str(threads))
+                t.check("gc-markers = 1 starts none", threads.get("one") == "1", str(threads))
+        finally:
+            flags_path.write_text(flags_saved)
+            markers_src.unlink(missing_ok=True)
+
+        print("C int widths")
+        # V's `int` is 64 bits and C's 32: through a pointer nothing converts it. The
+        # generator warns on the declarations that pass one that way, and the build goes on.
+        widths_src = project / "src" / "cwidths.v"
+        try:
+            widths_src.write_text("""module mypkg_native
+
+fn C.poll_fds(fds &int, n int) int
+
+fn C.poll_ok(fds &i32, n int) int
+
+struct C.wire_header {
+	tag  int
+	size i32
+}
+""", encoding="utf-8")
+            proc = vcraft("generate", cwd=project)
+            text = proc.stderr + proc.stdout
+            t.check("generate still succeeds with a C int width warning", proc.returncode == 0,
+                    text.strip()[-300:])
+            t.check("a fn C. taking &int is warned about",
+                    "fn C.poll_fds` passes `&int`" in text and "&i32" in text, text.strip()[-400:])
+            t.check("&i32 is not", "poll_ok" not in text, text.strip()[-400:])
+            t.check("an int field of a C struct mirror is warned about",
+                    "struct C.wire_header` field `tag`" in text and "field `size`" not in text,
+                    text.strip()[-400:])
+        finally:
+            widths_src.unlink(missing_ok=True)
 
         print("pyproject.toml is merged, not overwritten")
         # A project's own tables must survive a build: uv keeps [dependency-groups] in
@@ -2154,6 +2244,17 @@ pub enum Color {
 	green
 	blue
 }
+
+@[vc_rename: 'Shade']
+pub enum Tone {
+	light
+	dark
+}
+
+@[vc_fn]
+pub fn tone_of(t Tone) int {
+	return int(t)
+}
 ''')
         proc = vcraft("build", cwd=enumproj)
         t.check("an enum declared in a later file still resolves in a signature",
@@ -2168,7 +2269,8 @@ pub enum Color {
                  "c = m.Counter()\n"
                  "print(c.paint(m.Color.green), m.Counter.from_color(m.Color.blue), "
                  "m.color_of(m.Color.red))\n"
-                 "try:\n    c.paint(9)\nexcept ValueError:\n    print('value-error')\n",
+                 "try:\n    c.paint(9)\nexcept ValueError:\n    print('value-error')\n"
+                 "print(m.tone_of(m.Shade.dark), hasattr(m, 'Tone'))\n",
                  str(built[0].parent)], capture_output=True, text=True)
             t.check("enum parameters convert in a method, a static method and a function",
                     probe.returncode == 0
@@ -2177,6 +2279,11 @@ pub enum Color {
             stub = (enumproj / "python" / "enum_native.pyi").read_text()
             t.check("the stub declares the enum class",
                     "class Color(enum.IntEnum):" in stub and "red: Color" in stub, stub)
+            t.check("vc_rename gives an enum its Python name",
+                    probe.stdout.splitlines()[2:3] == ["1 False"]
+                    and "class Shade(enum.IntEnum):" in stub and "dark: Shade" in stub
+                    and "def tone_of(t: Shade) -> int: ..." in stub,
+                    (probe.stdout + stub[-300:]).strip())
 
         print("method resolution")
         # Two methods of the same name on different structs, declared so the non-exported

@@ -28,6 +28,14 @@ pub fn parse_int(text string) !int {
 }
 ```
 
+## Errores de sistema
+
+La familia `OSError` también está en `PyExc` (`.os_error`, `.file_not_found_error`,
+`.permission_error`, `.timeout_error`, `.connection_refused_error`, ...). Tras una llamada
+C fallida, `vcraft.raise_last_errno('contexto')` lanza la subclase que CPython elige para el
+`errno` actual (ECONNREFUSED es `ConnectionRefusedError`), con `errno` y `strerror`
+definidos; `vcraft.raise_errno(codigo, 'contexto')` recibe el número explícitamente.
+
 ## Tipos de excepción propios
 
 `@[vc_error]` sobre un struct lo hace utilizable como el error de una función `!T`.

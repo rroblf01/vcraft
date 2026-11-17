@@ -93,6 +93,11 @@ pub mut:
 	// a few percent of allocation-heavy throughput (measured on macOS arm64,
 	// CPython 3.13; see benchmark/README.md). Set 1 to favour speed instead.
 	gc_free_space_divisor int
+	// gc_markers is how many threads Boehm's parallel marker uses, the calling thread
+	// included. 0 keeps the collector's own choice, one per core; 1 marks on the calling
+	// thread alone, so an extension that allocates little never starts the marker threads
+	// (each a thread and its stack in every process that imports it).
+	gc_markers int
 	// targets are the cross-compilation targets `vcraft build --all-targets` builds.
 	targets []string
 	// schema_version is the `vcraft.toml` schema version, under `[vcraft]`.
@@ -244,8 +249,12 @@ pub fn load(root string) !Project {
 	p.ldflags = settings.string_of('ldflags', '')
 	p.embed_pyc = settings.bool_of('embed-pyc', false)
 	p.gc_free_space_divisor = settings.int_of('gc-free-space-divisor', 2)
+	p.gc_markers = settings.int_of('gc-markers', 0)
 	p.targets = build.string_list_of('targets')
 	p.schema_version = table.subtable('vcraft').int_of('version', 1)
+	if p.gc_markers < 0 || p.gc_markers > 256 {
+		return error('gc-markers is ${p.gc_markers}; it must be between 0 (the collector chooses, the default) and 256')
+	}
 	if p.gc_free_space_divisor < 1 {
 		return error('gc-free-space-divisor is ${p.gc_free_space_divisor}; it must be 1 or more (2 is the default, 1 favours speed over memory)')
 	}
@@ -259,7 +268,7 @@ pub fn load(root string) !Project {
 // with a comma in it is not a bare word and a classifier with a `::` looks like one.
 // build_keys are the settings read from `[build]`.
 pub const build_keys = ['minimum-version', 'abi3', 'free-threading', 'strip', 'embed-pyc',
-	'gc-free-space-divisor', 'cflags', 'ldflags']
+	'gc-free-space-divisor', 'gc-markers', 'cflags', 'ldflags']
 
 pub fn (p Project) render() string {
 	mut out := '[package]\n'
@@ -309,6 +318,9 @@ pub fn (p Project) render() string {
 	}
 	if p.gc_free_space_divisor != 2 {
 		out += 'gc-free-space-divisor = ${p.gc_free_space_divisor}\n'
+	}
+	if p.gc_markers != 0 {
+		out += 'gc-markers = ${p.gc_markers}\n'
 	}
 	if p.cflags.len > 0 {
 		out += 'cflags = ${quote(p.cflags)}\n'

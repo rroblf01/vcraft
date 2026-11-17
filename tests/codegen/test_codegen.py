@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 38,
+            glue.count("add_function_owned") == 40,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -282,6 +282,39 @@ def main() -> int:
              lambda: h.greet(123))
     t.raises("arity error names the missing parameter", TypeError, "add() missing",
              lambda: h.add(1))
+
+    print("collector-managed state in a class")
+    # Each registry's map lives in V's heap, reachable only from the instance; without the
+    # root `own_gc` registers, the collections below would free it under the instance.
+    regs = [h.Registry() for _ in range(3)]
+    for i in range(3000):
+        for k, r in enumerate(regs):
+            r.add(f"n{k}-{i}")
+        if i % 500 == 0:
+            h.repeat("ab", 4000)
+            gc.collect()
+    t.check("own_gc keeps each instance's V state alive across collections",
+            all(r.lookup(f"n{k}-{i}") == i for k, r in enumerate(regs) for i in (0, 1234, 2999)),
+            str([r.lookup(f"n{k}-2999") for k, r in enumerate(regs)]))
+    t.check("and instances do not share it", regs[0].lookup("n1-5") == -1)
+    del regs
+    gc.collect()
+    t.equal("releasing them leaves the extension working", h.add(1, 2), 3)
+
+    print("system errors")
+    import errno
+    try:
+        h.raise_os(errno.ECONNREFUSED, "connect 127.0.0.1:9")
+    except ConnectionRefusedError as exc:
+        t.check("an errno picks its OSError subclass", exc.errno == errno.ECONNREFUSED, repr(exc))
+        t.check("and carries the context", "connect 127.0.0.1:9" in str(exc), str(exc))
+    except Exception as exc:  # noqa: BLE001
+        t.check("an errno picks its OSError subclass", False, repr(exc))
+    t.raises("ENOENT is FileNotFoundError", FileNotFoundError, "No such file",
+             lambda: h.raise_os(errno.ENOENT, "missing.txt"))
+    t.raises("an empty context leaves the filename out", PermissionError, "[Errno",
+             lambda: h.raise_os(errno.EACCES, ""))
+    t.raises("raise_domain names the OSError family", TimeoutError, "too slow", h.too_slow)
 
     print("panics")
     t.check("a recovered panic raises", True)

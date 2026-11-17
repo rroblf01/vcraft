@@ -7,6 +7,28 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+### Added
+
+- **`@[vc_rename]` on constants and enums.** V insists on lowercase constants, so
+  `@[vc_const] @[vc_rename: 'EV_CONNECT'] pub const ev_connect = 1` is how a Python-style
+  name reaches the module; on an enum it renames the generated `IntEnum` class, in the
+  stub too.
+- **The `OSError` family and `raise_errno`.** `PyExc` gains `lookup_error`, `eof_error`,
+  `os_error` and its subclasses (`file_not_found_error`, `permission_error`,
+  `timeout_error`, `connection_refused_error`, ...). `vcraft.raise_errno(code, context)`
+  and `vcraft.raise_last_errno(context)` raise the subclass CPython picks for an errno,
+  with `errno` and `strerror` set.
+- **`vcraft.own_gc`: collector-managed state in a class.** A `@[vc_handle]` field can now
+  hold a V struct with maps, arrays, a mutex or a channel: the pointer is a collector
+  root until the instance is released, so each instance owns its own state instead of
+  sharing a module-level global.
+- **`gc-markers` in `[build]`.** The collector starts one marker thread per core in every
+  process that imports an extension able to create threads; `gc-markers = 1` starts none
+  (Linux and macOS).
+- **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
+  the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
+  fields of `struct C.` mirrors, and suggests `i32`.
+
 ### Performance
 
 Every change below is picked up by rebuilding with the new vcraft: no annotation, API or
@@ -54,6 +76,8 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **Negative integers in `vcraft.toml`.** The parser read `-1` as a bare word, so a
+  negative setting silently fell back to its default instead of being refused.
 - **The sdist carries the project's C code.** Only `.v` files under `src/` were packed,
   so a project with its own header or C source (for example `c/` reached through
   `#flag -I @VMODROOT/c`) built in `vcraft develop` but failed at the C compiler when

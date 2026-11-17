@@ -145,6 +145,18 @@ def main() -> int:
                     "[package]\n"
                     'name = "x"\n')
         t.equal("a mistyped integer takes the default", got.get("divisor"), "1")
+        got = parse(driver, tmp,
+                    "gc-free-space-divisor = -3\n"
+                    "\n"
+                    "[package]\n"
+                    'name = "x"\n')
+        t.equal("a negative integer keeps its sign", got.get("divisor"), "-3")
+        got = parse(driver, tmp,
+                    "gc-free-space-divisor = +4\n"
+                    "\n"
+                    "[package]\n"
+                    'name = "x"\n')
+        t.equal("a leading plus is accepted", got.get("divisor"), "4")
         print("arrays")
         got = parse(driver, tmp,
                     "[package]\n"

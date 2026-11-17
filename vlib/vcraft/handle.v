@@ -44,7 +44,10 @@ module vcraft
 pub struct Owned {
 pub mut:
 	ptr  voidptr
-	drop fn (voidptr)
+	drop fn (voidptr) = unsafe { nil }
+	// root is the collector root that keeps a V allocation alive while the instance
+	// holds it (see `own_gc`); null for a pointer `own` was given.
+	root voidptr
 }
 
 // own pairs a pointer with the function that releases it.
@@ -55,6 +58,44 @@ pub fn own(ptr voidptr, drop fn (voidptr)) Owned {
 	return Owned{
 		ptr:  ptr
 		drop: drop
+	}
+}
+
+// own_gc keeps a V allocation alive for as long as the instance holding it.
+//
+// `own` is for memory the collector does not manage. V state built with `&T{...}` -- a
+// struct with maps, arrays, a mutex, a channel -- is the collector's, and a pointer to it
+// kept only in an instance is a pointer the collector cannot see: the state block lives
+// in CPython's memory, which it does not scan, so the struct would be freed while the
+// instance still used it. `own_gc` registers the pointer as a collector root, and
+// `release` (run by the generated `tp_dealloc`) drops the root again, after which the
+// collector reclaims the struct like any other garbage.
+//
+// ```v
+// @[vc_class]
+// pub struct Server {
+// mut:
+// 	@[vc_handle]
+// 	hub vcraft.Owned
+// }
+//
+// pub fn new_server() &Server {
+// 	return &Server{
+// 		hub: vcraft.own_gc(&Hub{})
+// 	}
+// }
+//
+// fn (s &Server) state() &Hub {
+// 	return unsafe { &Hub(s.hub.get()) }
+// }
+// ```
+//
+// Each instance owns its own state, so a process can hold any number of them, which a
+// module-level global cannot give.
+pub fn own_gc(ptr voidptr) Owned {
+	return Owned{
+		ptr:  ptr
+		root: C.vpy_gc_pin(ptr)
 	}
 }
 
@@ -70,6 +111,11 @@ pub fn (mut o Owned) release() {
 		return
 	}
 	o.ptr = unsafe { nil }
+	if o.root != unsafe { nil } {
+		root := o.root
+		o.root = unsafe { nil }
+		C.vpy_gc_unpin(root)
+	}
 	if o.drop != unsafe { nil } {
 		o.drop(ptr)
 	}

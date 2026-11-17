@@ -36,6 +36,15 @@
 #define VCRAFT_GC_DIVISOR 2
 #endif
 
+// The parallel marker's thread count, from `vcraft.toml` (`gc-markers`) through
+// `-DVCRAFT_GC_MARKERS`. Left undefined, the collector picks one marker per core. It has
+// to be set before `GC_INIT`, which is why it lives in the pre-initialiser.
+static inline void vpy_gc_set_markers(void) {
+#ifdef VCRAFT_GC_MARKERS
+	GC_set_markers_count(VCRAFT_GC_MARKERS);
+#endif
+}
+
 #endif
 
 #if defined(__APPLE__) && defined(GC_THREADS)
@@ -60,6 +69,7 @@ __attribute__((constructor)) static void vpy_gc_preinit(void) {
 	GC_set_all_interior_pointers(1);
 	GC_set_free_space_divisor(VCRAFT_GC_DIVISOR);
 	GC_set_no_dls(1);
+	vpy_gc_set_markers();
 	GC_INIT();
 	Dl_info info;
 	if (dladdr((void *)&vpy_gc_preinit, &info) == 0 || info.dli_fbase == NULL) {
@@ -179,6 +189,7 @@ __attribute__((constructor)) static void vpy_gc_preinit_linux(void) {
 	GC_set_all_interior_pointers(1);
 	GC_set_free_space_divisor(VCRAFT_GC_DIVISOR);
 	GC_set_no_dls(1);
+	vpy_gc_set_markers();
 	vpy_gc_set_main_stackbottom();
 	GC_INIT();
 	for (unsigned i = 0; i < layout.count; i++) {
@@ -344,8 +355,32 @@ static void vpy_gc_hook_python(void) {
 	Py_XDECREF(hook);
 	Py_DECREF(callbacks);
 }
+
+// vpy_gc_pin makes `ptr` a collector root until `vpy_gc_unpin`: a one-word cell from the
+// uncollectable heap, which the collector scans and never frees, holding the pointer.
+static void *vpy_gc_pin(void *ptr) {
+	void **cell = (void **)GC_MALLOC_UNCOLLECTABLE(sizeof(void *));
+	if (cell != NULL) {
+		*cell = ptr;
+	}
+	return cell;
+}
+
+static void vpy_gc_unpin(void *root) {
+	if (root != NULL) {
+		*(void **)root = NULL;
+		GC_FREE(root);
+	}
+}
 #else
 static void vpy_gc_hook_python(void) {}
+static void *vpy_gc_pin(void *ptr) {
+	(void)ptr;
+	return NULL;
+}
+static void vpy_gc_unpin(void *root) {
+	(void)root;
+}
 #endif
 
 #endif // VCRAFT_GC_PREINIT_H

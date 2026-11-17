@@ -671,6 +671,17 @@ fn const_kind(value string) string {
 	return if is_float { 'float' } else { 'int' }
 }
 
+// renamed is the Python-side name `@[vc_rename: 'Name']` gives a declaration, or its V
+// name when the block has none. V insists on lowercase constants and snake_case
+// functions, so this is how `EV_CONNECT` or a CamelCase alias reaches Python.
+fn renamed(block AttrBlock, v_name string) string {
+	if attr_rename !in block.attrs {
+		return v_name
+	}
+	name := (block.args[attr_rename] or { v_name }).trim("'\"")
+	return if name.len > 0 { name } else { v_name }
+}
+
 // collect_const records a `@[vc_const] pub const NAME = literal`, exposed as a
 // module-level Python attribute of the same name.
 // collect_enum records a V `enum`, which crosses as a generated `enum.IntEnum`.
@@ -719,7 +730,7 @@ fn collect_enum(path string, lines []string, decl astquery.Declaration, mut p Pr
 	}
 	info := EnumInfo{
 		name:    name
-		py_name: name
+		py_name: renamed(read_above(lines, decl.line), name)
 		key:     name.to_lower()
 		members: members
 	}
@@ -850,7 +861,7 @@ fn collect_const(path string, lines []string, decl astquery.Declaration, mut p P
 	}
 	p.consts << Const{
 		name:    decl.name
-		py_name: decl.name
+		py_name: renamed(block, decl.name)
 		value:   value
 		kind:   kind
 		origin: path
@@ -2411,6 +2422,74 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 
 // report_unknown_attrs reports any `vc.` annotation the generator does not know, so
 // a typo does not silently drop a declaration from the module.
+// report_c_int_widths warns where V's `int` meets C's through memory.
+//
+// V's `int` is 64 bits on a 64-bit platform and C's is 32. A scalar `int` argument or
+// result is converted at the call, because the C prototype in the header governs it,
+// but a pointer or a slice is not: a `fn C.f(out &int)` that C fills with 32-bit ints
+// leaves every second V element holding two of them, and a `struct C.x` mirror with an
+// `int` field has every later field at the wrong offset. It works by accident for one
+// element and fails for several, which is how it was found. The fix is `i32` (or
+// `C.int`), so the warning names it.
+pub fn report_c_int_widths(lines []string, path string, mut p Project) {
+	mut in_c_struct := ''
+	for i, line in lines {
+		trimmed := line.all_before('//').trim_space()
+		if in_c_struct.len > 0 {
+			if trimmed.starts_with('}') {
+				in_c_struct = ''
+				continue
+			}
+			words := trimmed.fields()
+			if words.len >= 2 && words[1] in ['int', '&int', '[]int'] {
+				p.diagnostics << Diagnostic{
+					file:    path
+					line:    i + 1
+					column:  1
+					message: 'warning: `struct C.${in_c_struct}` field `${words[0]}` is `${words[1]}`, which is 64 bits in V and 32 in C, so this field and every one after it sit at the wrong offset; declare it `${words[1].replace('int', 'i32')}`'
+				}
+			}
+			continue
+		}
+		decl := trimmed.trim_string_left('pub ')
+		if decl.starts_with('struct C.') && decl.ends_with('{') {
+			in_c_struct = decl['struct C.'.len..].all_before('{').trim_space()
+			continue
+		}
+		if !decl.starts_with('fn C.') {
+			continue
+		}
+		open := decl.index('(') or { continue }
+		close := decl.last_index(')') or { continue }
+		if close < open {
+			continue
+		}
+		name := decl['fn C.'.len..open]
+		mut types := []string{}
+		for param in decl[open + 1..close].split(',') {
+			words := param.trim_space().fields()
+			if words.len > 0 {
+				types << words.last()
+			}
+		}
+		ret := decl[close + 1..].trim_space()
+		if ret.len > 0 {
+			types << ret
+		}
+		for t in types {
+			if t in ['&int', '[]int', '&[]int', '&&int'] {
+				p.diagnostics << Diagnostic{
+					file:    path
+					line:    i + 1
+					column:  1
+					message: 'warning: `fn C.${name}` passes `${t}`: V\'s `int` is 64 bits and C\'s is 32, and through a pointer nothing converts it, so C reads or writes half of each element; declare `${t.replace('int', 'i32')}` (or `C.int`)'
+				}
+				break
+			}
+		}
+	}
+}
+
 pub fn report_unknown_attrs(lines []string, path string, mut p Project) {
 	for i, line in lines {
 		trimmed := line.trim_space()

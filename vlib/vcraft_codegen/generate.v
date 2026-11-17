@@ -53,7 +53,9 @@ pub fn generate(opt Options) Generated {
 	register_types(src, mut p)
 	collect_dir(src, mut p)
 	for path in v_files_under(src) {
-		report_unknown_attrs(read_lines(path), path, mut p)
+		file_lines := read_lines(path)
+		report_unknown_attrs(file_lines, path, mut p)
+		report_c_int_widths(file_lines, path, mut p)
 	}
 	link_classes(mut p)
 

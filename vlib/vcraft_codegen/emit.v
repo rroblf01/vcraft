@@ -1976,13 +1976,13 @@ pub fn emit_stubs(p Project) string {
 	}
 	// Module-level constants, declared with their Python type so a type checker sees them.
 	for cn in p.consts {
-		w.write_string('${cn.name}: ${const_stub_type(cn.kind)}\n')
+		w.write_string('${cn.py_name}: ${const_stub_type(cn.kind)}\n')
 	}
 	// An enum is a module-level class, so it belongs in the stub whether or not a signature
 	// names it: a caller reaching for `Color.red` needs the type checker to know `Color`.
 	for e in p.enums {
 		w.write_string('\n')
-		w.write_string('class ${e.name}(enum.IntEnum):\n')
+		w.write_string('class ${e.py_name}(enum.IntEnum):\n')
 		if e.members.len == 0 {
 			w.write_string('    ...\n')
 		}
@@ -1990,7 +1990,7 @@ pub fn emit_stubs(p Project) string {
 		// `Color.red` satisfies a `Color` parameter. `int` would make `paint(Color.red)`
 		// a type error even though it is what the runtime accepts.
 		for m in e.members {
-			w.write_string('    ${m.name}: ${e.name}\n')
+			w.write_string('    ${m.name}: ${e.py_name}\n')
 		}
 	}
 	for f in p.funcs {

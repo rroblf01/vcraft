@@ -11,6 +11,7 @@
 // The limited API's <Python.h> does not pull in <string.h>, and the inline `vpy_memcpy`
 // below needs `memcpy` declared in every unit that includes this header.
 #include <string.h>
+#include <errno.h>
 
 // Constants that are macros in Python.h. V cannot read a C macro, so they are
 // surfaced as functions.
@@ -225,6 +226,26 @@ PyObject *vpy_exc_overflow_error(void);
 PyObject *vpy_exc_zero_division_error(void);
 PyObject *vpy_exc_arithmetic_error(void);
 PyObject *vpy_exc_buffer_error(void);
+PyObject *vpy_exc_lookup_error(void);
+PyObject *vpy_exc_eof_error(void);
+PyObject *vpy_exc_os_error(void);
+PyObject *vpy_exc_file_not_found_error(void);
+PyObject *vpy_exc_file_exists_error(void);
+PyObject *vpy_exc_permission_error(void);
+PyObject *vpy_exc_is_a_directory_error(void);
+PyObject *vpy_exc_not_a_directory_error(void);
+PyObject *vpy_exc_timeout_error(void);
+PyObject *vpy_exc_connection_error(void);
+PyObject *vpy_exc_connection_refused_error(void);
+PyObject *vpy_exc_connection_reset_error(void);
+PyObject *vpy_exc_connection_aborted_error(void);
+PyObject *vpy_exc_broken_pipe_error(void);
+PyObject *vpy_exc_blocking_io_error(void);
+PyObject *vpy_exc_interrupted_error(void);
+PyObject *vpy_exc_child_process_error(void);
+PyObject *vpy_exc_process_lookup_error(void);
+void vpy_raise_errno(int code, const char *context, Py_ssize_t len);
+int vpy_last_errno(void);
 void vpy_set_error_utf8(PyObject *exc, const char *msg, Py_ssize_t len);
 int vpy_is_complex(void *o);
 int vpy_slot_bf_getbuffer(void);

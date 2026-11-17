@@ -36,6 +36,28 @@ mut:
 }
 ```
 
+State the collector manages - a V struct with maps, arrays, a mutex or a channel - goes
+in the same kind of field through `vcraft.own_gc`, which registers the pointer as a
+collector root until the instance is released. Each instance owns its own, so a process
+can hold any number of them:
+
+```v
+@[vc_class]
+pub struct Server {
+mut:
+	@[vc_handle] hub vcraft.Owned
+}
+
+@[vc_fn]
+pub fn new_server() &Server {
+	return &Server{
+		hub: vcraft.own_gc(&Hub{})
+	}
+}
+```
+
+The state is read back with `unsafe { &Hub(s.hub.get()) }`.
+
 When Python itself has to see the handle, a capsule in a `@[vc_ref]` field does the same
 job at the cost of a Python object per handle (see `vlib/vcraft/README.md`).
 

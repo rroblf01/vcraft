@@ -199,7 +199,7 @@ pub fn describe(v_type string) string {
 		.fixed { 'list[' + describe(fixed_element(v_type)) + ']' }
 		.complex { 'complex' }
 		// The enum's own name is its Python class name.
-		.enum_type { v_type.trim_space() }
+		.enum_type { enum_py_name(v_type.trim_space()) }
 		// A plain struct is a dict of heterogeneous fields.
 		.struct_type { 'dict[str, Any]' }
 		.unsupported { 'Any' }

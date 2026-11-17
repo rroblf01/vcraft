@@ -27,6 +27,7 @@ free-threading = false       # true: build for a free-threaded CPython (3.13t+)
 strip = false
 embed-pyc = false
 gc-free-space-divisor = 2    # Boehm heap growth: 1 favours speed, 2 memory
+gc-markers = 0               # collector marker threads: 0 = one per core, 1 = none extra
 cflags = "-march=x86-64-v2"  # extra C compiler flags, passed to V as -cflags
 # ldflags = ""               # extra C linker flags, passed as -ldflags
 
@@ -45,6 +46,7 @@ Issues = "https://github.com/me/my-extension/issues"
 | `strip` | `false` | Strip the extension |
 | `embed-pyc` | `false` | Ship sourceless `.pyc` files instead of the project's `.py` |
 | `gc-free-space-divisor` | `2` | Boehm heap growth divisor; `1` trades memory for speed |
+| `gc-markers` | `0` | Collector marker threads; `0` is one per core, `1` starts none (Linux, macOS) |
 | `cflags` | unset | Extra flags for the C compiler, e.g. `-march=x86-64-v2` |
 | `ldflags` | unset | Extra flags for the C linker |
 

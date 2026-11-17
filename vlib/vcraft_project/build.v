@@ -519,10 +519,13 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	// The collector's heap growth is a `-D` define for the C compiler rather than a
 	// `-d` one for V: the only reader is the C pre-initialiser, and V's `$if`
 	// cannot see a `-cflags` define while the C preprocessor can.
-	gc_define := if p.gc_free_space_divisor != 2 {
+	mut gc_define := if p.gc_free_space_divisor != 2 {
 		'-DVCRAFT_GC_DIVISOR=${p.gc_free_space_divisor}'
 	} else {
 		''
+	}
+	if p.gc_markers > 0 {
+		gc_define = (gc_define + ' -DVCRAFT_GC_MARKERS=${p.gc_markers}').trim_space()
 	}
 	// glibc only declares `struct dl_phdr_info` and `dl_iterate_phdr` with
 	// `_GNU_SOURCE`, which the collector pre-initialiser needs for its Linux

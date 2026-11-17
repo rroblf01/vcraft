@@ -80,7 +80,7 @@ fuente produce un stub `.pyi`, así que `help()` y un type checker ven lo mismo.
 | `@[vc_raw]` | `pub fn` | Sin marshalling; tú manejas `PyObject *` |
 | `@[vc_mapping]` | `pub struct` | Activa el protocolo de mapeo (`obj[key]`, `obj[key] = v`, `del obj[key]`) |
 | `@[vc_pass_module]` | `pub fn` | Pasa el objeto módulo como primer argumento |
-| `@[vc_rename: 'name']` | `pub fn`, `pub struct`, campos | Renombra el nombre del lado Python |
+| `@[vc_rename: 'name']` | `pub fn`, `pub struct`, campos, `pub const`, `pub enum` | Renombra el nombre del lado Python |
 | `@[vc_from_py: 'fn']` | `pub fn` | Reemplaza el reader estándar de cada parámetro por un conversor custom |
 | `@[vc_into_py: 'fn']` | `pub fn` | Reemplaza el boxing estándar del resultado por un conversor custom |
 | `@[vc_memoryview]` | `pub fn`, métodos | Devuelve un slice nativo como `memoryview` escribible |

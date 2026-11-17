@@ -601,6 +601,57 @@ pub fn stop_outside() !int {
 	return vcraft.raise_domain(.stop_iteration, 'stopped here')
 }
 
+// RegistryState is ordinary V state -- a map and an array -- which the collector manages.
+struct RegistryState {
+mut:
+	names map[string]int
+	log   []string
+}
+
+// Registry keeps collector-managed state alive through `vcraft.own_gc`: each instance has
+// its own, released when the instance is.
+@[vc_class]
+pub struct Registry {
+mut:
+	@[vc_handle] state vcraft.Owned
+}
+
+@[vc_fn]
+pub fn new_registry() &Registry {
+	return &Registry{
+		state: vcraft.own_gc(&RegistryState{})
+	}
+}
+
+// add records a name and returns how many the registry holds.
+@[vc_method]
+pub fn (mut r Registry) add(name string) int {
+	mut s := unsafe { &RegistryState(r.state.get()) }
+	s.names[name.clone()] = s.names.len
+	s.log << name.clone()
+	return s.names.len
+}
+
+// lookup returns the position a name was added at, or -1.
+@[vc_method]
+pub fn (r &Registry) lookup(name string) int {
+	s := unsafe { &RegistryState(r.state.get()) }
+	return s.names[name] or { -1 }
+}
+
+// raise_os raises the OSError subclass an errno value stands for, with `context` as the
+// part after the colon in its message.
+@[vc_fn]
+pub fn raise_os(code int, context string) !int {
+	return vcraft.raise_errno(code, context)
+}
+
+// too_slow raises one of the OSError family by name.
+@[vc_fn]
+pub fn too_slow() !int {
+	return vcraft.raise_domain(.timeout_error, 'too slow')
+}
+
 // checksum adds every byte it is given.
 //
 // The parameter is `[]u8`, so any bytes-like object works: `bytes`, `bytearray`,

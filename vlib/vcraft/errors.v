@@ -113,6 +113,26 @@ pub enum PyExc {
 	zero_division_error
 	arithmetic_error
 	buffer_error
+	// Added after the first fourteen, which keep their numbers: a `code()` naming one of
+	// them stays the same exception.
+	lookup_error
+	eof_error
+	os_error
+	file_not_found_error
+	file_exists_error
+	permission_error
+	is_a_directory_error
+	not_a_directory_error
+	timeout_error
+	connection_error
+	connection_refused_error
+	connection_reset_error
+	connection_aborted_error
+	broken_pipe_error
+	blocking_io_error
+	interrupted_error
+	child_process_error
+	process_lookup_error
 }
 
 // pyexc_obj resolves an enum member to the CPython exception type.
@@ -133,6 +153,24 @@ pub fn pyexc_obj(kind PyExc) PyObj {
 		.zero_division_error { C.vpy_exc_zero_division_error() }
 		.arithmetic_error { C.vpy_exc_arithmetic_error() }
 		.buffer_error { C.vpy_exc_buffer_error() }
+		.lookup_error { C.vpy_exc_lookup_error() }
+		.eof_error { C.vpy_exc_eof_error() }
+		.os_error { C.vpy_exc_os_error() }
+		.file_not_found_error { C.vpy_exc_file_not_found_error() }
+		.file_exists_error { C.vpy_exc_file_exists_error() }
+		.permission_error { C.vpy_exc_permission_error() }
+		.is_a_directory_error { C.vpy_exc_is_a_directory_error() }
+		.not_a_directory_error { C.vpy_exc_not_a_directory_error() }
+		.timeout_error { C.vpy_exc_timeout_error() }
+		.connection_error { C.vpy_exc_connection_error() }
+		.connection_refused_error { C.vpy_exc_connection_refused_error() }
+		.connection_reset_error { C.vpy_exc_connection_reset_error() }
+		.connection_aborted_error { C.vpy_exc_connection_aborted_error() }
+		.broken_pipe_error { C.vpy_exc_broken_pipe_error() }
+		.blocking_io_error { C.vpy_exc_blocking_io_error() }
+		.interrupted_error { C.vpy_exc_interrupted_error() }
+		.child_process_error { C.vpy_exc_child_process_error() }
+		.process_lookup_error { C.vpy_exc_process_lookup_error() }
 	})
 }
 
@@ -251,6 +289,33 @@ pub fn set_error_object(exc voidptr, message string) {
 	}
 }
 
+// raise_errno raises the `OSError` an errno value stands for, and returns an error
+// carrying `context`.
+//
+// CPython picks the subclass from the number, as it does for its own system calls:
+// ECONNREFUSED is a `ConnectionRefusedError`, ENOENT a `FileNotFoundError`, EACCES a
+// `PermissionError`, and `str(exc)` is `[Errno 111] Connection refused: 'context'`.
+// `exc.errno` and `exc.strerror` are set, so Python code can match on either. An empty
+// `context` leaves the filename part out.
+//
+//	if C.bind(fd, addr, len) != 0 {
+//		return vcraft.raise_last_errno('bind ${host}:${port}')
+//	}
+pub fn raise_errno(code int, context string) IError {
+	unsafe {
+		C.vpy_raise_errno(i32(code), context.str, isize(context.len))
+	}
+	return error_with_code(if context.len > 0 { context } else { 'errno ${code}' },
+		int(PyExc.os_error))
+}
+
+// raise_last_errno is `raise_errno` with the calling thread's `errno`, read before anything
+// else can change it: the call to make right after a failed C call.
+pub fn raise_last_errno(context string) IError {
+	code := C.vpy_last_errno()
+	return raise_errno(code, context)
+}
+
 // raise_custom raises an arbitrary Python exception class and returns an error carrying
 // the same message.
 //
@@ -291,16 +356,16 @@ pub fn raise_custom(exc voidptr, message string) IError {
 // code, and those are common -- so it falls back to `.runtime_error` rather than being
 // read as one.
 pub fn pyexc_from_code(code int) PyExc {
-	// One through fourteen, which is every member of `PyExc` that names a class. Zero is
+	// One through the last member, every member of `PyExc` that names a class. Zero is
 	// `.none`, whose object is the null pointer, and it is deliberately not in the list:
 	// `code()` is 0 for every anonymous `error('...')`, so mapping it would send every
 	// plain V error to a null exception type. `PyErr_SetString(NULL, msg)` does not
 	// complain about that; it dereferences it, and the interpreter dies inside the call
 	// with a message about nothing at all.
-	return match code {
-		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 { unsafe { PyExc(code) } }
-		else { .runtime_error }
+	if code >= 1 && code <= int(PyExc.process_lookup_error) {
+		return unsafe { PyExc(code) }
 	}
+	return .runtime_error
 }
 
 // raise_from_error turns a V error value into a Python exception.

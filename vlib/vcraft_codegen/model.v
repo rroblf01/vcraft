@@ -910,6 +910,12 @@ pub fn enum_info(v_type string) ?EnumInfo {
 pub fn is_struct(v_type string) bool {
 	return v_type.trim_space() in known_structs
 }
+// enum_py_name is the Python name of a project enum: its `@[vc_rename]` when it has one.
+pub fn enum_py_name(name string) string {
+	info := known_enums[name] or { return name }
+	return if info.py_name.len > 0 { info.py_name } else { name }
+}
+
 // is_sumtype reports whether `v_type` names a sumtype the project declares.
 pub fn is_sumtype(v_type string) bool {
 	return v_type.trim_space() in known_sumtypes

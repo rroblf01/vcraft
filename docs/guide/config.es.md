@@ -27,6 +27,7 @@ free-threading = false       # true: construye para un CPython free-threaded (3.
 strip = false
 embed-pyc = false
 gc-free-space-divisor = 2    # crecimiento del heap de Boehm: 1 prima la velocidad, 2 la memoria
+gc-markers = 0               # hilos marcadores del colector: 0 = uno por núcleo, 1 = ninguno extra
 cflags = "-march=x86-64-v2"  # flags extra para el compilador C, pasadas a V como -cflags
 # ldflags = ""               # flags extra para el enlazador C, pasadas como -ldflags
 
@@ -45,6 +46,7 @@ Issues = "https://github.com/me/my-extension/issues"
 | `strip` | `false` | Elimina símbolos de la extensión |
 | `embed-pyc` | `false` | Envía `.pyc` sin fuente en vez de los `.py` del proyecto |
 | `gc-free-space-divisor` | `2` | Divisor de crecimiento del heap de Boehm; `1` cambia memoria por velocidad |
+| `gc-markers` | `0` | Hilos marcadores del colector; `0` es uno por núcleo, `1` no arranca ninguno (Linux, macOS) |
 | `cflags` | sin definir | Flags extra para el compilador C, p. ej. `-march=x86-64-v2` |
 | `ldflags` | sin definir | Flags extra para el enlazador C |
 

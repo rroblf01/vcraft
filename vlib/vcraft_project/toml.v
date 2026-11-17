@@ -482,8 +482,12 @@ fn parse_value(text string, line int) ?Value {
 	if text[0] == `[` {
 		return parse_array(text, line)
 	}
-	mut digits := true
-	for ch in text.bytes() {
+	// An integer, with TOML's optional sign. Without the sign `-1` was a bare word, so a
+	// negative setting fell back to its default instead of being refused.
+	negative := text[0] == `-`
+	body := if text[0] == `-` || text[0] == `+` { text[1..] } else { text }
+	mut digits := body.len > 0
+	for ch in body.bytes() {
 		if ch < `0` || ch > `9` {
 			digits = false
 			break
@@ -491,12 +495,12 @@ fn parse_value(text string, line int) ?Value {
 	}
 	if digits {
 		mut number := 0
-		for ch in text.bytes() {
+		for ch in body.bytes() {
 			number = number * 10 + int(ch - `0`)
 		}
 		return Value{
 			kind:   .integer
-			number: number
+			number: if negative { -number } else { number }
 			line:   line
 		}
 	}

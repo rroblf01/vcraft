@@ -79,7 +79,7 @@ the marshalled signature becomes `__text_signature__`, and the same source produ
 | `@[vc_raw]` | `pub fn` | Skips marshalling; you handle `PyObject *` |
 | `@[vc_mapping]` | `pub struct` | Enables the mapping protocol (`obj[key]`, `obj[key] = v`, `del obj[key]`) |
 | `@[vc_pass_module]` | `pub fn` | Passes the module object as the first argument |
-| `@[vc_rename: 'name']` | `pub fn`, `pub struct`, fields | Renames the Python-side name. Use it to expose dunder names such as `__call__`, `__enter__`, `__exit__` or `__str__` on a V-friendly method name |
+| `@[vc_rename: 'name']` | `pub fn`, `pub struct`, fields, `pub const`, `pub enum` | Renames the Python-side name. Use it to expose dunder names such as `__call__`, `__enter__`, `__exit__` or `__str__` on a V-friendly method name |
 | `@[vc_from_py: 'fn']` | `pub fn` | Replaces the standard reader for every parameter with a custom converter |
 | `@[vc_into_py: 'fn']` | `pub fn` | Replaces the standard boxing of the result with a custom converter |
 | `@[vc_memoryview]` | `pub fn`, methods | Returns a native slice as a writable `memoryview` |
