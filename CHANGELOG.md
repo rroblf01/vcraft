@@ -100,6 +100,10 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   wheel matrix and a `publish` job uploads both to PyPI through trusted publishing
   (`id-token: write`, a `pypi` environment, no token or secret); the rest of the
   workflow runs with `contents: read`.
+- **`vcraft build --pgo script.py`** (and `develop`): a profile-guided build with gcc.
+  It builds instrumented, runs the script, and rebuilds with the profile. On the benchmark
+  22 of 26 workloads got 4-31% faster, while the sieve (1.64x) and recursive `fib`
+  (1.17x) got slower, so it is opt-in and documented as a trade to measure.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.

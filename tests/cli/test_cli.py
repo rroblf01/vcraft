@@ -3069,6 +3069,42 @@ pub fn c_marker() int {
                 and "mypkg_native" in proc.stdout and ".pyd" in proc.stdout,
                 (proc.stderr or proc.stdout).strip()[-300:])
 
+        print("profile-guided build")
+        proc = vcraft("build", "--pgo", "no-such-script.py", cwd=project)
+        t.check("--pgo with a missing script is refused",
+                proc.returncode == 2 and "no such file" in proc.stderr, proc.stderr.strip())
+        (project / "train_pgo.py").write_text(
+            "import mypkg_native as m\n"
+            "for i in range(20000):\n"
+            "    m.add(i, 1); m.greet('x'); m.parse_int('42')\n")
+        proc = vcraft("build", "--pgo", "train_pgo.py", "--target", "linux-aarch64-gnu", cwd=project)
+        t.check("--pgo with a cross target is refused",
+                proc.returncode == 2 and "--target" in proc.stderr, proc.stderr.strip())
+        gcc = shutil.which("gcc")
+        cc_is_gcc = bool(gcc) and "Free Software Foundation" in subprocess.run(
+            ["cc", "--version"], capture_output=True, text=True).stdout
+        if sys.platform.startswith("linux") and cc_is_gcc:
+            pgo_out = tmp / "out-pgo"
+            proc = vcraft("build", "--pgo", "train_pgo.py", "--out-dir", str(pgo_out), cwd=project)
+            t.check("--pgo instruments, trains and rebuilds",
+                    proc.returncode == 0 and "pgo 3/3" in proc.stdout,
+                    (proc.stderr or proc.stdout).strip()[-600:])
+            profiles = list((project / ".vcraft" / "pgo" / "profile").rglob("*.gcda"))
+            t.check("the training wrote a profile", bool(profiles), str(profiles))
+            wheels = list(pgo_out.glob("*.whl"))
+            t.check("the optimized wheel is in --out-dir", len(wheels) == 1, str(wheels))
+            built = sorted((pgo_out / "build").glob(f"mypkg_native*{LIB_EXT}"))
+            probe = subprocess.run([sys.executable, "-c",
+                                    "import sys; sys.path.insert(0, sys.argv[1]); "
+                                    "import mypkg_native as m; print(m.add(2, 3))",
+                                    str(built[0].parent) if built else "."],
+                                   capture_output=True, text=True)
+            t.check("the optimized extension works", probe.stdout.strip() == "5",
+                    probe.stderr.strip()[-300:])
+        else:
+            print("  skip --pgo needs gcc as cc")
+        (project / "train_pgo.py").unlink()
+
         print("init in an existing Python project")
         existing = tmp / "existing"
         (existing / "src" / "mylib").mkdir(parents=True)

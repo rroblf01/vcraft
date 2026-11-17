@@ -35,10 +35,33 @@ $ vcraft --help
 | `--sanitize` | `build`, `develop` | ASan and UBSan; prints how to run Python with the runtime preloaded |
 | `--out-dir <dir>` | `build` | Where the wheel is written |
 | `--dry-run` | `build`, `develop` | Print the plan without running it |
+| `--pgo <script.py>` | `build`, `develop` | Profile-guided build with gcc (see below) |
 
 `vcraft info` is pure planning: it names the OS, architecture, tag and compiler without
 touching a toolchain, so it works everywhere, including for a target whose compiler is not
 installed.
+
+## Profile-guided builds: `--pgo`
+
+```console
+$ vcraft build --pgo bench_my_ext.py
+pgo 1/3: instrumented build
+pgo 2/3: training with bench_my_ext.py
+pgo 3/3: optimized build
+```
+
+The extension is built once instrumented, the script runs against it (with the project's
+Python tree importable) and records which branches and calls are hot, and the real build
+is then optimized for that profile. Code the script never ran is still optimized for
+speed (`-fprofile-partial-training`). It needs gcc as the C compiler and trains on this
+machine with one interpreter, so it does not combine with `--target` or several
+interpreters.
+
+It is a trade, so measure with your own workload. On the benchmark it made 22 of 26
+workloads 4-31% faster (`join_strings` 0.69x, `describe(3)` 0.74x, `add` 0.88x), but a
+tight loop that writes an array element by element can lose: the prime sieve ran 1.64x
+slower and the recursive `fib` 1.17x. Train with calls that resemble production, at
+production sizes.
 
 ## An existing Python project: `vcraft init`
 

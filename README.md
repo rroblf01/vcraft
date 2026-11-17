@@ -1424,6 +1424,7 @@ build options:
   --jobs <n>                   compiler parallelism
   --editable                   point the environment at this build instead of copying
   --copy                       install a copy, which is the opposite of --editable
+  --pgo <script.py>            profile-guided build: instrument, run the script, rebuild (gcc)
 ```
 
 `vcraft` never writes to a system location and never installs anything outside

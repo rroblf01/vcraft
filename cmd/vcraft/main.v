@@ -65,6 +65,7 @@ build options:
   --jobs <n>                   compiler parallelism
   --editable                   point the environment at this build instead of copying
   --copy                       install a copy, which is the opposite of --editable
+  --pgo <script.py>            profile-guided build: instrument, run the script, rebuild (gcc)
 '
 
 // Args is the parsed command line.
@@ -137,7 +138,7 @@ fn parse_args(argv []string) !Args {
 fn takes_value(name string) bool {
 	return name in ['abi3', 'interpreter', 'out-dir', 'platform', 'jobs', 'python',
 		'action', 'target', 'manylinux', 'musllinux', 'cc', 'cflags', 'ldflags', 'module',
-		'name', 'interval']
+		'name', 'interval', 'pgo']
 }
 
 fn main() {
@@ -418,6 +419,146 @@ fn cmd_watch(args Args) {
 		println('watching for changes (Ctrl-C to stop)')
 		flush_stdout()
 	}
+}
+
+// pgo_naming pins the name of the profile gcc writes. Left to itself gcc names it after
+// the object file, which V compiles under a temporary name that differs from one build to
+// the next, so the optimizing build would never find the profile the instrumented one
+// wrote.
+fn pgo_naming(dir string) string {
+	return '-dumpdir ${dir}/ -dumpbase vcraft-ext'
+}
+
+// has_gcda reports whether gcc wrote a profile anywhere under `dir`. Searched by hand
+// because gcc nests it under the absolute path of `dir` itself, which runs through the
+// hidden `.vcraft` directory that `os.walk_ext` skips.
+fn has_gcda(dir string) bool {
+	for entry in os.ls(dir) or { return false } {
+		path := dir + '/' + entry
+		if os.is_dir(path) {
+			if has_gcda(path) {
+				return true
+			}
+		} else if entry.ends_with('.gcda') {
+			return true
+		}
+	}
+	return false
+}
+
+// cmd_pgo is `vcraft build --pgo script.py`, and the same for `develop`: a
+// profile-guided build in three steps, each a `vcraft` run of its own.
+//
+//  1. an instrumented release build into `.vcraft/pgo/gen`;
+//  2. the script, run by the build's interpreter with that extension (and the project's
+//     Python tree) importable, which writes the profile;
+//  3. the real build, optimized with the profile.
+//
+// `-fprofile-partial-training` keeps code the script never ran optimized for speed rather
+// than size, so a path the training missed is no slower than without PGO.
+//
+// Opt-in because it is a trade, measured on the benchmark: the call path and the
+// conversions gain 10-40%, but a tight loop that writes an array through V's
+// bounds-checked `array_set` can lose (the sieve ran 1.7x slower: with the panic path
+// moved to a cold section, gcc stores the element's temporary on every iteration). No
+// gcc flag tried restores it. gcc only: clang's profiles need `llvm-profdata` and are not
+// handled yet.
+fn cmd_pgo(args Args, develop bool) {
+	script := args.options['pgo']
+	if !os.is_file(script) {
+		eprintln('error: --pgo ${script}: no such file; give the Python script that exercises the extension')
+		exit(2)
+	}
+	if args.options['target'] != '' || args.flags['find-interpreter'] || args.options['interpreter'].contains(',') {
+		eprintln('error: --pgo trains on this machine, with one interpreter; it cannot be combined with --target, --find-interpreter or several --interpreter values')
+		exit(2)
+	}
+	cc := if args.options['cc'] != '' { args.options['cc'] } else { 'cc' }
+	version := os.exec([cc, '--version'])
+	if version.exit_code != 0 || !(version.output.contains('gcc') || version.output.contains('GCC')
+		|| version.output.contains('Free Software Foundation')) {
+		eprintln('error: --pgo needs gcc as the C compiler (`${cc}` is not); pass --cc gcc')
+		exit(2)
+	}
+	p := vcraft_project.load('.') or {
+		eprintln('error: ${err.msg()}')
+		exit(1)
+	}
+	work := os.real_path('.') + '/.vcraft/pgo'
+	if work.contains(' ') {
+		eprintln('error: --pgo needs a project path without spaces (gcc flags are split on them): ${work}')
+		exit(2)
+	}
+	os.rmdir_all(work) or {}
+	profile := work + '/profile'
+	gen := work + '/gen'
+	os.mkdir_all(profile) or {
+		eprintln('error: cannot create ${profile}')
+		exit(1)
+	}
+	// Everything the user passed carries over, except what this function decides.
+	mut passed := []string{}
+	for k, v in args.flags {
+		if v && k !in ['release', 'force', 'editable', 'copy', 'dry-run'] {
+			passed << '--${k}'
+		}
+	}
+	for k, v in args.options {
+		if k !in ['pgo', 'cflags', 'ldflags', 'out-dir'] {
+			passed << '--${k}=${v}'
+		}
+	}
+	user_cflags := args.options['cflags']
+	user_ldflags := args.options['ldflags']
+	println('pgo 1/3: instrumented build')
+	flush_stdout()
+	mut instrumented := [os.executable(), 'build', '--release', '--force', '--skip-audit',
+		'--out-dir', gen, '--cflags', '${user_cflags} -fprofile-generate=${profile} ${pgo_naming(profile)}'.trim_space(),
+		'--ldflags', '${user_ldflags} -fprofile-generate'.trim_space()]
+	instrumented << passed.filter(it != '--skip-audit')
+	if os.system_args(instrumented) != 0 {
+		eprintln('error: the instrumented build failed')
+		exit(1)
+	}
+	python := if args.options['interpreter'] != '' {
+		args.options['interpreter']
+	} else {
+		vcraft_project.python_in_environment()
+	}
+	println('pgo 2/3: training with ${script}')
+	flush_stdout()
+	mut path := [gen + '/build', p.python_root('.')]
+	if old := os.getenv_opt('PYTHONPATH') {
+		if old.len > 0 {
+			path << old
+		}
+	}
+	os.setenv('PYTHONPATH', path.join(os.path_delimiter), true)
+	if os.system_args([python, script]) != 0 {
+		eprintln('error: the training script failed; fix it, then run the build again')
+		exit(1)
+	}
+	if !has_gcda(profile) {
+		eprintln('error: the training script wrote no profile; it has to import and call `${p.module}`')
+		exit(1)
+	}
+	println('pgo 3/3: optimized build')
+	flush_stdout()
+	mut final := [os.executable(), if develop { 'develop' } else { 'build' }, '--release', '--force',
+		'--cflags', '${user_cflags} -fprofile-use=${profile} ${pgo_naming(profile)} -fprofile-partial-training -Wno-missing-profile'.trim_space()]
+	if user_ldflags.len > 0 {
+		final << ['--ldflags', user_ldflags]
+	}
+	if args.options['out-dir'] != '' {
+		final << ['--out-dir', args.options['out-dir']]
+	}
+	for flag in ['editable', 'copy'] {
+		if args.flags[flag] {
+			final << '--${flag}'
+		}
+	}
+	final << passed
+	exit(os.system_args(final))
 }
 
 // source_stamp hashes the project's inputs plus the build options, so an unchanged
@@ -716,6 +857,10 @@ fn build_each(interpreters []string) {
 }
 
 fn cmd_build(args Args, develop bool) {
+	if args.options['pgo'] != '' {
+		cmd_pgo(args, develop)
+		return
+	}
 	interpreters := build_interpreters(args)
 	if args.flags['find-interpreter'] && interpreters.len == 0 {
 		eprintln('error: --find-interpreter found no python3.11 ... python3.15 on PATH')
