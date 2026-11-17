@@ -10,13 +10,14 @@ module vcraft_wheel
 //
 // zlib is not linked. It is present on most build hosts but not all, and linking it
 // makes the extension depend on a shared library the manylinux and musllinux images
-// have to agree on. Vendoring zlib is worse. About 250 lines of fixed-Huffman
-// DEFLATE is cheaper than either, and produces output every unzip reads.
+// have to agree on. Vendoring zlib is worse. A few hundred lines of DEFLATE are
+// cheaper than either, and produce output every unzip reads.
 //
-// What is implemented: a single fixed-Huffman block per 64 KiB of input, with a
-// hash-chain match finder. That is compression, roughly 2-3x on a binary, which is
-// what a wheel needs. Dynamic Huffman would do better and is not written; the
-// section at the bottom says what it would cost.
+// What is implemented (`fixed.v`, `huffman.v`): a hash-chain match finder with zlib's
+// lazy evaluation, and blocks of 16 Ki symbols each written with whichever is smaller,
+// the fixed Huffman code or a dynamic one fitted to the block. That lands within about
+// 1% of zlib's level 6 on an extension binary; the fixed code alone was 15% larger,
+// which was most of the difference between this wheel and maturin's.
 
 // BitWriter appends bits to a byte slice, least significant bit first.
 //

@@ -149,6 +149,59 @@ def main() -> int:
         except zlib.error as exc:
             t("the payload is a raw DEFLATE stream", False, str(exc))
 
+    print("deflate edge cases")
+    # The compressor writes each block with the fixed or a dynamic Huffman code, whichever
+    # is smaller, so the inputs here are the ones that stress the dynamic path: nothing at
+    # all, one or two symbols, an alphabet with no matches (no distance codes), runs the
+    # code-length encoding repeats across, data that does not compress, and a stream long
+    # enough to cross block boundaries. zlib is the judge, and the ratio is held to zlib's
+    # level 6 on the extension so a regression to the fixed code alone shows up.
+    import random
+    edges = Path(tempfile.mkdtemp(prefix="vcraft-deflate-"))
+    try:
+        rng = random.Random(1)
+        extension = next(Path(ROOT / "examples" / "hello" / "python").glob(f"hello_native{EXT}"))
+        samples = {
+            "empty": b"",
+            "one": b"a",
+            "two": b"ab",
+            "three": b"aaa",
+            "random": bytes(rng.getrandbits(8) for _ in range(70_000)),
+            "zeros": bytes(1 << 20),
+            "pattern": b"abcabcabd" * 50_000,
+            "two-symbols": bytes(rng.choice((0, 255)) for _ in range(70_000)),
+            "text": "".join(rng.choice("ab cd\n") for _ in range(300)).encode(),
+            "extension": extension.read_bytes(),
+        }
+        for name, data in samples.items():
+            (edges / name).write_bytes(data)
+        program = edges / "deflate"
+        proc = vcraft_build.run_v(["-enable-globals", "-o", program, "-path",
+                                   f"{vcraft_build.VLIB}|@vlib", ROOT / "tests" / "wheel" / "deflate"])
+        t("the deflate driver builds", proc.returncode == 0, (proc.stderr or proc.stdout)[-400:])
+        if proc.returncode == 0:
+            run = subprocess.run([str(program) + vcraft_build.EXE,
+                                  *[str(edges / n) for n in samples]],
+                                 capture_output=True, text=True)
+            t("vcraft inflates every stream it wrote", run.returncode == 0,
+              (run.stderr or run.stdout)[-400:])
+            for name, data in samples.items():
+                packed = (edges / f"{name}.deflate").read_bytes() if (edges / f"{name}.deflate").exists() else b""
+                try:
+                    good = zlib.decompress(packed, -15) == data
+                    detail = ""
+                except zlib.error as exc:
+                    good, detail = False, str(exc)
+                t(f"zlib inflates the {name} stream", good, detail)
+            data = samples["extension"]
+            packed = (edges / "extension.deflate").read_bytes()
+            z = zlib.compressobj(6, zlib.DEFLATED, -15)
+            reference = len(z.compress(data) + z.flush())
+            t("the extension compresses within 3% of zlib level 6",
+              len(packed) <= reference * 1.03, f"{len(packed)} vs zlib {reference}")
+    finally:
+        shutil.rmtree(edges, ignore_errors=True)
+
     print("install")
     # The check that matters: pip reads the name, unpacks, and puts the extension
     # somewhere import can find it. A wheel can satisfy every assertion above and
