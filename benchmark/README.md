@@ -21,6 +21,26 @@ It needs `uv`, `cargo`, `zig` 0.16 and a `v` built at the commit pinned in `dock
 `PATH`. It installs nothing outside `benchmark/.venv`. `BENCH_PYTHON` picks the interpreter
 (3.13 by default, the newest all three support).
 
+### Comparing two builds of vcraft
+
+`run.sh` measures each backend once, one after the other, so a machine that changes state
+in between (load, frequency scaling) moves its numbers by more than most optimisations do.
+To tell whether a change to vcraft helped, [`ab.py`](ab.py) runs the same workloads for
+several variants in turn, round after round, and keeps each variant's best figure:
+
+```console
+$ python ab.py pyo3=venv-a/bin/python:bench_pyo3 \
+               base=venv-a/bin/python:bench_vcraft_native \
+               new=venv-b/bin/python:bench_vcraft_native \
+               --rounds 5 [--only 'Counter()' ...] [--import-runs 20] [--memory]
+```
+
+Each variant is `label=python:module`, so a variant is an interpreter with one build of
+the module installed. The table gives every variant's time and two ratios: the last
+variant against the first, and the last two against each other. Two identical builds
+come out within about 5% of each other on short calls and about 10% on the long loops,
+which is the floor below which a difference means nothing.
+
 The full result is written to [`results.md`](results.md) and [`results.json`](results.json).
 Those hold the macOS run; the Linux run is kept beside them as
 [`results-linux.md`](results-linux.md) and [`results-linux.json`](results-linux.json). The

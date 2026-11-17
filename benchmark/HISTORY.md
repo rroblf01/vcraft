@@ -454,3 +454,82 @@ codegen — `array.get` is a non-inline bounds-checked call, `for x in arr` igno
 the byte-widening sum is not vectorized. It is written up for the V project in
 [`V_UPSTREAM.md`](V_UPSTREAM.md); `@[direct_array_access]` on `count_primes` alone takes
 it from 2.34 ms to 1.75 ms, ahead of PyO3's 1.96 ms.
+
+
+## Unreleased: the call path, iteration, import and wheels (on 1.7.2, Linux)
+
+Measured with [`ab.py`](ab.py): PyO3 0.29, vcraft 1.7.2 (`base`) and this work (`new`),
+interleaved over five rounds, best figure per variant, CPython 3.13.16, x86_64, load
+average about 3.5. Two identical builds land within ~5% of each other on short calls and
+~10% on long loops, so only bigger moves below are evidence.
+
+| workload | PyO3 | base | new | new/PyO3 | new/base |
+|---|---|---|---|---|---|
+| add | 68 ns | 67 ns | 61 ns | 0.90× | 0.91× |
+| fib(25) | 222.5 µs | 108.0 µs | 107.1 µs | 0.48× | 0.99× |
+| count_primes(1e6) | 1.89 ms | 2.10 ms | 2.07 ms | 1.10× | 0.99× |
+| sum_floats(100k) | 818.3 µs | 232.9 µs | 237.4 µs | 0.29× | 1.02× |
+| make_range(100k) | 2.09 ms | 2.32 ms | 2.31 ms | 1.11× | 0.99× |
+| greet | 130 ns | 112 ns | 106 ns | 0.82× | 0.95× |
+| describe(3) | 162 ns | 124 ns | 116 ns | 0.72× | 0.93× |
+| maybe_double(21) | 62 ns | 54 ns | 51 ns | 0.82× | 0.94× |
+| histogram(10k) | 695.9 µs | 525.3 µs | 556.9 µs | 0.80× | 1.06× |
+| minmax(100k) | 1.08 ms | 625.5 µs | 547.2 µs | 0.51× | 0.87× |
+| reverse3([1,2,3]) | 189 ns | 188 ns | 161 ns | 0.85× | 0.86× |
+| checksum(100kB) | 13.3 µs | 12.4 µs | 12.5 µs | 0.94× | 1.00× |
+| echo_bytes(100kB) | 3.6 µs | 1.7 µs | 1.7 µs | 0.49× | 0.99× |
+| join_strings(10k) | 483.9 µs | 287.3 µs | 283.9 µs | 0.59× | 0.99× |
+| expect_positive(err) | 220 ns | 208 ns | 200 ns | 0.91× | 0.96× |
+| Counter() | 91 ns | 88 ns | 73 ns | 0.80× | 0.82× |
+| c.increment() | 55 ns | 50 ns | 42 ns | 0.77× | 0.84× |
+| c.add(1) | 64 ns | 64 ns | 59 ns | 0.91× | 0.92× |
+| c.value | 46 ns | 34 ns | 33 ns | 0.73× | 0.99× |
+| c.is_zero | 35 ns | 39 ns | 31 ns | 0.89× | 0.79× |
+| c == c | 46 ns | 38 ns | 25 ns | 0.54× | 0.66× |
+| list(Countdown()) | 336 ns | 410 ns | 244 ns | 0.73× | 0.59× |
+| Vector(1000) | 216 ns | 248 ns | 220 ns | 1.02× | 0.89× |
+| vector.total() | 762 ns | 778 ns | 772 ns | 1.01× | 0.99× |
+| complex_scale(1+2j, 3) | 87 ns | 93 ns | 87 ns | 1.00× | 0.93× |
+| Counter.zero() | 58 ns | 59 ns | 56 ns | 0.96× | 0.95× |
+| import (median of 30) | 0.590 ms | 0.806 ms | 0.584 ms | 0.99× | 0.72× |
+| wheel | 285,447 B | 310,876 B | 269,568 B | 0.94× | 0.87× |
+
+Where the time went, each measured on its own before it was kept:
+
+- **The panic guard** cost ~15 ns of a short call. Removing it outright (not shippable)
+  put `c.is_zero` at 25 ns and `add` at 54 ns. What shipped keeps the guard and skips
+  its `recover()` on a normal return, worth 3–5 ns; the rest of the guard is V's
+  `setjmp` frame and its thread-local accesses.
+- **Thread-local access.** A dlopen'ed extension reaches its thread-locals through
+  `__tls_get_addr`, 115 call sites here. The initial-exec model removed them and gained
+  10–16 ns a call, but glibc puts a module's *whole* TLS block in static TLS (1,096 bytes,
+  1,040 of them V's `g_autostr_addr_state`), and the second vcraft extension in a process
+  then failed to load with "cannot allocate memory in static TLS block". Not shipped.
+  TLS descriptors (`-mtls-dialect=gnu2`) gained nothing for a dlopen'ed object.
+- **Out-of-line shim calls**: `sizeof(PyObject)` and the state `memcpy` behind every
+  instance access. Inline: `c == c` 37 → 25 ns, `c.is_zero` 41 → 34 ns.
+- **`StopIteration`** cost 110 ns per exhausted iteration, a third of `list(Countdown())`.
+- **The constructor's `&T{...}`** cost ~10 ns of `Counter()` and ~35 ns of `Vector(1000)`.
+- **Import**: half of the collector's start-up was glibc reading `/proc/self/maps` to find
+  the main thread's stack.
+- **Code alignment.** Once those were in, `count_primes` read 10% slower than 1.7.2
+  although its code had not changed. Its inner loop is about 60 bytes, and gcc places a
+  loop wherever the preceding code ends: in the fast builds it started on a 64-byte
+  boundary, in the slow ones 32 bytes into a line, straddling two. Any unrelated change
+  to the extension moved it. Release builds now pass `-falign-loops=32` (+0.6% text),
+  which put it back at 2.07 ms and keeps it there.
+- Tried and dropped: `-fno-plt`, `-funroll-loops` and `-fno-stack-protector` (no reliable
+  gain), `GC_UNMAP_THRESHOLD` and the free-space divisor for retained memory (no effect),
+  and `GC_set_min_bytes_allocd` (collections were a symptom of the alignment above).
+
+Still behind: `count_primes` and `make_range`, ~1.1×. Both are the user's loop as V lowers
+it — an `int`-index scalar store with a sign and bound check (8 instructions where LLVM
+emits 5), and `array_push` copying each element through `memcpy` — and vcraft cannot
+change either without changing the user's code or V. See [`V_UPSTREAM.md`](V_UPSTREAM.md).
+
+Memory, kept after `gc.collect()`: Python's collections now drive a full V collection
+that unmaps freed pages. `count_primes(10M) x5` keeps 9.6 MiB in most runs against PyO3's
+9.5 (19.1 before), but the scenario is bimodal for both vcraft builds — 9.6, 19 or 29 MiB
+from run to run, depending on whether a stale conservative root pins a 10 MiB block —
+and `make_range` keeps 2–3 MiB against PyO3's 0.9. A collector cannot match freeing on
+drop for temporaries the glue cannot prove dead.

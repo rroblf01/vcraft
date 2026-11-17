@@ -2,8 +2,10 @@
 # Builds the three projects from clean, installs their wheels into a uv virtualenv,
 # and runs bench.py against them.
 #
-# Needs on PATH: uv, cargo, zig (0.16), and a V compiler built at the commit pinned in
-# docker/ (vcraft passes flags the V releases predate). Nothing is installed outside
+# Needs on PATH: uv, cargo and a V compiler built at the commit pinned in docker/ (vcraft
+# passes flags the V releases predate). zig 0.16 is optional: without it, or when its
+# build fails (another zig version), zig-maturin is left out of the run with a warning
+# rather than failing the whole comparison. Nothing is installed outside
 # benchmark/.venv; cargo and zig keep their usual global caches, so a "clean" build here
 # is a clean project build with the toolchain's dependency caches warm.
 #
@@ -17,12 +19,15 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 venv="$here/.venv"
 
-for tool in uv cargo zig v; do
+for tool in uv cargo v; do
 	command -v "$tool" >/dev/null || { echo "$tool is not on PATH" >&2; exit 1; }
 done
 
 uv venv -q --allow-existing --python "${BENCH_PYTHON:-3.13}" "$venv"
-uv pip install -q --python "$venv/bin/python" maturin zig-maturin psutil
+uv pip install -q --python "$venv/bin/python" maturin psutil
+with_zig=1
+command -v zig >/dev/null || with_zig=0
+[ "$with_zig" = 1 ] && uv pip install -q --python "$venv/bin/python" zig-maturin
 export PATH="$venv/bin:$PATH"
 python="$venv/bin/python"
 
@@ -58,13 +63,19 @@ echo "== building"
 	timed pyo3 maturin build --release -i "$python" -o dist)
 (cd "$here/vcraft" && rm -rf build dist .vcraft &&
 	timed vcraft "$vcraft" build --release --interpreter "$python")
-(cd "$here/zig-maturin" && rm -rf .zig-cache zig-out dist &&
-	timed zig-maturin zig-maturin build --release --out dist)
+if [ "$with_zig" = 1 ]; then
+	(cd "$here/zig-maturin" && rm -rf .zig-cache zig-out dist &&
+		timed zig-maturin zig-maturin build --release --out dist) || with_zig=0
+fi
+[ "$with_zig" = 1 ] || echo "warning: zig-maturin is left out of this run (zig $(zig version 2>/dev/null || echo missing); it needs 0.16)" >&2
 
 echo "== installing"
-for project in pyo3 vcraft zig-maturin; do
+projects="pyo3 vcraft"
+[ "$with_zig" = 1 ] && projects="$projects zig-maturin"
+for project in $projects; do
 	uv pip install -q --python "$python" --reinstall "$here/$project"/dist/*.whl
 done
 
 echo "== benchmarking"
-"$python" "$here/bench.py" --build-times "$times" "$@"
+"$python" "$here/bench.py" --build-times "$times" \
+	$([ "$with_zig" = 1 ] || echo --only pyo3 vcraft python) "$@"

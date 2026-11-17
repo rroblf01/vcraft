@@ -105,8 +105,10 @@ Layered modules under `vlib/`; each has a README with the easy-to-get-wrong deta
 - `cmd/vcraft` — the CLI; at runtime it locates `vlib` relative to its own binary.
 
 `benchmark/` is a separate PyO3-vs-vcraft-vs-zig-maturin comparison; `./benchmark/run.sh`
-needs `uv`, `cargo`, `zig` 0.16 and a pinned `v` on PATH, and installs only into
-`benchmark/.venv`.
+needs `uv`, `cargo` and a pinned `v` on PATH (zig 0.16 is optional), and installs only into
+`benchmark/.venv`. To judge a change to vcraft, use `benchmark/ab.py`, which interleaves
+builds round after round: two identical builds differ by up to ~5% on short calls and
+~10% on long loops, so a single `run.sh` cannot resolve most optimisations.
 
 ## V compiler constraints (silent breakage)
 
