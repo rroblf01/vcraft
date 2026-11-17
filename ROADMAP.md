@@ -29,16 +29,17 @@ and a few things vcraft still owns.
       message. `Vector(1000)` 1.23×→1.17× PyO3, `Vector(1)` 1.47×→~1.10×,
       `list(Countdown())` 1.27×→1.19×, `expect_positive(err)` now ahead. Shipped in
       1.3.0.
-- [ ] **Byte loops and array lowering.** `checksum` over `bytes` is ~3× PyO3 and
-      `count_primes`/`make_range` ~1.1–1.2×: V emits `array.get` (non-inline, bounds-checked)
+- [ ] **Array lowering.** `checksum` is now level with PyO3; `count_primes`/`make_range`
+      are ~1.1×: V emits `array.get` (non-inline, bounds-checked)
       for `for x in arr` and `arr[i]`, does not honor `@[direct_array_access]` in `for in`,
       and does not take the scalar `<<` fast path for a local slice, and gcc does not
       vectorize the byte-widening sum. All of it is V's C codegen, not vcraft, and none of
       it is reachable from the runtime. Reported upstream in
       [`benchmark/V_UPSTREAM.md`](benchmark/V_UPSTREAM.md) with the generated C and the
       assembly; `@[direct_array_access]` on `count_primes` alone closes that row.
-- [ ] **Boehm retention.** vcraft keeps its collector heap (`count_primes` leaves
-      19.6 MiB against PyO3's 9.5), plateauing, never leaking. `gc-free-space-divisor` and
+- [x] **Boehm retention.** A full Python collection now runs a full V collection that
+      unmaps freed pages, so `count_primes` leaves ~9.6 MiB against PyO3's 9.5 (19.6 before)
+      once the process collects. What follows is the history of the item. `gc-free-space-divisor` and
       `GC_set_force_unmap_on_gcollect` were measured in 1.3.0 and do not move it: the
       retained memory is live between batches, or free but not collected because nothing
       allocates after the batch. Structural until V exposes a knob.
@@ -76,7 +77,7 @@ Additions that do not change anything 1.x promises.
 - [x] **Class protocols:** `@[vc_len]`, `@[vc_getitem]`, `@[vc_contains]`, the ordering
       operators `@[vc_lt]`/`vc_le`/`vc_gt`/`vc_ge`, `@[vc_classmethod]` and
       `@[vc_const]` module constants. Shipped in 1.3.0.
-- [ ] **Numeric operators:** `__add__`, `__mul__` and the rest. They do not fit the
+- [x] **Numeric operators:** `__add__`, `__mul__` and the rest. They do not fit the
       `@[vc_eq]`/`@[vc_lt]` shape and need a design: an operator function takes two state
       pointers, so a mixed operand (`counter * 2`) has no state to hand over, the same
       slot is called with the operands swapped for the reflected case (`2 * counter`), and

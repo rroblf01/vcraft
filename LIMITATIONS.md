@@ -24,28 +24,33 @@ fundamental limitation of the V language or of vcraft's scope, not a bug.
 
 ## Performance
 
-### Raw speed
-Rust (PyO3) compiles to native code with LLVM's auto-vectorization and has zero-cost
-abstractions. V compiles to C and then to native code, which is fast but not as fast
-as Rust. vcraft cannot close this gap: it is inherent to the language.
+Measured with `benchmark/ab.py` (PyO3 0.29, CPython 3.13, Linux x86_64); the full table
+and how each number was reached are in `benchmark/HISTORY.md`.
 
-**Mitigation:** vcraft provides C-level helpers (`vpy_checksum`, `vpy_sum_i64`,
-`vpy_sum_f64`, `vpy_list_from_i64`, `vpy_list_from_str`, etc.) for the hottest
-paths. Use them when a V loop is the bottleneck.
+### Raw speed
+vcraft is ahead of or level with PyO3 on 24 of the 26 benchmark workloads: the call
+path, argument binding, strings, containers, classes, iteration and the error path.
+The two it loses, `count_primes` and `make_range` (~1.1×), are the user's own loops as
+V lowers them -- an `int`-index store with a sign and bound check, and `array_push`
+copying each element through `memcpy` -- which vcraft cannot change without changing
+the user's code or V (see `benchmark/V_UPSTREAM.md`).
+
+**Mitigation:** `@[direct_array_access]` on the hot function, or the C-level helpers
+(`vpy_sum_i64`, `vpy_sum_f64`, `vpy_list_from_i64`, ...).
 
 ### Memory retention
-V uses Boehm's garbage collector, which holds onto freed memory for reuse rather
-than returning it to the OS. A process that allocates and frees 100 MB may keep
-20-30 MB resident. PyO3 (Rust) returns memory to the allocator immediately.
+V uses Boehm's garbage collector: a temporary lives until the next collection rather
+than until the end of its scope. vcraft runs a full V collection that unmaps freed pages
+whenever Python runs a full collection (`gc.collect()` or its own), so a process that
+collects gets the memory back; between collections an allocation-heavy loop keeps a few
+MiB more than PyO3 (`make_range` 2-3 MiB against 0.9).
 
-**Mitigation:** Set `GC_FREE_SPACE_DIVISOR` or use `GC_free` explicitly. vcraft
-already uses `PyObject_Free` for native buffers.
+**Mitigation:** `gc.collect()` where memory matters, or `gc-free-space-divisor` to
+collect more often.
 
 ### Import time
-vcraft's module init does more work than PyO3's (state chain setup, type
-registration, layout check). The gap is ~0.15 ms per import.
-
-**Mitigation:** Minimal. The work is necessary for correctness.
+Level with PyO3 since the collector stopped reading `/proc/self/maps` at start-up
+(0.58 ms against 0.59).
 
 ## Language-level limitations
 
@@ -125,45 +130,28 @@ marshalling rule for them: a parameter or result of sumtype type is reported
 as unsupported. Declare it as `vcraft.PyObj` and do the conversion in V with
 `is` checks, the same way `vjson` handled `json2.Any`.
 
-## Where vcraft already beats PyO3
+## Where vcraft stands against PyO3
 
-| Workload | vcraft vs PyO3 | Why |
-|----------|---------------|-----|
-| fib(25) | 2.12× faster | V's compiled code is faster for pure compute |
-| sum_floats(100k) | 3.95× faster | No boxing overhead for `[]f64` |
-| greet | 1.13× faster | Simpler str handling |
-| describe(3) | 1.41× faster | Less overhead in arg binding |
-| maybe_double | 1.21× faster | Simpler optional handling |
-| histogram | 1.29× faster | Faster dict building |
-| minmax | 1.61× faster | Faster tuple building |
-| join_strings | 1.91× faster | Faster string join |
-| c.increment() | 1.12× faster | Less method overhead |
-| c == c | 1.30× faster | Simpler comparison |
-| c.value | 1.48× faster | Direct field access |
+| Workload | vcraft / PyO3 |
+|----------|---------------|
+| fib(25) | 0.48× |
+| sum_floats(100k) | 0.29× |
+| minmax(100k) | 0.51× |
+| echo_bytes(100kB) | 0.49× |
+| join_strings(10k) | 0.59× |
+| c == c | 0.54× |
+| list(Countdown()) | 0.73× |
+| Counter() | 0.80× |
+| greet | 0.82× |
+| checksum(100kB) | 0.94× |
+| Vector(1000), vector.total(), complex_scale | 1.00-1.02× |
+| count_primes(1e6), make_range(100k) | 1.10-1.11× |
 
-### Where PyO3 wins (and why)
-
-| Workload | Gap | Cause |
-|----------|-----|-------|
-| checksum(100kB) | 2.66× | Rust auto-vectorization vs V loop |
-| Memory retention (make_range) | 5× | V GC (Boehm) holds memory |
-| Memory retention (count_primes) | 3× | V GC (Boehm) |
-| list(Countdown()) | 1.27× | Iterator trampoline overhead |
-| Vector(1000) | 1.23× | Object construction overhead |
-| Import time | 1.26× | Module init overhead |
-
-### The one gap worth closing
-
-**checksum (2.66×)** is the only large gap, and it's closeable with a C-level
-helper (`vpy_checksum`). The others are fundamental (V vs Rust, GC differences).
+Wheels are about 6% smaller than maturin's for the same workloads (dynamic-Huffman
+DEFLATE written by vcraft itself), and a clean release build is faster.
 
 ## Conclusion
 
-vcraft's value proposition is not "faster than PyO3" but "no Rust, no C++, no build
-tool, no zlib, and competitive performance." It beats PyO3 in 12 of 25 workloads and
-is within 1.3× on the rest. The remaining gaps (checksum, memory retention, import
-time) are V-level or language-level and cannot be closed from vcraft alone.
-
-The remaining PyO3 features (`wrap_pyfunction`, `import_exception`, `skip_from_py`)
-are low-value and don't justify the complexity. Native async, freelist and smart
-pointers require V language support that doesn't exist.
+vcraft's value proposition is "no Rust, no C++, no build tool, no zlib" with performance
+that now matches or beats PyO3 on almost every workload. What remains is V-level (two
+loop shapes, a tracing collector) or language-level (no destructors or smart pointers).
