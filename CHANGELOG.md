@@ -92,6 +92,10 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   editable installs and the stub all follow.
 - **`vcraft develop --watch`** rebuilds and reinstalls on every change to a V, C or
   manifest file; a failed build is reported and the watch goes on.
+- **An examples gallery**: `examples/async_server` (`@[vc_async]` behind an asyncio
+  server), `csv_parser` (checked against `csv`), `numpy_kernel` (`NdArray`/`NdOut`,
+  strided views, in-place writes) and `with_c` (a C file of the project's own), each
+  with a test that the new `tests/examples/test_examples.py` suite runs in CI.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.

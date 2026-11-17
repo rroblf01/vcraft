@@ -59,6 +59,7 @@ plugins:
             Continuous integration: Integración continua
             Configuration: Configuración
             Importing .v files: Importar ficheros .v
+            Examples: Ejemplos
 
 markdown_extensions:
   - admonition
@@ -86,6 +87,7 @@ nav:
       - Continuous integration: guide/ci.md
       - Configuration: guide/config.md
       - Importing .v files: guide/import-hook.md
+      - Examples: guide/examples.md
   - Reference:
       - Annotations: reference/annotations.md
       - Types: reference/types.md

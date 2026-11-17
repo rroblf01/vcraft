@@ -1,0 +1,11 @@
+[package]
+name = "with_c"
+version = "0.1.0"
+module = "fastc"
+description = "A V extension that compiles and calls a C file of its own."
+license = "MIT"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[build]
+minimum-version = "3.11"

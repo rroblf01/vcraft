@@ -1777,6 +1777,10 @@ CPython 3.11 and newer, and pulls in nothing else. It is the reference for what 
 project looks like end to end — [source](https://github.com/rroblf01/vqubit),
 [docs](https://rroblf01.github.io/vqubit/).
 
+Smaller, runnable projects are in [`examples/`](examples/README.md): an asyncio server
+over `@[vc_async]`, a CSV parser checked against `csv`, NumPy kernels through the buffer
+protocol, and an extension with its own C file.
+
 ## Stability
 
 vcraft follows [Semantic Versioning](https://semver.org/). From 1.0, the annotations,

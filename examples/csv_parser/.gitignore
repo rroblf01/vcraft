@@ -1,0 +1,9 @@
+/build/
+/dist/
+/.vcraft/
+/src/_vcraft_generated.v
+/python/
+/pyproject.toml
+/vcraft_build.py
+*.so
+__pycache__/

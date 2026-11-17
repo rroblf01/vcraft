@@ -198,6 +198,10 @@ jobs:
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/docs/test_readme.py
 
+      - name: "suite: examples gallery"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/examples/test_examples.py
+
   cli:
     needs: v-compiler
     # The slowest suite on its own job (see above for why it is separate).

@@ -1,0 +1,11 @@
+[package]
+name = "csv_parser"
+version = "0.1.0"
+module = "csvfast"
+description = "A CSV parser in V that agrees with Python's csv module."
+license = "MIT"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[build]
+minimum-version = "3.11"

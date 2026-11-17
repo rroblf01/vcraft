@@ -1,0 +1,11 @@
+[package]
+name = "numpy_kernel"
+version = "0.1.0"
+module = "ndkernel"
+description = "NumPy kernels in V through the buffer protocol, without depending on NumPy."
+license = "MIT"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[build]
+minimum-version = "3.11"
