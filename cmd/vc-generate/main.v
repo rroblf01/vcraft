@@ -21,7 +21,7 @@ fn main() {
 	}
 	result := vcraft_codegen.generate(opt)
 	for d in result.diagnostics {
-		eprintln(d.error())
+		eprint(d.render())
 	}
 	if result.has_errors() {
 		exit(1)

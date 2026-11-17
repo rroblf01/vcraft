@@ -94,7 +94,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   manifest file; a failed build is reported and the watch goes on.
 - **An examples gallery**: `examples/async_server` (`@[vc_async]` behind an asyncio
   server), `csv_parser` (checked against `csv`), `numpy_kernel` (`NdArray`/`NdOut`,
-  strided views, in-place writes) and `with_c` (a C file of the project's own), each
+  strided views, in-place writes), `with_c` (a C file of the project's own) and
+  `fuzzy_match` (Levenshtein, Jaro-Winkler and best-match search, about 50x faster than
+  the same algorithm in pure Python), each
   with a test that the new `tests/examples/test_examples.py` suite runs in CI.
 - **`vcraft generate-ci` publishes on a tag.** A `v*` tag now builds an sdist next to the
   wheel matrix and a `publish` job uploads both to PyPI through trusted publishing
@@ -107,6 +109,20 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **A V panic's traceback names its V function, file and line**: a frame
   `File "src/lib.v", line 42, in parse` (the function's declaration), with the V source
   line shown when the file is readable. Works under abi3; costs only the panic path.
+- **Diagnostics in the style of rustc.** Every generator error and warning shows the
+  source line with the place marked and its advice as a `help:` line; a misspelt
+  annotation suggests the closest one (`did you mean `@[vc_method]`?`), and a type with no
+  marshalling rule says what does cross (a list of references, a pointer to a plain
+  struct, a channel, a V function, a nested option).
+- **`vcraft test`** brings the editable install up to date and runs the tests (pytest
+  when installed, `unittest` discovery otherwise), passing everything after `--` to the
+  runner. **`pytest --vcraft-develop`** (or `vcraft_develop = true` in
+  `[tool.pytest.ini_options]`) does the same from pytest, through a plugin installed with
+  vcraft that is inactive unless asked for.
+- **Tested with the packaging tools people already use**: a new suite builds a project
+  through its backend with `pip wheel`, `python -m build` (sdist, then a wheel from it) and
+  `uv build`, installs each wheel and imports it; it runs in CI. The wheels guide shows
+  the cibuildwheel configuration with the published vcraft-manylinux image.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.

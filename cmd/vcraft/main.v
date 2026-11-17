@@ -22,6 +22,7 @@ usage:
   vcraft new <name> --with-server   also scaffold a Starlette server
   vcraft init [dir]            add vcraft to an existing Python project
   vcraft develop --watch       rebuild and reinstall whenever a source changes
+  vcraft test [-- args]        develop, then run the tests (pytest, else unittest)
   vcraft build [options]       build a wheel
   vcraft develop [options]     build and install into the active virtualenv
   vcraft sdist                 build a source distribution
@@ -176,6 +177,7 @@ fn main() {
 		}
 		'new' { cmd_new(args) }
 		'init' { cmd_init(args) }
+		'test' { cmd_test(args) }
 		'build' { cmd_build(args, false) }
 		'develop' {
 			if args.flags['watch'] {
@@ -419,6 +421,47 @@ fn cmd_watch(args Args) {
 		println('watching for changes (Ctrl-C to stop)')
 		flush_stdout()
 	}
+}
+
+// cmd_test is `vcraft test`: bring the editable install up to date, then run the
+// project's tests with the environment's interpreter -- pytest when it is installed,
+// `unittest` discovery otherwise -- and exit with their status. Everything after `--` is
+// handed to the test runner unchanged (`vcraft test -- -k parse -x`).
+fn cmd_test(args Args) {
+	if !os.exists('vcraft.toml') {
+		eprintln('error: no vcraft.toml here; run `vcraft test` in a project')
+		exit(1)
+	}
+	mut passthrough := []string{}
+	dash := os.args.index('--')
+	if dash >= 0 {
+		passthrough = os.args[dash + 1..].clone()
+	}
+	mut develop := [os.executable(), 'develop']
+	for k in ['release', 'debug', 'sanitize'] {
+		if args.flags[k] {
+			develop << '--${k}'
+		}
+	}
+	if os.system_args(develop) != 0 {
+		eprintln('error: the build failed; the tests were not run')
+		exit(1)
+	}
+	python := vcraft_project.python_in_environment()
+	has_pytest := os.exec([python, '-c', 'import pytest']).exit_code == 0
+	mut runner := [python, '-m']
+	if has_pytest {
+		runner << 'pytest'
+	} else {
+		runner << ['unittest', 'discover']
+		if os.is_dir('tests') && passthrough.len == 0 {
+			runner << ['-s', 'tests', '-t', '.']
+		}
+	}
+	runner << passthrough
+	println('running ${runner[2..].join(' ')}')
+	flush_stdout()
+	exit(os.system_args(runner))
 }
 
 // pgo_naming pins the name of the profile gcc writes. Left to itself gcc names it after
@@ -1154,7 +1197,7 @@ fn cmd_generate(args Args) {
 		stubs_dir:    p.python_source
 	})
 	for d in result.diagnostics {
-		eprintln(d.error())
+		eprint(d.render())
 	}
 	if result.has_errors() {
 		eprintln('error: the code generator reported errors')
@@ -1457,19 +1500,19 @@ fn cmd_completions(args Args) {
 			println('# bash completion for vcraft')
 			println('_vcraft() {')
 			println(r'  local cur="${COMP_WORDS[COMP_CWORD]}"')
-			println('  COMPREPLY=( $(compgen -W "new init build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor" -- "$cur") )')
+			println('  COMPREPLY=( $(compgen -W "new init test build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor" -- "$cur") )')
 			println('}')
 			println('complete -F _vcraft vcraft')
 		}
 		'zsh' {
 			println('#compdef vcraft')
 			println('local -a cmds')
-			println('cmds=(new init build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor)')
+			println('cmds=(new init test build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor)')
 			println('_describe "command" cmds')
 		}
 		'fish' {
 			println('complete -c vcraft -f')
-			println('complete -c vcraft -n "__fish_use_subcommand" -a "new init build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor"')
+			println('complete -c vcraft -n "__fish_use_subcommand" -a "new init test build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor"')
 		}
 		else {
 			eprintln('error: unknown shell `${shell}`; use bash, zsh or fish')

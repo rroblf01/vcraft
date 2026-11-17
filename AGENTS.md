@@ -44,6 +44,7 @@ python3 tests/memory/test_leaks.py      # each scenario twice per process; fails
 python3 tests/fuzz/test_fuzz.py [rounds] [calls-per-round]
 python3 tests/docs/test_readme.py       # builds every ```v block of README.md (see markers)
 python3 tests/examples/test_examples.py # builds the examples gallery and runs each test_*.py
+python3 tests/compat/test_compat.py     # pip wheel, python -m build and uv build through the backend
 python3 tests/cli/test_cli.py           # builds bin/vcraft, uses fresh venvs
 ```
 

@@ -58,3 +58,31 @@ $ vcraft publish
 
 `publish` refuses an editable build before choosing an uploader, so a local path cannot
 reach PyPI by accident.
+
+## Other build tools
+
+A vcraft project is a standard PEP 517 project, so the usual frontends build it with no
+vcraft-specific step; `tests/compat/test_compat.py` checks each of them on every CI run:
+
+```console
+$ pip wheel . -w dist/
+$ python -m build             # an sdist, then a wheel built from that sdist
+$ uv build
+```
+
+The backend finds `vcraft` on `PATH` (or `VCRAFT_BIN`), and asks the frontend to install
+it into the build environment when it is missing.
+
+**cibuildwheel** builds Linux wheels in a manylinux container; point it at the published
+vcraft image, which is PyPA's `manylinux_2_28` with V and vcraft already in it:
+
+```toml
+# pyproject.toml
+[tool.cibuildwheel]
+build = "cp311-* cp312-* cp313-* cp314-*"
+manylinux-x86_64-image = "ghcr.io/rroblf01/vcraft-manylinux:1.8.0"
+manylinux-aarch64-image = "ghcr.io/rroblf01/vcraft-manylinux:1.8.0"
+```
+
+`vcraft generate-ci` remains the tested path for a whole release matrix; the
+cibuildwheel route is exercised by the same suite when `VCRAFT_TEST_CIBUILDWHEEL=1`.

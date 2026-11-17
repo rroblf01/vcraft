@@ -501,7 +501,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		stubs_dir:    p.python_source
 	})
 	for d in generate_result.diagnostics {
-		eprintln(d.error())
+		eprint(d.render())
 	}
 	if generate_result.has_errors() {
 		return error('the code generator reported errors')

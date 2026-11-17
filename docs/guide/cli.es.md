@@ -8,6 +8,7 @@ $ vcraft --help
 | --- | --- |
 | `vcraft new <nombre>` | Crea un proyecto: manifiesto, fuente V, demo, test, README |
 | `vcraft init [dir]` | Añade vcraft a un proyecto Python existente (ver abajo) |
+| `vcraft test [-- args]` | Pone al día la instalación editable y ejecuta los tests (ver abajo) |
 | `vcraft build` | Ejecuta el generador, compila la extensión y escribe un wheel |
 | `vcraft develop` | Construye e instala en el virtualenv activo, editable por defecto |
 | `vcraft develop --watch` | Lo mismo, y otra vez con cada cambio en un fichero V, C o de manifiesto (`--interval <ms>`, 500 por defecto) |
@@ -40,6 +41,30 @@ $ vcraft --help
 `vcraft info` es planificación pura: nombra el SO, la arquitectura, el tag y el compilador
 sin tocar ningún toolchain, así que funciona en todas partes, incluso para un target cuyo
 compilador no está instalado.
+
+## Tests: `vcraft test` y el plugin de pytest
+
+```console
+$ vcraft test                  # vcraft develop y después pytest (o unittest discover)
+$ vcraft test -- -k parse -x   # todo lo que va tras -- llega al runner de tests
+```
+
+El build es incremental, así que un árbol sin cambios solo cuesta un hash de las fuentes,
+y un build fallido se detiene antes de que ningún test se ejecute contra una extensión
+desfasada. Con pytest, el plugin que trae vcraft hace lo mismo desde dentro de pytest, para
+los runners de tests de los IDE y los scripts de CI que llaman a pytest directamente:
+
+```console
+$ pytest --vcraft-develop
+```
+
+```toml
+# pyproject.toml: activado en todas las ejecuciones del proyecto
+[tool.pytest.ini_options]
+vcraft_develop = true
+```
+
+El plugin no hace nada salvo que una de esas dos cosas lo active.
 
 ## Builds guiados por perfil: `--pgo`
 

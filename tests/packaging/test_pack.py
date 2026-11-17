@@ -180,9 +180,12 @@ def main() -> int:
             entry_points = z.read(
                 "vcraft-0.1.0.dist-info/entry_points.txt").decode()
             t.check("a console script is declared",
-                    entry_points == "[console_scripts]\n"
-                    "vcraft = vcraft_tool._launch:main\n",
+                    entry_points.startswith("[console_scripts]\n"
+                                            "vcraft = vcraft_tool._launch:main\n"),
                     entry_points)
+            t.check("the pytest plugin is registered",
+                    "[pytest11]\nvcraft = vcraft_tool.pytest_plugin\n" in entry_points
+                    and "vcraft_tool/pytest_plugin.py" in z.namelist(), entry_points)
             init = z.read("vcraft_tool/__init__.py").decode()
             t.check("the version is stamped",
                     '__version__ = "0.1.0"' in init, init)

@@ -8,6 +8,7 @@ $ vcraft --help
 | --- | --- |
 | `vcraft new <name>` | Scaffolds a project: manifest, V source, demo, test, README |
 | `vcraft init [dir]` | Adds vcraft to an existing Python project (see below) |
+| `vcraft test [-- args]` | Brings the editable install up to date, then runs the tests (see below) |
 | `vcraft build` | Runs the generator, compiles the extension and writes a wheel |
 | `vcraft develop` | Builds and installs into the active virtualenv, editable by default |
 | `vcraft develop --watch` | The same, then again on every change to a V, C or manifest file (`--interval <ms>`, default 500) |
@@ -40,6 +41,30 @@ $ vcraft --help
 `vcraft info` is pure planning: it names the OS, architecture, tag and compiler without
 touching a toolchain, so it works everywhere, including for a target whose compiler is not
 installed.
+
+## Testing: `vcraft test` and the pytest plugin
+
+```console
+$ vcraft test                  # vcraft develop, then pytest (or unittest discovery)
+$ vcraft test -- -k parse -x   # everything after -- goes to the test runner
+```
+
+The build is incremental, so an unchanged tree costs only a hash of the sources, and a
+failed build stops before any test runs against a stale extension. With pytest, the
+plugin that ships with vcraft does the same from inside pytest, for IDE test runners and
+CI scripts that call pytest directly:
+
+```console
+$ pytest --vcraft-develop
+```
+
+```toml
+# pyproject.toml: on for every run of this project
+[tool.pytest.ini_options]
+vcraft_develop = true
+```
+
+The plugin does nothing unless one of those turns it on.
 
 ## Profile-guided builds: `--pgo`
 

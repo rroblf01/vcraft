@@ -2212,6 +2212,11 @@ print("ok" if not bad else bad)
         t.check("a misspelt annotation is an error, not a silently missing function",
                 proc.returncode != 0 and "unknown vcraft annotation `vc_fnn`" in proc.stderr,
                 (proc.stderr or proc.stdout).strip()[-300:])
+        t.check("the diagnostic points at the source, rustc style",
+                "--> " in proc.stderr and "| @[vc_fnn]" in proc.stderr
+                and "| ^^^^^^^^^" in proc.stderr, proc.stderr[-500:])
+        t.check("and suggests the annotation that was meant",
+                "= help: did you mean `@[vc_fn]`?" in proc.stderr, proc.stderr[-500:])
         native.write_text(saved)
         manifest_path.write_text(
             'minimum-version = "3.12"\nabi3 = "3.12"\n\n'
@@ -3068,6 +3073,28 @@ pub fn c_marker() int {
                 proc.returncode == 0 and "win_amd64" in proc.stdout
                 and "mypkg_native" in proc.stdout and ".pyd" in proc.stdout,
                 (proc.stderr or proc.stdout).strip()[-300:])
+
+        print("vcraft test")
+        test_venv = tmp / "venv-test"
+        make_venv(test_venv)
+        test_env = dict(os.environ, VIRTUAL_ENV=str(test_venv))
+        proc = subprocess.run([str(VCRAFT), "test"], cwd=project, env=test_env,
+                              capture_output=True, text=True)
+        t.check("vcraft test builds, then runs the project's tests",
+                proc.returncode == 0 and "running unittest discover" in proc.stdout
+                and "OK" in proc.stderr, (proc.stdout + proc.stderr)[-600:])
+        failing = project / "tests" / "test_zz_fails.py"
+        failing.write_text("import unittest\n\nclass T(unittest.TestCase):\n"
+                           "    def test_fails(self):\n        self.fail('on purpose')\n")
+        proc = subprocess.run([str(VCRAFT), "test"], cwd=project, env=test_env,
+                              capture_output=True, text=True)
+        t.check("a failing test fails vcraft test", proc.returncode != 0
+                and "on purpose" in proc.stderr, (proc.stdout + proc.stderr)[-400:])
+        proc = subprocess.run([str(VCRAFT), "test", "--", "-s", "tests", "-p", "test_m*.py"],
+                              cwd=project, env=test_env, capture_output=True, text=True)
+        t.check("arguments after -- reach the runner", proc.returncode == 0
+                and "test_zz" not in proc.stderr, (proc.stdout + proc.stderr)[-400:])
+        failing.unlink()
 
         print("profile-guided build")
         proc = vcraft("build", "--pgo", "no-such-script.py", cwd=project)

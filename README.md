@@ -1398,6 +1398,7 @@ would do, and without it each thread needs its own.
 ```
 vcraft new <name>            scaffold a V project ready for Python
 vcraft init [dir]            add vcraft to an existing Python project
+vcraft test [-- args]        rebuild if needed, then run the tests (pytest, else unittest)
 vcraft build [options]       build a distributable wheel
 vcraft develop [options]     build and install an editable pointer by default
 vcraft develop --copy        install a plain extension copy instead
@@ -1794,7 +1795,8 @@ project looks like end to end — [source](https://github.com/rroblf01/vqubit),
 
 Smaller, runnable projects are in [`examples/`](examples/README.md): an asyncio server
 over `@[vc_async]`, a CSV parser checked against `csv`, NumPy kernels through the buffer
-protocol, and an extension with its own C file.
+protocol, an extension with its own C file, and fuzzy string matching about 50x faster
+than the same algorithm in pure Python.
 
 ## Stability
 

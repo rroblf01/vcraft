@@ -1,5 +1,7 @@
 module vcraft_codegen
 
+import os
+
 // The model the generator builds from a project, and emits from.
 //
 // It is deliberately small: one function per exported declaration, with the
@@ -1075,9 +1077,54 @@ pub:
 	message string
 }
 
-// error renders a diagnostic the way a compiler would.
+// error renders a diagnostic the way a compiler would, on one line.
 pub fn (d Diagnostic) error() string {
 	return '${d.file}:${d.line}:${d.column}: ${d.message}'
+}
+
+// render shows a diagnostic the way rustc does: the message, where it is, the source
+// line with the place marked, and the advice after the message's first `; ` as a help
+// line. A diagnostic whose file cannot be read is shown without the source.
+//
+//	error: unknown vcraft annotation `vc_methd`
+//	  --> src/lib.v:12:1
+//	   |
+//	12 | @[vc_methd]
+//	   | ^^^^^^^^^^^
+//	   = help: did you mean `@[vc_method]`?
+pub fn (d Diagnostic) render() string {
+	kind := if d.message.starts_with('warning') { 'warning' } else { 'error' }
+	mut body := d.message
+	for prefix in ['error: ', 'warning: '] {
+		if body.starts_with(prefix) {
+			body = body[prefix.len..]
+		}
+	}
+	head := body.all_before('; ')
+	help := if body.contains('; ') { body.all_after('; ') } else { '' }
+	gutter := ' '.repeat(d.line.str().len)
+	mut out := '${kind}: ${head}\n${gutter}--> ${d.file}:${d.line}:${d.column}\n'
+	lines := os.read_lines(d.file) or { []string{} }
+	if d.line >= 1 && d.line <= lines.len {
+		raw := lines[d.line - 1]
+		col := if d.column >= 1 && d.column <= raw.len + 1 { d.column - 1 } else { 0 }
+		shown := raw.replace('\t', '    ')
+		lead := raw[..col].replace('\t', '    ').len
+		rest := raw[col..].trim_right(' \t{')
+		mut span := if rest.starts_with('@[') && rest.contains(']') {
+			rest.index(']') or { rest.len - 1 } + 1
+		} else {
+			rest.replace('\t', '    ').len
+		}
+		if span < 1 {
+			span = 1
+		}
+		out += '${gutter} |\n${d.line} | ${shown}\n${gutter} | ${' '.repeat(lead)}${'^'.repeat(span)}\n'
+	}
+	if help.len > 0 {
+		out += '${gutter} = help: ${help}\n'
+	}
+	return out
 }
 
 // has_errors reports whether any diagnostic is fatal. Warnings are not, so the

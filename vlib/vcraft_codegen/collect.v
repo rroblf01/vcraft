@@ -2521,7 +2521,7 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 		checked := if param.variadic() { param.v_type.trim_space()[3..] } else { param.v_type }
 		if !type_marshalable(checked) {
 			report(mut p, path, decl,
-				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule')
+				'error: cannot expose `${decl.name}`: type `${param.v_type}` of parameter `${param.name}` has no marshalling rule; ${type_hint(checked)}')
 			return
 		}
 		// A map or a nested composite reads through the generic converter helpers, which
@@ -2570,7 +2570,7 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 	// at any depth, has no rule.
 	if f.v_ret.len > 0 && pointer_target(f.v_ret).len == 0 && !type_marshalable(f.v_ret) {
 		report(mut p, path, decl,
-			'error: cannot expose `${decl.name}`: return type `${f.v_ret}` has no marshalling rule')
+			'error: cannot expose `${decl.name}`: return type `${f.v_ret}` has no marshalling rule; ${type_hint(f.v_ret)}')
 		return
 	}
 }
@@ -2645,6 +2645,77 @@ pub fn report_c_int_widths(lines []string, path string, mut p Project) {
 	}
 }
 
+// did_you_mean suggests the known annotation closest to a misspelt one, as the help
+// line of its diagnostic: `; did you mean `@[vc_method]`?`. Nothing when none is close.
+fn did_you_mean(name string) string {
+	mut best := ''
+	mut best_distance := 4
+	for known in known_attrs {
+		d := edit_distance(name, known)
+		if d < best_distance {
+			best = known
+			best_distance = d
+		}
+	}
+	for old, _ in deprecated_attrs {
+		if edit_distance(name, old) < best_distance {
+			best = deprecated_attrs[old]
+			best_distance = edit_distance(name, old)
+		}
+	}
+	if best.len == 0 {
+		return '; see the annotation table in the README for the ones vcraft knows'
+	}
+	return '; did you mean `@[${best}]`?'
+}
+
+// edit_distance is the Levenshtein distance between two short names.
+fn edit_distance(a string, b string) int {
+	mut prev := []int{len: b.len + 1, init: index}
+	mut cur := []int{len: b.len + 1}
+	for i in 1 .. a.len + 1 {
+		cur[0] = i
+		for j in 1 .. b.len + 1 {
+			cost := if a[i - 1] == b[j - 1] { 0 } else { 1 }
+			mut best := prev[j] + 1
+			if cur[j - 1] + 1 < best {
+				best = cur[j - 1] + 1
+			}
+			if prev[j - 1] + cost < best {
+				best = prev[j - 1] + cost
+			}
+			cur[j] = best
+		}
+		prev = cur.clone()
+	}
+	return prev[b.len]
+}
+
+// type_hint is the help line for a type with no marshalling rule: what does cross that
+// is closest to what was written.
+fn type_hint(t string) string {
+	s := t.trim_space()
+	if s.starts_with('[]&') {
+		return 'a list of references does not cross; take `[]T` of values, or one class instance as `&T`'
+	}
+	if s.starts_with('chan ') || s.contains(' chan ') {
+		return 'a channel stays inside V; pass values, or make the function `@[vc_async]` for concurrency'
+	}
+	if s.starts_with('fn ') || s.starts_with('fn(') {
+		return 'a V function cannot cross; take the Python callable as `vcraft.PyObj` and call it with `vcraft.call`'
+	}
+	if s.starts_with('&') {
+		return 'a pointer to a plain struct does not cross; take the struct by value (it crosses as a dict), or mark it `@[vc_class]`'
+	}
+	if s.starts_with('map[') {
+		return 'a map crosses when its key is a string, integer or enum and its value has a rule of its own'
+	}
+	if s.starts_with('?') || s.starts_with('!') {
+		return 'an option or result crosses only at the top level of a signature, not nested inside another type'
+	}
+	return 'the supported types are listed under "Type marshalling" in the README; `vcraft.PyObj` takes any Python object as it is'
+}
+
 pub fn report_unknown_attrs(lines []string, path string, mut p Project) {
 	for i, line in lines {
 		trimmed := line.trim_space()
@@ -2671,7 +2742,7 @@ pub fn report_unknown_attrs(lines []string, path string, mut p Project) {
 					file:    path
 					line:    i + 1
 					column:  indent + 1
-					message: 'error: unknown vcraft annotation `${name}`'
+					message: 'error: unknown vcraft annotation `${name}`' + did_you_mean(name)
 				}
 			}
 		}

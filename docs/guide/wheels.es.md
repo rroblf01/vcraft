@@ -60,3 +60,32 @@ $ vcraft publish
 
 `publish` rechaza un build editable antes de elegir un uploader, así que una ruta local no
 puede llegar a PyPI por accidente.
+
+## Otras herramientas de build
+
+Un proyecto vcraft es un proyecto PEP 517 estándar, así que los frontends habituales lo
+construyen sin ningún paso propio de vcraft; `tests/compat/test_compat.py` comprueba cada
+uno en cada ejecución de la CI:
+
+```console
+$ pip wheel . -w dist/
+$ python -m build             # un sdist, y después un wheel construido desde ese sdist
+$ uv build
+```
+
+El backend encuentra `vcraft` en el `PATH` (o en `VCRAFT_BIN`) y, si falta, pide al
+frontend que lo instale en el entorno de build.
+
+**cibuildwheel** construye los wheels de Linux en un contenedor manylinux; apúntalo a la
+imagen publicada de vcraft, que es la `manylinux_2_28` de PyPA con V y vcraft dentro:
+
+```toml
+# pyproject.toml
+[tool.cibuildwheel]
+build = "cp311-* cp312-* cp313-* cp314-*"
+manylinux-x86_64-image = "ghcr.io/rroblf01/vcraft-manylinux:1.8.0"
+manylinux-aarch64-image = "ghcr.io/rroblf01/vcraft-manylinux:1.8.0"
+```
+
+`vcraft generate-ci` sigue siendo el camino probado para una matriz de release completa;
+la ruta de cibuildwheel la ejercita el mismo suite cuando `VCRAFT_TEST_CIBUILDWHEEL=1`.

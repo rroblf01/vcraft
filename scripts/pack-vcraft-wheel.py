@@ -13,6 +13,7 @@ Layout inside the wheel::
     vcraft_tool/_launch.py       finds bin/vcraft next to itself and execs it
     vcraft_tool/auto.py          `import vcraft_tool.auto`: import .v files directly
     vcraft_tool/jupyter.py       `%load_ext vcraft_tool.jupyter`: the %%vcraft cell magic
+    vcraft_tool/pytest_plugin.py `pytest --vcraft-develop`: rebuild before the tests
     vcraft_tool/bin/vcraft      the compiled binary, executable bit preserved
     vcraft_tool/bin/*.dylib     Boehm's libgc on macOS, so the wheel is self-contained
     vcraft_tool/vlib/...        the V modules `-path` points at when building
@@ -203,7 +204,7 @@ def build_wheel(version: str, platform: str, binary: Path, vlib: Path,
         put("vcraft_tool/_launch.py", LAUNCH_PY.encode())
         # The import hook (`import vcraft_tool.auto`) and the Jupyter magic
         # (`%load_ext vcraft_tool.jupyter`) are real modules kept in tools/.
-        for module in ("auto.py", "jupyter.py"):
+        for module in ("auto.py", "jupyter.py", "pytest_plugin.py"):
             put(f"vcraft_tool/{module}", (ROOT / "tools" / "vcraft_tool" / module).read_bytes())
         # Windows wheels carry `vcraft.exe`, which is the file name the launcher
         # looks for there; every other platform's binary has no suffix.
@@ -230,7 +231,8 @@ def build_wheel(version: str, platform: str, binary: Path, vlib: Path,
             f"Tag: py3-none-{platform}\n"
         )
         put(f"{dist_info}/WHEEL", wheel_file.encode())
-        entry_points = "[console_scripts]\nvcraft = vcraft_tool._launch:main\n"
+        entry_points = ("[console_scripts]\nvcraft = vcraft_tool._launch:main\n\n"
+                        "[pytest11]\nvcraft = vcraft_tool.pytest_plugin\n")
         put(f"{dist_info}/entry_points.txt", entry_points.encode())
         record_rows.append(f"{dist_info}/RECORD,,")
         archive.writestr(

@@ -202,6 +202,10 @@ jobs:
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/examples/test_examples.py
 
+      - name: "suite: packaging frontends (pip, build, uv)"
+        if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
+        run: python3 tests/compat/test_compat.py
+
   cli:
     needs: v-compiler
     # The slowest suite on its own job (see above for why it is separate).
