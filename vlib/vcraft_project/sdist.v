@@ -46,6 +46,15 @@ pub fn sdist(p Project, root string) ![]u8 {
 		data := os.read_file(path) or { return error('cannot read ${path}') }
 		tar.add_file('${base_name(p)}/src/' + rel, data.bytes()) or { return err }
 	}
+	// The project's own C travels too. A header under `c/` reached through
+	// `#flag -I @VMODROOT/c`, or a `.c` next to the V sources, is part of the build
+	// as much as the V is, and an sdist without it compiles only on the author's
+	// machine: the failure is a missing header at the C compiler, on the user's side.
+	for rel in native_sources(root) {
+		path := root.trim_right('/') + '/' + rel
+		data := os.read_file(path) or { return error('cannot read ${path}') }
+		tar.add_file('${base_name(p)}/' + rel, data.bytes()) or { return err }
+	}
 	// The licence file travels too, so a build from the sdist still carries it.
 	if license_path := find_license_file(root) {
 		data := os.read_file(license_path) or { return error('cannot read ${license_path}') }
@@ -89,6 +98,45 @@ fn v_sources(root string) []string {
 	collect_files_with_suffixes(root.trim_right('/') + '/src', '', mut out, ['.v'])
 	return out.filter(it != '_vcraft_generated.v' &&
 		!it.ends_with('/_vcraft_generated.v'))
+}
+
+// native_suffixes are the C files a project can hand to V with `#flag` or `#include`.
+const native_suffixes = ['.c', '.h']
+
+// native_skipped_dirs are directories whose C files are output or someone else's, never
+// the project's sources: build products, caches and dependency trees.
+const native_skipped_dirs = ['dist', 'build', 'target', 'node_modules', '__pycache__']
+
+// native_sources lists the project's C sources and headers, relative to the root.
+//
+// The whole tree is walked rather than a fixed `c/`: V resolves `@VMODROOT` to the
+// project root, so the C can sit anywhere under it. Hidden directories (`.git`,
+// `.vcraft`, `.venv`), build output and virtual environments are skipped, the last by
+// their `pyvenv.cfg` because a venv can have any name.
+fn native_sources(root string) []string {
+	mut out := []string{}
+	collect_native(root.trim_right('/'), '', mut out)
+	return out
+}
+
+fn collect_native(dir string, prefix string, mut out []string) {
+	mut entries := os.ls(dir) or { return }
+	entries.sort()
+	for entry in entries {
+		path := dir + '/' + entry
+		rel := if prefix.len == 0 { entry } else { prefix + '/' + entry }
+		if os.is_dir(path) {
+			if entry.starts_with('.') || entry in native_skipped_dirs
+				|| os.exists(path + '/pyvenv.cfg') || os.is_link(path) {
+				continue
+			}
+			collect_native(path, rel, mut out)
+			continue
+		}
+		if native_suffixes.any(entry.ends_with(it)) {
+			out << rel
+		}
+	}
 }
 
 // base_name is the directory the archive unpacks into, which is `name-version`.

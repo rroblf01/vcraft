@@ -2299,11 +2299,32 @@ pub fn (mut c Counter) paint(color Color) int {
         extra = project / "src" / "extra.v"
         extra.write_text('''module mypkg_native
 
+#flag -I @VMODROOT/c
+#include "vc_marker.h"
+
+fn C.vc_marker() i32
+
 @[vc_fn]
 pub fn extra_marker() int {
 	return 7
 }
+
+@[vc_fn]
+pub fn c_marker() int {
+	return int(C.vc_marker())
+}
 ''', encoding="utf-8")
+        # A header of the project's own, outside `src`, reached through `@VMODROOT`:
+        # the shape a project with hand-written C takes. An sdist that carries only the
+        # V sources compiles nowhere but on the author's machine.
+        c_dir = project / "c"
+        c_dir.mkdir(exist_ok=True)
+        (c_dir / "vc_marker.h").write_text(
+            "#ifndef VC_MARKER_H\n#define VC_MARKER_H\n"
+            "static inline int vc_marker(void) { return 42; }\n#endif\n",
+            encoding="utf-8")
+        (c_dir / "vc_marker.c").write_text(
+            '#include "vc_marker.h"\n', encoding="utf-8")
         manifest_path = project / "vcraft.toml"
         manifest_saved = manifest_path.read_text()
         manifest_path.write_text(
@@ -2345,6 +2366,14 @@ pub fn extra_marker() int {
                         top + "/src/mypkg_native.v" in members)
                 t.check("it carries a sibling V source too",
                         top + "/src/extra.v" in members, str(members))
+                t.check("it carries the project's C header",
+                        top + "/c/vc_marker.h" in members, str(members))
+                t.check("it carries the project's C source",
+                        top + "/c/vc_marker.c" in members, str(members))
+                t.check("it leaves build output out",
+                        not any("/dist/" in m or "/.vcraft/" in m or "/build/" in m
+                                for m in members),
+                        str([m for m in members if "/dist/" in m or "/.vcraft/" in m]))
                 t.check("it carries the demo", top + "/main.py" in members)
                 t.check("it carries the tests",
                         top + "/tests/test_mypkg.py" in members, str(members))
@@ -2369,6 +2398,7 @@ pub fn extra_marker() int {
                 t.check("PKG-INFO names the package", "Name: mypkg" in info, info[:120])
                 t.check("PKG-INFO has a version", "Version: 0.1.0" in info)
         extra.unlink(missing_ok=True)
+        shutil.rmtree(c_dir, ignore_errors=True)
 
         print("pep 517")
         # `pip install .` goes through the backend rather than through vcraft's own
@@ -2477,6 +2507,14 @@ pub fn extra_marker() int {
                 capture_output=True, text=True, cwd=tmp)
             t.check("the sdist carried the sibling source",
                     proc.stdout.strip() == "7", (proc.stdout + proc.stderr).strip()[-200:])
+            # The header was deleted from the tree too, so the build from the sdist
+            # only found it if the archive carried it.
+            proc = subprocess.run(
+                [str(venv_python(target)), "-c",
+                 "import mypkg_native as m; print(m.c_marker())"],
+                capture_output=True, text=True, cwd=tmp)
+            t.check("the sdist carried the project's C code",
+                    proc.stdout.strip() == "42", (proc.stdout + proc.stderr).strip()[-200:])
 
         print("generate-ci")
         proc = vcraft("generate-ci", cwd=project)
