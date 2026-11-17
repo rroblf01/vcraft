@@ -110,6 +110,82 @@ fn toolchain_build_command(dir string, jobs int) []string {
 	return ['make', '-C', dir, 'local=1', '-j${jobs}', 'VEXE=./v']
 }
 
+// prebuilt_base is where `release-v.yml` publishes the pinned V, one archive per platform,
+// under the release tagged `v/<commit>`.
+pub const prebuilt_base = 'https://github.com/rroblf01/vcraft/releases/download'
+
+// prebuilt_asset names the archive for this host, or '' when none is published: the
+// archives are built on glibc runners, so a musl host builds from source.
+pub fn prebuilt_asset() string {
+	t := default_target()
+	return match true {
+		t.os == 'linux' && t.arch == 'x86_64' && t.libc == 'gnu' { 'linux-x86_64' }
+		t.os == 'linux' && t.arch == 'aarch64' && t.libc == 'gnu' { 'linux-aarch64' }
+		t.os == 'macos' && t.arch == 'aarch64' { 'macos-arm64' }
+		t.os == 'windows' { 'win-amd64' }
+		else { '' }
+	}
+}
+
+// prebuilt_url is the archive's address for this host, or ''. `VCRAFT_V_ARCHIVE_URL`
+// replaces it, for a mirror on a network that cannot reach GitHub (any URL curl takes,
+// `file://` included).
+pub fn prebuilt_url() string {
+	if os.getenv('VCRAFT_V_ARCHIVE_URL') != '' {
+		return os.getenv('VCRAFT_V_ARCHIVE_URL')
+	}
+	asset := prebuilt_asset()
+	if asset == '' {
+		return ''
+	}
+	return '${prebuilt_base}/v/${v_commit}/v-${v_commit}-${asset}.tar.gz'
+}
+
+// install_prebuilt downloads and unpacks the published V for this host into `dir`: a
+// download of seconds where the source build takes minutes. `curl` fetches it, or the
+// Python on PATH when there is no curl, and `tar` unpacks it; the result has to report
+// the pinned commit, or it is removed and the call fails.
+fn install_prebuilt(dir string) ! {
+	url := prebuilt_url()
+	if url == '' {
+		return error('no prebuilt V is published for this platform')
+	}
+	if os.find_abs_path_of_executable('tar') or { '' } == '' {
+		return error('`tar` is needed to unpack the prebuilt V')
+	}
+	archive := dir + '.tar.gz'
+	os.mkdir_all(os.dir(dir)) or { return error('cannot create ${os.dir(dir)}') }
+	mut fetch := []string{}
+	if os.find_abs_path_of_executable('curl') or { '' } != '' {
+		fetch = ['curl', '-fsSL', '--retry', '2', '-o', archive, url]
+	} else {
+		python := os.find_abs_path_of_executable(executable_name('python3')) or {
+			os.find_abs_path_of_executable(executable_name('python')) or {
+				return error('`curl` or Python is needed to download the prebuilt V')
+			}
+		}
+		fetch = [python, '-c', 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])',
+			url, archive]
+	}
+	println('+ download ${url}')
+	if os.system_args(fetch) != 0 {
+		os.rm(archive) or {}
+		return error('the download failed')
+	}
+	if os.exists(dir) {
+		os.rmdir_all(dir) or { return error('cannot clear ${dir}: ${err.msg()}') }
+	}
+	os.mkdir_all(dir) or { return error('cannot create ${dir}') }
+	unpacked := os.system_args(['tar', '-xzf', archive, '-C', dir])
+	os.rm(archive) or {}
+	built_v := os.join_path(dir, executable_name('v'))
+	if unpacked != 0 || !v_matches_pin(built_v) {
+		os.rmdir_all(dir) or {}
+		return error('the prebuilt archive did not unpack to V ${v_commit[..7]}')
+	}
+	println('installed the prebuilt V ${v_commit[..7]} in ${dir}')
+}
+
 // install_toolchain builds the pinned V into `toolchain_dir()`, printing what it runs.
 //
 // git and a build tool -- `make` on POSIX, the checkout's own `makev.bat` on Windows --
@@ -117,8 +193,26 @@ fn toolchain_build_command(dir string, jobs int) []string {
 // interrupted run is removed first, because a half-built V is worse than none. The C
 // bootstrap sources are deleted afterwards, as CI does: they are only read while
 // building the compiler, and they are most of its size.
-pub fn install_toolchain(jobs int) ! {
+//
+// With `prebuilt` it first downloads the archive `release-v.yml` publishes for this host
+// and falls back to the source build only when there is none or the download fails.
+pub fn install_toolchain(jobs int, prebuilt bool) ! {
 	dir := toolchain_dir()
+	if installed_v() != '' && v_matches_pin(installed_v()) {
+		println('V ${v_commit[..7]} is already installed in ${dir}')
+		return
+	}
+	if prebuilt {
+		install_prebuilt(dir) or {
+			eprintln('note: ${err.msg()}; building V from source instead')
+			install_into(dir, jobs) or {
+				os.rmdir_all(dir) or {}
+				return err
+			}
+			return
+		}
+		return
+	}
 	install_into(dir, jobs) or {
 		// A half-built checkout is gigabytes of nothing usable: remove it, so the
 		// "nothing was installed" in the error is true.

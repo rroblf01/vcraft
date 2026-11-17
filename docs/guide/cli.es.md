@@ -14,7 +14,7 @@ $ vcraft --help
 | `vcraft generate-ci` | Escribe un workflow de GitHub Actions que construye y comprueba los wheels |
 | `vcraft publish` | Sube los wheels construidos (rechaza un build editable) |
 | `vcraft toolchain` | Informa del compilador V que usa vcraft y si es el pin |
-| `vcraft toolchain install` | Construye el V pin en la caché propia de vcraft |
+| `vcraft toolchain install` | Instala el V pin en la caché propia de vcraft: el archivo precompilado donde se publica, compilado desde el código fuente si no (`--from-source` lo fuerza) |
 | `vcraft version` / `--version` | Imprime la versión |
 
 ## Flags habituales
@@ -27,7 +27,10 @@ $ vcraft --help
 | `--manylinux <ver>` / `--musllinux <ver>` | `build` | Declara una política de distribución Linux |
 | `--abi3 <versión>` | `build` | Un wheel de ABI estable para `versión` y posteriores |
 | `--free-threading` | `build` | Construye contra la ABI free-threaded |
-| `--interpreter <ruta>` | `build`, `info` | El intérprete contra el que construir |
+| `--interpreter <ruta>` | `build`, `info` | El intérprete contra el que construir; `a,b,c` construye un wheel por cada uno |
+| `--find-interpreter` | `build` | Un wheel por cada CPython soportado en el `PATH` |
+| `--debug` | `build`, `develop` | `-g`: números de línea de V en gdb y en los informes de fallo |
+| `--sanitize` | `build`, `develop` | ASan y UBSan; indica cómo ejecutar Python con el runtime precargado |
 | `--out-dir <dir>` | `build` | Dónde se escribe el wheel |
 | `--dry-run` | `build`, `develop` | Imprime el plan sin ejecutarlo |
 

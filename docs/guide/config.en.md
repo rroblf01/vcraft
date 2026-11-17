@@ -60,6 +60,15 @@ or a deliberate platform baseline, not in a wheel meant to run on any x86-64.
 Classifiers must be ones PyPI knows: V has none of its own, so use
 `Programming Language :: Other`. Each entry of `[urls]` becomes a link in the PyPI sidebar.
 
+## `[project]` in `pyproject.toml`
+
+When `pyproject.toml` has a PEP 621 `[project]` table -- uv and pip read it -- its fields
+are the package metadata: `name`, `version`, `description`, `requires-python`, `readme`,
+`license`, `dependencies`, `keywords`, `classifiers` and `[project.urls]` win over
+`[package]`, except the ones listed in `dynamic`. A field both files set to different
+values is reported on every build. Keys written as inline tables (`authors`, the table
+form of `license`) are left to `vcraft.toml`.
+
 ## Refused combinations
 
 `vcraft build` refuses the combinations that would compile and then fail later: an

@@ -20,6 +20,13 @@ pub mut:
 	out_dir string
 	// release compiles with `-prod`.
 	release bool
+	// debug compiles with V's `-g`: line information pointing at the V source, so gdb,
+	// a sanitizer report or a core dump names `.v` lines rather than generated C.
+	debug bool
+	// sanitize instruments the extension with AddressSanitizer and UBSan (gcc or clang,
+	// Linux and macOS). The interpreter then has to load the runtime first; the CLI prints
+	// how.
+	sanitize bool
 	// editable builds a wheel that points at this build's output rather than carrying a
 	// copy of the extension, so a rebuild is picked up without reinstalling.
 	editable bool
@@ -546,10 +553,14 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	// not, so it is only given where neither can be the compiler. The binary grows by
 	// well under 1%.
 	align_flag := if opt.release && target.os != 'windows' { '-falign-loops=32' } else { '' }
+	// The sanitizers the repository's own suites run under (`run-sanitized.sh`): ASan and
+	// UBSan, frames kept so a report has a usable stack.
+	sanitize_cflags := if opt.sanitize { '-fsanitize=address,undefined -fno-omit-frame-pointer -g' } else { '' }
 	// The manifest's flags come first and the CLI's after, so `--cflags` adds to what the
 	// project already asks for rather than replacing it.
-	extra_cflags := (align_flag + ' ' + p.cflags + ' ' + opt.cflags).trim_space()
-	mut link_extra := (p.ldflags + ' ' + opt.ldflags).trim_space()
+	extra_cflags := (align_flag + ' ' + sanitize_cflags + ' ' + p.cflags + ' ' + opt.cflags).trim_space()
+	mut link_extra := ((if opt.sanitize { '-fsanitize=address,undefined ' } else { '' }) + p.ldflags +
+		' ' + opt.ldflags).trim_space()
 	mut args := [
 		opt.v,
 		'-new-compiler',
@@ -643,6 +654,9 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	}
 	if opt.release {
 		args << '-prod'
+	}
+	if opt.debug || opt.sanitize {
+		args << '-g'
 	}
 	args << opt.root.trim_right('/')
 	if opt.dry_run {

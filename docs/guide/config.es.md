@@ -61,6 +61,15 @@ como Markdown, `.rst` como reStructuredText); `vcraft new` escribe un `README.md
 `Programming Language :: Other`. Cada entrada de `[urls]` pasa a ser un enlace en la barra
 lateral de PyPI.
 
+## `[project]` en `pyproject.toml`
+
+Cuando `pyproject.toml` tiene una tabla `[project]` de PEP 621 -- la que leen uv y pip --
+sus campos son los metadatos del paquete: `name`, `version`, `description`,
+`requires-python`, `readme`, `license`, `dependencies`, `keywords`, `classifiers` y
+`[project.urls]` mandan sobre `[package]`, salvo los que aparecen en `dynamic`. Un campo con
+valores distintos en los dos ficheros se avisa en cada build. Las claves escritas como
+tablas en línea (`authors`, la forma de tabla de `license`) se quedan en `vcraft.toml`.
+
 ## Combinaciones rechazadas
 
 `vcraft build` rechaza las combinaciones que compilarían y fallarían después: un intérprete

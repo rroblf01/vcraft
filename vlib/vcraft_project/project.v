@@ -252,6 +252,7 @@ pub fn load(root string) !Project {
 	p.gc_markers = settings.int_of('gc-markers', 0)
 	p.targets = build.string_list_of('targets')
 	p.schema_version = table.subtable('vcraft').int_of('version', 1)
+	apply_pyproject(mut p, root, pkg)
 	if p.gc_markers < 0 || p.gc_markers > 256 {
 		return error('gc-markers is ${p.gc_markers}; it must be between 0 (the collector chooses, the default) and 256')
 	}
@@ -370,4 +371,150 @@ pub fn (p Project) long_description(root string) (string, string) {
 		}
 	}
 	return p.description, ''
+}
+
+// pyproject_section returns the text of `[project]` and its `[project.*]` subtables from a
+// `pyproject.toml`, cleaned down to what the vcraft.toml parser reads.
+//
+// A pyproject is not written for that parser: `authors = [{ name = "..." }]` and
+// `license = { text = "..." }` are inline tables, and a long description may be a
+// multi-line string. Those keys are dropped -- with their continuation lines -- so the
+// rest still parses; vcraft.toml remains the place for anything this leaves out.
+fn pyproject_section(text string) string {
+	mut out := []string{}
+	mut inside := false
+	lines := text.replace('\r\n', '\n').split('\n')
+	mut i := 0
+	for i < lines.len {
+		t := lines[i].trim_space()
+		if t.starts_with('[') {
+			header := t.trim_left('[').trim_right(']').trim_space()
+			inside = header == 'project' || header.starts_with('project.')
+			if inside {
+				out << t
+			}
+			i++
+			continue
+		}
+		if !inside || t == '' || t.starts_with('#') {
+			i++
+			continue
+		}
+		value := t.all_after('=').trim_space()
+		triple_double := '"' + '"' + '"'
+		triple_single := "'" + "'" + "'"
+		if value.starts_with(triple_double) || value.starts_with(triple_single) {
+			quote := value[..3]
+			mut rest := value[3..]
+			for !rest.contains(quote) && i + 1 < lines.len {
+				i++
+				rest = lines[i]
+			}
+			i++
+			continue
+		}
+		// Each line's own comment goes before it is joined: one left inside a joined
+		// line would swallow everything after it.
+		mut joined := strip_comment(t)
+		mut depth := toml_depth(joined)
+		for depth > 0 && i + 1 < lines.len {
+			i++
+			joined += ' ' + strip_comment(lines[i].trim_space())
+			depth = toml_depth(joined)
+		}
+		if !joined.all_after('=').contains('{') {
+			out << joined
+		}
+		i++
+	}
+	return out.join('\n') + '\n'
+}
+
+// toml_depth is how many `[` and `{` are still open in a line, ignoring brackets inside
+// strings.
+fn toml_depth(s string) int {
+	mut depth := 0
+	mut quote := u8(0)
+	for c in s {
+		if quote != 0 {
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		match c {
+			`"`, `'` { quote = c }
+			`[`, `{` { depth++ }
+			`]`, `}` { depth-- }
+			else {}
+		}
+	}
+	return depth
+}
+
+// apply_pyproject makes `pyproject.toml`'s `[project]` table the source of the package
+// metadata, as PEP 621 intends and maturin does.
+//
+// uv, pip and every other frontend read `[project]`, and a project that also keeps the
+// same metadata in vcraft.toml has two copies to keep in step. With this, a field written
+// in `[project]` wins; one listed in `dynamic`, or left out, still comes from vcraft.toml.
+// When both files give a field different values, the build says so, naming both.
+fn apply_pyproject(mut p Project, root string, pkg Table) {
+	text := os.read_file(root.trim_right('/') + '/pyproject.toml') or { return }
+	if !text.contains('[project]') {
+		return
+	}
+	table := parse(pyproject_section(text)) or {
+		eprintln('warning: pyproject.toml: [project] could not be read (${err.msg()}); using vcraft.toml')
+		return
+	}
+	proj := table.subtable('project')
+	dynamic := proj.string_list_of('dynamic')
+	for key in ['name', 'version', 'description', 'requires-python', 'readme', 'license'] {
+		if key in dynamic {
+			continue
+		}
+		v := proj.get(key) or { continue }
+		if v.kind != .string || v.text.len == 0 {
+			continue
+		}
+		mine := pkg.string_of(key, '')
+		if mine.len > 0 && mine != v.text {
+			eprintln('warning: pyproject.toml [project].${key} = "${v.text}" overrides vcraft.toml [package].${key} = "${mine}"; keep one of them')
+		}
+		match key {
+			'name' { p.name = v.text }
+			'version' { p.version = v.text }
+			'description' { p.description = v.text }
+			'requires-python' { p.requires_python = v.text }
+			'readme' { p.readme = v.text }
+			'license' { p.license = v.text }
+			else {}
+		}
+	}
+	for key in ['dependencies', 'keywords', 'classifiers'] {
+		if key in dynamic {
+			continue
+		}
+		if _ := proj.get(key) {
+			list := proj.string_list_of(key)
+			match key {
+				'dependencies' { p.dependencies = list }
+				'keywords' { p.keywords = list }
+				'classifiers' { p.classifiers = list }
+				else {}
+			}
+		}
+	}
+	if 'urls' !in dynamic {
+		urls := table.subtable('project.urls')
+		if urls.entries.len > 0 {
+			p.urls = []string{}
+			for e in urls.entries {
+				if e.value.kind == .string && e.value.text.len > 0 {
+					p.urls << '${e.name}, ${e.value.text}'
+				}
+			}
+		}
+	}
 }

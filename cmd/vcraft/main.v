@@ -34,15 +34,19 @@ usage:
   vcraft check-wheel [path]    validate a built wheel (METADATA, RECORD, tags)
   vcraft clean                 remove build output
   vcraft toolchain             show which V compiler vcraft uses
-  vcraft toolchain install     build the V compiler vcraft is tested with
+  vcraft toolchain install     install the V compiler vcraft is tested with (prebuilt, or built)
+  vcraft toolchain install --from-source   build it from source even where a prebuilt one exists
   vcraft toolchain install --force   reinstall even if present
   vcraft toolchain install --offline use a cached checkout (no network)
   vcraft version, --version    print the version
 
 build options:
   --release                    compile with -prod
+  --debug                      compile with -g: V line numbers in gdb and crash reports
+  --sanitize                   instrument with ASan and UBSan (implies --debug)
   --abi3 <version>             build against the stable ABI
-  --interpreter <path>         build against a specific interpreter
+  --interpreter <path>         build against a specific interpreter; a,b,c builds one wheel each
+  --find-interpreter           build a wheel for every supported CPython on PATH
   --out-dir <dir>              output directory (default: dist/)
   --platform <tag>             override the platform tag
   --target <name>              cross-compile for a target, e.g. linux-aarch64-gnu
@@ -334,7 +338,18 @@ fn run_build(args Args, develop bool, target_override string) {
 	}
 	// No compiler is the first thing a new user hits, and V's own "command not found"
 	// says nothing about how to get one. A dry run plans without compiling.
-	v := vcraft_project.v_compiler()
+	mut v := vcraft_project.v_compiler()
+	// A build the PEP 517 backend started -- `pip install` of an sdist, `uv sync` -- has
+	// nobody to tell "install V first", so it installs the pinned V itself: the published
+	// archive when there is one for this host, the source build otherwise.
+	if !args.flags['dry-run'] && !command_exists(v) && os.getenv('VCRAFT_AUTO_TOOLCHAIN') == '1' {
+		eprintln('no V compiler found; installing the pinned V ${vcraft_project.v_commit[..7]}')
+		vcraft_project.install_toolchain(2, true) or {
+			eprintln('error: ${err.msg()}')
+			exit(1)
+		}
+		v = vcraft_project.v_compiler()
+	}
 	if !args.flags['dry-run'] && !command_exists(v) {
 		eprintln('error: no V compiler found')
 		eprintln('  install the one vcraft is tested with:')
@@ -394,6 +409,8 @@ fn run_build(args Args, develop bool, target_override string) {
 		root:        root
 		out_dir:     if args.options['out-dir'] != '' { args.options['out-dir'] } else { 'dist' }
 		release:     args.flags['release']
+		debug:       args.flags['debug']
+		sanitize:    args.flags['sanitize']
 		// `develop` installs into the active virtualenv, so it has to build against that
 		// virtualenv's interpreter: with the venv not first on PATH, `python3` is a
 		// different CPython and the extension cannot be imported by the interpreter it
@@ -421,6 +438,14 @@ fn run_build(args Args, develop bool, target_override string) {
 		// means: the point of a development install is that a rebuild is picked up. `build`
 		// is never editable, because a wheel is a thing you upload.
 		editable:    (develop || args.flags['editable']) && !args.flags['copy']
+	}
+	if (args.flags['debug'] || args.flags['sanitize']) && args.flags['release'] {
+		eprintln('error: `--debug`/`--sanitize` and `--release` pull opposite ways; pick one')
+		exit(2)
+	}
+	if args.flags['sanitize'] && os.user_os() == 'windows' {
+		eprintln('error: `--sanitize` needs gcc or clang on Linux or macOS')
+		exit(2)
 	}
 	if develop && args.flags['dry-run'] {
 		// `develop` installs, so a dry run would plan a build it then refuses to do.
@@ -453,7 +478,16 @@ fn run_build(args Args, develop bool, target_override string) {
 	}
 	println('  tag       ${result.tag}')
 	println('  extension ${result.extension}')
-	println('  size      ${result.wheel.len} bytes')
+	// The wheel's size, which for an editable install is a pointer file rather than the
+	// extension: labelled as such, so a few hundred bytes do not read as a broken build.
+	println('  wheel     ${result.wheel.len} bytes${if opt.editable { ' (editable: points at the build)' } else { '' }}')
+	if args.flags['sanitize'] && os.user_os() == 'linux' {
+		// CPython is not built with ASan, so its runtime has to be loaded first or the
+		// import fails with "ASan runtime does not come first in initial library list".
+		asan := os.execute('gcc -print-file-name=libasan.so').output.trim_space()
+		println('  sanitize  run Python as:')
+		println('            LD_PRELOAD=${asan} ASAN_OPTIONS=detect_leaks=0 python ...')
+	}
 	if !develop {
 		return
 	}
@@ -473,7 +507,83 @@ fn run_build(args Args, develop bool, target_override string) {
 }
 
 // cmd_build builds a wheel, or installs it when `develop` was asked for.
+// build_interpreters is the list a `build` is asked to make wheels for: the
+// comma-separated `--interpreter` values, or with `--find-interpreter` every supported
+// CPython found on PATH (`python3.11` ... `python3.15`). Empty means the usual single build.
+fn build_interpreters(args Args) []string {
+	mut out := []string{}
+	if args.flags['find-interpreter'] {
+		for version in vcraft_project.supported_pythons {
+			name := 'python' + version
+			if found := os.find_abs_path_of_executable(name) {
+				out << found
+			}
+		}
+		return out
+	}
+	value := args.options['interpreter']
+	if value.contains(',') {
+		for part in value.split(',') {
+			if part.trim_space().len > 0 {
+				out << part.trim_space()
+			}
+		}
+	}
+	return out
+}
+
+// build_each runs this binary's `build` once per interpreter, as maturin's `-i a b c` and
+// `--find-interpreter` do: one wheel each, every other option passed through unchanged.
+fn build_each(interpreters []string) {
+	mut forwarded := []string{}
+	mut i := 1
+	for i < os.args.len {
+		a := os.args[i]
+		if a == '--find-interpreter' {
+			i++
+			continue
+		}
+		if a == '--interpreter' {
+			i += 2
+			continue
+		}
+		if a.starts_with('--interpreter=') {
+			i++
+			continue
+		}
+		forwarded << a
+		i++
+	}
+	mut failed := 0
+	for interp in interpreters {
+		println('== ${interp}')
+		mut cmd := [os.executable()]
+		cmd << forwarded
+		cmd << ['--interpreter', interp]
+		if os.system_args(cmd) != 0 {
+			failed++
+		}
+	}
+	if failed > 0 {
+		eprintln('error: ${failed} of ${interpreters.len} builds failed')
+		exit(1)
+	}
+}
+
 fn cmd_build(args Args, develop bool) {
+	interpreters := build_interpreters(args)
+	if args.flags['find-interpreter'] && interpreters.len == 0 {
+		eprintln('error: --find-interpreter found no python3.11 ... python3.15 on PATH')
+		exit(1)
+	}
+	if interpreters.len > 0 {
+		if develop {
+			eprintln('error: `develop` installs into one environment; give it one interpreter')
+			exit(2)
+		}
+		build_each(interpreters)
+		return
+	}
 	if args.flags['check'] {
 		root := '.'
 		stamp := source_stamp(root, args, develop, args.options['target'])
@@ -1207,7 +1317,10 @@ fn cmd_toolchain(args Args) {
 				}
 				println('using cached toolchain (offline)')
 			}
-			vcraft_project.install_toolchain(if jobs > 0 { jobs } else { 2 }) or {
+			// The published archive first, unless a source build was asked for or the
+			// install is offline (the cache is a source checkout).
+			prebuilt := !args.flags['from-source'] && !args.flags['offline']
+			vcraft_project.install_toolchain(if jobs > 0 { jobs } else { 2 }, prebuilt) or {
 				eprintln('error: ${err.msg()}')
 				exit(1)
 			}

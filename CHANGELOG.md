@@ -49,6 +49,19 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   (`f64s()`, `i32s()`, ...) or read through the strides (`at_f64(i, j)`). A
   `vcraft.NdOut` result (`vcraft.nd_out_f64(shape)`) comes back as an N-dimensional
   `memoryview` that `numpy.asarray` wraps without a copy.
+- **sdists install without V or vcraft preinstalled.** The PEP 517 backend asks for
+  vcraft from PyPI when it cannot find it, and a build it starts installs the pinned V on
+  its own.
+- **`vcraft toolchain install` downloads the prebuilt V** published for the platform
+  (seconds instead of minutes) and builds from source only where there is none;
+  `--from-source` forces the source build and `VCRAFT_V_ARCHIVE_URL` names a mirror.
+- **`[project]` in `pyproject.toml` is the metadata source.** Its fields win over
+  `vcraft.toml`'s `[package]` (except those in `dynamic`), as with maturin, and a field
+  the two files disagree on is reported.
+- **Several interpreters in one build.** `--interpreter a,b,c` builds one wheel each, and
+  `--find-interpreter` builds one for every supported CPython on `PATH`.
+- **`--debug` and `--sanitize`** for `build` and `develop`: V line numbers in gdb and
+  crash reports, and ASan/UBSan with the command to run Python under them.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.
@@ -105,6 +118,8 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **`develop` labels the wheel's size as the wheel's**, noting an editable one is a
+  pointer, instead of an unlabelled `size` that read as the extension's.
 - **Negative integers in `vcraft.toml`.** The parser read `-1` as a bare word, so a
   negative setting silently fell back to its default instead of being refused.
 - **The sdist carries the project's C code.** Only `.v` files under `src/` were packed,

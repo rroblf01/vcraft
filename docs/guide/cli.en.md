@@ -14,7 +14,7 @@ $ vcraft --help
 | `vcraft generate-ci` | Writes a GitHub Actions workflow that builds and checks the wheels |
 | `vcraft publish` | Uploads the built wheels (refuses an editable build) |
 | `vcraft toolchain` | Reports the V compiler vcraft uses and whether it is the pinned one |
-| `vcraft toolchain install` | Builds the pinned V into vcraft's own cache |
+| `vcraft toolchain install` | Installs the pinned V into vcraft's own cache: the prebuilt archive where one is published, a source build otherwise (`--from-source` forces it) |
 | `vcraft version` / `--version` | Prints the version |
 
 ## Common flags
@@ -27,7 +27,10 @@ $ vcraft --help
 | `--manylinux <ver>` / `--musllinux <ver>` | `build` | Claims a Linux distribution policy |
 | `--abi3 <version>` | `build` | One stable-ABI wheel for `version` and newer |
 | `--free-threading` | `build` | Build against the free-threaded ABI |
-| `--interpreter <path>` | `build`, `info` | The interpreter to build against |
+| `--interpreter <path>` | `build`, `info` | The interpreter to build against; `a,b,c` builds one wheel each |
+| `--find-interpreter` | `build` | One wheel for every supported CPython on `PATH` |
+| `--debug` | `build`, `develop` | `-g`: V line numbers in gdb and crash reports |
+| `--sanitize` | `build`, `develop` | ASan and UBSan; prints how to run Python with the runtime preloaded |
 | `--out-dir <dir>` | `build` | Where the wheel is written |
 | `--dry-run` | `build`, `develop` | Print the plan without running it |
 

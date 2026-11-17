@@ -1856,10 +1856,12 @@ in [`vlib/vcraft/README.md`](vlib/vcraft/README.md):
 
 ## Build system and PyPI
 
-vcraft's build backend is **not self-contained**: `requires = []` and V is a host
-tool, so an sdist cannot be built on a user's machine without V and vcraft. Only
-pre-built wheels are distributed; use `vcraft toolchain install` to obtain the
-pinned compiler. Editable installs (`vcraft develop`) depend on `dist/build` plus a
+An sdist installs anywhere with network access: when the build frontend cannot find
+vcraft, the backend asks for it from PyPI in the build environment, and a build the
+backend starts installs the pinned V on its own -- the prebuilt archive published for
+the platform (Linux x86_64 and aarch64 glibc, macOS arm64, Windows amd64), a source
+build elsewhere. `vcraft toolchain install` does the same by hand
+(`--from-source` to skip the archive; `VCRAFT_V_ARCHIVE_URL` points at a mirror). Editable installs (`vcraft develop`) depend on `dist/build` plus a
 `.pth`; `vcraft clean` removes them and breaks imports until a rebuild. Run
 `vcraft check` (or `vcraft check --strict`) to detect the drift.
 

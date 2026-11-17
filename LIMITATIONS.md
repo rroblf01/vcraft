@@ -2,11 +2,11 @@
 
 ## Build system and PyPI
 
-### Not self-contained for PyPI
-`requires = []` and a local backend mean an sdist cannot be built on a user's machine
-without V and vcraft. This is inherent (V is a host tool, not a Python dependency),
-so only pre-built wheels are distributed. Use `vcraft toolchain install` to get the
-pinned V, or install vcraft from PyPI and let it fetch its own toolchain.
+### Installing from an sdist needs network
+An sdist builds on a user's machine without V or vcraft preinstalled: the backend asks
+for vcraft from PyPI and installs the pinned V itself (prebuilt where published, built
+from source elsewhere). That needs network access, and a source build of V on platforms
+without a published archive (musl, Intel macOS) takes minutes.
 
 ### Editable installs
 `vcraft develop` depends on `dist/build` plus a `.pth`. `vcraft clean` removes them

@@ -965,6 +965,35 @@ pub fn spawn_once() int {
             flags_path.write_text(flags_saved)
             markers_src.unlink(missing_ok=True)
 
+        print("prebuilt toolchain")
+        # `vcraft toolchain install` unpacks a published archive instead of building V when
+        # one exists. A stand-in archive whose `v` reports the pinned commit exercises the
+        # download, unpack and check without a network or a real compiler.
+        if not WINDOWS:
+            import tarfile as _tarfile
+            fake_root = tmp / "fake-v"
+            fake_root.mkdir(exist_ok=True)
+            fake_v = fake_root / "v"
+            fake_v.write_text("#!/bin/sh\necho 'V 0.5.2 36be926'\n")
+            fake_v.chmod(0o755)
+            archive = tmp / "fake-v.tar.gz"
+            with _tarfile.open(archive, "w:gz") as tar:
+                tar.add(fake_v, arcname="v")
+            home = tmp / "toolchain-prebuilt-home"
+            env = dict(os.environ, VCRAFT_HOME=str(home),
+                       VCRAFT_V_ARCHIVE_URL=archive.resolve().as_uri())
+            proc = subprocess.run([str(VCRAFT), "toolchain", "install"], capture_output=True,
+                                  text=True, env=env)
+            t.check("toolchain install unpacks a prebuilt V", proc.returncode == 0
+                    and "installed the prebuilt V" in proc.stdout,
+                    (proc.stdout + proc.stderr).strip()[-400:])
+            installed = list(home.glob("v-*/v"))
+            t.check("into the toolchain cache", len(installed) == 1, str(installed))
+            proc = subprocess.run([str(VCRAFT), "toolchain"], capture_output=True, text=True,
+                                  env=env)
+            t.check("which then reports the pinned commit", "the pinned commit" in proc.stdout,
+                    proc.stdout.strip()[-300:])
+
         print("C int widths")
         # V's `int` is 64 bits and C's 32: through a pointer nothing converts it. The
         # generator warns on the declarations that pass one that way, and the build goes on.
@@ -993,6 +1022,49 @@ struct C.wire_header {
                     text.strip()[-400:])
         finally:
             widths_src.unlink(missing_ok=True)
+
+        print("[project] in pyproject.toml is the metadata source")
+        # PEP 621's [project] wins over vcraft.toml's [package], field by field, unless the
+        # field is `dynamic`; keys the vcraft.toml parser cannot read (inline tables, a
+        # multi-line string) are skipped rather than failing the build.
+        pp_path = project / "pyproject.toml"
+        pp_saved = pp_path.read_text()
+        try:
+            pp_path.write_text(pp_saved + """
+[project]
+name = "mypkg"
+version = "9.9.9"
+description = \"\"\"spread
+over two lines\"\"\"
+dependencies = [
+    "attrs>=23",  # pinned below 24 elsewhere
+    "packaging",
+]
+authors = [{ name = "Someone", email = "someone@example.com" }]
+dynamic = ["description"]
+
+[project.urls]
+Homepage = "https://example.com/mypkg"
+""")
+            out_dir = tmp / "out-pep621"
+            proc = vcraft("build", "--out-dir", str(out_dir), cwd=project)
+            wheels = sorted(out_dir.glob("*.whl"))
+            t.check("[project].version names the wheel", proc.returncode == 0 and wheels
+                    and "-9.9.9-" in wheels[0].name,
+                    (proc.stderr or proc.stdout).strip()[-300:])
+            t.check("and a disagreement with vcraft.toml is reported",
+                    "[project].version" in proc.stderr and "overrides" in proc.stderr,
+                    proc.stderr.strip()[-300:])
+            if wheels:
+                with zipfile.ZipFile(wheels[0]) as z:
+                    meta = z.read([n for n in z.namelist() if n.endswith("METADATA")][0]).decode()
+                t.check("its dependencies and URLs reach the metadata",
+                        "Requires-Dist: attrs>=23" in meta and "Requires-Dist: packaging" in meta
+                        and "Project-URL: Homepage, https://example.com/mypkg" in meta, meta[:600])
+                t.check("a dynamic field still comes from vcraft.toml",
+                        "spread" not in meta, meta[:400])
+        finally:
+            pp_path.write_text(pp_saved)
 
         print("pyproject.toml is merged, not overwritten")
         # A project's own tables must survive a build: uv keeps [dependency-groups] in
