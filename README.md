@@ -1721,6 +1721,11 @@ stable ABI), and `free-threading` on anything older than 3.13.
 
 ## Performance
 
+The 1.8.0 comparison with PyO3, how to read it and how to reproduce it are on the
+[benchmarks page](docs/benchmarks.en.md). Coming from PyO3 and maturin? The
+[migration guide](docs/guide/from-pyo3.en.md) maps every attribute, command and crate to
+its vcraft counterpart.
+
 The same workloads implemented with PyO3, vcraft and zig-maturin, plus pure
 Python, measured on Linux x86_64 (AMD Ryzen 5 3600), CPython 3.13, vcraft 1.3.0.
 Time per call, lower is better:

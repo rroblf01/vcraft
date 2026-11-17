@@ -176,6 +176,12 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Documentation
 
+- **A guide for PyO3 and maturin users** (English and Spanish) mapping commands,
+  configuration, attributes, error handling, classes and common crates to vcraft.
+- **A benchmarks page** with the 1.8.0 comparison against PyO3 (including the three
+  workloads where vcraft is slower), how to read a difference, and how to reproduce it
+  with `run.sh` and `ab.py`.
+
 - **`str` arguments are borrowed.** A `string` parameter, `[]string` items, `map[string]T`
   keys and values, and setter/`__setitem__` values point into the `str`'s own UTF-8
   buffer and are valid for the call only; anything kept past it needs `.clone()`. The

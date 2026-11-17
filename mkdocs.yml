@@ -60,6 +60,8 @@ plugins:
             Configuration: Configuración
             Importing .v files: Importar ficheros .v
             Examples: Ejemplos
+            Coming from PyO3: Si vienes de PyO3
+            Benchmarks: Benchmarks
 
 markdown_extensions:
   - admonition
@@ -88,6 +90,8 @@ nav:
       - Configuration: guide/config.md
       - Importing .v files: guide/import-hook.md
       - Examples: guide/examples.md
+      - Coming from PyO3: guide/from-pyo3.md
+  - Benchmarks: benchmarks.md
   - Reference:
       - Annotations: reference/annotations.md
       - Types: reference/types.md
