@@ -8,7 +8,7 @@ git-ignored and local-only, so it may not be in your checkout.
 
 vcraft is to the V language what PyO3 + maturin is to Rust: CPython bindings written in
 V, a code generator that turns `@[vc_*]` annotations into extension glue, and a CLI that
-compiles the project with `v -shared` and writes the wheel itself. Currently at 1.5.0
+compiles the project with `v -shared` and writes the wheel itself. Currently at 1.8.0
 (see `CHANGELOG.md`). No Rust, C++ or zlib in the pipeline.
 
 `bin/`, `build/`, `**/_vcraft_generated.v` and `python/*.pyi` are generated and
@@ -97,7 +97,7 @@ Layered modules under `vlib/`; each has a README with the easy-to-get-wrong deta
   `src/_vcraft_generated.v` (git-ignored) and `python/<package>.pyi`. The `@[...]`
   attribute block is read from the **source text** because V's parse tree drops attributes.
   `cmd/vc-generate` is a thin driver.
-- `vlib/vcraft_wheel` — writes wheels and sdists from scratch: fixed-Huffman DEFLATE, ZIP,
+- `vlib/vcraft_wheel` — writes wheels and sdists from scratch: DEFLATE (fixed or dynamic Huffman per block), ZIP,
   tar, SHA-256, CRC32, METADATA/WHEEL/RECORD, tags. No zlib.
 - `vlib/vcraft_project` — `vcraft.toml` parser (a deliberately limited TOML subset),
   scaffolding, build and cross-compile planning, the PEP 517/660 backend.

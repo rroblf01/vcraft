@@ -545,14 +545,15 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	} else {
 		''
 	}
-	// Hot loops start on a 32-byte boundary in a release build. gcc's default leaves a
+	// Hot loops start on a 64-byte boundary in a release build. gcc's default leaves a
 	// loop wherever the code before it ends, so a tight loop of 40-60 bytes straddled a
 	// 64-byte line in one build and not in the next: an unrelated change elsewhere in the
-	// extension moved a user's loop by 10% either way (benchmark/HISTORY.md). gcc and
-	// clang both take the flag; tcc and MSVC, which a debug or Windows build may use, do
-	// not, so it is only given where neither can be the compiler. The binary grows by
-	// well under 1%.
-	align_flag := if opt.release && target.os != 'windows' { '-falign-loops=32' } else { '' }
+	// extension moved a user's loop by 10% either way (benchmark/HISTORY.md). 32 bytes
+	// was tried first and is not enough: a loop starting half-way through a line still
+	// crosses it. gcc and clang both take the flag; tcc and MSVC, which a debug or Windows
+	// build may use, do not, so it is only given where neither can be the compiler. The
+	// binary grows by under 2%.
+	align_flag := if opt.release && target.os != 'windows' { '-falign-loops=64' } else { '' }
 	// The sanitizers the repository's own suites run under (`run-sanitized.sh`): ASan and
 	// UBSan, frames kept so a report has a usable stack.
 	sanitize_cflags := if opt.sanitize { '-fsanitize=address,undefined -fno-omit-frame-pointer -g' } else { '' }

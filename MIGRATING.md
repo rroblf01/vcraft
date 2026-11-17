@@ -1,3 +1,25 @@
+# Migrating from 1.7 to 1.8
+
+1.8 changes no annotation, API or `vcraft.toml` key: rebuilding with it is enough. Two
+behaviours change, both towards what CPython itself does:
+
+- **`next()` on an exhausted iterator raises a bare `StopIteration`.** The end of a
+  `@[vc_next]` iteration no longer builds an exception object (it cost 110 ns per loop),
+  so the text given to `raise_domain(.stop_iteration, ...)` is not carried there. `for`
+  and `list()` never saw it; code that inspected `exc.args` after an explicit `next()`
+  gets `()`. Raised anywhere else, the text is kept.
+- **Pickling a class with native state raises `TypeError`.** Before, the default
+  `__reduce__` rebuilt such an instance through its constructor and silently dropped the
+  state. A class whose state is all exposed attributes now pickles and copies properly;
+  one with a `@[vc_buffer]`, a `@[vc_handle]` or a field Python cannot see refuses,
+  naming it. Give such a class a `__reduce__` of its own if it must pickle.
+
+If `pyproject.toml` has a `[project]` table, its fields now win over `vcraft.toml`'s
+`[package]`; a build that finds the two disagreeing says which field. Remove the copy you
+do not want to keep.
+
+---
+
 # Migrating from 0.x to 1.0
 
 1.0 renames a few things and fixes behaviour that 0.x got wrong. Everything renamed

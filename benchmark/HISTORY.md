@@ -516,8 +516,10 @@ Where the time went, each measured on its own before it was kept:
   although its code had not changed. Its inner loop is about 60 bytes, and gcc places a
   loop wherever the preceding code ends: in the fast builds it started on a 64-byte
   boundary, in the slow ones 32 bytes into a line, straddling two. Any unrelated change
-  to the extension moved it. Release builds now pass `-falign-loops=32` (+0.6% text),
-  which put it back at 2.07 ms and keeps it there.
+  to the extension moved it. Release builds pass `-falign-loops=64` (+1.7% text): 32
+  bytes was shipped first and turned out not to be enough, because a loop starting
+  half-way through a line still crosses it (2.31 ms against 2.12 ms with 64, the rest of
+  the suite unchanged within noise).
 - Tried and dropped: `-fno-plt`, `-funroll-loops` and `-fno-stack-protector` (no reliable
   gain), `GC_UNMAP_THRESHOLD` and the free-space divisor for retained memory (no effect),
   and `GC_set_min_bytes_allocd` (collections were a symptom of the alignment above).
@@ -533,3 +535,47 @@ that unmaps freed pages. `count_primes(10M) x5` keeps 9.6 MiB in most runs again
 from run to run, depending on whether a stale conservative root pins a 10 MiB block —
 and `make_range` keeps 2–3 MiB against PyO3's 0.9. A collector cannot match freeing on
 drop for temporaries the glue cannot prove dead.
+
+
+## vcraft 1.8.0 on Linux
+
+`ab.py`, five interleaved rounds, PyO3 0.29, CPython 3.13, x86_64, load average about 3,
+with release builds aligning loops to 64 bytes. 1.8.0 adds features rather than
+reworking the call path; the point of the run is that none of them cost the call path
+anything (`__reduce__` on every class, struct reads through `struct_field`, interned dict
+keys).
+
+| workload | PyO3 | vcraft 1.8.0 | vcraft/PyO3 |
+|---|---|---|---|
+| add | 69 ns | 60 ns | 0.87× |
+| fib(25) | 227.6 µs | 109.5 µs | 0.48× |
+| count_primes(1e6) | 1.93 ms | 2.12 ms | 1.10× |
+| sum_floats(100k) | 833.3 µs | 234.8 µs | 0.28× |
+| make_range(100k) | 2.18 ms | 2.30 ms | 1.05× |
+| greet | 131 ns | 108 ns | 0.83× |
+| describe(3) | 165 ns | 121 ns | 0.73× |
+| histogram(10k) | 718.4 µs | 570.9 µs | 0.79× |
+| minmax(100k) | 1.09 ms | 555.9 µs | 0.51× |
+| reverse3([1,2,3]) | 193 ns | 157 ns | 0.81× |
+| checksum(100kB) | 13.5 µs | 12.7 µs | 0.94× |
+| echo_bytes(100kB) | 3.6 µs | 1.8 µs | 0.49× |
+| join_strings(10k) | 483.5 µs | 300.5 µs | 0.62× |
+| expect_positive(err) | 218 ns | 209 ns | 0.96× |
+| Counter() | 94 ns | 70 ns | 0.74× |
+| c.increment() | 57 ns | 44 ns | 0.78× |
+| c.add(1) | 62 ns | 57 ns | 0.92× |
+| c.value | 46 ns | 41 ns | 0.89× |
+| c.is_zero | 36 ns | 38 ns | 1.08× |
+| c == c | 47 ns | 26 ns | 0.57× |
+| list(Countdown()) | 348 ns | 237 ns | 0.68× |
+| Vector(1000) | 221 ns | 221 ns | 1.00× |
+| vector.total() | 786 ns | 792 ns | 1.01× |
+| complex_scale(1+2j, 3) | 89 ns | 83 ns | 0.93× |
+| Counter.zero() | 59 ns | 53 ns | 0.90× |
+| import (median of 30) | 0.591 ms | 0.592 ms | 1.00× |
+
+Tried and dropped: marking V's panic helpers `cold` through a redeclaration, which moved
+the bounds-check branch out of the loop body and made `count_primes` twice as slow.
+
+A struct returned as a dict builds in 206 ns where it took 346 (keys interned at import),
+and a `@[vc_structseq]` struct in 182 ns (example module, debug build).

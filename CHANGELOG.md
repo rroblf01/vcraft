@@ -7,6 +7,8 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-17
+
 ### Added
 
 - **`@[vc_rename]` on constants and enums.** V insists on lowercase constants, so
@@ -99,7 +101,7 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   one Python runs itself) now runs a full V collection that returns freed pages to the
   system, so temporaries of earlier calls no longer stay resident until the extension
   allocates again.
-- **Release builds align loops to 32 bytes** (`-falign-loops=32`, gcc and clang, not on
+- **Release builds align loops to 64 bytes** (`-falign-loops=64`, gcc and clang, not on
   Windows). Without it a tight loop's speed depended on where unrelated code happened to
   end: the benchmark's sieve moved by 10% between builds that did not touch it.
 - **Wheels and sdists are about 13% smaller.** The DEFLATE writer now writes each block
