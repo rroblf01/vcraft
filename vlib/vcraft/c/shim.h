@@ -8,6 +8,9 @@
 #define VCRAFT_SHIM_H
 
 #include <Python.h>
+// The limited API's <Python.h> does not pull in <string.h>, and the inline `vpy_memcpy`
+// below needs `memcpy` declared in every unit that includes this header.
+#include <string.h>
 
 // Constants that are macros in Python.h. V cannot read a C macro, so they are
 // surfaced as functions.
@@ -27,8 +30,33 @@ int vpy_type_name_into(PyObject *o, char *buf, size_t n);
 // the mirrors still agree with the headers the extension was built against.
 Py_ssize_t vpy_size_PyModuleDef(void);
 Py_ssize_t vpy_size_PyMethodDef(void);
-Py_ssize_t vpy_size_PyObject(void);
+// The object header's size, inline: every method, property and constructor of a class
+// reaches its state as `obj + sizeof(PyObject)`, so an out-of-line call here was paid on
+// every one of them. Header-only, so the generated unit sees the constant.
+static inline Py_ssize_t vpy_size_PyObject(void) {
+	return (Py_ssize_t)sizeof(PyObject);
+}
 unsigned int vpy_tpflags_default(void);
+
+// vpy_complex_parts reads a complex's two halves in one step, returning 0 for anything
+// that is not a complex. A full build reads them straight out of the object, inline: the
+// check and the two `PyComplex_*AsDouble` calls it replaces were three calls into other
+// units on every complex argument. The limited API hides the struct, so an abi3 build
+// keeps the calls, gathered in `vpy_complex_parts_slow`.
+int vpy_complex_parts_slow(void *o, double *re, double *im);
+#ifndef Py_LIMITED_API
+static inline int vpy_complex_parts(void *o, double *re, double *im) {
+	if (o == NULL || !PyComplex_Check((PyObject *)o)) {
+		return 0;
+	}
+	Py_complex value = ((PyComplexObject *)o)->cval;
+	*re = value.real;
+	*im = value.imag;
+	return 1;
+}
+#else
+#define vpy_complex_parts vpy_complex_parts_slow
+#endif
 unsigned int vpy_tpflags_weakref(void);
 unsigned int vpy_tpflags_managed_dict(void);
 
@@ -37,7 +65,14 @@ unsigned int vpy_tpflags_managed_dict(void);
 // V's `memcpy` builtin compiles to `v_memcpy`, whose declaration the backend emits
 // late in the file, so calling it from a helper declared early trips gcc's implicit
 // declaration rule. This is the same reason the module includes <Python.h>.
-void *vpy_memcpy(void *dst, const void *src, size_t n);
+//
+// Inline in the header rather than defined in shim.c: a class's state is a few bytes,
+// copied on every construction and every field write, and only a `memcpy` the compiler
+// can see becomes a couple of moves. `memcpy` is a C library function, so the limited
+// API does not hide it; `<Python.h>` has already declared it.
+static inline void *vpy_memcpy(void *dst, const void *src, size_t n) {
+	return memcpy(dst, src, n);
+}
 
 // Calls the base deallocator for a heap type.
 //

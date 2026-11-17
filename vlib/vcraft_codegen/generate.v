@@ -59,7 +59,7 @@ pub fn generate(opt Options) Generated {
 
 	return Generated{
 		glue_path:    os.join_path(src, '_vcraft_generated.v')
-		glue:         enter_collector(emit_glue(p))
+		glue:         skip_recover_on_return(enter_collector(emit_glue(p)))
 		stub_path:    os.join_path(opt.project_root, opt.stubs_dir, opt.package + '.pyi')
 		stub:         emit_stubs(p)
 		diagnostics: p.diagnostics
@@ -92,6 +92,165 @@ fn ensure_dir_of(path string) {
 		return
 	}
 	os.mkdir_all(dir) or { return }
+}
+
+// skip_recover_on_return keeps the panic guard's `recover()` off the normal return path.
+//
+// A trampoline guards its call with `defer { if message := recover() { ... } }`. V runs
+// a deferred block on every exit, not only when a panic lands there, so a call that
+// returned normally still paid `recover()`: a function call and a thread-local lookup
+// to learn that no panic is in flight. That was a measurable share of a short call.
+//
+// The rewrite gives the guard a local flag that every normal return clears first:
+//
+//	mut vc_live := true
+//	defer {
+//		if vc_live {
+//			if message := recover() { ... }
+//		}
+//	}
+//	...
+//	vc_ret0 := <the returned expression>
+//	vc_live = false
+//	return vc_ret0
+//
+// The order is what makes it sound. The returned expression is evaluated *before* the
+// flag is cleared, so a panic anywhere in the function's V code, the return expression
+// included, reaches the landing pad with the flag still set and recovers exactly as
+// before. And the flag is written only after the last V code ran: C leaves a local that
+// was modified between `setjmp` and `longjmp` indeterminate, but a panic never follows
+// the write, so the landing pad only ever reads the value `setjmp` saw. An expression
+// that cannot panic (`unsafe { nil }`, a literal, a plain name) skips the temporary.
+//
+// Done over the finished text, like `enter_collector`, so every emitter's guard gets it.
+// A function whose guard is followed by no `return` (it falls off the end) is left
+// untouched rather than given a flag nothing clears.
+fn skip_recover_on_return(glue string) string {
+	lines := glue.split_into_lines()
+	mut out := []string{cap: lines.len + lines.len / 4}
+	mut i := 0
+	for i < lines.len {
+		if !lines[i].starts_with('fn ') {
+			out << lines[i]
+			i++
+			continue
+		}
+		mut end := i + 1
+		for end < lines.len && lines[end] != '}' {
+			end++
+		}
+		if end >= lines.len {
+			out << lines[i..]
+			break
+		}
+		out << rewrite_guarded_fn(lines[i..end + 1])
+		i = end + 1
+	}
+	return out.join('\n') + '\n'
+}
+
+// rewrite_guarded_fn applies `skip_recover_on_return` to one function, given its lines
+// from the `fn` line to the closing brace.
+fn rewrite_guarded_fn(lines []string) []string {
+	mut guard := -1
+	for k in 0 .. lines.len - 1 {
+		if lines[k] == '\tdefer {' && lines[k + 1] == '\t\tif message := recover() {' {
+			guard = k
+			break
+		}
+	}
+	if guard < 0 {
+		return lines
+	}
+	mut guard_end := guard + 1
+	for guard_end < lines.len && lines[guard_end] != '\t}' {
+		guard_end++
+	}
+	if guard_end >= lines.len {
+		return lines
+	}
+	mut out := []string{cap: lines.len + 16}
+	out << lines[..guard]
+	out << '\tmut vc_live := true'
+	out << '\tdefer {'
+	out << '\t\tif vc_live {'
+	for k in guard + 1 .. guard_end {
+		out << '\t' + lines[k]
+	}
+	out << '\t\t}'
+	out << '\t}'
+	mut rewritten := 0
+	// The indentation of an anonymous function opened inside the body, whose own
+	// `return` statements belong to it and must not touch the trampoline's flag.
+	mut closure_indent := -1
+	for k in guard_end + 1 .. lines.len {
+		line := lines[k]
+		indent := leading_tabs(line)
+		body := line[indent..]
+		if closure_indent >= 0 {
+			if indent == closure_indent && body.starts_with('}') {
+				closure_indent = -1
+			}
+			out << line
+			continue
+		}
+		if body.ends_with('{') && opens_closure(body) {
+			closure_indent = indent
+			out << line
+			continue
+		}
+		if body != 'return' && !body.starts_with('return ') {
+			out << line
+			continue
+		}
+		tabs := line[..indent]
+		expr := body['return'.len..].trim_space()
+		if expr == '' || cannot_panic(expr) {
+			out << tabs + 'vc_live = false'
+			out << line
+		} else {
+			name := 'vc_ret${rewritten}'
+			out << tabs + '${name} := ${expr}'
+			out << tabs + 'vc_live = false'
+			out << tabs + 'return ${name}'
+		}
+		rewritten++
+	}
+	if rewritten == 0 {
+		return lines
+	}
+	return out
+}
+
+// leading_tabs counts the tabs that indent a line of the generated glue.
+fn leading_tabs(line string) int {
+	mut n := 0
+	for n < line.len && line[n] == `\t` {
+		n++
+	}
+	return n
+}
+
+// opens_closure reports whether a line that ends in `{` opens an anonymous function.
+fn opens_closure(body string) bool {
+	return body.contains('fn (') || body.contains('fn [')
+}
+
+// cannot_panic reports whether a returned expression runs no V code: the null pointer,
+// a numeric or boolean literal, or a plain local.
+fn cannot_panic(expr string) bool {
+	if expr == 'unsafe { nil }' || expr == 'true' || expr == 'false' {
+		return true
+	}
+	mut digits := expr
+	if digits.starts_with('-') {
+		digits = digits[1..]
+	}
+	if digits.len > 0 && digits.bytes().all(it.is_digit()) {
+		return true
+	}
+	return expr.len > 0 && (expr[0].is_letter() || expr[0] == `_`)
+		&& expr.bytes().all(it.is_letter() || it.is_digit() || it == `_`)
 }
 
 // enter_collector starts every function in the glue by registering the calling thread

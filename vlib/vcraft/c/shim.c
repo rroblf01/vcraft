@@ -75,10 +75,6 @@ Py_ssize_t vpy_size_PyMethodDef(void) {
 	return (Py_ssize_t)sizeof(PyMethodDef);
 }
 
-Py_ssize_t vpy_size_PyObject(void) {
-	return (Py_ssize_t)sizeof(PyObject);
-}
-
 // The interpreter's own Py_TPFLAGS_DEFAULT, which is a union whose contents depend
 // on how CPython was built. Asking beats hard-coding a bitmask.
 unsigned int vpy_tpflags_default(void) {
@@ -106,12 +102,6 @@ unsigned int vpy_tpflags_managed_dict(void) {
 // Under the stable ABI there is no `PyTypeObject` to read a field out of and no
 // exported `Py*_GET_SIZE`. Everything below goes through a function CPython does
 // export, which is the whole point of the limited API.
-
-void *vpy_memcpy(void *dst, const void *src, size_t n) {
-	// `memcpy` is a C library function rather than a CPython one, so the limited API
-	// does not hide it. The header that declares it is the reason for the guard above.
-	return memcpy(dst, src, n);
-}
 
 void *vpy_type_ptr(PyObject *self) {
 	return (void *)Py_TYPE(self);
@@ -214,10 +204,6 @@ void vpy_type_free(PyObject *self) {
 }
 
 #else
-
-void *vpy_memcpy(void *dst, const void *src, size_t n) {
-	return memcpy(dst, src, n);
-}
 
 void *vpy_type_ptr(PyObject *self) {
 	return (void *)Py_TYPE(self);
@@ -1114,6 +1100,15 @@ int vpy_is_complex(void *o) {
 	// string comparison, on the hot path of every complex conversion.
 	return o != NULL && PyComplex_Check((PyObject *)o);
 #endif
+}
+
+int vpy_complex_parts_slow(void *o, double *re, double *im) {
+	if (!vpy_is_complex(o)) {
+		return 0;
+	}
+	*re = PyComplex_RealAsDouble((PyObject *)o);
+	*im = PyComplex_ImagAsDouble((PyObject *)o);
+	return 1;
 }
 
 // The buffer-protocol slot ids, read from the headers.

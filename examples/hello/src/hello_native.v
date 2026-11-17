@@ -584,6 +584,23 @@ pub fn spin_checked(iterations int) !int {
 	return spin(iterations)
 }
 
+// first_char_nogil is `first_char` without the GIL: a panic in a `@[vc_nogil]` call
+// unwinds through the GIL release and is still recovered as a RuntimeError.
+@[vc_fn]
+@[vc_nogil]
+pub fn first_char_nogil(text string) string {
+	unsafe {
+		return text[..1].str()
+	}
+}
+
+// stop_outside chooses StopIteration in an ordinary `!T` function. Only an iterator's
+// `tp_iternext` ends silently on it; anywhere else it is raised with its message.
+@[vc_fn]
+pub fn stop_outside() !int {
+	return vcraft.raise_domain(.stop_iteration, 'stopped here')
+}
+
 // checksum adds every byte it is given.
 //
 // The parameter is `[]u8`, so any bytes-like object works: `bytes`, `bytearray`,

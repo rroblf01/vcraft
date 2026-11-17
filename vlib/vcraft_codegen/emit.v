@@ -1371,7 +1371,16 @@ fn composite_boxed_expr(strategy Strategy, value string, v_type string) string {
 			key, val := map_parts(t)
 			'vcraft.to_py_dict(${value}, fn (k ${key}) vcraft.PyObj { return ${box_value_expr('k', key)} }, fn (v ${val}) vcraft.PyObj { return ${box_value_expr('v', val)} })'
 		}
-		.fixed { seq_boxed_expr(fixed_element(t), '${value}[..]') }
+		.fixed {
+			n, element := fixed_parts(t)
+			// Only a plain local can be addressed; a value inside a nested expression
+			// keeps the slice.
+			if element in ['int', 'i64'] && value == 'result' {
+				'vcraft.to_py_int_fixed(unsafe { voidptr(&${value}[0]) }, ${n}, sizeof(${element}) == 8)'
+			} else {
+				seq_boxed_expr(element, '${value}[..]')
+			}
+		}
 		else { boxed_expr(strategy, value) }
 	}
 }
@@ -2091,16 +2100,22 @@ fn composite_reader(strategy Strategy, local string, index int, func string, par
 			key, val := map_parts(t)
 			'${fetch}\n\t${local} := vcraft_convert_dict(${obj}, ${vstring_literal(param)}, ${reader_fn(key)}, ${reader_fn(val)}) or { return unsafe { nil } }'
 		}
-		// Read as the slice of the same element, then held to exactly N items.
+		// Read as the slice of the same element, then held to exactly N items. An `int`
+		// or `i64` element is read in place instead, with the same checks: no slice.
 		.fixed {
 			n, element := fixed_parts(t)
 			seq := '${local}_seq'
-			'${reader_expr(.seq, seq, index, func, param, '[]' + element, false)}\n' +
-				'\tif ${seq}.len != ${n} {\n' +
-				"\t\tvcraft.raise_value_error('${func}() argument ${param}: expected ${n} items, got \${${seq}.len}')\n" +
-				'\t\treturn unsafe { nil }\n\t}\n' +
-				'\tmut ${local} := ${t}{}\n' +
-				'\tfor ${local}_k in 0 .. ${n} {\n\t\t${local}[${local}_k] = ${seq}[${local}_k]\n\t}'
+			if element in ['int', 'i64'] {
+				'mut ${local} := ${t}{}\n' +
+					"\tvcraft.read_int_fixed(args, ${index}, '${func}', '${param}', unsafe { voidptr(&${local}[0]) }, ${n}, sizeof(${element}) == 8) or { return unsafe { nil } }"
+			} else {
+				'${reader_expr(.seq, seq, index, func, param, '[]' + element, false)}\n' +
+					'\tif ${seq}.len != ${n} {\n' +
+					"\t\tvcraft.raise_value_error('${func}() argument ${param}: expected ${n} items, got \${${seq}.len}')\n" +
+					'\t\treturn unsafe { nil }\n\t}\n' +
+					'\tmut ${local} := ${t}{}\n' +
+					'\tfor ${local}_k in 0 .. ${n} {\n\t\t${local}[${local}_k] = ${seq}[${local}_k]\n\t}'
+			}
 		}
 		else { "vcraft.raise_type_error('${func}() argument ${param}: a multi-value type cannot be passed in')\n\treturn unsafe { nil }" }
 	}

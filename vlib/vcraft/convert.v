@@ -154,8 +154,10 @@ pub fn from_py_complex(obj PyObj, name string) !complex.Complex {
 		set_error(pyexc_obj(.type_error), '${name}: missing argument')
 		return error('${name}: missing')
 	}
-	if C.vpy_is_complex(obj.ptr) != 0 {
-		return complex.complex(C.PyComplex_RealAsDouble(obj.ptr), C.PyComplex_ImagAsDouble(obj.ptr))
+	mut real := 0.0
+	mut imag := 0.0
+	if C.vpy_complex_parts(obj.ptr, &real, &imag) != 0 {
+		return complex.complex(real, imag)
 	}
 	if obj.type_is(float_type()) || obj.type_is(long_type()) {
 		re := from_py_f64(obj, name)!
@@ -542,6 +544,20 @@ pub fn to_py_obj_dict(m map[string]PyObj) PyObj {
 // them for those element types and `to_py_list` for the rest.
 pub fn to_py_i64_list(items []i64) PyObj {
 	return steal(C.vpy_list_from_i64(unsafe { &i64(items.data) }, isize(items.len)))
+}
+
+// to_py_int_fixed boxes a fixed-size array of `int` or `i64` as a list, read straight
+// from its storage: `n` elements at `ptr`, `wide` when an element is 64 bits. The general
+// path slices the array first, which allocates a slice header per call.
+pub fn to_py_int_fixed(ptr voidptr, n int, wide bool) PyObj {
+	if wide {
+		return steal(C.vpy_list_from_i64(unsafe { &i64(ptr) }, isize(n)))
+	}
+	mut items := []int{len: n}
+	for k in 0 .. n {
+		items[k] = unsafe { (&int(ptr))[k] }
+	}
+	return to_py_int_list(items)
 }
 
 pub fn to_py_int_list(items []int) PyObj {

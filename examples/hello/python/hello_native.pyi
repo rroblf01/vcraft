@@ -156,6 +156,16 @@ def spin(iterations: int) -> int: ...
 """
 def spin_checked(iterations: int) -> int: ...
 
+"""first_char_nogil is `first_char` without the GIL: a panic in a `@[vc_nogil]` call
+	unwinds through the GIL release and is still recovered as a RuntimeError.
+"""
+def first_char_nogil(text: str) -> str: ...
+
+"""stop_outside chooses StopIteration in an ordinary `!T` function. Only an iterator's
+	`tp_iternext` ends silently on it; anywhere else it is raised with its message.
+"""
+def stop_outside() -> int: ...
+
 """checksum adds every byte it is given.
 
 	The parameter is `[]u8`, so any bytes-like object works: `bytes`, `bytearray`,

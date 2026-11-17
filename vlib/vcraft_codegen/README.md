@@ -33,18 +33,31 @@ fn vcraft_generated__wrap_add(self voidptr, args voidptr, nargs isize) voidptr {
 		return unsafe { nil }
 	}
 	mut result := 0
+	mut vc_live := true
 	defer {
-		if message := recover() {
-			vcraft.raise_panic(message)
+		if vc_live {
+			if message := recover() {
+				vcraft.raise_panic(message)
+			}
 		}
 	}
 	result = add(arg0, arg1)
 	if vcraft.error_is_set() {
+		vc_live = false
 		return unsafe { nil }
 	}
-	return vcraft.to_py_int(result).ptr
+	vc_ret1 := vcraft.to_py_int(result).ptr
+	vc_live = false
+	return vc_ret1
 }
 ```
+
+The `vc_live` flag is added by `skip_recover_on_return`, a pass over the finished text
+like `enter_collector`: V runs a deferred block on every exit, so without it a normal
+return paid a `recover()` call and a thread-local lookup. The returned expression is
+evaluated before the flag is cleared, so a panic anywhere in the trampoline still lands
+with the flag set, and the flag is written only after the last V code ran, which keeps
+it determinate across the guard's `setjmp`.
 
 The output is V, in the user's own module, and it is meant to be read. When
 something goes wrong at three in the morning, this is what you read.
@@ -168,7 +181,11 @@ not a `[]voidptr{len: ...}` slice the collector has to allocate, and the paramet
 and optional arrays are module-level globals (`emit_bind_globals`, the same ones a
 function uses) rather than literals rebuilt on every construction. A base-less class's
 `newstate` returns the constructor's value directly, so the state is not zeroed and copied
-twice.
+twice. When the constructor's whole body is `return &T{...}` (`constructor_literal`),
+`newstate` evaluates that literal itself under the constructor's parameter names instead
+of calling it: the `&` allocated a collector block only for `newstate` to copy out of. A
+literal that names another module, holds a string or a comment, or a constructor that
+does anything else keeps the call.
 
 A field annotation is read from the field's own line; V also accepts one on the line
 above, where it would be silently ignored. `collect_fields` warns for a stray

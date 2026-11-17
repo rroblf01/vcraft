@@ -8,8 +8,9 @@
 // with a macOS 11 deployment target, which is what the wheel tag promises, the linker
 // drops it without a word.
 //
-// Not yet measured on Linux: the shape below is the macOS one translated to
-// `dl_iterate_phdr`, and CI is where it gets exercised. If the own-object walk ever
+// On Linux the shape below is the macOS one translated to `dl_iterate_phdr`, measured
+// with the collector's start-up at about half of an extension's import before the main
+// stack bound was supplied (`vpy_gc_set_main_stackbottom`). If the own-object walk ever
 // fails to locate the module, the constructor returns before touching anything and V
 // starts the collector with its defaults, exactly as without this file.
 #ifndef VCRAFT_GC_PREINIT_H
@@ -129,6 +130,34 @@ static int vpy_gc_linux_visit(struct dl_phdr_info *info, size_t _size, void *dat
 	return 1;
 }
 
+// vpy_gc_set_main_stackbottom hands the collector the main thread's stack base, so its
+// start-up does not have to look it up.
+//
+// Left to itself, `GC_init` asks `pthread_getattr_np` for the initialising thread's
+// stack, and for the main thread glibc answers that by reading `/proc/self/maps` line by
+// line. A Python process has hundreds of mappings, and the read was half of the
+// collector's start-up and a third of the whole import. `__libc_stack_end` is the same
+// bound, published by the dynamic loader, and is what the collector itself uses when it
+// is built without `pthread_getattr_np`; setting `GC_stackbottom` before `GC_init` is
+// the documented way to supply it.
+//
+// Only for the main thread: an extension imported from another thread has its own stack,
+// for which `pthread_getattr_np` is cheap and is left to run. On a libc without
+// `__libc_stack_end` (musl) the weak reference is null and nothing changes.
+#include <sys/syscall.h>
+#include <unistd.h>
+extern void *__libc_stack_end __attribute__((weak));
+
+static void vpy_gc_set_main_stackbottom(void) {
+	if (&__libc_stack_end == NULL || __libc_stack_end == NULL) {
+		return;
+	}
+	if ((pid_t)syscall(SYS_gettid) != getpid()) {
+		return;
+	}
+	GC_stackbottom = (char *)__libc_stack_end;
+}
+
 // vpy_gc_preinit_linux starts V's collector so that it scans only this module.
 //
 // The Linux shape of the macOS problem: left alone, the collector registers every
@@ -150,6 +179,7 @@ __attribute__((constructor)) static void vpy_gc_preinit_linux(void) {
 	GC_set_all_interior_pointers(1);
 	GC_set_free_space_divisor(VCRAFT_GC_DIVISOR);
 	GC_set_no_dls(1);
+	vpy_gc_set_main_stackbottom();
 	GC_INIT();
 	for (unsigned i = 0; i < layout.count; i++) {
 		GC_add_roots(layout.starts[i], layout.ends[i]);
@@ -252,6 +282,70 @@ static inline void vpy_gc_enter(void) {
 // Without a threaded collector (`gc = none`, or another platform) there is nothing
 // to register.
 static inline void vpy_gc_enter(void) {}
+#endif
+
+// V's collector follows Python's: a full Python collection runs a full V one.
+//
+// A V allocation is reclaimed only when the collector next runs, and the collector runs
+// on allocation pressure alone, so the temporaries of the last calls -- a converted
+// argument, a result already handed to Python as a list, a scratch buffer -- stay
+// resident until the extension allocates enough again. Python code that wants memory
+// back calls `gc.collect()`, and Python itself runs a full collection now and then; this
+// hooks both. On the generation-2 `stop` callback the collector runs a full collection
+// and returns the pages it freed to the system (`GC_gcollect_and_unmap`), so a process
+// that collects sees the V heap shrink the way the Python one does.
+//
+// Generation 0 and 1 collections, which are frequent, cost the callback one string
+// compare and nothing else. The hook is registered once per process by `init_state`;
+// each extension links its own collector and so registers its own hook.
+#ifdef GC_H
+static PyObject *vpy_gc_on_python_gc(PyObject *self, PyObject *const *args, Py_ssize_t nargs) {
+	(void)self;
+	// `phase` is "start" or "stop"; only a finished generation-2 pass matters. The length
+	// test first keeps the frequent young-generation calls to a couple of loads.
+	if (nargs == 2 && PyUnicode_Check(args[0]) && PyUnicode_GetLength(args[0]) == 4
+		&& PyUnicode_CompareWithASCIIString(args[0], "stop") == 0 && PyDict_Check(args[1])) {
+		PyObject *generation = PyDict_GetItemString(args[1], "generation");
+		if (generation != NULL && PyLong_Check(generation) && PyLong_AsLong(generation) == 2) {
+			vpy_gc_enter();
+			GC_gcollect_and_unmap();
+		}
+	}
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
+static PyMethodDef vpy_gc_hook_def = {"_vcraft_collect", (PyCFunction)(void (*)(void))vpy_gc_on_python_gc,
+	METH_FASTCALL, NULL};
+static int vpy_gc_hooked = 0;
+
+// vpy_gc_hook_python appends the hook to `gc.callbacks`. A failure leaves the extension
+// working exactly as without it, so it is cleared rather than reported.
+static void vpy_gc_hook_python(void) {
+	if (vpy_gc_hooked) {
+		return;
+	}
+	vpy_gc_hooked = 1;
+	PyObject *gc = PyImport_ImportModule("gc");
+	if (gc == NULL) {
+		PyErr_Clear();
+		return;
+	}
+	PyObject *callbacks = PyObject_GetAttrString(gc, "callbacks");
+	Py_DECREF(gc);
+	if (callbacks == NULL) {
+		PyErr_Clear();
+		return;
+	}
+	PyObject *hook = PyCFunction_NewEx(&vpy_gc_hook_def, NULL, NULL);
+	if (hook == NULL || PyList_Append(callbacks, hook) < 0) {
+		PyErr_Clear();
+	}
+	Py_XDECREF(hook);
+	Py_DECREF(callbacks);
+}
+#else
+static void vpy_gc_hook_python(void) {}
 #endif
 
 #endif // VCRAFT_GC_PREINIT_H

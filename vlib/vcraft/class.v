@@ -201,6 +201,9 @@ pub const state_chain_max = 8
 pub fn init_state() {
 	unsafe {
 		C.vpy_state_init()
+		// Also once per import: let a full Python collection run a full V one, so the V
+		// heap gives memory back when the process collects. See `vpy_gc_hook_python`.
+		C.vpy_gc_hook_python()
 	}
 }
 

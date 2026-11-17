@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 36,
+            glue.count("add_function_owned") == 38,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -234,6 +234,12 @@ def main() -> int:
             except ValueError as exc:
                 wrong += "invalid literal" not in str(exc)
     t.equal("values survive hundreds of collections", wrong, 0)
+    # A full Python collection runs a full V one, so the V heap gives memory back when
+    # the process collects; the hook is one entry in `gc.callbacks`.
+    hooks = [c for c in gc.callbacks if getattr(c, "__name__", "") == "_vcraft_collect"]
+    t.equal("the V collector follows gc.collect()", len(hooks), 1)
+    gc.collect()
+    t.equal("and the extension works after it", h.greet("Bo"), "Hello, Bo!")
 
     print("raw escape hatch")
     sentinel = [1, 2, 3]
@@ -291,6 +297,21 @@ def main() -> int:
     t.equal("interpreter survives", h.add(2, 3), 5)
     t.equal("extension still works", h.parse_int("7"), 7)
     t.equal("no panic state leaks", h.greet("Ana"), "Hello, Ana!")
+    # The guard only calls `recover()` when a panic landed, so a normal return skips it;
+    # a panic without the GIL must still be caught, and the GIL handed back.
+    try:
+        h.first_char_nogil("")
+    except RuntimeError as exc:
+        t.check("a panic without the GIL is recovered", "out of bounds" in str(exc), str(exc))
+    else:
+        t.check("a panic without the GIL is recovered", False, "no exception")
+    t.equal("the GIL is held again after it", h.first_char_nogil("xy"), "x")
+    for _ in range(3):
+        try:
+            h.first_char("")
+        except RuntimeError:
+            pass
+    t.equal("repeated panics leave nothing behind", h.add(1, 1), 2)
 
     print("class")
     counter = h.Counter()
@@ -938,10 +959,14 @@ def main() -> int:
         next(it)
     except StopIteration as exc:
         t.check("exhaustion raises StopIteration", True)
-        t.check("with the message the V code chose", str(exc) == "no more values",
-                repr(str(exc)))
+        # The end of an iteration builds no exception object: `tp_iternext` returns null
+        # with nothing set, and `next()` raises a bare StopIteration as it does for
+        # CPython's own iterators.
+        t.check("a bare one, as CPython's iterators raise", exc.args == (), repr(exc.args))
     else:
         t.check("exhaustion raises StopIteration", False, "no exception")
+    t.raises("StopIteration outside an iterator keeps its message", StopIteration,
+             "stopped here", h.stop_outside)
     t.equal("and stays exhausted", list(down), [3, 2, 1])
     down.rewind()
     t.equal("rewind restores it", list(down), [3, 2, 1])
@@ -963,6 +988,16 @@ def main() -> int:
             and "voidptr(vcraft_generated__next_countdown)" in glue)
     t.check("a class without the pair gets neither slot",
             "vcraft_generated__iter_counter" not in glue)
+    t.check("the end of the iteration sets no exception",
+            "if vcraft.ends_iteration(err) {" in glue)
+    t.check("the panic guard skips recover() on a normal return",
+            "\t\tif vc_live {\n\t\t\tif message := recover() {" in glue
+            and "\tvc_live = false\n\treturn" in glue)
+    t.check("a constructor that is one literal builds the state in place",
+            "fn vcraft_generated__newstate_countdown() Countdown {\n\tvcraft.gc_enter()\n"
+            "\treturn Countdown{}\n}" in glue)
+    t.check("a constructor that does more is still called",
+            "return *new_owned_box(" in glue)
     t.check("the stub keeps both as methods",
             "    def rewind(self) -> None: ..." in stub
             and "    def advance(self) -> int: ..." in stub, stub[-600:])

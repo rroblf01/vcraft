@@ -1923,6 +1923,97 @@ fn find_struct_in(ast &flat.FlatAst, id flat.NodeId, wanted string) ?flat.NodeId
 	return none
 }
 
+// constructor_literal returns the struct literal a constructor builds, without its `&`,
+// when the constructor is nothing but `return &Name{...}`, and '' for anything else.
+//
+// The idiomatic constructor is exactly that, and calling it costs a heap allocation:
+// V's `&Name{...}` is a collector block, which `newstate` copies into the instance and
+// drops. Evaluating the same literal in `newstate`, under the constructor's own
+// parameter names, builds the same value with the same side effects and no block.
+//
+// Anything the copy could resolve differently is refused, which falls back to the call:
+// a signature on several lines, generic or with a `mut` parameter, a body with more than
+// the one `return`, braces that do not close the literal exactly where the body ends,
+// and a qualified name other than `vcraft.`, `C.` or a parameter's, because the glue
+// imports only `vcraft` and a module the user's file imports would not resolve there.
+// An unqualified name resolves the same in both files: they are one V module.
+fn constructor_literal(f Func, class_name string) string {
+	lines := read_lines(f.origin)
+	mut sig := -1
+	for k := f.line - 1; k >= 0 && k < lines.len && k < f.line + 8; k++ {
+		if lines[k].contains('fn ${f.name}(') {
+			sig = k
+			break
+		}
+	}
+	if sig < 0 {
+		return ''
+	}
+	head := lines[sig].trim_space()
+	if !head.ends_with('&${class_name} {') || head.contains('mut ') || head.contains('fn ${f.name}[') {
+		return ''
+	}
+	mut end := sig + 1
+	for end < lines.len && lines[end] != '}' {
+		end++
+	}
+	if end >= lines.len {
+		return ''
+	}
+	body := lines[sig + 1..end].join('\n').trim_space()
+	prefix := 'return &${class_name}{'
+	if !body.starts_with(prefix) || !body.ends_with('}') {
+		return ''
+	}
+	literal := body['return &'.len..]
+	// The literal's first brace has to close at its last character: otherwise the body
+	// holds more than the literal (`return &T{}.with(x)`, a second statement).
+	mut depth := 0
+	for k, ch in literal {
+		if ch == `{` {
+			depth++
+		} else if ch == `}` {
+			depth--
+			if depth == 0 && k != literal.len - 1 {
+				return ''
+			}
+		}
+	}
+	if depth != 0 {
+		return ''
+	}
+	names := f.params.map(it.name)
+	if 'vcraft' in names {
+		return ''
+	}
+	mut k := 0
+	for k < literal.len {
+		ch := literal[k]
+		if ch.is_letter() || ch == `_` {
+			start := k
+			for k < literal.len && (literal[k].is_letter() || literal[k].is_digit()
+				|| literal[k] == `_`) {
+				k++
+			}
+			word := literal[start..k]
+			// A qualifier is a name directly followed by a dot that does not itself follow
+			// a dot: `vcraft.x`, `n.len`, but not the `len` of `n.len`.
+			qualifies := k < literal.len && literal[k] == `.`
+			after_dot := start > 0 && literal[start - 1] == `.`
+			if qualifies && !after_dot && word != 'vcraft' && word != 'C' && word !in names {
+				return ''
+			}
+			continue
+		}
+		if ch == `'` || ch == `"` || ch == `\`` || ch == `/` {
+			// A string, a rune or a comment could hide anything from the scan above.
+			return ''
+		}
+		k++
+	}
+	return literal
+}
+
 // link_classes resolves the `new_*` function of each class and gives the class
 // methods their flags.
 //
@@ -1948,6 +2039,7 @@ fn link_classes(mut p Project) {
 				p.classes[i].ctor_fn = f.name
 				p.classes[i].ctor_params = f.params
 				p.classes[i].ctor_opaque = f.opaque
+				p.classes[i].ctor_literal = constructor_literal(f, c.name)
 				ctors << f.name
 			}
 		}

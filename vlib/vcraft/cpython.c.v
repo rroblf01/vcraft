@@ -100,6 +100,7 @@ fn C.vpy_is_exact_bytes(obj voidptr) int
 fn C.vpy_buffer_export(data voidptr, owner voidptr, nbytes isize, itemsize isize, kind int) voidptr
 fn C.vpy_buffer_fill_typed(view voidptr, exporter voidptr, data voidptr, nbytes isize, itemsize isize, kind int, readonly int, flags int) int
 fn C.vpy_state_init()
+fn C.vpy_gc_hook_python()
 fn C.vpy_enter_state(block voidptr) voidptr
 fn C.vpy_leave_state(previous voidptr)
 fn C.vpy_publish_state(level int, ptr voidptr)
@@ -199,6 +200,7 @@ fn C.PyComplex_RealAsDouble(o voidptr) f64
 fn C.PyComplex_ImagAsDouble(o voidptr) f64
 
 fn C.vpy_is_complex(o voidptr) int
+fn C.vpy_complex_parts(o voidptr, re &f64, im &f64) int
 
 // ----------------------------------------------------------------- strings
 

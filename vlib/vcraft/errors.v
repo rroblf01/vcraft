@@ -201,9 +201,27 @@ pub fn raise_panic(message string) {
 // compiler rejects a value whose type is not IError, and a struct that implements
 // `msg()` is not one. That is why the choice travels out of band, through the
 // pending Python exception, instead of inside the error value.
+//
+// `StopIteration` is the one exception that is not set here. It is how an iterator
+// ends, so an iteration of n items raised it once per loop, and building the exception
+// object cost more than the rest of a short iteration put together. The error carries
+// the exception in its `code()` instead: the `tp_iternext` trampoline ends the iteration
+// on it without any exception (CPython's own contract for the slot, and what `for`,
+// `list()` and `next()` all accept), and every other trampoline hands it to
+// `raise_from_error`, which raises `StopIteration` with this message exactly as before.
 pub fn raise_domain(kind PyExc, message string) IError {
+	if kind == .stop_iteration {
+		return error_with_code(message, int(PyExc.stop_iteration))
+	}
 	raise(kind, message)
 	return error(message)
+}
+
+// ends_iteration reports whether an error that reached a `tp_iternext` trampoline is the
+// end of the iteration rather than a failure: an iterator's `StopIteration` that no
+// Python exception has overtaken. See `raise_domain`.
+pub fn ends_iteration(err IError) bool {
+	return err.code() == int(PyExc.stop_iteration) && !error_is_set()
 }
 
 // set_error_object sets an arbitrary Python exception class with a message.

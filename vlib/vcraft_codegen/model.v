@@ -464,6 +464,11 @@ pub mut:
 	// ctor_fn is the user's `new_*` function, run by `tp_new`. Empty when the class
 	// has none, in which case instances can only be built from V.
 	ctor_fn string
+	// ctor_literal is the struct literal the constructor returns, `Name{...}` with the
+	// `&` dropped, when its whole body is `return &Name{...}`; empty otherwise. `newstate`
+	// evaluates it in place of calling the constructor, which saves the heap block the
+	// `&` allocates only for `newstate` to copy out of it. See `constructor_literal`.
+	ctor_literal string
 	// ctor_params is the constructor's parameters. They travel through the same
 	// marshalling rules as a method's, read in `tp_new` from the tuple and dict CPython
 	// passes there, so a class can be sized at construction: `new_tableau(2 * n + 1)`.

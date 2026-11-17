@@ -435,7 +435,10 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 	}
 	call := 'state.' + c.self_access() + '${f.name}()'
 	if f.returns_result {
-		inner := 'vcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
+		// The end of the iteration returns null with no exception set, which is the
+		// slot's contract and costs no exception object; see `vcraft.raise_domain`.
+		inner := 'if vcraft.ends_iteration(err) {\n\t\t\treturn unsafe { nil }\n\t\t}\n' +
+			'\t\tvcraft.raise_from_error(err)\n\t\treturn unsafe { nil }'
 		if has_value {
 			if f.nogil {
 				w.write_string('\t${result_target(ret, f.v_ret)} = ${call} or {\n' + emit_nogil_failure(inner) +
@@ -1169,6 +1172,19 @@ fn emit_class_newstate(p Project, c Class) string {
 	// nothing to zero first and nothing to merge. The general path below keeps the
 	// `mut state` local, which a subclass needs to hold the base and its own half.
 	if c.base_indices.len == 0 && c.ctor_fn != '' {
+		// The constructor's own literal, evaluated here under its own parameter names,
+		// builds the state without the heap block `&T{...}` would allocate only to be
+		// copied out of; see `constructor_literal`. Parameters the glue converts (an
+		// instance, an opaque capsule) keep the call.
+		if c.ctor_literal != '' && !c.ctor_opaque
+			&& c.newstate_params.all(it.instance_target == '') {
+			mut named := []string{}
+			for param in c.newstate_params {
+				named << '${param.name} ${param.v_type}'
+			}
+			return 'fn ${c.newstate_fn}(${named.join(', ')}) ${c.state_type()} {\n' +
+				'\treturn ${c.ctor_literal}\n}\n\n'
+		}
 		w.write_string('\treturn *${c.ctor_fn}(${call_args.join(', ')})\n')
 		w.write_string('}\n\n')
 		return w.str()

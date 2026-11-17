@@ -369,6 +369,39 @@ pub fn from_py_int_seq_arg(argv voidptr, i int, func string, name string) ![]int
 	return out
 }
 
+// read_int_fixed reads positional argument `i` straight into a fixed-size array of
+// `int` or `i64` at `out`, which holds exactly `n` of them, `wide` when an element is
+// 64 bits.
+//
+// The general `[N]T` path reads the argument into a heap slice and copies it out, an
+// allocation per call for what is a few machine words on the stack. This writes the
+// array in place, with the same checks and the same errors: a list or a tuple, exactly
+// `n` items (ValueError otherwise), each an int in range.
+pub fn read_int_fixed(argv voidptr, i int, func string, name string, out voidptr, n int,
+	wide bool) ! {
+	obj := seq_elements(argv, i, func, name) or { return error(name) }
+	got := int(obj.len())
+	if got != n {
+		raise_value_error('${func}() argument ${name}: expected ${n} items, got ${got}')
+		return error(name)
+	}
+	mut k := 0
+	if wide && n > 0 {
+		k = int(C.vpy_seq_fill_i64(obj.ptr, unsafe { &i64(out) }, isize(n)))
+	}
+	for k < n {
+		value := from_py_int(obj.item(k), name)!
+		unsafe {
+			if wide {
+				(&i64(out))[k] = value
+			} else {
+				(&int(out))[k] = int(value)
+			}
+		}
+		k++
+	}
+}
+
 // from_py_i64_seq_arg reads positional argument `i` as a sequence of i64.
 pub fn from_py_i64_seq_arg(argv voidptr, i int, func string, name string) ![]i64 {
 	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
