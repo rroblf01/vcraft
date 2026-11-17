@@ -3010,6 +3010,11 @@ pub fn c_marker() int {
             text = (ROOT / place).read_text()
             t.check(f"{place} pins the same V", pin_v in text and pin_vc in text,
                     f"expected {pin_v[:7]} and {pin_vc[:7]}")
+        release_v = (ROOT / ".github" / "workflows" / "release-v.yml").read_text()
+        t.check("the published V is a -prod build, checked away from its build path",
+                "-prod -o v.prod cmd/v" in release_v and "-prod -o" in release_v.split("(Windows)")[1]
+                and "the archive works away from its build path" in release_v,
+                "a development build of V embeds file paths, not files, and panics on users' machines")
         no_v = {k: v for k, v in os.environ.items() if k not in ("VCRAFT_V",)}
         no_v["VCRAFT_HOME"] = str(tmp / "no-toolchain")
         if WINDOWS:

@@ -184,6 +184,17 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **The prebuilt V never worked outside CI, so every first install compiled V (about
+  five minutes).** `release-v.yml` published a development build of the compiler, which
+  reads the files it embeds from the path it was built at and panicked anywhere else;
+  `vcraft toolchain install` then fell back to the source build without saying why. The
+  archives are now built with `-prod`, each one is unpacked and run away from its build
+  path before it is published, Intel macOS (`macos-x86_64`) and Windows archives are
+  added, and the workflow runs by itself when a push moves the pins, rebuilding what is
+  missing or predates the fix. The fallback now prints why the archive was refused, and
+  a new `scripts/check-first-run.py` times the whole path from `pip install vcraft` to
+  `import` (the release workflow runs it against PyPI with a three-minute budget).
+
 - **`develop` labels the wheel's size as the wheel's**, noting an editable one is a
   pointer, instead of an unlabelled `size` that read as the extension's.
 - **`scripts/check-perf-baseline.py` ran at all.** A stray line left at the end of the

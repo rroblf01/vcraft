@@ -122,6 +122,7 @@ pub fn prebuilt_asset() string {
 		t.os == 'linux' && t.arch == 'x86_64' && t.libc == 'gnu' { 'linux-x86_64' }
 		t.os == 'linux' && t.arch == 'aarch64' && t.libc == 'gnu' { 'linux-aarch64' }
 		t.os == 'macos' && t.arch == 'aarch64' { 'macos-arm64' }
+		t.os == 'macos' && t.arch == 'x86_64' { 'macos-x86_64' }
 		t.os == 'windows' { 'win-amd64' }
 		else { '' }
 	}
@@ -180,8 +181,16 @@ fn install_prebuilt(dir string) ! {
 	os.rm(archive) or {}
 	built_v := os.join_path(dir, executable_name('v'))
 	if unpacked != 0 || !v_matches_pin(built_v) {
+		// Say why, so a fallback to the five-minute source build is never silent: the
+		// unpack status and what the unpacked compiler answered (or that it would not run).
+		reason := if unpacked != 0 {
+			'tar exited with ${unpacked}'
+		} else {
+			answer := os.exec([built_v, 'version'])
+			'`v version` exited with ${answer.exit_code} and said: ${answer.output.trim_space().limit(300)}'
+		}
 		os.rmdir_all(dir) or {}
-		return error('the prebuilt archive did not unpack to V ${v_commit[..7]}')
+		return error('the prebuilt archive did not unpack to V ${v_commit[..7]} (${reason})')
 	}
 	println('installed the prebuilt V ${v_commit[..7]} in ${dir}')
 }

@@ -497,6 +497,13 @@ jobs:
       - name: smoke test the published release
         run: python scripts/release-smoke.py
 
+      # What a new user goes through, timed: a fresh virtualenv and an empty vcraft cache,
+      # `pip install vcraft`, `vcraft toolchain install`, `vcraft new`, `vcraft develop`,
+      # `import`. Over budget means the prebuilt V was not used and the user would have
+      # waited for a compiler build: the failure release-v.yml once shipped unnoticed.
+      - name: time a first install
+        run: python scripts/check-first-run.py --pypi --budget 180
+
 # ---------------------------------------------------------------------------
 # 5. Action: validate the composite action and move its floating tags so that
 #    @v1 / @v1.x follow the release. Needs publish to have succeeded.

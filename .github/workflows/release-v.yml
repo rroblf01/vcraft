@@ -8,13 +8,22 @@ name: release-v
 # The release is a prerelease, so it is a toolchain cache and never the repository's
 # "latest release": that stays the real vcraft release under the `vcraft/v*` tag.
 #
-# Run on demand, after the V pin moves. Deliberately not on push: it touches only the V
-# pin, so a push that happens to edit ci.yml -- a version bump, a comment -- would rebuild
-# V for three platforms and publish a release for nothing. It is an optimisation anyway:
-# ci.yml and release.yml fall back to building from source when an archive is
-# missing, so a first run or a failed publish only costs time.
+# Runs when a push to main touches the pins, and on demand. It builds only what is
+# missing from the release (see the `check` job), so a push that edits ci.yml for
+# something else -- a version bump, a comment -- rebuilds nothing. A user's `vcraft
+# toolchain install` downloads these archives, which is what keeps a first install to
+# seconds instead of a five-minute compiler build; ci.yml and release.yml also use them
+# and fall back to a source build when one is missing.
 on:
   workflow_dispatch:
+  # When a push to main moves the pin (or this workflow), the `check` job below compares
+  # the published release with the platforms this workflow builds, and only a missing
+  # archive is built: a push that edits ci.yml for something else costs one API call.
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ci.yml
+      - .github/workflows/release-v.yml
 
 permissions:
   contents: write
@@ -25,20 +34,43 @@ env:
   VC_COMMIT: 6851aaf3f9e696b30b26e406f16095b0002acaab
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      missing: ${{ steps.release.outputs.missing }}
+    steps:
+      - name: which archives the release lacks
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          have="$(gh release view "v/$V_COMMIT" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null || true)"
+          missing=false
+          for asset in linux-x86_64 linux-aarch64 macos-arm64 macos-x86_64 win-amd64; do
+            echo "$have" | grep -qx "v-$V_COMMIT-$asset.tar.gz" || { echo "missing: $asset"; missing=true; }
+          done
+          # Archives published before the -prod rebuild only ran at their build path;
+          # the marker says this release's archives are the relocatable kind.
+          echo "$have" | grep -qx "v-$V_COMMIT-relocatable.txt" || { echo "missing: relocatable archives"; missing=true; }
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then missing=true; fi
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: [check]
+    if: needs.check.outputs.missing == 'true'
     strategy:
       fail-fast: false
       matrix:
         include:
-          # One archive per platform CI actually runs on. Intel macOS is left out
-          # because no runner in these workflows is one; the pin build itself is
-          # architecture-independent.
+          # One archive per platform a user's `vcraft toolchain install` may run on.
           - os: ubuntu-latest
             asset: linux-x86_64
           - os: ubuntu-24.04-arm
             asset: linux-aarch64
           - os: macos-26
             asset: macos-arm64
+          - os: macos-15-intel
+            asset: macos-x86_64
           - os: windows-latest
             asset: win-amd64
     runs-on: ${{ matrix.os }}
@@ -55,6 +87,12 @@ jobs:
           (cd vc && git checkout -q "$VC_COMMIT")
           make fresh_tcc
           make local=1 "-j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+          # Rebuilt with -prod before it is shipped. A development build keeps only the
+          # *path* of every `$embed_file` (the C headers V's backend embeds) and reads it
+          # at run time, so a compiler built here panicked on every other machine --
+          # where /tmp/v-src does not exist -- and every user fell back to building V.
+          ./v -prod -o v.prod cmd/v
+          mv v.prod v
           ./v version
 
       # Native Windows: `makev.bat`, not `make`, with the bundled TCC it wants. The
@@ -72,6 +110,9 @@ jobs:
           git -C "$v\vc" checkout -q $env:VC_COMMIT
           git clone --filter=blob:none -q --branch thirdparty-windows-amd64 https://github.com/vlang/tccbin "$v\thirdparty\tcc"
           & "$v\makev.bat" --local
+          # -prod, so the files V embeds are inside the binary (see the POSIX step).
+          & "$v\v.exe" -prod -o "$v\v.prod.exe" "$v\cmd\v"
+          Move-Item -Force "$v\v.prod.exe" "$v\v.exe"
           & "$v\v.exe" version
 
       - name: package it
@@ -86,6 +127,22 @@ jobs:
           rm -rf vc .git
           tar -czf "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz" .
           ls -l "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz"
+
+      # The archive is unpacked somewhere else and run there, the way a user's `vcraft
+      # toolchain install` runs it, so a compiler that only works at its build path
+      # fails here instead of in every user's first install.
+      - name: the archive works away from its build path
+        shell: bash
+        run: |
+          elsewhere="$RUNNER_TEMP/relocated"
+          mkdir -p "$elsewhere"
+          tar -xzf "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz" -C "$elsewhere"
+          mv "$RUNNER_TEMP/v-src" "$RUNNER_TEMP/v-src.moved"
+          v="$elsewhere/v"; [ -x "$v" ] || v="$elsewhere/v.exe"
+          "$v" version | tee "$RUNNER_TEMP/version.txt"
+          grep -q "${V_COMMIT:0:7}" "$RUNNER_TEMP/version.txt"
+          printf 'fn main() { println("relocated ok") }\n' > "$RUNNER_TEMP/hello.v"
+          "$v" run "$RUNNER_TEMP/hello.v"
 
       - name: upload the archive
         uses: actions/upload-artifact@v6
@@ -103,6 +160,11 @@ jobs:
         with:
           path: assets
           pattern: v-*
+
+      - name: mark the archives relocatable
+        run: |
+          mkdir -p relocatable
+          echo "built with -prod and run away from their build path" > "relocatable/v-$V_COMMIT-relocatable.txt"
 
       - name: create or update the release
         # One publish step rather than one per matrix cell: several cells racing to
@@ -123,5 +185,7 @@ jobs:
             of building V, and fall back to a source build when one is missing.
 
             This is a workflow toolchain cache, not a vcraft release.
-          files: assets/**/*.tar.gz
+          files: |
+            assets/**/*.tar.gz
+            relocatable/*.txt
           fail_on_unmatched_files: true
