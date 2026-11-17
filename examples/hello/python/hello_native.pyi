@@ -193,6 +193,22 @@ async def slow_square(n: int, label: str) -> str: ...
 """async_boom panics on its worker thread; the future gets the RuntimeError."""
 async def async_boom(i: int) -> int: ...
 
+"""nd_scale multiplies a float64 array of any shape by `k`: read through the buffer
+	protocol without a copy, written into a new array of the same shape.
+"""
+def nd_scale(a: Any, k: float) -> memoryview: ...
+
+"""nd_trace sums the diagonal of a 2-D float64 array through its strides, so a transposed
+	or sliced array works as well as a contiguous one.
+"""
+def nd_trace(a: Any) -> float: ...
+
+"""nd_fill writes into the caller's array in place."""
+def nd_fill(a: Any, value: float) -> None: ...
+
+"""nd_shape reports what the view saw."""
+def nd_shape(a: Any) -> str: ...
+
 """raise_os raises the OSError subclass an errno value stands for, with `context` as the
 	part after the colon in its message.
 """

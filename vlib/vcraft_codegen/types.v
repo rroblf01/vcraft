@@ -55,6 +55,12 @@ pub enum Strategy {
 	// It crosses as whichever variant the value holds, and is read back by trying the
 	// variants; the stub calls it `int | str | ...`.
 	sum_type
+	// NdArray is `vcraft.NdArray`, a parameter: a borrowed N-dimensional view of any
+	// buffer exporter (a NumPy array, `array.array`, `memoryview`), released after the call.
+	nd_array
+	// NdOut is `vcraft.NdOut`, a result: a native buffer with a shape, returned as an
+	// N-dimensional `memoryview` that `numpy.asarray` wraps without copying.
+	nd_out
 	// Unsupported means the generator refuses to emit code for it.
 	unsupported
 }
@@ -76,6 +82,12 @@ pub fn lookup(v_type string) Strategy {
 	// is the same type written out.
 	if base == 'PyObj' || base == 'vcraft.PyObj' {
 		return .pyref
+	}
+	if base == 'vcraft.NdArray' || base == 'NdArray' {
+		return .nd_array
+	}
+	if base == 'vcraft.NdOut' || base == 'NdOut' {
+		return .nd_out
 	}
 	// `math.complex.Complex` is a struct, but a well-known one: it crosses as a Python
 	// `complex` rather than as an unsupported struct. Both spellings, because a project
@@ -204,6 +216,9 @@ pub fn describe(v_type string) string {
 		// A plain struct is a dict of heterogeneous fields.
 		.struct_type { struct_stub_type(v_type.trim_space()) }
 		.sum_type { sum_stub_type(v_type) }
+		// Anything with the buffer protocol; `collections.abc.Buffer` is 3.12+ only.
+		.nd_array { 'Any' }
+		.nd_out { 'memoryview' }
 		.unsupported { 'Any' }
 	}
 }

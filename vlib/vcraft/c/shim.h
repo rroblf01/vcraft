@@ -246,6 +246,13 @@ PyObject *vpy_exc_child_process_error(void);
 PyObject *vpy_exc_process_lookup_error(void);
 void vpy_raise_errno(int code, const char *context, Py_ssize_t len);
 PyObject *vpy_running_loop(void);
+int vpy_nd_get(void *obj, void *view);
+int vpy_view_ndim(void *view);
+Py_ssize_t vpy_view_shape(void *view, int i);
+Py_ssize_t vpy_view_stride(void *view, int i);
+Py_ssize_t vpy_view_itemsize(void *view);
+int vpy_view_readonly(void *view);
+const char *vpy_view_format(void *view);
 PyObject *vpy_async_settle_fn(void);
 PyObject *vpy_new_runtime_error(void);
 PyObject *vpy_structseq_type(const char *name, const char *const *fields, int count,

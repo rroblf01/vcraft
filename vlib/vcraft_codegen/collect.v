@@ -2349,6 +2349,16 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 	if f.is_async && !validate_async(mut p, path, decl, f) {
 		return
 	}
+	if lookup(f.v_ret) == .nd_array {
+		report(mut p, path, decl, 'error: `${decl.name}` returns `vcraft.NdArray`, which is a borrowed view valid only for a call; return a `vcraft.NdOut` (`vcraft.nd_out_f64(shape)`) instead')
+		return
+	}
+	for param in f.params {
+		if lookup(param.v_type) == .nd_out {
+			report(mut p, path, decl, 'error: `${decl.name}` parameter `${param.name}` is `vcraft.NdOut`, which is a result type; take a `vcraft.NdArray`')
+			return
+		}
+	}
 	if f.opaque {
 		if f.v_ret.trim_space() != 'voidptr' && !f.params.any(it.v_type.trim_space() == 'voidptr') {
 			report(mut p, path, decl,

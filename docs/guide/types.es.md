@@ -70,6 +70,15 @@ Un sumtype (`type Shape = int | string | Point`) cruza como la variante que cont
 probando las variantes: un `bool` solo para un `bool` real, los enteros antes que los
 flotantes y después el orden declarado. El stub lo tipa como una unión.
 
+## NumPy y arrays N-dimensionales
+
+`vcraft.NdArray` como parámetro acepta cualquier exportador de buffer (un array de NumPy,
+`array.array`, `memoryview`) sin copiar y sin depender de NumPy, con su `kind`, `shape`,
+`strides`, `readonly` y `c_contiguous`. `f64s()`, `f32s()`, `i64s()`, `i32s()` y `u8s()`
+aliasan un array C-contiguo como slice de V; `at_f64(i, j)` sigue los strides de cualquier
+otro. `vcraft.NdOut` como resultado (`vcraft.nd_out_f64(shape)`) se devuelve como un
+`memoryview` N-dimensional que `numpy.asarray` envuelve sin copia.
+
 ## Strings prestados
 
 Un `str` no se copia al entrar. Un parámetro `string`, los elementos de un `[]string`, las

@@ -43,6 +43,12 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   loop settles the future with the result, the error's exception or a panic's
   RuntimeError. Gathered calls overlap, a cancelled future is left alone, and the stub
   declares the function `async def`.
+- **NumPy and N-dimensional arrays, without depending on NumPy.** A `vcraft.NdArray`
+  parameter views any buffer exporter (NumPy, `array.array`, `memoryview`) with its
+  format, shape, strides and writability, aliased as a V slice when C-contiguous
+  (`f64s()`, `i32s()`, ...) or read through the strides (`at_f64(i, j)`). A
+  `vcraft.NdOut` result (`vcraft.nd_out_f64(shape)`) comes back as an N-dimensional
+  `memoryview` that `numpy.asarray` wraps without a copy.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.

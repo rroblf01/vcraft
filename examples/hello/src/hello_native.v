@@ -732,6 +732,52 @@ pub fn async_boom(i int) int {
 	return values[i]
 }
 
+// nd_scale multiplies a float64 array of any shape by `k`: read through the buffer
+// protocol without a copy, written into a new array of the same shape.
+@[vc_fn]
+pub fn nd_scale(a vcraft.NdArray, k f64) !vcraft.NdOut {
+	src := a.f64s()!
+	out := vcraft.nd_out_f64(a.shape)
+	mut dst := out.f64s()
+	for i, x in src {
+		dst[i] = x * k
+	}
+	return out
+}
+
+// nd_trace sums the diagonal of a 2-D float64 array through its strides, so a transposed
+// or sliced array works as well as a contiguous one.
+@[vc_fn]
+pub fn nd_trace(a vcraft.NdArray) !f64 {
+	if a.ndim() != 2 {
+		return error_with_code('expected a 2-D array', int(vcraft.PyExc.value_error))
+	}
+	mut total := 0.0
+	n := if a.shape[0] < a.shape[1] { a.shape[0] } else { a.shape[1] }
+	for i in 0 .. n {
+		total += a.at_f64(i, i)
+	}
+	return total
+}
+
+// nd_fill writes into the caller's array in place.
+@[vc_fn]
+pub fn nd_fill(a vcraft.NdArray, value f64) ! {
+	mut xs := a.f64s()!
+	if a.readonly {
+		return error_with_code('the array is read-only', int(vcraft.PyExc.value_error))
+	}
+	for i in 0 .. xs.len {
+		xs[i] = value
+	}
+}
+
+// nd_shape reports what the view saw.
+@[vc_fn]
+pub fn nd_shape(a vcraft.NdArray) string {
+	return '${a.shape} ${a.kind.ascii_str()} ${a.readonly} ${a.c_contiguous}'
+}
+
 // raise_os raises the OSError subclass an errno value stands for, with `context` as the
 // part after the colon in its message.
 @[vc_fn]

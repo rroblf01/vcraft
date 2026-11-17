@@ -412,6 +412,13 @@ fn C.vpy_exc_process_lookup_error() voidptr
 fn C.vpy_raise_errno(code i32, context &u8, len isize)
 fn C.vpy_last_errno() int
 fn C.vpy_running_loop() voidptr
+fn C.vpy_nd_get(obj voidptr, view voidptr) int
+fn C.vpy_view_ndim(view voidptr) int
+fn C.vpy_view_shape(view voidptr, i int) isize
+fn C.vpy_view_stride(view voidptr, i int) isize
+fn C.vpy_view_itemsize(view voidptr) isize
+fn C.vpy_view_readonly(view voidptr) int
+fn C.vpy_view_format(view voidptr) &char
 fn C.vpy_async_settle_fn() voidptr
 fn C.vpy_new_runtime_error() voidptr
 fn C.vpy_structseq_type(name &char, fields &&char, count int, doc &char) voidptr

@@ -1444,6 +1444,7 @@ pub fn return_expr(strategy Strategy, value string, raw bool, v_type string, exp
 			'vcraft.tuple_of([${items.join(', ')}]).ptr'
 		}
 		.optional, .dict, .fixed { '${composite_boxed_expr(strategy, value, v_type)}.ptr' }
+		.nd_out { 'vcraft.nd_export(${value}).ptr' }
 		else { '${box_value_expr(value, v_type)}.ptr' }
 	}
 }
@@ -1887,6 +1888,8 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 		// cast to an enum an unsafe operation.
 		.enum_type { 'unsafe { ${v_type.trim_space()}(0) }' }
 		.struct_type { '${v_type.trim_space()}{}' }
+		.nd_out { 'vcraft.NdOut{}' }
+		.nd_array { 'vcraft.NdArray{}' }
 		// The first variant's zero value, which any value the function returns replaces.
 		.sum_type {
 			info := sumtype_info(v_type) or { return 'unsafe { nil }' }
@@ -1935,6 +1938,10 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 		return '${local}_enum := vcraft.enum_value(g_vc_enum_${info.key}.ptr, vcraft.required_arg(args, ${index}, ' +
 			"'${func}', '${param}') or { return unsafe { nil } }, ${vstring_literal(param)}) or { return unsafe { nil } }\n" +
 			'\t${local} := unsafe { ${param_type.trim_space()}(${local}_enum) }'
+	}
+	if strategy == .nd_array {
+		return "${local} := vcraft.nd_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }\n" +
+			'\tdefer { ${local}.release() }'
 	}
 	if strategy == .sum_type {
 		return "${local} := ${reader_fn(param_type)}(vcraft.required_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }, ${vstring_literal(param)}) or { return unsafe { nil } }"
@@ -2093,6 +2100,8 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 		.struct_type { 'vcraft.to_py_none()' }
 		// So does a sumtype. Unreachable.
 		.sum_type { 'vcraft.to_py_none()' }
+		.nd_out { 'vcraft.nd_export(' + value + ')' }
+		.nd_array { 'vcraft.to_py_none()' }
 		.unsupported { 'unsafe { nil }' }
 	}
 }

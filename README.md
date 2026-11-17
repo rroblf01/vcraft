@@ -1040,6 +1040,38 @@ of failure, and why the raiser exists.
 
 
 
+### NumPy and N-dimensional arrays
+
+A `vcraft.NdArray` parameter takes anything that exports a buffer -- a NumPy array, an
+`array.array`, a `memoryview` -- without copying it and without depending on NumPy. It
+carries the element format (`kind`), `shape`, `strides`, `readonly` and `c_contiguous`,
+and is valid for the call. `f64s()`, `f32s()`, `i64s()`, `i32s()` and `u8s()` alias a
+C-contiguous array of that element type as a V slice (a TypeError or ValueError says
+why not otherwise); `at_f64(i, j, ...)` follows the strides of a transposed or sliced
+array. A `vcraft.NdOut` result is a zeroed native buffer with a shape, made by
+`vcraft.nd_out_f64(shape)` and its siblings, which Python receives as an N-dimensional
+`memoryview` that `numpy.asarray` wraps without a copy:
+
+<!-- readme-test: skip -->
+```v
+@[vc_fn]
+pub fn scale(a vcraft.NdArray, k f64) !vcraft.NdOut {
+	src := a.f64s()!
+	out := vcraft.nd_out_f64(a.shape)
+	mut dst := out.f64s()
+	for i, x in src {
+		dst[i] = x * k
+	}
+	return out
+}
+```
+
+```python
+>>> np.asarray(m.scale(np.arange(6.0).reshape(2, 3), 2.0))
+array([[ 0.,  2.,  4.],
+       [ 6.,  8., 10.]])
+```
+
 ### Buffers without copying
 
 A `[]u8` parameter accepts anything bytes-like through the buffer protocol:

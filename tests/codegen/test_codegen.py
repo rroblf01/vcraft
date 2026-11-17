@@ -72,7 +72,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 49,
+            glue.count("add_function_owned") == 53,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -437,6 +437,33 @@ def main() -> int:
     t.check("a cancelled call is left alone when it finishes", asyncio.run(cancelled()))
     t.check("the stub declares it async",
             "async def slow_square(n: int, label: str) -> str: ..." in STUBS.read_text())
+
+    print("N-dimensional arrays through the buffer protocol")
+    import array as pyarray
+    import struct as pystruct
+    a = pyarray.array("d", [1.0, 2.0, 3.0])
+    out = h.nd_scale(a, 2.0)
+    t.check("a float64 array is read without a copy and a new one comes back",
+            isinstance(out, memoryview) and out.tolist() == [2.0, 4.0, 6.0] and out.format == "d",
+            repr(out.tolist() if isinstance(out, memoryview) else out))
+    grid = memoryview(bytearray(pystruct.pack("6d", 1, 2, 3, 4, 5, 6))).cast("d", [2, 3])
+    shaped = h.nd_scale(grid, 10.0)
+    t.check("the result keeps the shape", shaped.shape == (2, 3)
+            and shaped.tolist() == [[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]], repr(shaped.tolist()))
+    t.equal("strided reads follow the shape", h.nd_trace(grid), 1.0 + 5.0)
+    h.nd_fill(a, 7.0)
+    t.equal("a writable array is written in place", a.tolist(), [7.0, 7.0, 7.0])
+    frozen = memoryview(pystruct.pack("2d", 1, 2)).cast("d")
+    t.raises("a read-only array refuses writes", ValueError, "read-only",
+             lambda: h.nd_fill(frozen, 1.0))
+    t.equal("the view reports shape, kind, read-only and contiguity", h.nd_shape(b"abc"),
+            "[3] B true true")
+    t.raises("the wrong element type is named", TypeError, "expected float64",
+             lambda: h.nd_scale(pyarray.array("i", [1, 2]), 1.0))
+    t.raises("an object with no buffer is refused", TypeError, "",
+             lambda: h.nd_scale([1.0, 2.0], 1.0))
+    t.check("the stub types them", "def nd_scale(a: Any, k: float) -> memoryview: ..." in STUBS.read_text(),
+            [l for l in STUBS.read_text().splitlines() if "nd_scale" in l])
 
     print("system errors")
     import errno

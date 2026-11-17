@@ -690,6 +690,60 @@ int vpy_buffer_get(void *obj, void *view) {
 	return PyObject_GetBuffer((PyObject *)obj, (Py_buffer *)view, PyBUF_SIMPLE);
 }
 
+// vpy_nd_get acquires an N-dimensional view with its format, shape and strides: writable
+// when the exporter allows it, read-only otherwise. Returns 0, or -1 with the exporter's
+// exception set (TypeError for an object that has no buffer).
+int vpy_nd_get(void *obj, void *view) {
+	if (PyObject_GetBuffer((PyObject *)obj, (Py_buffer *)view, PyBUF_RECORDS) == 0) {
+		return 0;
+	}
+	// Exporters disagree on how they refuse a writable view -- `bytes` raises BufferError,
+	// a read-only NumPy array ValueError -- so any refusal is retried read-only, and only
+	// that attempt's error is reported.
+	PyErr_Clear();
+	return PyObject_GetBuffer((PyObject *)obj, (Py_buffer *)view, PyBUF_RECORDS_RO);
+}
+
+int vpy_view_ndim(void *view) {
+	return ((Py_buffer *)view)->ndim;
+}
+
+// The shape and strides of a 0-dimensional view are null; a 1-D view without strides
+// (`PyBUF_ND`) is contiguous by definition. Both are answered here so V never reads a
+// null array.
+Py_ssize_t vpy_view_shape(void *view, int i) {
+	Py_buffer *v = (Py_buffer *)view;
+	if (v->shape == NULL) {
+		return v->itemsize > 0 ? v->len / v->itemsize : 0;
+	}
+	return v->shape[i];
+}
+
+Py_ssize_t vpy_view_stride(void *view, int i) {
+	Py_buffer *v = (Py_buffer *)view;
+	if (v->strides == NULL) {
+		Py_ssize_t stride = v->itemsize;
+		for (int k = v->ndim - 1; k > i; k--) {
+			stride *= v->shape != NULL ? v->shape[k] : 1;
+		}
+		return stride;
+	}
+	return v->strides[i];
+}
+
+Py_ssize_t vpy_view_itemsize(void *view) {
+	return ((Py_buffer *)view)->itemsize;
+}
+
+int vpy_view_readonly(void *view) {
+	return ((Py_buffer *)view)->readonly;
+}
+
+const char *vpy_view_format(void *view) {
+	const char *f = ((Py_buffer *)view)->format;
+	return f != NULL ? f : "B";
+}
+
 // vpy_buffer_ptr returns the address of the viewed bytes.
 void *vpy_buffer_ptr(void *view) {
 	if (view == NULL) {
