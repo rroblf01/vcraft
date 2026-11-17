@@ -103,6 +103,16 @@ Additions that do not change anything 1.x promises.
 
 ## Platforms and toolchain
 
+- [ ] **Pyodide / WebAssembly wheels** (`pyemscripten_*` tags, as maturin builds), so a
+      vcraft extension runs in the browser and in JupyterLite. What is known: V targets
+      `wasm32_emscripten`; a Pyodide extension is an emscripten `SIDE_MODULE` built with
+      the exact emscripten version of a Pyodide release, against the headers
+      `pyodide xbuildenv` provides. What is not: whether V's Boehm collector runs in
+      Pyodide's single-threaded wasm (no `GC_THREADS`, stack scanning through emscripten),
+      and what `-shared` turns into for that target. Next step is a proof of concept --
+      `pyodide-build` in a virtualenv, the hello example compiled with `emcc -sSIDE_MODULE`,
+      imported in Node's Pyodide -- before any CLI surface (`--target wasm32-pyodide`).
+
 - [x] **Windows (`win_amd64`).** `vcraft build` links the `.pyd` against the interpreter's
       own import library with the MinGW runtime folded in statically, the CLI and
       `vcraft toolchain install` (`makev.bat`) work there, the action and
