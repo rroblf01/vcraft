@@ -239,6 +239,12 @@ fn windows_import_library(python string, abi3 string) string {
 		if base.starts_with('lib') {
 			base = base[3..]
 		}
+		if base.len == 0 {
+			// Windows' sysconfig has no LDLIBRARY; the library is named after the
+			// version (`python313.lib`, `python313t.lib` free-threaded). Falling back to
+			// `python3.lib` would link only the stable ABI and miss every other symbol.
+			base = python_line(python, "'python%d%d%s' % (sys.version_info[0], sys.version_info[1], 't' if sysconfig.get_config_var('Py_GIL_DISABLED') else '')")
+		}
 		if base.len > 0 {
 			name = base
 		}

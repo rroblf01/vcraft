@@ -250,6 +250,15 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **Windows builds failed to link** (`undefined reference to __imp_Py_CompileStringExFlags`).
+  Windows' `sysconfig` has no `LDLIBRARY`, so a full-API build fell back to the stable
+  ABI's `python3.lib`, which lacks every function outside it. It now links
+  `python3XX.lib` (`python3XXt.lib` free-threaded). The panic-traceback code also compiles
+  its frame through `compile()` rather than `Py_CompileString`, a macro over a function
+  the stable ABI does not export, so abi3 builds link too.
+- **Struct conversion errors were unformatted on Python 3.11**: a missing field or a
+  tuple of the wrong length raised the raw format string (`%.*s: expected ...`), as
+  3.11's `PyErr_Format` does not know `%.*s`. The struct name is now passed as `%U`.
 - **`par_range`, `released`, `with_gil` and `with_py_scope` leaked their closure on every
   call**: V never frees a closure, or what it captured, unless a `closure.Lifetime`
   reclaims it, so a parallel loop over two 2000-element arrays grew the process by 32 KiB

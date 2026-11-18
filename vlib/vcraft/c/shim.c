@@ -47,7 +47,10 @@ void vpy_add_v_frame(const char *file, int line, const char *func) {
 		Py_XDECREF(lead);
 	}
 	const char *text = padded ? PyUnicode_AsUTF8AndSize(padded, NULL) : NULL;
-	code = text ? Py_CompileString(text, file, Py_file_input) : NULL;
+	// `compile()` from builtins rather than `Py_CompileString`: that one is a macro over
+	// `Py_CompileStringExFlags`, which the stable ABI does not export (python3.dll).
+	PyObject *compile = text ? PyDict_GetItemString(PyEval_GetBuiltins(), "compile") : NULL;
+	code = compile ? PyObject_CallFunction(compile, "Oss", padded, file, "exec") : NULL;
 	globals = code ? PyDict_New() : NULL;
 	if (globals != NULL && PyDict_SetItemString(globals, "__builtins__", PyEval_GetBuiltins()) == 0
 		&& PyDict_SetItemString(globals, "__vcraft_exc", value) == 0) {
@@ -1407,6 +1410,19 @@ int vpy_complex_parts_slow(void *o, double *re, double *im) {
 	return 1;
 }
 
+// vpy_struct_error raises `kind` with a message that starts with the struct's name.
+// `PyErr_Format` cannot take the name directly: `%.*s` is only understood from 3.12, and
+// 3.11 copies the format string verbatim from the first directive it does not know.
+static void vpy_struct_error(PyObject *kind, const char *name, Py_ssize_t name_len,
+	PyObject *rest) {
+	PyObject *label = rest ? PyUnicode_FromStringAndSize(name, name_len) : NULL;
+	if (label != NULL) {
+		PyErr_Format(kind, "%U: %U", label, rest);
+	}
+	Py_XDECREF(label);
+	Py_XDECREF(rest);
+}
+
 // vpy_struct_field returns field `key` (position `index` of `count`) of whatever was
 // passed for a plain V struct, as a borrowed reference, or NULL with an exception set.
 //
@@ -1425,7 +1441,7 @@ PyObject *vpy_struct_field(PyObject *obj, const char *key, Py_ssize_t index, Py_
 	if (PyDict_Check(obj)) {
 		PyObject *item = PyDict_GetItemString(obj, key);
 		if (item == NULL && !PyErr_Occurred()) {
-			PyErr_Format(PyExc_KeyError, "%.*s: missing key %s", (int)name_len, name, key);
+			vpy_struct_error(PyExc_KeyError, name, name_len, PyUnicode_FromFormat("missing key %s", key));
 		}
 		return item;
 	}
@@ -1433,8 +1449,8 @@ PyObject *vpy_struct_field(PyObject *obj, const char *key, Py_ssize_t index, Py_
 		if (PyTuple_Size(obj) == count) {
 			return PyTuple_GetItem(obj, index);
 		}
-		PyErr_Format(PyExc_TypeError, "%.*s: expected a tuple of %zd items, got %zd",
-			(int)name_len, name, count, PyTuple_Size(obj));
+		vpy_struct_error(PyExc_TypeError, name, name_len, PyUnicode_FromFormat(
+			"expected a tuple of %zd items, got %zd", count, PyTuple_Size(obj)));
 		return NULL;
 	}
 	PyObject *dict = PyObject_GetAttrString(obj, "__dict__");
@@ -1454,9 +1470,9 @@ PyObject *vpy_struct_field(PyObject *obj, const char *key, Py_ssize_t index, Py_
 			PyErr_Clear();
 			// `PyType_GetName`, not `tp_name`: the struct is opaque under the limited API.
 			PyObject *type_name = PyType_GetName(Py_TYPE(obj));
-			PyErr_Format(PyExc_TypeError,
-				"%.*s: expected a dict, a tuple or an object with a field '%s', got %U",
-				(int)name_len, name, key, type_name);
+			vpy_struct_error(PyExc_TypeError, name, name_len, type_name ? PyUnicode_FromFormat(
+				"expected a dict, a tuple or an object with a field '%s', got %U", key,
+				type_name) : NULL);
 			Py_XDECREF(type_name);
 		}
 		return NULL;
@@ -1467,9 +1483,8 @@ PyObject *vpy_struct_field(PyObject *obj, const char *key, Py_ssize_t index, Py_
 		return value;
 	}
 	Py_DECREF(value);
-	PyErr_Format(PyExc_TypeError,
-		"%.*s: field '%s' is computed on access; pass a dict or an object that stores it",
-		(int)name_len, name, key);
+	vpy_struct_error(PyExc_TypeError, name, name_len, PyUnicode_FromFormat(
+		"field '%s' is computed on access; pass a dict or an object that stores it", key));
 	return NULL;
 }
 
