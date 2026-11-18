@@ -947,7 +947,13 @@ fn param_reader(param Param, local string, index int, func string, opaque bool) 
 	return 'mut ${local} := ${v_default(param)}\n' +
 		'\tif vcraft.arg_present(args, nargs, kwnames, ${index}) {\n' +
 		'\t\t${reader_expr(strategy, given, index, func, param.name, param.v_type, opaque)}\n' +
-		'\t\t${local} = ${given}\n\t}'
+		// An array or a map: V makes a plain assignment between two of them a clone, or an
+		// error without `unsafe`, and the value read is fresh, so it is moved, not copied.
+		(if param.v_type.trim_space().starts_with('[]') || param.v_type.trim_space().starts_with('map[') {
+			'\t\tunsafe { ${local} = ${given} }\n\t}'
+		} else {
+			'\t\t${local} = ${given}\n\t}'
+		})
 }
 
 // v_default is a parameter's default as a V expression of its type.
@@ -975,6 +981,10 @@ fn python_default(param Param) string {
 		else {
 			if value[0] == `'` || value[0] == `"` {
 				'"' + value[1..value.len - 1].replace('"', '\\"') + '"'
+			} else if value.ends_with('{}') {
+				// An empty V composite: `[]string{}` is `[]` and `map[string]int{}` is `{}` in
+				// Python; anything else (an empty struct) is a default a stub writes as `...`.
+				if value.starts_with('[]') { '[]' } else if value.starts_with('map[') { '{}' } else { '...' }
 			} else {
 				value
 			}
@@ -2402,8 +2412,11 @@ pub fn text_signature(name string, f Func, first string) string {
 // is_python_literal reports whether a default renders as something `inspect` evaluates:
 // a number, a string, True, False or None.
 fn is_python_literal(s string) bool {
-	if s in ['True', 'False', 'None'] || s.starts_with('"') {
+	if s in ['True', 'False', 'None', '[]', '{}'] || s.starts_with('"') {
 		return true
+	}
+	if s == '...' {
+		return false
 	}
 	mut body := s.trim_left('-+')
 	return body.len > 0 && body.bytes().all(it.is_digit() || it in [`.`, `e`, `E`, `_`, `-`, `+`, `x`, `o`, `b`]

@@ -1559,6 +1559,7 @@ fn collect_struct(path string, lines []string, ast &flat.FlatAst, decl astquery.
 		dict:      attr_dict in block.attrs
 		mapping:   attr_mapping in block.attrs
 		context:   attr_context in block.attrs
+		auto_init: (block.args[attr_class] or { '' }).trim("'\" ") == 'init'
 		origin:    path
 		line:      decl.line
 		column:    decl.column
@@ -2095,6 +2096,25 @@ fn constructor_literal(f Func, class_name string) string {
 //
 // A class with no `new_*` is usable from V but cannot be instantiated from Python,
 // which is allowed rather than reported: not every class needs to be constructible.
+// zero_literal is the V literal for a type's zero value, the default an auto-generated
+// constructor gives each field.
+fn zero_literal(v_type string) string {
+	t := v_type.trim_space()
+	if t == 'bool' {
+		return 'false'
+	}
+	if t in ['f32', 'f64'] {
+		return '0.0'
+	}
+	if is_scalar_type(t) {
+		return '0'
+	}
+	if t == 'string' {
+		return "''"
+	}
+	return '${t}{}'
+}
+
 // collector_managed reports whether a field of this type holds memory V's collector owns
 // -- a string, an array, a map, a pointer, an option or a struct that may contain one --
 // rather than plain bits. Scalars, enums and `vcraft.PyObj` (a CPython reference) do not.
@@ -2158,6 +2178,36 @@ fn link_classes(mut p Project) {
 				ctors << f.name
 			}
 		}
+	}
+	// `@[vc_class: 'init']`: a constructor made from the exposed fields.
+	for i, c in p.classes {
+		if !c.auto_init {
+			continue
+		}
+		if c.ctor_fn.len > 0 {
+			report(mut p, c.origin, astquery.Declaration{
+				name:   c.name
+				line:   c.line
+				column: c.column
+			}, "error: `${c.name}` has both `@[vc_class: 'init']` and `${c.ctor_fn}`; keep one constructor")
+			continue
+		}
+		fields := c.fields.filter(!it.buffer && !it.handle && !it.ref)
+		mut params := []Param{}
+		mut inits := []string{}
+		for f in fields {
+			params << Param{
+				name:    f.name
+				v_type:  f.v_type
+				default: zero_literal(f.v_type)
+			}
+			inits << '${f.name}: ${f.name}'
+		}
+		p.classes[i].ctor_fn = 'vcraft_generated__init_fields_${c.key}'
+		p.classes[i].ctor_origin = c.origin
+		p.classes[i].ctor_line = c.line
+		p.classes[i].ctor_params = params
+		p.classes[i].ctor_literal = '${c.name}{' + inits.join(', ') + '}'
 	}
 	// A subclass's state is built base first, so the base's constructor parameters have
 	// to arrive through the subclass's `tp_new` and be forwarded. The subclass's full

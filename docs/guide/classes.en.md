@@ -23,6 +23,13 @@ mut:
 }
 ```
 
+
+### Constructors from the fields
+
+`@[vc_class: 'init']` generates the constructor from the exposed fields, as a dataclass
+does: `Point3(1.0, label='origin')`, each field optional with its zero value as default
+(`0`, `0.0`, `False`, `''`, `[]`, `{}`). A class that writes its own `new_*` keeps it.
+
 ## Native state
 
 A field that is not a scalar (a `string`, a `[]T`) cannot live in CPython-owned

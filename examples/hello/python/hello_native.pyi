@@ -473,6 +473,20 @@ class Draft(Note):
     __match_args__ = ('title', 'tags', 'views', 'revision', 'author')
     def __init__(self, title: str) -> None: ...
 
+class Point3:
+    """Point3 is built from its fields: `@[vc_class: 'init']` generates the constructor, so
+    `Point3(x=1.0, label='a')` works with no `new_point3` written.
+    """
+    x: float
+    y: float
+    z: float
+    label: str
+    tags: list[str]
+    __match_args__ = ('x', 'y', 'z', 'label', 'tags')
+    def __init__(self, x: float = 0.0, y: float = 0.0, z: float = 0.0, label: str = "", tags: Sequence[str] = []) -> None: ...
+    def norm2(self) -> float:
+        """norm2 is the squared length."""
+
 class Countdown:
     """A countdown that yields its values one at a time.
 

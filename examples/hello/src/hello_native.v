@@ -957,6 +957,24 @@ mut:
 	@[vc_field] author   string
 }
 
+// Point3 is built from its fields: `@[vc_class: 'init']` generates the constructor, so
+// `Point3(x=1.0, label='a')` works with no `new_point3` written.
+@[vc_class: 'init']
+pub struct Point3 {
+mut:
+	@[vc_field] x     f64
+	@[vc_field] y     f64
+	@[vc_field] z     f64
+	@[vc_field] label string
+	@[vc_field] tags  []string
+}
+
+// norm2 is the squared length.
+@[vc_method]
+pub fn (p &Point3) norm2() f64 {
+	return p.x * p.x + p.y * p.y + p.z * p.z
+}
+
 // count_all takes only *args, so its glue reads no fixed parameter.
 @[vc_fn]
 pub fn count_all(xs ...int) int {

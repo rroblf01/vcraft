@@ -1539,6 +1539,17 @@ def main() -> int:
     t.check("the stub types the new fields",
             "    title: str" in flat_stub() and "    tags: list[str]" in flat_stub())
 
+    print("constructors made from the fields")
+    import inspect as _inspect
+    pt = h.Point3(1.0, 2.0, label="a" + "b", tags=["x" * 3])
+    t.equal("@[vc_class: 'init'] builds from positional and keyword fields",
+            (pt.x, pt.y, pt.z, pt.label, pt.tags, pt.norm2()), (1.0, 2.0, 0.0, "ab", ["xxx"], 5.0))
+    blank = h.Point3()
+    t.equal("every field defaults to its zero value", (blank.x, blank.label, blank.tags), (0.0, "", []))
+    t.equal("the constructor has a signature", str(_inspect.signature(h.Point3)),
+            "(x=0.0, y=0.0, z=0.0, label='', tags=[])")
+    t.raises("an unknown field is a TypeError", TypeError, "unexpected keyword", lambda: h.Point3(w=1))
+
     print("call_py")
     t.equal("call_py passes PyObj arguments", h.apply_py(lambda v: v * 3, 7), 21)
     t.raises("a Python exception in the callback reaches the caller unchanged",

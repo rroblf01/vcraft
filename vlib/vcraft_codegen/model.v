@@ -533,6 +533,10 @@ pub mut:
 	// allocation and could free. Classes with only scalar fields keep the state inline.
 	// Uniform across an inheritance tree, since a base's methods read a subclass's state.
 	boxed bool
+	// auto_init is `@[vc_class: 'init']`: with no `new_*` of its own, the class is built
+	// from its exposed fields, each an optional parameter defaulting to its zero value, as
+	// a dataclass is (`Note(title='x', tags=['a'])`). The constructor is generated.
+	auto_init bool
 	// ctor_fn is the user's `new_*` function, run by `tp_new`. Empty when the class
 	// has none, in which case instances can only be built from V.
 	ctor_fn string

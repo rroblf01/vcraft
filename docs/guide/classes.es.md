@@ -24,6 +24,14 @@ mut:
 }
 ```
 
+
+### Constructores a partir de los campos
+
+`@[vc_class: 'init']` genera el constructor a partir de los campos expuestos, como un
+dataclass: `Point3(1.0, label='origin')`, con cada campo opcional y su valor cero por
+defecto (`0`, `0.0`, `False`, `''`, `[]`, `{}`). Una clase que escribe su propio `new_*` lo
+conserva.
+
 ## Estado nativo
 
 Un campo que no es escalar (un `string`, un `[]T`) no puede vivir en memoria propiedad de

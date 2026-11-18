@@ -44,6 +44,7 @@ fn emit_class(p Project, c Class) string {
 	w.write_string('fn ${c.size_fn}() usize {\n')
 	w.write_string('\tunsafe { return sizeof(' + c.state_type() + ') }\n')
 	w.write_string('}\n\n')
+	w.write_string(emit_auto_init(c))
 	w.write_string(emit_class_newstate(p, c))
 	w.write_string(emit_class_getsets(c))
 	w.write_string(emit_class_methods(c))
@@ -1245,6 +1246,17 @@ fn emit_class_state_struct(p Project, c Class) string {
 	w.write_string('\tself ' + c.name + '\n')
 	w.write_string('}\n\n')
 	return w.str()
+}
+
+// emit_auto_init renders the constructor `@[vc_class: 'init']` generates: one parameter
+// per exposed field, building the struct from them. Used through `ctor_literal` when the
+// class has no base, and called by the subclass's `newstate` otherwise.
+fn emit_auto_init(c Class) string {
+	if !c.auto_init || c.ctor_fn != 'vcraft_generated__init_fields_${c.key}' {
+		return ''
+	}
+	params := c.ctor_params.map('${it.name} ${it.v_type}').join(', ')
+	return 'fn ${c.ctor_fn}(${params}) &${c.name} {\n\treturn &${c.ctor_literal}\n}\n\n'
 }
 
 // emit_class_newstate renders the constructor of the whole state block.

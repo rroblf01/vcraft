@@ -211,7 +211,7 @@ that immediately precedes each declaration. Any name works; these are the ones
 | Annotation      | Applies to      | Effect                                                     |
 | --------------- | --------------- | ---------------------------------------------------------- |
 | `@[vc_fn]`      | `pub fn`        | Exports the function as a module-level Python callable      |
-| `@[vc_class]`   | `pub struct`    | Creates a Python type backed by the V struct                |
+| `@[vc_class]`   | `pub struct`    | Creates a Python type backed by the V struct; `@[vc_class: 'init']` builds it from its fields |
 | `@[vc_method]` | methods         | Adds the method to the class of its receiver                |
 | `@[vc_field]`   | struct fields   | Exposes the field as an attribute of the instance           |
 | `@[vc_buffer]`  | struct fields   | A persistent native `[]T` of scalars, freed at dealloc      |
@@ -512,6 +512,31 @@ takes only `m`). Because both sets travel in the one Python signature the subcla
 they need distinct names; a shared name is reported.
 
 Docstrings reach `__doc__` on the type, its methods, its properties and its fields.
+
+### Constructors from the fields
+
+`@[vc_class: 'init']` writes the constructor, the way a dataclass does: each exposed field
+is a parameter, by position or by name, defaulting to its zero value.
+
+<!-- readme-test: skip -->
+```v
+@[vc_class: 'init']
+pub struct Point3 {
+mut:
+	@[vc_field] x     f64
+	@[vc_field] y     f64
+	@[vc_field] label string
+}
+```
+
+```python
+>>> p = m.Point3(1.0, label="origin"); (p.x, p.y, p.label)
+(1.0, 0.0, 'origin')
+>>> inspect.signature(m.Point3)
+<Signature (x=0.0, y=0.0, label='')>
+```
+
+A class with its own `new_*` keeps it; having both is an error.
 
 ### Strings, lists and maps in a class
 
