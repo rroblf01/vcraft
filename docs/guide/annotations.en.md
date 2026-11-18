@@ -114,6 +114,15 @@ calling thread with V's collector first; a thread started with `spawn` is regist
 A thread a C library created and calls back on is not: call `vcraft.gc_enter()` at the top
 of the callback before allocating, and `vcraft.with_gil` before touching Python.
 
+## Parallel loops: `vcraft.par_range`
+
+`vcraft.par_range(n, fn [inputs, mut out] (start int, end int) { ... })` splits `0 .. n`
+into one chunk per core and runs the closure on each chunk in parallel, like rayon's
+`par_iter`. Allocate the result first and let each chunk write its own part. Workers must
+not touch Python objects; a panic in one becomes a RuntimeError in the caller. Combine it
+with `@[vc_nogil]` so other Python threads keep running. `par_range_with(n, workers, body)`
+sets the number of threads.
+
 ## Next
 
 - [Type marshalling](types.md)

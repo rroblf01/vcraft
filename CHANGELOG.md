@@ -14,6 +14,10 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   is opened or updated when they fail, so an upstream break is known while it is small.
   The README's Stability section now states the V pin policy: a pin move is a minor
   release, never a patch.
+- **`vcraft.par_range(n, body)`, parallel loops** in the spirit of rayon: `0 .. n` split
+  into one chunk per core, each run on its own thread, a worker's panic raised again in
+  the caller as a RuntimeError. A polynomial over 2 million points kept 8.2 of 12 cores
+  busy. `par_range_with` fixes the thread count.
 - **Arrow columns in and out** (`vcraft.ArrowArray`, `vcraft.ArrowOut`), over the Arrow
   PyCapsule interface pyarrow, polars, pandas and DuckDB share: numeric columns alias in
   place, strings in all three Arrow layouts read, nulls through `is_null`, and results

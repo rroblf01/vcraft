@@ -116,6 +116,15 @@ punto de entrada generado registra antes el hilo con el colector de V; un hilo l
 registrado: llama a `vcraft.gc_enter()` al principio del callback antes de asignar, y a
 `vcraft.with_gil` antes de tocar Python.
 
+## Bucles paralelos: `vcraft.par_range`
+
+`vcraft.par_range(n, fn [entradas, mut out] (start int, end int) { ... })` divide `0 .. n`
+en un trozo por núcleo y ejecuta el closure sobre cada trozo en paralelo, como el
+`par_iter` de rayon. Reserva antes el resultado y deja que cada trozo escriba su parte. Los
+hilos trabajadores no deben tocar objetos de Python; un pánico en uno se convierte en un
+RuntimeError en quien llama. Combínalo con `@[vc_nogil]` para que los demás hilos de Python
+sigan funcionando. `par_range_with(n, workers, body)` fija el número de hilos.
+
 ## Siguiente
 
 - [Tipos](types.md)

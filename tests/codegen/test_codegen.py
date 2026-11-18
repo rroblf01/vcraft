@@ -107,7 +107,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 69,
+            glue.count("add_function_owned") == 71,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -1578,6 +1578,22 @@ def main() -> int:
     for _ in range(2000):
         h.arrow_sum(h.arrow_range(100))
     t.equal("columns survive many round trips", h.arrow_sum(h.arrow_range(100)), 4950.0)
+
+    print("par_range")
+    import time as _time
+    points = [float(i % 13) for i in range(20000)]
+    def serial(xs, rounds):
+        out = []
+        for x in xs:
+            acc = 0.0
+            for r in range(rounds):
+                acc = acc * 0.5 + x * (r % 7)
+            out.append(acc)
+        return out
+    t.equal("par_range computes every chunk", h.par_poly(points[:500], 50), serial(points[:500], 50))
+    t.raises("a panic in a worker becomes a RuntimeError in the caller", RuntimeError,
+             "failed", lambda: h.par_fail(1000))
+    t.equal("and the extension still works after it", h.par_poly([1.0], 3), serial([1.0], 3))
 
     print("call_py")
     t.equal("call_py passes PyObj arguments", h.apply_py(lambda v: v * 3, 7), 21)

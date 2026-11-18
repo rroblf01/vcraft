@@ -1195,6 +1195,32 @@ array([[ 0.,  2.,  4.],
        [ 6.,  8., 10.]])
 ```
 
+### Parallel loops
+
+`vcraft.par_range(n, body)` is the `rayon` of a vcraft extension: it splits `0 .. n` into
+one chunk per core and runs `body(start, end)` on each in parallel, returning when all are
+done. Each chunk writes its own part of a result allocated beforehand.
+
+<!-- readme-test: skip -->
+```v
+@[vc_fn]
+@[vc_nogil]
+pub fn squares(xs []f64) []f64 {
+	mut out := []f64{len: xs.len}
+	vcraft.par_range(xs.len, fn [xs, mut out] (start int, end int) {
+		for i in start .. end {
+			out[i] = xs[i] * xs[i]
+		}
+	})
+	return out
+}
+```
+
+The workers run V code only, never Python objects. A panic in one is raised again in the
+caller once all have finished, as a RuntimeError. `@[vc_nogil]` lets other Python threads
+run meanwhile; `par_range_with(n, workers, body)` fixes the thread count. On a 12-core
+machine a polynomial over 2 million points kept 8.2 cores busy on average.
+
 ### Arrow columns: pyarrow, polars, pandas
 
 A `vcraft.ArrowArray` parameter takes any Arrow column -- a pyarrow array, a polars

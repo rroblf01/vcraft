@@ -1023,6 +1023,34 @@ pub fn arrow_upper(col vcraft.ArrowArray) !vcraft.ArrowOut {
 	return vcraft.arrow_strings(out)
 }
 
+// par_poly evaluates a polynomial at each point, one chunk of the points per core.
+@[vc_fn]
+@[vc_nogil]
+pub fn par_poly(xs []f64, rounds int) []f64 {
+	mut out := []f64{len: xs.len}
+	vcraft.par_range(xs.len, fn [xs, mut out, rounds] (start int, end int) {
+		for i in start .. end {
+			mut acc := 0.0
+			for r in 0 .. rounds {
+				acc = acc * 0.5 + xs[i] * f64(r % 7)
+			}
+			out[i] = acc
+		}
+	})
+	return out
+}
+
+// par_fail panics in one of its chunks.
+@[vc_fn]
+pub fn par_fail(n int) int {
+	vcraft.par_range(n, fn (start int, end int) {
+		if start > 0 {
+			panic('chunk starting at ${start} failed')
+		}
+	})
+	return n
+}
+
 // count_all takes only *args, so its glue reads no fixed parameter.
 @[vc_fn]
 pub fn count_all(xs ...int) int {

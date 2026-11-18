@@ -247,6 +247,12 @@ def arrow_names(names: Sequence[str]) -> Any:
 def arrow_upper(col: Any) -> Any:
     """arrow_upper upper-cases a utf8 Arrow column into a new one."""
 
+def par_poly(xs: Sequence[float], rounds: int) -> list[float]:
+    """par_poly evaluates a polynomial at each point, one chunk of the points per core."""
+
+def par_fail(n: int) -> int:
+    """par_fail panics in one of its chunks."""
+
 def count_all(*xs: int) -> int:
     """count_all takes only *args, so its glue reads no fixed parameter."""
 
