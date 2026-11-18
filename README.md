@@ -246,9 +246,11 @@ that immediately precedes each declaration. Any name works; these are the ones
 | `@[vc_iter]`    | methods         | Makes the instance its own iterator (`__iter__`)            |
 | `@[vc_next]`    | methods         | Produces one item per call (`__next__`)                     |
 
-Names are taken from the V declaration, verbatim. Doc comments become `__doc__`, the
-marshalled signature becomes `__text_signature__`, and the same source also produces
-a `.pyi` stub, so `help()` and a type checker see the same thing.
+Names are taken from the V declaration, verbatim. Every function, method and
+constructor gets a `__text_signature__`, so `inspect.signature()`, `help()`, Jupyter's
+`?` and Sphinx see its parameters and defaults; `__doc__` holds the typed signature
+followed by the doc comment, and the same source also produces a `.pyi` stub with the
+types, so a type checker sees them too.
 
 The prefix is part of the name rather than a namespace because V rejects two
 annotations sharing one: `@[vc.fn]` and `@[vc.raw]` on the same declaration is

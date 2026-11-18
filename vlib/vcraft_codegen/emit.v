@@ -335,7 +335,7 @@ pub fn glue_module_body(p Project) string {
 		}
 		w.write_string('\tg_vc_module.add_function_owned(' + vstring_literal(f.py_name) +
 			', voidptr(' + f.trampoline + '), ' + flags + ',\n')
-		w.write_string('\t\t${vstring_literal(python_signature(f))})\n')
+		w.write_string('\t\t${vstring_literal(function_doc(f))})\n')
 	}
 	if p.classes.len > 0 {
 		w.write_string("\tg_vc_module.add_function_owned('_vcraft_rebuild', voidptr(vcraft_generated__rebuild), vcraft.meth_fastcall_keywords,\n")
@@ -564,7 +564,7 @@ pub fn render_class_exec(p Project, c Class) string {
 	// The state lives inside the object, so the type's `tp_basicsize` is the header plus
 	// this class's state struct; the generator knows the size and passes it here.
 	w.write_string('\t\tint(${c.size_fn}()),\n')
-	w.write_string('\t\t' + vstring_literal(c.doc) + ',\n')
+	w.write_string('\t\t' + vstring_literal(class_doc(c)) + ',\n')
 	w.write_string('\t\tvoidptr(' + c.ctor + '),\n')
 	// `tp_init`, when the class declares an `@[vc_init]` method.
 	init_arg := if c.init_fn.len > 0 { 'voidptr(' + c.init_fn + ')' } else { 'unsafe { nil }' }
@@ -2360,7 +2360,90 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 
 // python_signature renders `name(a: int, b: int) -> int` for `__text_signature__`.
 pub fn python_signature(f Func) string {
-	return '${f.name}(${param_list(f)}) -> ${result_annotation(f)}'
+	name := if f.py_name.len > 0 { f.py_name } else { f.name }
+	return '${name}(${param_list(f)}) -> ${result_annotation(f)}'
+}
+
+// text_signature is the signature `inspect.signature()` reads, in the form CPython takes
+// from the start of a builtin's docstring: names and defaults only, because `inspect`
+// refuses annotations there ("Annotations are not currently supported"). `first` is the
+// receiver CPython strips -- `$module`, `$self`, `$type` -- or empty for a staticmethod.
+// Empty when a default is not a literal `inspect` can evaluate, in which case the
+// function simply keeps no `__text_signature__`, as before.
+pub fn text_signature(name string, f Func, first string) string {
+	mut parts := []string{}
+	if first.len > 0 {
+		parts << first
+	}
+	mut tail := []string{}
+	for param in f.params {
+		if param.variadic() {
+			tail.insert(0, '*${param.name}')
+			continue
+		}
+		if param.collects_kwargs {
+			tail << '**${param.name}'
+			continue
+		}
+		default := python_default(param)
+		if default.len > 0 && !is_python_literal(default) {
+			return ''
+		}
+		parts << if default.len > 0 { '${param.name}=${default}' } else { param.name }
+	}
+	parts << tail
+	return '${name}(${parts.join(', ')})'
+}
+
+// is_python_literal reports whether a default renders as something `inspect` evaluates:
+// a number, a string, True, False or None.
+fn is_python_literal(s string) bool {
+	if s in ['True', 'False', 'None'] || s.starts_with('"') {
+		return true
+	}
+	mut body := s.trim_left('-+')
+	return body.len > 0 && body.bytes().all(it.is_digit() || it in [`.`, `e`, `E`, `_`, `-`, `+`, `x`, `o`, `b`]
+		|| (it >= `a` && it <= `f`) || (it >= `A` && it <= `F`))
+}
+
+// documented joins a text signature, the typed signature and the doc comment into the
+// docstring CPython splits: `__text_signature__` before the `--` line, `__doc__` after.
+// The typed line stays in `__doc__` so `help()` still shows the types.
+pub fn documented(sig string, typed string, doc string) string {
+	body := if doc.len > 0 { '${typed}\n\n${doc}' } else { typed }
+	return if sig.len > 0 { '${sig}\n--\n\n${body}' } else { body }
+}
+
+// function_doc is a module function's docstring.
+pub fn function_doc(f Func) string {
+	name := if f.py_name.len > 0 { f.py_name } else { f.name }
+	return documented(text_signature(name, f, '\$module'), python_signature(f), f.doc)
+}
+
+// method_doc is a method's docstring: the receiver is `$self`, `$type` for a classmethod,
+// and absent for a staticmethod.
+pub fn method_doc(m Func) string {
+	name := if m.py_name.len > 0 { m.py_name } else { m.name }
+	first := if m.static { '' } else if m.classmethod { '\$type' } else { '\$self' }
+	mut typed_params := m
+	return documented(text_signature(name, m, first), python_signature(typed_params), m.doc)
+}
+
+// class_doc is a class's docstring, with the constructor's signature in front so
+// `inspect.signature(Class)` works. A class Python cannot construct keeps its plain doc.
+pub fn class_doc(c Class) string {
+	if c.ctor_fn.len == 0 && c.newstate_params.len == 0 {
+		return c.doc
+	}
+	ctor := Func{
+		params: c.newstate_params
+	}
+	sig := text_signature(c.py_name, ctor, '')
+	if sig.len == 0 {
+		return c.doc
+	}
+	typed := '${c.py_name}(${param_list(ctor)})'
+	return '${sig}\n--\n\n' + if c.doc.len > 0 { '${typed}\n\n${c.doc}' } else { typed }
 }
 
 // result_annotation is the Python type name for a function's result. A

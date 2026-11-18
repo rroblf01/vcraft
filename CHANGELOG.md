@@ -190,6 +190,12 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **`inspect.signature()` failed on every function, method and class, and a function's doc
+  comment was missing from its `__doc__`** (it held only the typed signature). Docstrings
+  now start with a signature CPython parses into `__text_signature__` (names and defaults;
+  `inspect` refuses annotations there), and `__doc__` is the typed signature followed by
+  the doc comment. `help()`, Jupyter's `?`, Sphinx autodoc and IDE parameter hints work.
+
 - **Free-threaded: threads calling into one instance could lose updates.** Eight threads
   calling `doc.feed(...)` on a shared object lost writes, silently. A method with a `mut`
   receiver now holds the object's critical section (`PyCriticalSection`) for the call, so

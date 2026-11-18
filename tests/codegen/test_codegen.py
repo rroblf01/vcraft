@@ -56,6 +56,15 @@ class Suite:
             self.check(label, False, f"returned {result!r}, no exception")
 
 
+def _has_signature(f) -> bool:
+    import inspect
+    try:
+        inspect.signature(f)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def build() -> None:
     print("building the example")
     vcraft_build.build_example("hello", PACKAGE)
@@ -93,8 +102,10 @@ def main() -> int:
     print("docstrings and signatures")
     t.check("module docstring is a literal",
             "vcraft.new_module('hello_native', '" in glue)
-    t.check("signature text emitted", "'add(a: int, b: int) -> int'" in glue)
-    t.check("void signature says None", "'noop() -> None'" in glue)
+    t.check("signature text emitted",
+            "'add($module, a, b)\\n--\\n\\nadd(a: int, b: int) -> int" in glue,
+            glue[glue.find("'add("):][:120])
+    t.check("void signature says None", "noop() -> None" in glue)
     stubs = STUBS.read_text() if STUBS.exists() else ""
     t.check("stub has add", "def add(a: int, b: int) -> int: ..." in stubs)
     t.check("stub has the docstring", "Adds two integers" in stubs)
@@ -116,7 +127,17 @@ def main() -> int:
     t.equal("total over a list", h.total([1, 2, 3, 4]), 10)
     t.equal("total over a tuple", h.total((5, 5)), 10)
     t.equal("total of empty", h.total([]), 0)
-    t.equal("text signature", h.add.__doc__, "add(a: int, b: int) -> int")
+    import inspect
+    t.equal("inspect.signature reads a function", str(inspect.signature(h.add)), "(a, b)")
+    t.equal("__doc__ is the typed signature, then the doc comment", h.add.__doc__,
+            "add(a: int, b: int) -> int\n\nAdds two integers and returns the sum.")
+    t.equal("defaults, *args and **kwargs reach inspect",
+            [str(inspect.signature(f)) for f in (h.sum_all, h.tag)],
+            ["(base, *xs)", "(name, **opts)"])
+    no_signature = [n for n in dir(h) if callable(getattr(h, n)) and not n.startswith("_")
+                    and not isinstance(getattr(h, n), type)
+                    and not _has_signature(getattr(h, n))]
+    t.check("every function has a signature", not no_signature, str(no_signature))
 
     print("sequence arguments")
     t.equal("an i64 sequence", h.total64([2**40, 1]), 2**40 + 1)
@@ -201,7 +222,7 @@ def main() -> int:
     t.raises("a non-number is rejected as a complex", TypeError, "expected complex",
              lambda: h.scale_complex("x", 1))
     t.check("the signature names complex",
-            h.scale_complex.__doc__ == "scale_complex(z: complex, k: float) -> complex",
+            h.scale_complex.__doc__.startswith("scale_complex(z: complex, k: float) -> complex"),
             h.scale_complex.__doc__)
 
     print("i64 fields")
@@ -676,11 +697,13 @@ def main() -> int:
             sys.getrefcount(raw_sentinel) - raw_before)
 
     print("class docstrings")
-    t.check("class docstring", h.Counter.__doc__.startswith("A counter with state."),
-            h.Counter.__doc__)
+    t.check("class docstring", "A counter with state." in h.Counter.__doc__, h.Counter.__doc__)
     t.check("method docstring",
-            h.Counter.increment.__doc__ == "increment adds step to value and returns the new total.",
+            h.Counter.increment.__doc__.endswith("increment adds step to value and returns the new total."),
             h.Counter.increment.__doc__)
+    t.equal("inspect.signature reads a method and a constructor",
+            [str(inspect.signature(h.Counter.increment)), str(inspect.signature(h.Counter))],
+            ["(self, /)", "()"])
     t.check("property docstring",
             h.Counter.is_zero.__doc__ == "is_zero reports whether the value is still zero.",
             h.Counter.is_zero.__doc__)

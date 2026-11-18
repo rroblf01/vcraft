@@ -348,7 +348,7 @@ fn emit_class_methods(c Class) string {
 		w.write_string("\t\t\tname:  voidptr(c'${if m.py_name.len > 0 { m.py_name } else { m.name } }')\n")
 		w.write_string("\t\t\tmeth:  voidptr(${m.trampoline})\n")
 		w.write_string('\t\t\tflags: ${method_flags(m)}\n')
-		w.write_string('\t\t\tdoc:   ' + doc_pointer(m.doc) + '\n')
+		w.write_string('\t\t\tdoc:   ' + doc_pointer(method_doc(m)) + '\n')
 		w.write_string('\t\t},\n')
 	}
 	w.write_string('\t\tvcraft.PyMethodDef{\n')
