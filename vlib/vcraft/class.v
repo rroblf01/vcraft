@@ -125,6 +125,58 @@ pub fn instance_storage(obj voidptr) voidptr {
 	return storage_of(obj)
 }
 
+fn C.vpy_gc_box(size usize) voidptr
+fn C.vpy_gc_unbox(block voidptr)
+fn C.vpy_mark_boxed(typ voidptr)
+fn C.vpy_is_boxed(typ voidptr) int
+
+// A class whose fields hold V-managed memory (a string, an array, a map) cannot keep its
+// state inside the object: CPython allocated that memory and V's collector does not scan
+// it, so a string stored there could be freed while the instance still used it. Such a
+// class -- `boxed` -- keeps its state in a block the collector scans, and the object holds
+// only the pointer. The generated glue reaches the state through `boxed_storage`.
+
+// mark_boxed_type registers a type whose instances are boxed, for the readers of `&T`
+// arguments and results that only have the type to go by.
+pub fn mark_boxed_type(typ voidptr) {
+	C.vpy_mark_boxed(typ)
+}
+
+// boxed_storage returns the state block of an instance of a boxed class.
+@[inline]
+pub fn boxed_storage(obj voidptr) voidptr {
+	unsafe {
+		return *(&voidptr(storage_of(obj)))
+	}
+}
+
+// box_new gives a fresh instance of a boxed class its zeroed state block, once.
+pub fn box_new(obj voidptr, size usize) {
+	unsafe {
+		slot := &voidptr(storage_of(obj))
+		if *slot == nil {
+			*slot = C.vpy_gc_box(size)
+		}
+	}
+}
+
+// box_free releases an instance's state block, at dealloc.
+pub fn box_free(obj voidptr) {
+	unsafe {
+		slot := &voidptr(storage_of(obj))
+		C.vpy_gc_unbox(*slot)
+		*slot = nil
+	}
+}
+
+// state_start is where the state of `obj`, an instance of `typ` or of a subclass, begins.
+fn state_start(obj voidptr, typ voidptr) voidptr {
+	if C.vpy_is_boxed(typ) != 0 {
+		return boxed_storage(obj)
+	}
+	return storage_of(obj)
+}
+
 // instance_fail releases an instance whose constructor failed, and returns the null
 // pointer a `tp_new` must return.
 //
@@ -909,7 +961,7 @@ pub fn from_py_instance(obj voidptr, target voidptr, target_name string, offset 
 		return unsafe { nil }
 	}
 	unsafe {
-		return voidptr(&u8(storage_of(obj)) + offset)
+		return voidptr(&u8(state_start(obj, target)) + offset)
 	}
 }
 
@@ -931,7 +983,7 @@ pub fn instance_ref(ptr voidptr, target voidptr, target_name string, offset usiz
 		}
 		if is_instance_of(candidate, target) {
 			unsafe {
-				if voidptr(&u8(storage_of(candidate)) + offset) == ptr {
+				if voidptr(&u8(state_start(candidate, target)) + offset) == ptr {
 					return borrow(candidate).new_ref().ptr
 				}
 			}

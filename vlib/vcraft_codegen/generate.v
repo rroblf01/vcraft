@@ -58,14 +58,15 @@ pub fn generate(opt Options) Generated {
 		report_c_int_widths(file_lines, path, mut p)
 	}
 	link_classes(mut p)
+	mark_boxed(mut p)
 
 	return Generated{
 		glue_path:    os.join_path(src, '_vcraft_generated.v')
-		glue:         lock_mutators(locate_panics(skip_recover_on_return(enter_collector(emit_glue(p))),
-			p, opt.project_root), p)
+		glue:         own_stored_strings(lock_mutators(locate_panics(skip_recover_on_return(enter_collector(emit_glue(p))),
+			p, opt.project_root), p), p)
 		stub_path:    os.join_path(opt.project_root, opt.stubs_dir, opt.package + '.pyi')
 		stub:         emit_stubs(p)
-		diagnostics: p.diagnostics
+		diagnostics: unique_diagnostics(p.diagnostics)
 	}
 }
 
@@ -302,6 +303,89 @@ fn locate_panics(glue string, p Project, root string) string {
 	return out.join('\n') + '\n'
 }
 
+// owned_copy is an expression for a copy of `value`, of type `v_type`, that owns all of
+// its string bytes, or '' when the type holds no string. A `string` argument points into
+// the Python `str` it came from and is valid for the call only; one stored into a field
+// of a boxed class has to own its bytes, or it dangles once Python frees the `str`.
+pub fn owned_copy(value string, v_type string) string {
+	t := v_type.trim_space()
+	if t == 'string' {
+		return '${value}.clone()'
+	}
+	if t == '[]string' {
+		return '${value}.map(it.clone())'
+	}
+	if t.starts_with('map[') && t.contains('string') {
+		key, val := map_parts(t)
+		k := if key.trim_space() == 'string' { 'vc_k.clone()' } else { 'vc_k' }
+		v := if val.trim_space() == 'string' { 'vc_v.clone()' } else { 'vc_v' }
+		return '(fn (m ${t}) ${t} {\n\t\tmut o := ${t}{}\n\t\tfor vc_k, vc_v in m {\n\t\t\to[${k}] = ${v}\n\t\t}\n\t\treturn o\n\t}(${value}))'
+	}
+	return ''
+}
+
+// own_stored_strings makes the calls that may store their arguments -- the constructor
+// of a boxed class and its methods with a `mut` receiver -- pass copies of their string
+// arguments that own their bytes (see `owned_copy`), so a field assigned from a parameter
+// stays valid after the call. Done over the finished text, on the line that calls the
+// user's function, like the other post-passes.
+fn own_stored_strings(glue string, p Project) string {
+	mut targets := map[string]string{}
+	mut types := map[string][]string{}
+	for c in p.classes {
+		if !c.boxed {
+			continue
+		}
+		if c.newstate_params.any(owned_copy('x', it.v_type) != '') {
+			targets['vcraft_generated__new_${c.key}'] = '${c.newstate_fn}('
+			types['vcraft_generated__new_${c.key}'] = c.newstate_params.map(it.v_type)
+		}
+		for m in c.methods {
+			if m.mut_receiver && m.trampoline.len > 0 && m.params.any(owned_copy('x', it.v_type) != '') {
+				targets[m.trampoline] = '.${m.name}('
+				types[m.trampoline] = m.params.map(it.v_type)
+			}
+		}
+	}
+	if targets.len == 0 {
+		return glue
+	}
+	mut out := []string{cap: glue.len / 32}
+	mut current := ''
+	for line in glue.split_into_lines() {
+		if line.starts_with('fn ') {
+			current = line[3..].all_before('(')
+		}
+		call := targets[current] or { '' }
+		if call.len == 0 || !line.contains(call) {
+			out << line
+			continue
+		}
+		start := line.index(call) or { 0 } + call.len
+		end := line.last_index(")") or { line.len }
+		if end < start {
+			out << line
+			continue
+		}
+		param_types := types[current]
+		mut args := line[start..end].split(', ')
+		for i, a in args {
+			name := a.trim_space()
+			if name.starts_with('arg') && name[3..].is_int() {
+				index := name[3..].int()
+				if index < param_types.len {
+					copy := owned_copy(name, param_types[index])
+					if copy.len > 0 {
+						args[i] = copy
+					}
+				}
+			}
+		}
+		out << line[..start] + args.join(', ') + line[end..]
+	}
+	return out.join('\n') + '\n'
+}
+
 // lock_mutators makes every method that changes its instance -- a `(mut x T)` receiver --
 // hold the object's critical section for the call, so on a free-threaded interpreter two
 // threads calling into one instance cannot interleave their updates (`counter.add(1)` from
@@ -334,6 +418,22 @@ fn lock_mutators(glue string, p Project) string {
 		}
 	}
 	return out.join('\n') + '\n'
+}
+
+// unique_diagnostics drops a diagnostic that repeats an earlier one word for word at the
+// same place: a check that runs once per pass would otherwise print it once per pass.
+fn unique_diagnostics(ds []Diagnostic) []Diagnostic {
+	mut seen := map[string]bool{}
+	mut out := []Diagnostic{cap: ds.len}
+	for d in ds {
+		key := '${d.file}:${d.line}:${d.column}:${d.message}'
+		if key in seen {
+			continue
+		}
+		seen[key] = true
+		out << d
+	}
+	return out
 }
 
 // panic_location records where `f` is declared, keyed by its trampoline, in the form

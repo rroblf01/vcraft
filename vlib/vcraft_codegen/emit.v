@@ -563,7 +563,8 @@ pub fn render_class_exec(p Project, c Class) string {
 	w.write_string(vstring_literal(c.qualified) + ',\n')
 	// The state lives inside the object, so the type's `tp_basicsize` is the header plus
 	// this class's state struct; the generator knows the size and passes it here.
-	w.write_string('\t\tint(${c.size_fn}()),\n')
+	// A boxed class keeps only a pointer to its state in the object (see `Class.boxed`).
+	w.write_string(if c.boxed { '\t\tint(sizeof(voidptr)),\n' } else { '\t\tint(${c.size_fn}()),\n' })
 	w.write_string('\t\t' + vstring_literal(class_doc(c)) + ',\n')
 	w.write_string('\t\tvoidptr(' + c.ctor + '),\n')
 	// `tp_init`, when the class declares an `@[vc_init]` method.
@@ -673,6 +674,9 @@ pub fn render_class_exec(p Project, c Class) string {
 		c.name) + ')\n')
 	w.write_string('\t\treturn -1\n')
 	w.write_string('\t}\n')
+	if c.boxed {
+		w.write_string('\tvcraft.mark_boxed_type(' + c.ctype + '.ptr)\n')
+	}
 	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.py_name) + ', ' +
 		c.ctype + ')\n')
 	// `__match_args__`: the exposed fields in order, a base's before the class's own, so

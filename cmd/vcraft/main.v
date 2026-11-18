@@ -297,7 +297,7 @@ fn cmd_new(args Args) {
 	println('  python -m venv .venv && source .venv/bin/activate')
 	println('  vcraft develop          # build and install into the active virtualenv')
 	println('  python main.py          # run the example in main.py')
-	println('  python -m unittest      # run the tests in tests/')
+	println('  vcraft test             # rebuild if needed, then run the tests in tests/')
 }
 
 // cmd_init adds vcraft to an existing Python project: a manifest, a V source, the build

@@ -527,6 +527,12 @@ pub mut:
 	storage string
 	fields  []Field
 	methods []Func
+	// boxed keeps the instance state in a block V's collector scans (GC_MALLOC_UNCOLLECTABLE)
+	// and stores only a pointer to it in the object, because a field holds V-managed memory
+	// -- a string, array or map -- that the collector would not see inside CPython's
+	// allocation and could free. Classes with only scalar fields keep the state inline.
+	// Uniform across an inheritance tree, since a base's methods read a subclass's state.
+	boxed bool
 	// ctor_fn is the user's `new_*` function, run by `tp_new`. Empty when the class
 	// has none, in which case instances can only be built from V.
 	ctor_fn string
@@ -1022,6 +1028,10 @@ pub fn struct_info(v_type string) ?StructInfo {
 
 pub struct Project {
 pub mut:
+	// gc_structs names the `@[vc_class]` structs with a field V's collector has to see --
+	// a string, an array, a map, a pointer -- whether or not it is exposed. Their whole
+	// inheritance tree keeps its state in a collector-scanned block (see `Class.boxed`).
+	gc_structs map[string]bool
 	// errors are the `@[vc_error]` types found, in declaration order.
 	errors []ErrorType
 	// module is the V module the glue will be compiled into. It is the user's own
@@ -1110,7 +1120,12 @@ pub fn (d Diagnostic) render() string {
 	lines := os.read_lines(d.file) or { []string{} }
 	if d.line >= 1 && d.line <= lines.len {
 		raw := lines[d.line - 1]
-		col := if d.column >= 1 && d.column <= raw.len + 1 { d.column - 1 } else { 0 }
+		mut col := if d.column >= 1 && d.column <= raw.len + 1 { d.column - 1 } else { 0 }
+		// A column on the indentation (a field reported at column 1) marks the code, not
+		// the tabs before it.
+		for col < raw.len && (raw[col] == ` ` || raw[col] == `\t`) {
+			col++
+		}
 		shown := raw.replace('\t', '    ')
 		lead := raw[..col].replace('\t', '    ').len
 		rest := raw[col..].trim_right(' \t{')

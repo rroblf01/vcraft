@@ -6,10 +6,14 @@ reserva y un método no sigue ningún puntero.
 
 ## Campos
 
-`@[vc_field]` expone un campo como atributo de lectura/escritura. Los campos deben ser
-escalares (o una referencia a instancia, ver abajo): un `string` o un `[]T` en memoria
-propiedad de CPython sería un puntero que el recolector de V no ve. Los strings van detrás
-de métodos, que marshalling a/desde `str`.
+`@[vc_field]` expone un campo como atributo de lectura/escritura, de cualquier tipo que
+vcraft convierta: escalares, `string`, listas, mapas, structs. Una clase con solo campos
+escalares guarda su estado dentro del objeto. Una con un campo que gestiona el recolector
+de V -- un `string`, un `[]T`, un mapa, expuesto o no -- lo guarda en un bloque que el
+recolector recorre, al que apunta el objeto y que se libera en el dealloc, así que el
+string no se puede liberar mientras Python tenga la instancia. Un string que guardan un
+constructor, un método `mut` o un setter se copia, porque lo que pasa Python es prestado
+durante la llamada.
 
 ```v
 @[vc_class]

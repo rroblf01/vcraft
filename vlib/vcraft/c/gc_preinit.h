@@ -372,7 +372,27 @@ static void vpy_gc_unpin(void *root) {
 		GC_FREE(root);
 	}
 }
+// vpy_gc_box allocates the state block of a class whose fields hold V-managed memory: a
+// zeroed block the collector scans for pointers but never frees on its own, so a string
+// stored in a field stays alive exactly as long as the instance. `vpy_gc_unbox` frees it.
+static void *vpy_gc_box(size_t size) {
+	return GC_MALLOC_UNCOLLECTABLE(size > 0 ? size : 1);
+}
+
+static void vpy_gc_unbox(void *block) {
+	if (block != NULL) {
+		GC_FREE(block);
+	}
+}
 #else
+static void *vpy_gc_box(size_t size) {
+	return calloc(1, size > 0 ? size : 1);
+}
+
+static void vpy_gc_unbox(void *block) {
+	free(block);
+}
+
 static void vpy_gc_hook_python(void) {}
 static void *vpy_gc_pin(void *ptr) {
 	(void)ptr;

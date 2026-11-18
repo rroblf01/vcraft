@@ -224,13 +224,23 @@ fn emit_field_accessors(p Project, c Class) string {
 			w.write_string('}\n\n')
 			continue
 		}
-		w.write_string('\treturn ' + boxed_expr(lookup(f.v_type), 'state.' +
-			c.field_access(f.name)) + '.ptr\n')
+		// A scalar has a direct boxer; anything else (a string, a list, a map, a struct) goes
+		// through the same conversion a function result does.
+		getter := if f.is_scalar() {
+			boxed_expr(lookup(f.v_type), 'state.' + c.field_access(f.name))
+		} else {
+			box_value_expr('state.' + c.field_access(f.name), f.v_type)
+		}
+		w.write_string('\treturn ' + getter + '.ptr\n')
 		w.write_string('}\n\n')
 		// The converted value is written through the field's address rather than
 		// assigned, because assigning would need the field itself to be `mut`, and a
 		// plain `@[vc_field]` does not have to be.
-		conv := unbox_expr(lookup(f.v_type), 'value', f.v_type)
+		conv := if f.is_scalar() {
+			unbox_expr(lookup(f.v_type), 'value', f.v_type)
+		} else {
+			'${reader_fn(f.v_type)}(vcraft.borrow(value), ${vstring_literal(f.py_name)})'
+		}
 		// No `mut` on the parameters: V wraps a C callback whose parameters are `mut`,
 		// and the wrapper shifts the incoming arguments.
 		//
@@ -246,6 +256,11 @@ fn emit_field_accessors(p Project, c Class) string {
 		// error here would leave two set at once, which CPython later reports as an
 		// unrelated SystemError.
 		w.write_string('\tmut field := ' + conv + ' or { return -1 }\n')
+		// A string read from Python points into the `str`; the field outlives it.
+		copy := owned_copy('field', f.v_type)
+		if copy.len > 0 {
+			w.write_string('\tfield = ${copy}\n')
+		}
 		w.write_string(emit_state_pointer(c))
 		w.write_string(emit_enter_state(p, c))
 		// Only the field is copied, so the size is the field's, not the struct's.
@@ -938,6 +953,11 @@ fn emit_class_new(c Class) string {
 	}
 	w.write_string('\tinstance := vcraft.type_alloc(type_obj)\n')
 	w.write_string('\tif instance == unsafe { nil } {\n\t\treturn vcraft.no_memory()\n\t}\n')
+	// A boxed class gets its zeroed state block first, so every later path -- no
+	// constructor, a failing one, a panic -- finds a block, and dealloc frees it.
+	if c.boxed {
+		w.write_string('\tvcraft.box_new(instance, ${c.size_fn}())\n')
+	}
 	// A class whose whole state is its own struct can stop here when it has no
 	// constructor: `PyType_GenericAlloc` zeroed the state, which is the V zero value. A
 	// subclass cannot: its state includes the base's, so the base's constructor still has
@@ -948,7 +968,7 @@ fn emit_class_new(c Class) string {
 	}
 	// The state is part of the object; `storage_of` names it so the readers below and
 	// the V constructor write into the same bytes.
-	w.write_string('\tstorage := vcraft.storage_of(instance)\n')
+	w.write_string('\tstorage := ${c.state_ptr_expr('instance')}\n')
 	// `tp_new` owns the object: a panic on this path must release it, or the object
 	// `tp_alloc` handed over leaks when nil travels back to CPython. `instance_fail`
 	// decrefs it, which runs the generated dealloc and frees whatever the constructor
@@ -968,6 +988,12 @@ fn emit_class_new(c Class) string {
 	return w.str()
 }
 
+// state_ptr_expr is the expression for where the state of the instance `obj` begins:
+// inside the object, or in the collector-scanned block a boxed class points at.
+pub fn (c Class) state_ptr_expr(obj string) string {
+	return if c.boxed { 'vcraft.boxed_storage(${obj})' } else { 'vcraft.instance_storage(${obj})' }
+}
+
 // emit_state_pointer renders `state`, a pointer to the instance's inline state.
 //
 // Methods, accessors and slots work on the state in place, as PyO3 does with the cell
@@ -978,7 +1004,7 @@ fn emit_class_new(c Class) string {
 // The state lives inside the object, so the pointer is never null and there is no
 // failure branch to guard against: `instance_storage` is `obj` plus the header.
 fn emit_state_pointer(c Class) string {
-	return '\tmut state := unsafe { &${c.state_type()}(vcraft.instance_storage(self)) }\n'
+	return '\tmut state := unsafe { &${c.state_type()}(${c.state_ptr_expr('self')}) }\n'
 }
 
 // emit_enter_state publishes the state block and every generation above it, so a method
@@ -1059,6 +1085,11 @@ fn emit_class_dealloc(p Project, c Class) string {
 	refs := c.ref_fields()
 	bufs := c.buffer_fields()
 	handles := c.handle_fields()
+	// An instance whose construction failed before its block was made has nothing to
+	// release; the CPython half is all there is.
+	if c.boxed {
+		w.write_string('\tif vcraft.boxed_storage(self) == unsafe { nil } {\n\t\treturn vcraft.class_dealloc(self)\n\t}\n')
+	}
 	if refs.len > 0 || bufs.len > 0 || handles.len > 0 {
 		w.write_string(emit_state_pointer(c))
 		if refs.len > 0 {
@@ -1074,6 +1105,9 @@ fn emit_class_dealloc(p Project, c Class) string {
 		for f in handles {
 			w.write_string('\tstate.' + f.path + '.release()\n')
 		}
+	}
+	if c.boxed {
+		w.write_string('\tvcraft.box_free(self)\n')
 	}
 	w.write_string('\treturn vcraft.class_dealloc(self)\n')
 	w.write_string('}\n\n')
@@ -1317,8 +1351,8 @@ fn emit_class_richcompare(c Class) string {
 		// panicked between the load and the store would leave the instance holding a
 		// half-written value. The user reads the fields through `state_from_ptr`, which is
 		// what makes the signature a free function taking two pointers.
-		w.write_string('\t\tmut same := ${c.eq_fn}(vcraft.instance_storage(self), ' +
-			'vcraft.instance_storage(other))\n')
+		w.write_string('\t\tmut same := ${c.eq_fn}(${c.state_ptr_expr('self')}, ' +
+			'${c.state_ptr_expr('other')})\n')
 		// `!=` is the negation of `==` rather than a call of its own. A V `bool` is not
 		// the same thing as a Python `True`, so the negation happens here rather than in
 		// the user's code, where `a != b` would mean comparing the two answers.
@@ -1334,8 +1368,8 @@ fn emit_class_richcompare(c Class) string {
 				continue
 			}
 			w.write_string('\tif op == vcraft.op_${kind} {\n')
-			w.write_string('\t\treturn vcraft.to_py_bool(${opfn}(vcraft.instance_storage(self), ' +
-				'vcraft.instance_storage(other))).ptr\n\t}\n')
+			w.write_string('\t\treturn vcraft.to_py_bool(${opfn}(${c.state_ptr_expr('self')}, ' +
+				'${c.state_ptr_expr('other')})).ptr\n\t}\n')
 		}
 	}
 	w.write_string('\treturn vcraft.richcompare_not_implemented()\n')
@@ -1445,7 +1479,7 @@ fn emit_numeric_unary(c Class, s NumericSlot, fn_ Func) string {
 	w.write_string('\tif !vcraft.is_instance_of(self, g_vc_type_${c.key}.ptr) {\n')
 	w.write_string('\t\treturn vcraft.richcompare_not_implemented()\n\t}\n')
 	w.write_string(emit_numeric_result(c, fn_,
-		'${fn_.name}(vcraft.instance_storage(self))', '\t'))
+		'${fn_.name}(${c.state_ptr_expr('self')})', '\t'))
 	w.write_string('}\n\n')
 	return w.str()
 }
@@ -1459,11 +1493,11 @@ fn emit_numeric_unary(c Class, s NumericSlot, fn_ Func) string {
 fn emit_numeric_call(c Class, handler Func, selfv string, otherv string) string {
 	mut w := new_builder()
 	operand := handler.params[1].v_type.trim_space()
-	storage := 'vcraft.instance_storage(${selfv})'
+	storage := c.state_ptr_expr(selfv)
 	if operand == '&' + c.name {
 		w.write_string('\t\tif vcraft.is_instance_of(${otherv}, g_vc_type_${c.key}.ptr) {\n')
 		w.write_string(emit_numeric_result(c, handler,
-			'${handler.name}(${storage}, vcraft.instance_storage(${otherv}))', '\t\t\t'))
+			'${handler.name}(${storage}, ${c.state_ptr_expr(otherv)})', '\t\t\t'))
 		w.write_string('\t\t}\n')
 		return w.str()
 	}
@@ -1522,7 +1556,10 @@ fn emit_numeric_result(c Class, handler Func, call string, indent string) string
 		w.write_string(indent + 'instance := vcraft.type_alloc(g_vc_type_${c.key}.ptr)\n')
 		w.write_string(indent + 'if instance == unsafe { nil } {\n')
 		w.write_string(indent + '\treturn vcraft.no_memory()\n' + indent + '}\n')
-		w.write_string(indent + 'vcraft.load_state(unsafe { voidptr(&out) }, vcraft.instance_storage(instance), ${c.size_fn}())\n')
+		if c.boxed {
+			w.write_string(indent + 'vcraft.box_new(instance, ${c.size_fn}())\n')
+		}
+		w.write_string(indent + 'vcraft.load_state(unsafe { voidptr(&out) }, ${c.state_ptr_expr('instance')}, ${c.size_fn}())\n')
 		w.write_string(indent + 'if vcraft.error_is_set() {\n')
 		w.write_string(indent + '\treturn vcraft.instance_fail(instance)\n' + indent + '}\n')
 		w.write_string(indent + 'return instance\n')
@@ -1550,7 +1587,7 @@ fn emit_class_hash(c Class) string {
 	// passes one: a copy would have to be written back, and a panic in between would
 	// leave the instance half written.
 	w.write_string('\treturn vcraft.hash_from_int(${c.hash_name}' +
-		'(vcraft.instance_storage(self)))\n')
+		'(${c.state_ptr_expr('self')}))\n')
 	w.write_string('}\n\n')
 	return w.str()
 }

@@ -98,6 +98,27 @@ void vpy_critical_end(void *cs) {
 }
 #endif
 
+// The types whose instances keep their state in a separate block (see `vpy_gc_box`),
+// registered once each as the module builds them. A handful per extension; looked up by
+// the readers of a `&T` argument or result, which must follow the pointer for these.
+static void *vpy_boxed_types[256];
+static int vpy_boxed_count = 0;
+
+void vpy_mark_boxed(void *type) {
+	if (vpy_boxed_count < 256) {
+		vpy_boxed_types[vpy_boxed_count++] = type;
+	}
+}
+
+int vpy_is_boxed(void *type) {
+	for (int i = 0; i < vpy_boxed_count; i++) {
+		if (vpy_boxed_types[i] == type) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
 int vpy_python_api_version(void) {
 	return PYTHON_API_VERSION;
 }

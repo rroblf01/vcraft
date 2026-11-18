@@ -909,6 +909,54 @@ pub fn apply_py(f vcraft.PyObj, x int) !int {
 	return int(out)
 }
 
+// Note has fields V's collector manages -- strings, a list, a map -- so its state lives in
+// a block the collector scans, and the parameters it stores are copied for it.
+@[vc_class]
+pub struct Note {
+mut:
+	@[vc_field] title string
+	@[vc_field] tags  []string
+	@[vc_field] views int
+	words map[string]int
+}
+
+@[vc_fn]
+pub fn new_note(title string) &Note {
+	return &Note{
+		title: title
+	}
+}
+
+// rename stores its argument in the instance.
+@[vc_method]
+pub fn (mut n Note) rename(title string) {
+	n.title = title
+}
+
+// learn counts the words of a text into a map the class keeps.
+@[vc_method]
+pub fn (mut n Note) learn(text string) int {
+	for w in text.split(' ') {
+		n.words[w.clone()]++
+	}
+	return n.words.len
+}
+
+// summary reads every field.
+@[vc_method]
+pub fn (n &Note) summary() string {
+	return '${n.title}: ${n.tags.join(',')} (${n.views} views, ${n.words.len} words)'
+}
+
+// Draft is a subclass of a boxed class, which is boxed too.
+@[vc_class]
+@[vc_base(Note)]
+pub struct Draft {
+mut:
+	@[vc_field] revision int
+	@[vc_field] author   string
+}
+
 // count_all takes only *args, so its glue reads no fixed parameter.
 @[vc_fn]
 pub fn count_all(xs ...int) int {

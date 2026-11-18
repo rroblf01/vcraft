@@ -289,14 +289,18 @@ once identity is added.
 The state lives inside the object, right after the PyObject header, so `tp_basicsize`
 is the header plus the class's state struct and no separate allocation or pointer is
 needed. `PyType_GenericAlloc` zeroes that memory, and `tp_free` releases the whole
-object. Only scalars may live in the state. A V `string` is a pointer into V's heap,
-and V's collector does not scan memory CPython allocated, so the string would be
-reclaimed while Python still holds it. A class that needs strings marshals them
-through a method.
+object. That is only safe for scalars: a V `string` is a pointer into V's heap, and V's
+collector does not scan memory CPython allocated, so the string would be reclaimed while
+Python still holds it. A class with such a field -- a string, an array, a map, exposed or
+not -- is *boxed*: the object holds only a pointer to a `GC_MALLOC_UNCOLLECTABLE` block
+(scanned by the collector, never freed by it), made zeroed in `tp_new` and freed in
+`tp_dealloc`. The generated glue reaches it through `boxed_storage`, and the readers of a
+`&T` argument or result through the type registry `mark_boxed_type` fills. A whole
+inheritance tree is boxed or not, since a base's methods read a subclass's state.
 
 ## Persistent native buffers
 
-A `@[vc_buffer]` field is the exception to "scalars only", and it is a narrow one: a
+A `@[vc_buffer]` field is the other way to keep a slice in a class, and a narrow one: a
 `[]T` of scalars whose backing is allocated with the CPython allocator and owned by hand.
 The header of the slice still travels in the state, where V's collector cannot see it;
 the backing it points at must not be in V's heap, or the pointer would look unreachable

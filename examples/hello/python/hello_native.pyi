@@ -450,6 +450,29 @@ class Record:
     def __getattr__(self, name: str) -> int:
         """lookup is the matching `__getattr__`."""
 
+class Note:
+    """Note has fields V's collector manages -- strings, a list, a map -- so its state lives in
+    a block the collector scans, and the parameters it stores are copied for it.
+    """
+    title: str
+    tags: list[str]
+    views: int
+    __match_args__ = ('title', 'tags', 'views')
+    def __init__(self, title: str) -> None: ...
+    def rename(self, title: str) -> None:
+        """rename stores its argument in the instance."""
+    def learn(self, text: str) -> int:
+        """learn counts the words of a text into a map the class keeps."""
+    def summary(self) -> str:
+        """summary reads every field."""
+
+class Draft(Note):
+    """Draft is a subclass of a boxed class, which is boxed too."""
+    revision: int
+    author: str
+    __match_args__ = ('title', 'tags', 'views', 'revision', 'author')
+    def __init__(self, title: str) -> None: ...
+
 class Countdown:
     """A countdown that yields its values one at a time.
 

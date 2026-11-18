@@ -852,11 +852,13 @@ def main() -> int:
     # One per trampoline that works on a subclass's state, and none in a trampoline of a
     # class with no base: there is no generation above it to point at.
     # BoundedCounter publishes one level; TallyBuffer (a buffer subclass) publishes one
-    # too. The exact count covers both, and the functions that load the state but never
+    # too, and Draft (a subclass of the boxed Note) five, one per trampoline: its two fields
+    # getters and setters and its tp_new. The exact count covers all three, and the
+    # functions that load the state but never
     # enter it -- dealloc, traverse, clear, the buffer callbacks -- are not trampolines and
     # publish nothing.
     t.check("one published level per subclass trampoline",
-            glue.count("publish_base(1,") == 9,
+            glue.count("publish_base(1,") == 14,
             f"{glue.count('publish_base(1,')} published")
     # The chain is published only where `state_at` can observe it. A method of a
     # base-less class that never calls `state_at` does not enter the chain at all; a
@@ -1507,6 +1509,32 @@ def main() -> int:
     for w in workers:
         w.join()
     t.equal("eight threads incrementing one instance lose nothing", shared.value, 8 * 20000)
+
+    print("string, list and map fields (boxed state)")
+    note = h.Note("first " + "title" * 3)
+    note.tags = ["a" * 5, "b" + "c" * 4]
+    note.views = 3
+    t.equal("string and list fields read back", (note.title, note.tags, note.views),
+            ("first titletitletitle", ["aaaaa", "bcccc"], 3))
+    source = "renamed-" + "q" * 40
+    note.rename(source)
+    del source
+    t.equal("an unexposed map field works", note.learn("x y z x"), 3)
+    for i in range(20000):
+        tmp = h.Note("tmp %d" % i)
+        tmp.rename("x" * (i % 50))
+        tmp.tags = ["y" * (i % 7)]
+        if i % 5000 == 0:
+            gc.collect()
+    t.equal("stored strings survive the caller dropping them and heavy churn",
+            note.summary(), "renamed-" + "q" * 40 + ": aaaaa,bcccc (3 views, 3 words)")
+    t.raises("a string field refuses a non-str", TypeError, "expected str", lambda: setattr(note, "title", 5))
+    draft = h.Draft("dr" + "aft")
+    draft.author = "ana" * 2
+    t.equal("a subclass of a boxed class is boxed too",
+            (draft.title, draft.author, isinstance(draft, h.Note)), ("draft", "anaana", True))
+    t.check("the stub types the new fields",
+            "    title: str" in flat_stub() and "    tags: list[str]" in flat_stub())
 
     print("call_py")
     t.equal("call_py passes PyObj arguments", h.apply_py(lambda v: v * 3, 7), 21)

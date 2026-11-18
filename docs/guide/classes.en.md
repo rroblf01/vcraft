@@ -6,10 +6,13 @@ method follows no pointer.
 
 ## Fields
 
-`@[vc_field]` exposes a field as a read/write attribute. Fields must be scalars (or an
-instance reference, see below): a `string` or a `[]T` held in CPython-owned memory would be
-a pointer V's collector cannot see. Strings belong behind methods, which marshal to and
-from `str`.
+`@[vc_field]` exposes a field as a read/write attribute, of any type vcraft converts:
+scalars, `string`, lists, maps, structs. A class with only scalar fields keeps its state
+inside the object. One with a field V's collector manages -- a `string`, a `[]T`, a map,
+exposed or not -- keeps it in a block the collector scans, which the object points at and
+frees at dealloc, so the string cannot be reclaimed while Python holds the instance. A
+string a constructor, a `mut` method or a setter stores is copied for it, since what
+Python passes is borrowed for the call.
 
 ```v
 @[vc_class]

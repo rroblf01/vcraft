@@ -18,6 +18,8 @@
 int vpy_python_api_version(void);
 void vpy_add_v_frame(const char *file, int line, const char *func);
 void vpy_critical_begin(void *cs, void *op);
+void vpy_mark_boxed(void *type);
+int vpy_is_boxed(void *type);
 void vpy_critical_end(void *cs);
 unsigned long vpy_version_hex(void);
 const char *vpy_version_string(void);

@@ -619,6 +619,11 @@ fn link_iterators(mut p Project) {
 		if iters.len == 0 && nexts.len == 0 {
 			continue
 		}
+		// A `@[vc_iter]` method that was refused is already reported; saying the class has
+		// none on top of that would be a second, misleading error about the same line.
+		if iters.len == 0 && p.diagnostics.any(it.file == c.origin && it.message.contains('`@[vc_iter]')) {
+			continue
+		}
 		if iters.len == 0 {
 			report(mut p, c.origin, astquery.Declaration{
 				name:   c.name
@@ -1673,8 +1678,8 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			pending = ''
 		}
 	}
-	// Only the annotated ones are exposed, and only scalars and references are safe to
-	// hold in CPython-owned memory.
+	// Only the annotated ones are exposed. A field holding V-managed memory -- annotated or
+	// not -- makes the class keep its state where V's collector sees it (`Class.boxed`).
 	mut exposed := []Field{}
 	for _, original in out {
 		mut f := original
@@ -1696,6 +1701,10 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			}, 'warning: `@[${stray}]` on the line above `${struct_name}.${f.name}` is ignored; a field annotation goes on the field\'s own line')
 		}
 		block := read_inline(lines, line)
+		if attr_ref !in block.attrs && attr_buffer !in block.attrs && attr_buffer_typed !in block.attrs
+			&& attr_handle !in block.attrs && collector_managed(f.v_type) {
+			p.gc_structs[struct_name] = true
+		}
 		if attr_field !in block.attrs && attr_ref !in block.attrs && attr_buffer !in block.attrs
 			&& attr_buffer_typed !in block.attrs && attr_handle !in block.attrs {
 			continue
@@ -1783,13 +1792,13 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 			exposed << f
 			continue
 		}
-		if !f.is_scalar() {
+		if !f.is_scalar() && !type_marshalable(f.v_type) {
 			report(mut p, path, astquery.Declaration{
 				name:       f.name
 				type_name:  f.v_type
 				line:       field_line_in(ast, id, f.name)
 				column:     1
-			}, 'error: `@[vc_field] ${struct_name}.${f.name}` has type `${f.v_type}`, which cannot be stored in a Python object: only bool, the integer and float types are safe. Expose it through a method instead')
+			}, 'error: `@[vc_field] ${struct_name}.${f.name}` has type `${f.v_type}`, which has no marshalling rule; ${type_hint(f.v_type)}')
 			continue
 		}
 		exposed << f
@@ -2086,6 +2095,43 @@ fn constructor_literal(f Func, class_name string) string {
 //
 // A class with no `new_*` is usable from V but cannot be instantiated from Python,
 // which is allowed rather than reported: not every class needs to be constructible.
+// collector_managed reports whether a field of this type holds memory V's collector owns
+// -- a string, an array, a map, a pointer, an option or a struct that may contain one --
+// rather than plain bits. Scalars, enums and `vcraft.PyObj` (a CPython reference) do not.
+fn collector_managed(v_type string) bool {
+	t := v_type.trim_space()
+	if is_scalar_type(t) || t in ['vcraft.PyObj', 'PyObj', 'voidptr', 'vcraft.Owned'] {
+		return false
+	}
+	if lookup(t) == .enum_type {
+		return false
+	}
+	return true
+}
+
+// mark_boxed decides which classes keep their state in a collector-scanned block: every
+// class of an inheritance tree in which any class has a collector-managed field.
+fn mark_boxed(mut p Project) {
+	for i in 0 .. p.classes.len {
+		mut root := i
+		for p.classes[root].base_index >= 0 {
+			root = p.classes[root].base_index
+		}
+		mut tree_has_gc := false
+		for j in 0 .. p.classes.len {
+			mut r := j
+			for p.classes[r].base_index >= 0 {
+				r = p.classes[r].base_index
+			}
+			if r == root && p.classes[j].name in p.gc_structs {
+				tree_has_gc = true
+				break
+			}
+		}
+		p.classes[i].boxed = tree_has_gc
+	}
+}
+
 fn link_classes(mut p Project) {
 	// First, because a constructor is found by scanning `p.funcs` and the operators are
 	// not in it: they are free functions, dropped from the exported set the moment they
@@ -2380,6 +2426,18 @@ fn validate_var_args(mut p Project, path string, decl astquery.Declaration, f Fu
 		return false
 	}
 	for i, param in f.params {
+		// Python writes `*args` before `**kwargs`; V insists the variadic parameter is the
+		// last one. Caught here, with the spelling that works, rather than as V's bare
+		// "variadic with non-final parameter".
+		if param.variadic() && i != f.params.len - 1 {
+			kw := f.params[f.params.len - 1]
+			mut ordered := f.params.filter(!it.variadic() && it.name != kw.name).map('${it.name} ${it.v_type}')
+			ordered << '${kw.name} ${kw.v_type}'
+			ordered << '${param.name} ${param.v_type}'
+			order := ordered.join(', ')
+			report(mut p, path, decl, 'error: `${decl.name}`: the variadic `${param.name}` has to be the last parameter in V; write `@[vc_kwargs: \'${kw.name}\']` and `fn ${decl.name}(${order})` -- Python still sees `*${param.name}` before `**${kw.name}`')
+			return false
+		}
 		if param.collects_kwargs {
 			trailing := i == f.params.len - 1
 				|| (i == f.params.len - 2 && f.params[f.params.len - 1].variadic())

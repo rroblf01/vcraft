@@ -64,6 +64,13 @@ a use-after-free, so vcraft does not apply it.
 call (a `@[vc_buffer]` field, or state behind `vcraft.own_gc`); `gc-free-space-divisor =
 8` caps the five-call case at two blocks, for some allocation throughput.
 
+### Allocation-heavy code on free-threaded CPython
+V's collector serialises allocation, so code that allocates a lot does not scale across
+threads on a free-threaded interpreter: a word count that builds strings and a map ran in
+0.11 s on one thread and 0.36 s for four in parallel. Code that computes without
+allocating does scale (four threads in the time of one). Reuse buffers in hot loops that
+run from several threads.
+
 ### Import time
 Level with PyO3 since the collector stopped reading `/proc/self/maps` at start-up
 (0.58 ms against 0.59).

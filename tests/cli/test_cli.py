@@ -122,7 +122,7 @@ def main() -> int:
                 "The importable name is `mypkg`." in proc.stdout, proc.stdout)
         t.check("new shows how to run the demo", "python main.py" in proc.stdout,
                 proc.stdout)
-        t.check("new shows how to run the tests", "python -m unittest" in proc.stdout,
+        t.check("new shows how to run the tests", "vcraft test" in proc.stdout,
                 proc.stdout)
         project = tmp / "mypkg"
         t.check("vcraft.toml", (project / "vcraft.toml").exists())

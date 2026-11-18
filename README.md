@@ -392,10 +392,9 @@ keywords existed: one comparison.
 ```v
 // A counter with state.
 //
-// Fields must be scalars. A V string inside a Python object would be a pointer
-// that V's collector cannot see, because it does not scan memory CPython
-// allocated, so the string would be reclaimed while Python still held it. Reach a
-// string through a method, which marshals it properly.
+// Fields can be any type vcraft converts. A class with a string, list or map field
+// keeps its state in a block V's collector scans (see "Strings, lists and maps in a
+// class" below); this one has only scalars, so its state lives inside the object.
 @[vc_class]
 pub struct Counter {
 mut:
@@ -513,6 +512,45 @@ takes only `m`). Because both sets travel in the one Python signature the subcla
 they need distinct names; a shared name is reported.
 
 Docstrings reach `__doc__` on the type, its methods, its properties and its fields.
+
+### Strings, lists and maps in a class
+
+A field can hold anything vcraft converts, exposed with `@[vc_field]` or kept private:
+
+<!-- readme-test: skip -->
+```v
+@[vc_class]
+pub struct Note {
+mut:
+	@[vc_field] title string
+	@[vc_field] tags  []string
+	words map[string]int
+}
+
+@[vc_fn]
+pub fn new_note(title string) &Note {
+	return &Note{
+		title: title
+	}
+}
+
+@[vc_method]
+pub fn (mut n Note) rename(title string) {
+	n.title = title
+}
+```
+
+```python
+>>> n = m.Note("draft"); n.tags = ["a", "b"]; n.rename("final"); n.title
+'final'
+```
+
+V's collector does not scan memory CPython allocated, so such a class keeps its state in
+a block the collector does scan, which the object points at and frees at dealloc; a class
+with only scalar fields keeps its state inside the object, as before. A string argument
+borrows the caller's `str` for the call, so the one a constructor, a `mut` method or a
+field setter receives is copied before it can be stored. A string kept by other means --
+a module-level variable, a `&T` parameter's fields -- still needs `.clone()`.
 
 ### Inheritance
 

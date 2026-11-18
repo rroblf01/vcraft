@@ -136,6 +136,13 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   that take and return `vcraft.PyObj` only. The existing `call` (`voidptr` arguments) and
   `call_owned` (`PyObj` arguments) were easy to mix up, and V let the wrong slice through
   to a C compiler error about generated temporaries.
+- **String, list and map fields in classes.** `@[vc_field] title string`, `[]string`, maps
+  and structs are now attributes like any other, and unexposed fields may hold them too.
+  Such a class keeps its state in a block V's collector scans, which the object points at
+  and frees at dealloc (classes with only scalar fields are unchanged); a string stored
+  by a constructor, a `mut` method or a setter is copied for it, since Python's is
+  borrowed for the call. Before, only scalars were allowed in `@[vc_field]`, and a string
+  or map in an unexposed field compiled but could be freed under the instance.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.

@@ -388,11 +388,21 @@ pub fn check_versions(interpreter string, abi3 string, free_threading bool) ! {
 }
 
 // build compiles the project and writes a wheel.
-pub fn build(p Project, opt BuildOptions) !BuildResult {
+pub fn build(project Project, opt BuildOptions) !BuildResult {
+	mut p := project
 	python := if opt.interpreter.len > 0 { opt.interpreter } else { python_binary_name() }
 	interp_version := interpreter_version(python)
 	if interp_version.len == 0 {
 		return error('cannot run ${python}; is it on PATH?')
+	}
+	// A free-threaded interpreter can only take a free-threaded extension, so naming one is
+	// enough to ask for that build: requiring `--free-threading` as well only made the
+	// first attempt fail. Not for a cross build (the interpreter there is not the target's)
+	// nor with abi3, which free-threaded CPython does not have and which is refused below.
+	if !p.free_threading && p.abi3.len == 0 && opt.target.len == 0
+		&& interpreter_is_free_threaded(python) {
+		eprintln('note: ${python} is free-threaded, so this is a free-threaded build')
+		p.free_threading = true
 	}
 	check_versions(interp_version, p.abi3, p.free_threading)!
 	// The target is resolved before anything else, because every error it can report is
