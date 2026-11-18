@@ -7,6 +7,8 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-18
+
 ### Added
 
 - **A weekly canary against V's master** (`.github/workflows/v-canary.yml`): the generator,
@@ -39,10 +41,6 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 - **Signed provenance for published files.** The `publish` job `vcraft generate-ci` writes
   signs each wheel and sdist with GitHub's build provenance (`gh attestation verify`) and
   uploads PEP 740 attestations to PyPI alongside them.
-
-## [1.8.0] - 2026-11-18
-
-### Added
 
 - **`@[vc_rename]` on constants and enums.** V insists on lowercase constants, so
   `@[vc_const] @[vc_rename: 'EV_CONNECT'] pub const ev_connect = 1` is how a Python-style

@@ -100,6 +100,10 @@ Additions that do not change anything 1.x promises.
       --watch`, `*args`/`**kwargs`, `__getattr__`/`__setattr__`, dates, decimals, big
       integers, JSON values and logging, an examples gallery, a guide for PyO3 users, a
       benchmarks page, and trusted publishing from `vcraft generate-ci`. Ships in 1.8.0.
+- [x] **The maturin + PyO3 gaps:** Arrow columns in and out, `vcraft.par_range` parallel
+      loops, constructors from the fields, string/list/map fields in classes, `vcraft bind`
+      for C headers, signed provenance on publish, a weekly V canary, a generated runtime
+      reference, and contribution guidelines. Ships in 1.8.0.
 
 ## Platforms and toolchain
 
