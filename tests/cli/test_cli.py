@@ -2699,10 +2699,16 @@ pub fn c_marker() int {
                 (proc.stdout + proc.stderr)[-300:])
         (pub / "dist" / "mypkg-0.1.0-cp313-cp313-linux_x86_64.whl").unlink()
         (pub / "dist" / "mypkg-0.1.0-cp313-cp313-manylinux_2_28_x86_64.whl").write_bytes(b"")
+        # What `vcraft build` and `vcraft sdist` leave next to the distributions.
+        (pub / "dist" / "build" / ".staging").mkdir(parents=True)
+        (pub / "dist" / "mypkg-0.1.0.tar.gz").write_bytes(b"")
         proc = vcraft("publish", "--dry-run", cwd=pub)
         t.check("publish --dry-run shows the upload and makes none",
                 proc.returncode == 0 and "would upload" in proc.stdout
                 and "manylinux_2_28" in proc.stdout, (proc.stdout + proc.stderr)[-300:])
+        t.check("publish uploads the distributions and not the build directory",
+                "dist/mypkg-0.1.0.tar.gz" in proc.stdout and "dist/build" not in proc.stdout,
+                proc.stdout[-300:])
 
         print("pip install an sdist")
         if sdists:

@@ -1226,7 +1226,16 @@ fn cmd_publish(args Args) {
 		exit(1)
 	}
 	mut upload := if uploader == 'twine' { ['twine', 'upload'] } else { ['uv', 'publish'] }
-	for entry in os.ls('dist') or { []string{} } {
+	// Distributions only: `dist/` also holds the build directory every `vcraft build`
+	// leaves there, which uv and twine refuse as an upload, failing the whole batch.
+	mut files := (os.ls('dist') or { []string{} }).filter((it.ends_with('.whl')
+		|| it.ends_with('.tar.gz')) && os.is_file('dist/' + it))
+	files.sort()
+	if files.len == 0 {
+		eprintln('error: nothing to upload in dist/; run `vcraft build` and `vcraft sdist` first')
+		exit(1)
+	}
+	for entry in files {
 		upload << 'dist/' + entry
 	}
 	if args.flags['dry-run'] {

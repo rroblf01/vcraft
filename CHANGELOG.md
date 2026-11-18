@@ -277,6 +277,11 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   success instead of asking for one. An unchanged tree now skips the build only when the
   active environment holds the install.
 
+- **`vcraft publish` passed `dist/build` to the uploader**: every `vcraft build` leaves its
+  build directory in `dist/`, and `publish` handed everything there to `uv publish` or
+  `twine upload`, which refuse a directory. It now uploads only the `.whl` and `.tar.gz`
+  files, and says so when there are none.
+
 - **A failed build deleted the last working extension**, so after one compile error an
   editable install no longer imported at all. The compiler now writes into a staging
   directory and the result replaces the previous build only once it built.
