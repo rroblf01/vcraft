@@ -883,6 +883,18 @@ pub fn (r &Record) lookup(name string) !int {
 	return s.extra[name] or { return error('no ${name}') }
 }
 
+// Mood is a V enum: Python sees an `enum.IntEnum` named `Mood`.
+pub enum Mood {
+	calm
+	happy = 5
+}
+
+// cheer_up returns the happier mood.
+@[vc_fn]
+pub fn cheer_up(m Mood) Mood {
+	return if m == .calm { Mood.happy } else { m }
+}
+
 // count_all takes only *args, so its glue reads no fixed parameter.
 @[vc_fn]
 pub fn count_all(xs ...int) int {

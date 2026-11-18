@@ -190,6 +190,9 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **A generated enum could not be pickled**: the functional `IntEnum(...)` call, made from
+  C, set `__module__` to `_frozen_importlib`. The class now names the extension module.
+
 - **Stubs a type checker and an editor can use.** Results are typed `list[...]` (they are
   lists; a parameter keeps `Sequence[...]`), so `x: list[str] = f()` type-checks;
   docstrings are the body of each `def` and `class`, where an editor shows them on hover,

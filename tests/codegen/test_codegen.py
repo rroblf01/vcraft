@@ -91,7 +91,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 63,
+            glue.count("add_function_owned") == 64,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -1507,6 +1507,14 @@ def main() -> int:
     for w in workers:
         w.join()
     t.equal("eight threads incrementing one instance lose nothing", shared.value, 8 * 20000)
+
+    print("enums round-trip")
+    import pickle
+    happy = h.cheer_up(h.Mood.calm)
+    t.check("an enum result is the IntEnum member", happy is h.Mood.happy, repr(happy))
+    t.equal("an enum's __module__ is the extension", h.Mood.__module__, "hello_native")
+    t.check("an enum member pickles", pickle.loads(pickle.dumps(happy)) is h.Mood.happy)
+    t.check("the stub gives members their values", "    happy = 5" in flat_stub())
 
     print("release build")
     # -prod rejects what a debug build only notes (an unused variable in the glue), so

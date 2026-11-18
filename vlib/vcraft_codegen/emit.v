@@ -382,8 +382,8 @@ pub fn glue_module_body(p Project) string {
 	// kept in a global the trampolines box and read through. `add_object_ref_on` keeps a
 	// reference while the global holds the original, so the class outlives the call.
 	for e in p.enums {
-		w.write_string('\tg_vc_enum_' + e.key + ' = vcraft.int_enum(' +
-			vstring_literal(e.py_name) + ', ' + enum_members_expr(e) + ')\n')
+		w.write_string('\tg_vc_enum_' + e.key + ' = vcraft.int_enum_in(' + vstring_literal(p.package) +
+			', ' + vstring_literal(e.py_name) + ', ' + enum_members_expr(e) + ')\n')
 		w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(e.py_name) +
 			', g_vc_enum_' + e.key + ')\n')
 	}

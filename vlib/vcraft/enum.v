@@ -21,6 +21,14 @@ pub fn import_module(name string) PyObj {
 // `name` is the V enum's name, so `Color.red` on the Python side is the V `Color.red`,
 // and the class shows up in the module as `Color`.
 pub fn int_enum(name string, members map[string]i64) PyObj {
+	return int_enum_in('', name, members)
+}
+
+// int_enum_in is `int_enum` for a class that lives in module `module`: its `__module__`
+// names that module, which is what pickle and `repr` look the class up by. Without it the
+// functional `IntEnum(...)` API guesses from the calling frame and, called from C, lands
+// on `_frozen_importlib`, so a member could not be pickled.
+pub fn int_enum_in(module string, name string, members map[string]i64) PyObj {
 	enum_mod := import_module('enum')
 	if enum_mod.is_null() {
 		return enum_mod
@@ -38,8 +46,19 @@ pub fn int_enum(name string, members map[string]i64) PyObj {
 	for member, value in members {
 		dict_set_owned(table, to_py_string(member), to_py_int(value))
 	}
-	// `call_owned` releases the name and the table it was given; `cls` is the caller's.
-	result := call_owned(cls.ptr, [to_py_string(name), table])
+	py_name := to_py_string(name)
+	mut result := PyObj{}
+	if module.len > 0 {
+		py_module := to_py_string(module)
+		result = call_kw(cls.ptr, [py_name.ptr, table.ptr], {
+			'module': py_module
+		})
+		py_module.decref()
+	} else {
+		result = call(cls.ptr, [py_name.ptr, table.ptr])
+	}
+	py_name.decref()
+	table.decref()
 	cls.decref()
 	return result
 }
