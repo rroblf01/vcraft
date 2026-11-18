@@ -51,6 +51,8 @@ python3 tests/cli/test_cli.py           # builds bin/vcraft, uses fresh venvs
 Other scripts:
 
 - `./scripts/build-vcraft.sh` builds the CLI into `bin/vcraft`.
+- `scripts/update-ci-templates.py` rewrites `templates/ci/*.yml`, the workflows
+  `generate-ci` writes, kept as text; the CLI suite fails when they drift (`--check`).
 - `./scripts/build-example.sh [example] [module]` runs the generator then compiles. It
   rebuilds `build/vc-generate` every time on purpose: a stale generator silently emits an
   empty module instead of erroring.

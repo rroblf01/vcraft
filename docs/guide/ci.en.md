@@ -42,6 +42,13 @@ approval. Then:
 $ git tag v0.1.0 && git push origin v0.1.0
 ```
 
+## The workflows as text
+
+The files `generate-ci` writes are also kept in the repository, generated for a sample
+project, under [`templates/ci/`](https://github.com/rroblf01/vcraft/tree/main/templates/ci):
+`build.yml` (one wheel per CPython), `build-abi3.yml` and `build-free-threading.yml`. Read
+them before generating your own, or copy one and replace `mypkg_native` with your module.
+
 ## Running the tool's own suites
 
 The vcraft repository tests every claim in this documentation. If you are contributing,
