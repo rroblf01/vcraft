@@ -8,6 +8,7 @@ $ vcraft --help
 | --- | --- |
 | `vcraft new <nombre>` | Crea un proyecto: manifiesto, fuente V, demo, test, README |
 | `vcraft init [dir]` | Añade vcraft a un proyecto Python existente (ver abajo) |
+| `vcraft bind <header.h>` | Escribe en `src/` las declaraciones V (`fn C.`) de las funciones de una cabecera C (ver abajo) |
 | `vcraft test [-- args]` | Pone al día la instalación editable y ejecuta los tests (ver abajo) |
 | `vcraft build` | Ejecuta el generador, compila la extensión y escribe un wheel |
 | `vcraft develop` | Construye e instala en el virtualenv activo, editable por defecto |
@@ -41,6 +42,22 @@ $ vcraft --help
 `vcraft info` es planificación pura: nombra el SO, la arquitectura, el tag y el compilador
 sin tocar ningún toolchain, así que funciona en todas partes, incluso para un target cuyo
 compilador no está instalado.
+
+## Envolver C: `vcraft bind`
+
+```console
+$ vcraft bind c/mylib.h --source c/mylib.c     # o --lib mylib para una biblioteca del sistema
+wrote src/mylib_c.v: 12 declaration(s)
+```
+
+Lee los prototipos de función de una cabecera y escribe las declaraciones `fn C.` con los
+anchos que quiere decir C -- `int` es `i32`, `size_t` es `usize`, `const uint8_t *` es
+`&u8` --, que es donde los bindings escritos a mano fallan en silencio (el `int` de V es de
+64 bits). Los punteros a structs pasan a `voidptr`; los varargs, los structs por valor y
+los punteros a función quedan como comentarios que explican por qué. Las líneas
+`#flag`/`#include` compilan el C dentro de la extensión. Después, un `@[vc_fn]` llama a
+`C.nombre(...)` como a cualquier función V. `--out -` imprime en vez de escribir y
+`--force` sustituye un fichero existente.
 
 ## Tests: `vcraft test` y el plugin de pytest
 

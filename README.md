@@ -1546,6 +1546,7 @@ vcraft new <name>            scaffold a V project ready for Python
 vcraft init [dir]            add vcraft to an existing Python project
 vcraft new <name> --devcontainer   also write a dev container (Codespaces, VS Code)
 vcraft test [-- args]        rebuild if needed, then run the tests (pytest, else unittest)
+vcraft bind <header.h>       V declarations for the functions of a C header, into src/
 vcraft build [options]       build a distributable wheel
 vcraft develop [options]     build and install an editable pointer by default
 vcraft develop --copy        install a plain extension copy instead

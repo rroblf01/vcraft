@@ -3171,6 +3171,33 @@ pub fn c_marker() int {
             print("  skip --pgo needs gcc as cc")
         (project / "train_pgo.py").unlink()
 
+        print("vcraft bind")
+        bound = tmp / "boundpkg"
+        vcraft("new", "boundpkg", cwd=tmp)
+        shutil.copytree(ROOT / "examples" / "with_c" / "c", bound / "c")
+        proc = vcraft("bind", "c/fastc.h", "--source", "c/fastc.c", cwd=bound)
+        decls = (bound / "src" / "fastc_c.v").read_text() if (bound / "src" / "fastc_c.v").exists() else ""
+        t.check("bind writes the declarations with C's widths",
+                proc.returncode == 0
+                and "fn C.fastc_fnv1a(data &u8, len usize) u32" in decls
+                and "fn C.fastc_rle(src &u8, len usize, dst &u8, dst_cap usize) isize" in decls
+                and "#flag @VMODROOT/c/fastc.c" in decls and '#include "fastc.h"' in decls,
+                proc.stderr + decls)
+        (bound / "src" / "use_fastc.v").write_text(
+            "module boundpkg_native\n\n@[vc_fn]\npub fn fnv(data []u8) u32 {\n"
+            "\treturn C.fastc_fnv1a(data.data, usize(data.len))\n}\n")
+        proc = vcraft("build", "--skip-audit", cwd=bound)
+        built = sorted((bound / "dist" / "build").glob(f"boundpkg_native*{LIB_EXT}"))
+        run = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); "
+                              "import boundpkg_native as m; print(m.fnv(b'a'))",
+                              str(built[0].parent) if built else "."], capture_output=True, text=True)
+        t.check("a project builds and calls C through the bound declarations",
+                proc.returncode == 0 and run.stdout.strip() == "3826002220",
+                (proc.stderr + run.stderr).strip()[-500:])
+        proc = vcraft("bind", "c/fastc.h", cwd=bound)
+        t.check("bind refuses to overwrite without --force", proc.returncode != 0
+                and "--force" in proc.stderr, proc.stderr)
+
         print("init in an existing Python project")
         existing = tmp / "existing"
         (existing / "src" / "mylib").mkdir(parents=True)

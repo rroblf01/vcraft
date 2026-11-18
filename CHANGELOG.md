@@ -14,6 +14,11 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   is opened or updated when they fail, so an upstream break is known while it is small.
   The README's Stability section now states the V pin policy: a pin move is a minor
   release, never a patch.
+- **`vcraft bind <header.h>`** writes the `fn C.` declarations for a C header's functions
+  with the widths C means (`int` is `i32`, `size_t` is `usize`, `const uint8_t *` is
+  `&u8`) and the `#flag`/`#include` lines, into `src/`; varargs, structs by value and
+  function pointers are left as explained comments. The by-hand version is where the
+  64-bit V `int` against C's 32 goes wrong silently.
 - **CONTRIBUTING.md, a code of conduct, and issue and pull request templates**: a bug
   report asks for the reproduction and `vcraft doctor`, a proposal points at DECISIONS.md.
 - **A reference of the runtime API** (`docs/reference/runtime`), generated from the doc

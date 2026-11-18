@@ -10,5 +10,8 @@ $ vcraft develop
 $ python test_with_c.py
 ```
 
+`vcraft bind c/fastc.h --source c/fastc.c` writes those `fn C.` declarations from the
+header instead of by hand.
+
 Mind the widths: C's `int` is V's `i32`, `size_t` is `usize`, `uint32_t` is `u32`. The
 generator warns on a `fn C.` that takes V's 64-bit `int` through a pointer.

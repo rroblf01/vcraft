@@ -24,6 +24,7 @@ usage:
   vcraft init [dir]            add vcraft to an existing Python project
   vcraft develop --watch       rebuild and reinstall whenever a source changes
   vcraft test [-- args]        develop, then run the tests (pytest, else unittest)
+  vcraft bind <header.h>       V declarations for the functions of a C header, into src/
   vcraft build [options]       build a wheel
   vcraft develop [options]     build and install into the active virtualenv
   vcraft sdist                 build a source distribution
@@ -140,7 +141,7 @@ fn parse_args(argv []string) !Args {
 fn takes_value(name string) bool {
 	return name in ['abi3', 'interpreter', 'out-dir', 'platform', 'jobs', 'python',
 		'action', 'target', 'manylinux', 'musllinux', 'cc', 'cflags', 'ldflags', 'module',
-		'name', 'interval', 'pgo']
+		'name', 'interval', 'pgo', 'out', 'source', 'lib']
 }
 
 fn main() {
@@ -179,6 +180,7 @@ fn main() {
 		'new' { cmd_new(args) }
 		'init' { cmd_init(args) }
 		'test' { cmd_test(args) }
+		'bind' { cmd_bind(args) }
 		'build' { cmd_build(args, false) }
 		'develop' {
 			if args.flags['watch'] {
@@ -440,6 +442,56 @@ fn cmd_watch(args Args) {
 		println('watching for changes (Ctrl-C to stop)')
 		flush_stdout()
 	}
+}
+
+// cmd_bind is `vcraft bind <header.h> [--source file.c] [--lib name] [--out path]`: the V
+// declarations for a C header's function prototypes, written into the project's sources
+// (`src/<header>_c.v` unless `--out` says otherwise; `--out -` prints them).
+fn cmd_bind(args Args) {
+	if args.positional.len == 0 {
+		eprintln('error: `vcraft bind` needs a header, e.g. `vcraft bind c/mylib.h`')
+		exit(2)
+	}
+	header := args.positional[0]
+	text := os.read_file(header) or {
+		eprintln('error: cannot read ${header}')
+		exit(1)
+	}
+	p := vcraft_project.load('.') or { vcraft_project.default_project('bound') }
+	mut sources := []string{}
+	if args.options['source'] != '' {
+		sources = args.options['source'].split(',').map(it.trim_space())
+	}
+	mut libs := []string{}
+	if args.options['lib'] != '' {
+		libs = args.options['lib'].split(',').map(it.trim_space())
+	}
+	out := vcraft_project.bind_file(vcraft_project.BindOptions{
+		header:  header
+		module:  p.module
+		sources: sources
+		libs:    libs
+	}, text)
+	target := if args.options['out'] != '' {
+		args.options['out']
+	} else {
+		'src/' + os.file_name(header).all_before_last('.') + '_c.v'
+	}
+	if target == '-' {
+		print(out)
+		return
+	}
+	if os.exists(target) && !args.flags['force'] {
+		eprintln('error: ${target} exists; pass --force to replace it, or --out to write elsewhere')
+		exit(1)
+	}
+	os.write_file(target, out) or {
+		eprintln('error: cannot write ${target}')
+		exit(1)
+	}
+	count := out.split_into_lines().filter(it.starts_with('fn C.')).len
+	skipped := out.split_into_lines().filter(it.starts_with('// skipped')).len
+	println('wrote ${target}: ${count} declaration(s)${if skipped > 0 { ', ${skipped} skipped (see the comments)' } else { '' }}')
 }
 
 // cmd_test is `vcraft test`: bring the editable install up to date, then run the
@@ -1544,19 +1596,19 @@ fn cmd_completions(args Args) {
 			println('# bash completion for vcraft')
 			println('_vcraft() {')
 			println(r'  local cur="${COMP_WORDS[COMP_CWORD]}"')
-			println('  COMPREPLY=( $(compgen -W "new init test build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor" -- "$cur") )')
+			println('  COMPREPLY=( $(compgen -W "new init test bind build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor" -- "$cur") )')
 			println('}')
 			println('complete -F _vcraft vcraft')
 		}
 		'zsh' {
 			println('#compdef vcraft')
 			println('local -a cmds')
-			println('cmds=(new init test build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor)')
+			println('cmds=(new init test bind build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor)')
 			println('_describe "command" cmds')
 		}
 		'fish' {
 			println('complete -c vcraft -f')
-			println('complete -c vcraft -n "__fish_use_subcommand" -a "new init test build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor"')
+			println('complete -c vcraft -n "__fish_use_subcommand" -a "new init test bind build develop sdist generate-ci publish info generate check clean toolchain version migrate completions doctor"')
 		}
 		else {
 			eprintln('error: unknown shell `${shell}`; use bash, zsh or fish')
