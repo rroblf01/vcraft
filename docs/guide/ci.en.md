@@ -42,6 +42,11 @@ approval. Then:
 $ git tag v0.1.0 && git push origin v0.1.0
 ```
 
+Each file is also attested: the job signs its build provenance with GitHub's
+`attest-build-provenance` (check one with `gh attestation verify <file> --repo <owner/repo>`),
+and PyPI receives PEP 740 attestations, which it shows next to the file and which tools
+can verify before installing.
+
 ## The workflows as text
 
 The files `generate-ci` writes are also kept in the repository, generated for a sample

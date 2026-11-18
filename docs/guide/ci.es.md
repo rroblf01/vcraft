@@ -43,6 +43,11 @@ una aprobación. Después:
 $ git tag v0.1.0 && git push origin v0.1.0
 ```
 
+Cada fichero queda además atestiguado: el job firma su procedencia de build con
+`attest-build-provenance` de GitHub (se comprueba con
+`gh attestation verify <fichero> --repo <owner/repo>`), y PyPI recibe attestations PEP 740,
+que muestra junto al fichero y que las herramientas pueden verificar antes de instalar.
+
 ## Los workflows como texto
 
 Los ficheros que escribe `generate-ci` también se guardan en el repositorio, generados para

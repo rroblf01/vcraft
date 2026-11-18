@@ -149,6 +149,7 @@ jobs:
     environment: pypi
     permissions:
       id-token: write
+      attestations: write
     steps:
       - name: download the wheels and the sdist
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
@@ -156,8 +157,14 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: sign the build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
       # Trusted publishing: PyPI checks the OIDC identity of the job; no secret is stored.
       - name: publish to PyPI
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
         with:
           packages-dir: dist
+          attestations: true

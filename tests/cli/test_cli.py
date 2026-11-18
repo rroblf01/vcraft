@@ -2772,6 +2772,9 @@ pub fn c_marker() int {
                     and "pypa/gh-action-pypi-publish@" in publish
                     and "startsWith(github.ref, 'refs/tags/v')" in publish,
                     publish[:800])
+            t.check("the publish job signs provenance and PEP 740 attestations",
+                    "actions/attest-build-provenance@" in publish and "attestations: true" in publish
+                    and "attestations: write" in publish, publish[:900])
             t.check("no token or password is used to publish",
                     "password" not in text and "PYPI_API_TOKEN" not in text
                     and "secrets." not in text, publish[:800])

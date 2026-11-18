@@ -195,17 +195,25 @@ fn publish_jobs(vcraft_action string) string {
 	w.write_string('    environment: pypi\n')
 	w.write_string('    permissions:\n')
 	w.write_string('      id-token: write\n')
+	w.write_string('      attestations: write\n')
 	w.write_string('    steps:\n')
 	w.write_string('      - name: download the wheels and the sdist\n')
 	w.write_string('        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7\n')
 	w.write_string('        with:\n')
 	w.write_string('          path: dist\n')
 	w.write_string('          merge-multiple: true\n\n')
+	// Provenance: a signed statement of which workflow run built each file, checkable
+	// with `gh attestation verify`, and PEP 740 attestations PyPI shows next to each file.
+	w.write_string('      - name: sign the build provenance\n')
+	w.write_string('        uses: actions/attest-build-provenance@v2\n')
+	w.write_string('        with:\n')
+	w.write_string('          subject-path: dist/*\n\n')
 	w.write_string('      # Trusted publishing: PyPI checks the OIDC identity of the job; no secret is stored.\n')
 	w.write_string('      - name: publish to PyPI\n')
 	w.write_string('        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1\n')
 	w.write_string('        with:\n')
 	w.write_string('          packages-dir: dist\n')
+	w.write_string('          attestations: true\n')
 	return w.str()
 }
 
