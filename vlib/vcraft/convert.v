@@ -25,9 +25,9 @@ import math.complex
 
 // from_py_int reads a Python int.
 //
-// bool is rejected. It is a subclass of int in Python, so PyLong_AsLongLong
-// would happily accept it, but `True` becoming `1` in a V function is almost
-// never what the caller meant.
+// Any int is accepted, subclasses included -- `bool` (`True` is 1), an `IntEnum` member
+// -- as Python's own `int` parameters and PyO3 accept them, and as the stub's `int`
+// tells a type checker. A float or a str is refused with the type it got.
 // from_py_int_item reads element `i` of a list or a tuple as an int.
 //
 // The `from_py_*_arg` readers ask for a positional argument by index; this one asks for
@@ -85,11 +85,7 @@ pub fn from_py_int(obj PyObj, name string) !i64 {
 		set_error(pyexc_obj(.type_error), '${name}: missing argument')
 		return error('${name}: missing')
 	}
-	if obj.type_is(bool_type()) {
-		set_error(pyexc_obj(.type_error), '${name}: expected int, got bool')
-		return error('${name}: expected int, got bool')
-	}
-	if !obj.type_is(long_type()) {
+	if C.vpy_is_instance(obj.ptr, long_type().ptr) == 0 {
 		set_error(pyexc_obj(.type_error), '${name}: expected int, got ${obj.type_name()}')
 		return error('${name}: expected int')
 	}
@@ -113,7 +109,7 @@ pub fn from_py_int(obj PyObj, name string) !i64 {
 // from_py_uint reads a Python int into a u64. PyLong_AsUnsignedLongLong already
 // raises OverflowError for a negative input, so the range check comes for free.
 pub fn from_py_uint(obj PyObj, name string) !u64 {
-	if obj.type_is(bool_type()) || !obj.type_is(long_type()) {
+	if C.vpy_is_instance(obj.ptr, long_type().ptr) == 0 {
 		set_error(pyexc_obj(.type_error), '${name}: expected int, got ${obj.type_name()}')
 		return error('${name}: expected int')
 	}

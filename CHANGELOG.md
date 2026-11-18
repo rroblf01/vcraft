@@ -7,7 +7,7 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
-## [1.8.0] - 2026-11-17
+## [1.8.0] - 2026-11-18
 
 ### Added
 
@@ -198,6 +198,11 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   lazily, landing within 1% of zlib level 6.
 
 ### Changed
+
+- **An integer parameter accepts `bool` and other `int` subclasses** (`True` is 1, an
+  `IntEnum` member its value), as Python's own functions and PyO3 do and as the stub's
+  `int` already told a type checker. Before, `True` raised `TypeError`. A float or a
+  string is still refused.
 
 - **Pickling a class with native state raises `TypeError`.** The default `__reduce__`
   rebuilt it through its constructor and silently dropped the state; a class holding a

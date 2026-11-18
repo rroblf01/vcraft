@@ -18,6 +18,9 @@ If `pyproject.toml` has a `[project]` table, its fields now win over `vcraft.tom
 `[package]`; a build that finds the two disagreeing says which field. Remove the copy you
 do not want to keep.
 
+An integer parameter now accepts `bool` and `int` subclasses (`f(True)` passes 1), where
+it raised `TypeError`; a test that expected the error for a bool needs updating.
+
 A workflow written by an older `vcraft generate-ci` keeps working; run it again to get the
 tag-triggered `publish` job (trusted publishing, no token) and the sdist job. A workflow
 that already uploads with a `PYPI_API_TOKEN` secret of its own needs no change.

@@ -158,8 +158,9 @@ def main() -> int:
     t.equal("an empty float sequence", h.mean([]), 0.0)
     t.raises("a bad item after good ones", TypeError, "expected float",
              lambda: h.mean([1.0, 2.0, "x"]))
-    t.raises("an int subclass is read the slow way", TypeError, "expected int",
-             lambda: h.total64([1, True]))
+    t.equal("an int subclass is read the slow way, and accepted", h.total64([1, True]), 2)
+    t.raises("a non-int item is still refused", TypeError, "expected int",
+             lambda: h.total64([1, 2.5]))
     t.raises("an item too large for 64 bits", OverflowError, "out of range",
              lambda: h.total64([1, 2**64]))
     # Each item read used to keep a reference nobody released, so the items of a
@@ -300,7 +301,9 @@ def main() -> int:
              lambda: h.add(1))
     t.raises("too many arguments", TypeError, "takes at most", lambda: h.add(1, 2, 3))
     t.raises("wrong argument type", TypeError, "expected int", lambda: h.add("x", 1))
-    t.raises("bool is not an int", TypeError, "expected int", lambda: h.add(True, 1))
+    t.equal("bool is an int, as in Python and PyO3", h.add(True, 1), 2)
+    t.equal("an IntEnum member is an int", h.add(h.Mood.happy, 1), 6)
+    t.raises("a float is still not an int", TypeError, "expected int, got float", lambda: h.add(1.5, 1))
     t.raises("wrong string type", TypeError, "expected str", lambda: h.greet(5))
     t.raises("sequence expected", TypeError, "expected a sequence",
              lambda: h.total("ab"))

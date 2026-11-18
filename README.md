@@ -267,7 +267,7 @@ generic value tree.
 | V                                     | Python                       | Notes                                              |
 | ------------------------------------- | ---------------------------- | -------------------------------------------------- |
 | `bool`                                | `bool`                       | Any object in, by its truth value                  |
-| `i8`, `i16`, `i32`, `int`, `i64`, `isize` | `int`                    | Range-checked: out of range raises OverflowError    |
+| `i8`, `i16`, `i32`, `int`, `i64`, `isize` | `int`                    | Range-checked: out of range raises OverflowError; `bool` and `int` subclasses accepted |
 | `u8`, `u16`, `u32`, `u64`, `usize`    | `int`                        | Negative or out of range raises OverflowError      |
 | `f32`, `f64`                          | `float`                      | An `int` is accepted too                           |
 | `rune`                                | `int`                        | The code point                                     |

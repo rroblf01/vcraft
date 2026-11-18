@@ -240,7 +240,7 @@ def main() -> int:
     t.raises("too few", TypeError, "takes 2 positional", lambda: m.add(1))
     t.raises("too many", TypeError, "takes at most", lambda: m.add(1, 2, 3))
     t.raises("str for int", TypeError, "expected int", lambda: m.add("x", 1))
-    t.raises("bool for int", TypeError, "expected int", lambda: m.add(True, 1))
+    t.equal("bool is an int, as in Python", m.add(True, 1), 2)
     t.raises("int for str", TypeError, "expected str", lambda: m.greet(5))
     t.raises("int for float", TypeError, "expected float", lambda: m.describe("x"))
 
