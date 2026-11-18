@@ -748,10 +748,34 @@ call when no reflected one is given. An operand the function does not accept lea
 slot returning `NotImplemented`, so Python raises its own `TypeError` rather than vcraft
 guessing at a conversion.
 
-A V function can call back into Python with `vcraft.call(callee, args)` (borrowed
-arguments, a new reference back) or `vcraft.call_owned(callee, args)` (it releases the
-arguments), and `vcraft.getattr` / `vcraft.call_method` reach an object's methods. The
-callable usually arrives as a `voidptr` parameter:
+A V function can call back into Python with `vcraft.call_py(f, args...)` and
+`vcraft.call_method_py(obj, 'name', args...)`, which take and return `vcraft.PyObj`
+(arguments borrowed, a new reference back, the null object with an exception set on
+failure). An exception raised by the Python code propagates to the caller unchanged:
+
+<!-- readme-test: continue -->
+```v
+@[vc_fn]
+pub fn map_words(words []string, f vcraft.PyObj) ![]string {
+	mut out := []string{cap: words.len}
+	for w in words {
+		arg := vcraft.to_py_string(w)
+		r := vcraft.call_py(f, arg)
+		arg.decref()
+		if r.is_null() {
+			return error('callback failed') // the Python exception is what the caller sees
+		}
+		out << vcraft.from_py_string(r, 'result')!.clone()
+		r.decref()
+	}
+	return out
+}
+```
+
+The lower-level `vcraft.call(callee, args)` (borrowed `voidptr` arguments) and
+`vcraft.call_owned(callee, args)` (it releases the `PyObj` arguments) remain, and
+`vcraft.getattr` / `vcraft.call_method` reach an object's methods. The callable can also
+arrive as a `voidptr` parameter:
 
 <!-- readme-test: continue -->
 ```v

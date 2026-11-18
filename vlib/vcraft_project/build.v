@@ -485,7 +485,13 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	if !os.exists(compiled) {
 		os.mkdir_all(compiled) or { return error('cannot create ${compiled}') }
 	}
-	output := compiled + '/' + p.module + suffix
+	// The compiler writes into a staging directory, and the result replaces the previous
+	// extension only once it built. Writing in place meant a typo deleted the last working
+	// build first, so an editable install stopped importing at all until the code compiled
+	// again -- the moment a working module is most wanted.
+	final_output := compiled + '/' + p.module + suffix
+	staging := compiled + '/.staging'
+	output := staging + '/' + p.module + suffix
 
 	// The glue is regenerated on every build, so a build never depends on a checked-in
 	// copy that a source change has made stale.
@@ -665,7 +671,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 		// Before the toolchain check: planning is pure and has to work where the
 		// compiler does not exist, which is the whole point of verifying a target
 		// without its toolchain.
-		println(describe_plan(p, opt, target, tag, suffix, output, args))
+		println(describe_plan(p, opt, target, tag, suffix, final_output, args))
 		return BuildResult{
 			wheel:     []
 			filename:  ''
@@ -692,6 +698,7 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	// EXT_SUFFIX, so the suffixed file is moved back after the build. Both names are
 	// cleared first, so a leftover from an earlier build can never be read as this one.
 	suffixed := if target.os == 'windows' { output + '.dll' } else { output + '.dylib' }
+	os.mkdir_all(staging) or { return error('cannot create ${staging}') }
 	for stale in [output, suffixed] {
 		if os.exists(stale) {
 			os.rm(stale) or { return error('cannot remove ${stale}') }
@@ -699,12 +706,16 @@ pub fn build(p Project, opt BuildOptions) !BuildResult {
 	}
 	result := os.exec(args)
 	if result.exit_code != 0 {
-		return error('the V compiler failed:\n${result.output}')
+		return error('the V compiler failed:\n${user_diagnostics(result.output)}')
 	}
 	if !os.exists(output) && os.exists(suffixed) {
 		os.mv(suffixed, output) or { return error('cannot move ${suffixed} to ${output}') }
 	}
-	binary := os.read_file(output) or { return error('cannot read ${output}') }
+	if os.exists(final_output) {
+		os.rm(final_output) or { return error('cannot replace ${final_output}: ${err.msg()}') }
+	}
+	os.mv(output, final_output) or { return error('cannot move ${output} to ${final_output}') }
+	binary := os.read_file(final_output) or { return error('cannot read ${final_output}') }
 
 	// Hand-written Python travels with a wheel from the project's Python directory,
 	// `python/` unless `python-source` names another. That is where generated stubs live
@@ -894,6 +905,30 @@ pub fn (p Project) python_tree(root string) []string {
 	stub := p.module + '.pyi'
 	return all.filter(it == stub || it.all_before('/') in p.python_packages
 		|| (!it.contains('/') && it.all_before_last('.') in p.python_packages))
+}
+
+// user_diagnostics is the compiler's output without the notices and warnings it printed
+// about vcraft's own runtime (anything under a `vlib/vcraft*` directory): they are not
+// the user's to fix, and stacked above the user's error they buried it. Errors are always
+// kept, wherever they are, and so is everything about the project's own files.
+pub fn user_diagnostics(output string) string {
+	mut out := []string{}
+	mut dropping := false
+	for line in output.split_into_lines() {
+		is_header := (line.contains(': notice: ') || line.contains(': warning: ')
+			|| line.contains(': error: ')) && line.all_before(': ').count(':') >= 2
+		if is_header {
+			path := line.all_before(':')
+			dropping = !line.contains(': error: ') && (path.contains('/vlib/vcraft/')
+				|| path.contains('/vlib/vcraft_') || path.starts_with('vlib/vcraft'))
+		} else if dropping && !(line.starts_with(' ') || line.starts_with('\t') || line.len == 0) {
+			dropping = false
+		}
+		if !dropping {
+			out << line
+		}
+	}
+	return out.join('\n')
 }
 
 fn python_files(dir string) []string {

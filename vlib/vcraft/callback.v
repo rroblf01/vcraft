@@ -25,6 +25,29 @@ pub fn call(callee voidptr, args []voidptr) PyObj {
 	}
 }
 
+// call_py calls the Python callable `f` with `args`, all of them `PyObj` -- the form to
+// reach for first: no `voidptr`, no `.ptr`, no slice literal to get the element type of
+// right. The arguments are borrowed, as with `call`; the result is a new reference, or
+// the null object with an exception set.
+//
+//	r := vcraft.call_py(f, vcraft.to_py_string(word))
+pub fn call_py(f PyObj, args ...PyObj) PyObj {
+	mut raw := []voidptr{cap: args.len}
+	for a in args {
+		raw << a.ptr
+	}
+	return call(f.ptr, raw)
+}
+
+// call_method_py calls `obj.name(*args)` with `PyObj` arguments, borrowed; see `call_py`.
+pub fn call_method_py(obj PyObj, name string, args ...PyObj) PyObj {
+	mut raw := []voidptr{cap: args.len}
+	for a in args {
+		raw << a.ptr
+	}
+	return call_method(obj.ptr, name, raw)
+}
+
 // call_owned is `call` for arguments the caller built only for the call and does not
 // keep: it releases each one after the call, on success or failure.
 pub fn call_owned(callee voidptr, args []PyObj) PyObj {

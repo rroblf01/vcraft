@@ -91,7 +91,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 64,
+            glue.count("add_function_owned") == 65,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -1507,6 +1507,11 @@ def main() -> int:
     for w in workers:
         w.join()
     t.equal("eight threads incrementing one instance lose nothing", shared.value, 8 * 20000)
+
+    print("call_py")
+    t.equal("call_py passes PyObj arguments", h.apply_py(lambda v: v * 3, 7), 21)
+    t.raises("a Python exception in the callback reaches the caller unchanged",
+             ZeroDivisionError, "", lambda: h.apply_py(lambda v: v // 0, 1))
 
     print("enums round-trip")
     import pickle

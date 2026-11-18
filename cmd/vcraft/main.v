@@ -839,6 +839,13 @@ fn run_build(args Args, develop bool, target_override string) {
 	if !develop {
 		return
 	}
+	// A development build is unoptimised, and the first thing many people do after
+	// `develop` is time a call: say so, or that first measurement reads as vcraft being
+	// slow (a word count ran 3.7x slower than the same code built with --release).
+	if !opt.release {
+		println('  build     debug: unoptimised, several times slower than `--release`;')
+		println('            time things with `vcraft develop --release`')
+	}
 	if opt.editable {
 		vcraft_project.develop_editable(p, result) or {
 			eprintln('error: ${err.msg()}')

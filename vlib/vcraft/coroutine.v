@@ -89,14 +89,14 @@ pub fn run_coroutine(coro PyObj) PyObj {
 				t.decref()
 				v.decref()
 				tb.decref()
-				restore_marker(events, previous, loop)
+				restore_marker(events, previous)
 				if !previous.is_null() {
 					previous.decref()
 				}
 				loop.decref()
 				return value
 			}
-			restore_marker(events, previous, loop)
+			restore_marker(events, previous)
 			if !previous.is_null() {
 				previous.decref()
 			}
@@ -104,7 +104,7 @@ pub fn run_coroutine(coro PyObj) PyObj {
 			C.PyErr_Restore(t.ptr, v.ptr, tb.ptr)
 			return steal(unsafe { nil })
 		}
-		restore_marker(events, previous, loop)
+		restore_marker(events, previous)
 		if !previous.is_null() {
 			previous.decref()
 		}
@@ -197,7 +197,7 @@ pub fn run_coroutine(coro PyObj) PyObj {
 					t.decref()
 					v.decref()
 					tb.decref()
-					restore_marker(events, previous, loop)
+					restore_marker(events, previous)
 					if !previous.is_null() {
 						previous.decref()
 					}
@@ -205,7 +205,7 @@ pub fn run_coroutine(coro PyObj) PyObj {
 					return value
 				}
 				// Not StopIteration: restore the exception so it propagates.
-				restore_marker(events, previous, loop)
+				restore_marker(events, previous)
 				if !previous.is_null() {
 					previous.decref()
 				}
@@ -213,7 +213,7 @@ pub fn run_coroutine(coro PyObj) PyObj {
 				C.PyErr_Restore(t.ptr, v.ptr, tb.ptr)
 				return steal(unsafe { nil })
 			}
-			restore_marker(events, previous, loop)
+			restore_marker(events, previous)
 			if !previous.is_null() {
 				previous.decref()
 			}
@@ -238,7 +238,7 @@ pub fn call_async(callee voidptr, args []voidptr) PyObj {
 }
 
 // restore_marker puts the running-loop marker back where it was, without leaking it.
-fn restore_marker(events PyObj, previous PyObj, loop PyObj) {
+fn restore_marker(events PyObj, previous PyObj) {
 	none_obj := py_none()
 	mut args := []voidptr{cap: 1}
 	if previous.is_null() {

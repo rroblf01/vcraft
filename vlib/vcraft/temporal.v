@@ -173,10 +173,10 @@ pub fn from_py_decimal(o PyObj, name string) !Decimal {
 		text.decref()
 		return err
 	}
-	copy := out.clone()
+	kept := out.clone()
 	text.decref()
 	return Decimal{
-		text: copy
+		text: kept
 	}
 }
 

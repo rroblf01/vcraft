@@ -895,6 +895,20 @@ pub fn cheer_up(m Mood) Mood {
 	return if m == .calm { Mood.happy } else { m }
 }
 
+// apply_py calls a Python function with a V value, through `call_py`.
+@[vc_fn]
+pub fn apply_py(f vcraft.PyObj, x int) !int {
+	arg := vcraft.to_py_int(x)
+	r := vcraft.call_py(f, arg)
+	arg.decref()
+	if r.is_null() {
+		return error('callback failed')
+	}
+	out := vcraft.from_py_int(r, 'result')!
+	r.decref()
+	return int(out)
+}
+
 // count_all takes only *args, so its glue reads no fixed parameter.
 @[vc_fn]
 pub fn count_all(xs ...int) int {

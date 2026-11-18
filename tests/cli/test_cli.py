@@ -1190,6 +1190,17 @@ Homepage = "https://example.com/mypkg"
         pth = platlib / "_mypkg_editable.pth"
         t.check("an editable pointer is installed", pth.exists(),
                 str(list(platlib.glob("*.pth"))))
+        native_src = project / "src" / "mypkg_native.v"
+        good_source = native_src.read_text()
+        native_src.write_text(good_source + "\n@[vc_fn]\npub fn broken_now(n int) string {\n\treturn n\n}\n")
+        proc = subprocess.run([str(VCRAFT), "develop"], cwd=project, env=env,
+                              capture_output=True, text=True)
+        native_src.write_text(good_source)
+        still = subprocess.run([str(venv_python(target)), "-c", "import mypkg_native as m; print(m.add(2, 3))"],
+                               capture_output=True, text=True, cwd=tmp)
+        t.check("a failed build leaves the last working extension importable",
+                proc.returncode != 0 and still.stdout.strip() == "5",
+                (still.stderr or proc.stderr).strip()[-400:])
         installed = list(venv_platlib(target).rglob(f"mypkg_native*{LIB_EXT}"))
         t.check("no copied extension shadows the editable build", not installed,
                 str([str(p) for p in venv_platlib(target).rglob(f"*{LIB_EXT}")]))
@@ -2357,10 +2368,10 @@ pub fn tone_of(t Tone) int {
                     (probe.stdout + probe.stderr).strip()[-400:])
             stub = (enumproj / "python" / "enum_native.pyi").read_text()
             t.check("the stub declares the enum class",
-                    "class Color(enum.IntEnum):" in stub and "red: Color" in stub, stub)
+                    "class Color(enum.IntEnum):" in stub and "    red = 0" in stub, stub)
             t.check("vc_rename gives an enum its Python name",
                     probe.stdout.splitlines()[2:3] == ["1 False"]
-                    and "class Shade(enum.IntEnum):" in stub and "dark: Shade" in stub
+                    and "class Shade(enum.IntEnum):" in stub and "    dark = 1" in stub
                     and "def tone_of(t: Shade) -> int: ..." in stub,
                     (probe.stdout + stub[-300:]).strip())
 

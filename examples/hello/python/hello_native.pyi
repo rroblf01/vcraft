@@ -232,6 +232,9 @@ def both(prefix: str, *items: str, **weights: int) -> str:
 def cheer_up(m: Mood) -> Mood:
     """cheer_up returns the happier mood."""
 
+def apply_py(f: Any, x: int) -> int:
+    """apply_py calls a Python function with a V value, through `call_py`."""
+
 def count_all(*xs: int) -> int:
     """count_all takes only *args, so its glue reads no fixed parameter."""
 
