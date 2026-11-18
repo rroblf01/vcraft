@@ -1124,6 +1124,25 @@ fn cmd_publish(args Args) {
 		eprintln('  build a regular wheel first: `vcraft build`')
 		exit(1)
 	}
+	// PyPI refuses a wheel tagged with a bare `linux_*` platform: it says nothing about the
+	// glibc it needs. Refused here, before any upload starts, with the way to get one it
+	// takes, rather than halfway through a batch.
+	mut bare_linux := []string{}
+	for entry in os.ls('dist') or { []string{} } {
+		if entry.ends_with('.whl') && (entry.contains('-linux_') || entry.ends_with('linux_x86_64.whl')) {
+			bare_linux << entry
+		}
+	}
+	bare_linux.sort()
+	if bare_linux.len > 0 {
+		eprintln('error: PyPI does not accept wheels tagged `linux_*`:')
+		for name in bare_linux {
+			eprintln('  dist/${name}')
+		}
+		eprintln('  build them in the vcraft-manylinux image (`vcraft generate-ci` does), or claim a')
+		eprintln('  policy your build meets with `vcraft build --manylinux 2_28`, then remove these')
+		exit(1)
+	}
 	mut uploader := ''
 	if command_exists('uv') {
 		uploader = 'uv'
@@ -1138,6 +1157,11 @@ fn cmd_publish(args Args) {
 	for entry in os.ls('dist') or { []string{} } {
 		upload << 'dist/' + entry
 	}
+	if args.flags['dry-run'] {
+		println('would upload ${p.name} ${p.version} with:')
+		println('  ${upload.join(' ')}')
+		return
+	}
 	result := os.exec(upload)
 	if result.output.len > 0 {
 		eprintln(result.output)
@@ -1145,7 +1169,6 @@ fn cmd_publish(args Args) {
 	if result.exit_code != 0 {
 		exit(result.exit_code)
 	}
-	_ = p
 }
 
 // command_exists reports whether a program is on PATH.
@@ -1372,15 +1395,10 @@ fn cmd_doctor(args Args) {
 	py := vcraft_project.python_in_environment()
 	println('python        ${py} (${vcraft_project.interpreter_version(py)})')
 	println('vlib          ${vcraft_project.vlib_path()}')
-	if command_exists('ffmpeg') {
-		println('ffmpeg        available')
-	} else {
-		println('ffmpeg        not found (needed for video projects)')
-	}
 	if command_exists(py) {
 		ver := vcraft_project.interpreter_version(py)
-		if ver != '3.14' {
-			println('python version ${ver} (3.14 recommended)')
+		if ver !in vcraft_project.supported_pythons {
+			println('python version ${ver} is not one vcraft supports (${vcraft_project.supported_pythons.join(', ')})')
 		}
 		println('doctor        ok')
 	} else {

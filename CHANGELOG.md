@@ -190,6 +190,13 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **`vcraft publish --dry-run` uploaded.** The flag was ignored and the upload started (a
+  missing credential was all that stopped it). It now prints the command and uploads
+  nothing. `publish` also refuses wheels tagged `linux_*`, which PyPI rejects, before any
+  upload starts, and says how to get a manylinux one.
+- **`vcraft doctor` reported ffmpeg and recommended Python 3.14**, leftovers unrelated to
+  vcraft; it now flags only an interpreter vcraft does not support.
+
 - **A function taking only `*args`/`**kwargs` broke every release build**: its glue
   assigned `args` and never read it, which `-prod` rejects. The codegen suite now also
   compiles the example with `-prod`, so glue that only a release build refuses is caught.

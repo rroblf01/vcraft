@@ -2670,6 +2670,22 @@ pub fn c_marker() int {
                 for original, staged in saved:
                     staged.rename(original)
 
+        print("publish guards")
+        pub = tmp / "publish-guard"
+        (pub / "dist").mkdir(parents=True)
+        shutil.copy(project / "vcraft.toml", pub / "vcraft.toml")
+        (pub / "dist" / "mypkg-0.1.0-cp313-cp313-linux_x86_64.whl").write_bytes(b"")
+        proc = vcraft("publish", "--dry-run", cwd=pub)
+        t.check("publish refuses linux_* wheels PyPI would reject",
+                proc.returncode != 0 and "does not accept wheels tagged `linux_*`" in proc.stderr,
+                (proc.stdout + proc.stderr)[-300:])
+        (pub / "dist" / "mypkg-0.1.0-cp313-cp313-linux_x86_64.whl").unlink()
+        (pub / "dist" / "mypkg-0.1.0-cp313-cp313-manylinux_2_28_x86_64.whl").write_bytes(b"")
+        proc = vcraft("publish", "--dry-run", cwd=pub)
+        t.check("publish --dry-run shows the upload and makes none",
+                proc.returncode == 0 and "would upload" in proc.stdout
+                and "manylinux_2_28" in proc.stdout, (proc.stdout + proc.stderr)[-300:])
+
         print("pip install an sdist")
         if sdists:
             target = tmp / "venv-sdist"
