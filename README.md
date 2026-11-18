@@ -1724,6 +1724,11 @@ interpreter older than 3.11, an `abi3` floor below 3.11 or above the interpreter
 building it, `abi3` together with `free-threading` (free-threaded CPython has no
 stable ABI), and `free-threading` on anything older than 3.13.
 
+On a free-threaded interpreter a method with a `mut` receiver holds the instance's
+critical section for the call, so threads calling into one object take turns, as they do
+under the GIL, while calls on different objects run in parallel. A `@[vc_nogil]` method
+releases it with the GIL; module-level V state shared between threads needs its own lock.
+
 ---
 
 ## Performance

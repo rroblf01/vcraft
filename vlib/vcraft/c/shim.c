@@ -76,6 +76,28 @@ void vpy_add_v_frame(const char *file, int line, const char *func) {
 	PyErr_Restore(type, value, tb);
 }
 
+// vpy_critical_begin/end hold an object's critical section around a method that changes
+// it. Only a free-threaded interpreter has (and needs) them: with the GIL they are empty,
+// and the inlined call disappears. `cs` is caller storage of 32 bytes, which the static
+// assertion keeps honest about PyCriticalSection's size.
+#if defined(Py_GIL_DISABLED) && !defined(Py_LIMITED_API) && PY_VERSION_HEX >= 0x030D0000
+_Static_assert(sizeof(PyCriticalSection) <= 32, "PyCriticalSection outgrew vcraft's storage");
+void vpy_critical_begin(void *cs, void *op) {
+	PyCriticalSection_Begin((PyCriticalSection *)cs, (PyObject *)op);
+}
+void vpy_critical_end(void *cs) {
+	PyCriticalSection_End((PyCriticalSection *)cs);
+}
+#else
+void vpy_critical_begin(void *cs, void *op) {
+	(void)cs;
+	(void)op;
+}
+void vpy_critical_end(void *cs) {
+	(void)cs;
+}
+#endif
+
 int vpy_python_api_version(void) {
 	return PYTHON_API_VERSION;
 }

@@ -1450,6 +1450,27 @@ def main() -> int:
                     f"extra: {sorted(exported - allowed)}")
         t.check("extension suffix", extension.name.endswith(suffix), extension.name)
 
+    print("methods that change an instance hold its critical section")
+    def body_of(name: str) -> str:
+        start = glue.find(f"fn {name}(")
+        return glue[start:glue.find("\n}\n", start)] if start >= 0 else ""
+    t.check("a (mut c Counter) method takes the object's critical section",
+            "vcraft.critical_begin(" in body_of("vcraft_generated__method_counter_increment"))
+    t.check("a (c &Counter) method does not",
+            "vcraft.critical_begin(" not in body_of("vcraft_generated__method_counter_is_zero")
+            and body_of("vcraft_generated__method_counter_is_zero") != "")
+    import threading
+    shared = h.Counter()
+    def bump() -> None:
+        for _ in range(20000):
+            shared.increment()
+    workers = [threading.Thread(target=bump) for _ in range(8)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    t.equal("eight threads incrementing one instance lose nothing", shared.value, 8 * 20000)
+
     print("release build")
     # -prod rejects what a debug build only notes (an unused variable in the glue), so
     # the example is compiled once more the way `vcraft build --release` compiles.

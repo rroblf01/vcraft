@@ -1114,6 +1114,23 @@ pub fn type_defines(self voidptr, name voidptr) bool {
 	return r == 1
 }
 
+fn C.vpy_critical_begin(cs voidptr, op voidptr)
+fn C.vpy_critical_end(cs voidptr)
+
+// critical_begin holds `obj`'s critical section in the 32 bytes at `cs` (a free-threaded
+// interpreter only; a no-op with the GIL). The generated glue wraps every method with a
+// `mut` receiver in it, so concurrent calls into one instance do not interleave.
+@[inline]
+pub fn critical_begin(cs voidptr, obj voidptr) {
+	C.vpy_critical_begin(cs, obj)
+}
+
+// critical_end releases what `critical_begin` took.
+@[inline]
+pub fn critical_end(cs voidptr) {
+	C.vpy_critical_end(cs)
+}
+
 // attribute_error_pending reports whether the pending exception is an AttributeError.
 pub fn attribute_error_pending() bool {
 	return C.PyErr_ExceptionMatches(pyexc_obj(.attribute_error).ptr) != 0

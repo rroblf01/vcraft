@@ -190,6 +190,12 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **Free-threaded: threads calling into one instance could lose updates.** Eight threads
+  calling `doc.feed(...)` on a shared object lost writes, silently. A method with a `mut`
+  receiver now holds the object's critical section (`PyCriticalSection`) for the call, so
+  concurrent calls into one instance serialise as they do under the GIL; calls on
+  different instances still run in parallel. With the GIL it compiles to nothing.
+
 - **The release could stall after the upload**: its new first-install check depends on the
   relocatable V archives, so `release.yml` now runs `release-v.yml` first (a reusable
   workflow that rebuilds only what is missing). Before, a tag pushed ahead of that rebuild

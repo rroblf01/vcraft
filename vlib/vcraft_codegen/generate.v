@@ -61,8 +61,8 @@ pub fn generate(opt Options) Generated {
 
 	return Generated{
 		glue_path:    os.join_path(src, '_vcraft_generated.v')
-		glue:         locate_panics(skip_recover_on_return(enter_collector(emit_glue(p))), p,
-			opt.project_root)
+		glue:         lock_mutators(locate_panics(skip_recover_on_return(enter_collector(emit_glue(p))),
+			p, opt.project_root), p)
 		stub_path:    os.join_path(opt.project_root, opt.stubs_dir, opt.package + '.pyi')
 		stub:         emit_stubs(p)
 		diagnostics: p.diagnostics
@@ -298,6 +298,40 @@ fn locate_panics(glue string, p Project, root string) string {
 			}
 		}
 		out << line
+	}
+	return out.join('\n') + '\n'
+}
+
+// lock_mutators makes every method that changes its instance -- a `(mut x T)` receiver --
+// hold the object's critical section for the call, so on a free-threaded interpreter two
+// threads calling into one instance cannot interleave their updates (`counter.add(1)` from
+// four threads lost increments). With the GIL the lock is compiled out and costs nothing.
+// Done over the finished text, after `vcraft.gc_enter()`, like the other post-passes.
+fn lock_mutators(glue string, p Project) string {
+	mut mutators := map[string]bool{}
+	for c in p.classes {
+		for m in c.methods {
+			if m.mut_receiver && !m.static && !m.classmethod && m.trampoline.len > 0 {
+				mutators[m.trampoline] = true
+				if m.is_iter || m.is_next {
+					mutators[if m.is_iter { c.iter_fn } else { c.next_fn }] = true
+				}
+			}
+		}
+	}
+	mut out := []string{cap: glue.len / 32}
+	mut pending := false
+	for line in glue.split_into_lines() {
+		out << line
+		if line.starts_with('fn ') {
+			name := line[3..].all_before('(')
+			pending = name in mutators && line.contains('(self voidptr')
+		} else if pending && line == '\tvcraft.gc_enter()' {
+			out << '\tmut vc_cs := [4]u64{}'
+			out << '\tvcraft.critical_begin(unsafe { voidptr(&vc_cs[0]) }, self)'
+			out << '\tdefer { vcraft.critical_end(unsafe { voidptr(&vc_cs[0]) }) }'
+			pending = false
+		}
 	}
 	return out.join('\n') + '\n'
 }

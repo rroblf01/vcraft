@@ -1162,6 +1162,8 @@ fn collect_method(path string, lines []string, ast &flat.FlatAst,
 	m.origin = path
 	m.line = decl.line
 	m.column = decl.column
+	m.mut_receiver = decl.line >= 1 && decl.line <= lines.len
+		&& lines[decl.line - 1].replace(' ', '').contains('(mut')
 	m.property = attr_property in block.attrs && m.params.len == 0
 	m.str_method = attr_str in block.attrs
 	m.call_method = attr_call in block.attrs

@@ -422,6 +422,9 @@ pub mut:
 	is_getattr bool
 	// is_setattr is `@[vc_setattr]`: the method takes assignments the class has no slot for.
 	is_setattr bool
+	// mut_receiver is a method declared `(mut x T)`: it changes the instance, so on a
+	// free-threaded interpreter its trampoline holds the object's critical section.
+	mut_receiver bool
 	// opaque marks a function whose `voidptr` result is a native pointer, not a borrowed
 	// `PyObject`: the wrapper hands it to Python in a capsule.
 	opaque bool
