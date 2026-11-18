@@ -449,8 +449,11 @@ fn panic_location(mut where map[string]string, f Func, root string) {
 	if f.trampoline.len == 0 || f.origin.len == 0 || f.line < 1 {
 		return
 	}
-	mut file := f.origin
-	prefix := root.trim_right('/') + '/'
+	// Forward slashes on every platform: a Windows path's backslashes are escapes in the
+	// V string literal this ends up in (`'.\src\x.v'` reads `\s`), and Python shows a
+	// frame's file as given, which Windows opens either way.
+	mut file := f.origin.replace('\\', '/')
+	prefix := root.replace('\\', '/').trim_right('/') + '/'
 	if file.starts_with(prefix) {
 		file = file[prefix.len..]
 	}
@@ -458,7 +461,13 @@ fn panic_location(mut where map[string]string, f Func, root string) {
 		file = file[2..]
 	}
 	name := if f.name.len > 0 { f.name } else { f.py_name }
-	where[f.trampoline] = "'${file}', ${f.line}, '${name}'"
+	where[f.trampoline] = "'${v_quoted(file)}', ${f.line}, '${v_quoted(name)}'"
+}
+
+// v_quoted escapes text for a single-quoted V string: a quote would end it and a `$`
+// would start an interpolation.
+fn v_quoted(text string) string {
+	return text.replace('\\', '\\\\').replace("'", "\\'").replace('$', '\\$')
 }
 
 // enter_collector starts every function in the glue by registering the calling thread

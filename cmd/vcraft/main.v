@@ -1220,11 +1220,13 @@ fn cmd_publish(args Args) {
 		uploader = 'uv'
 	} else if command_exists('twine') {
 		uploader = 'twine'
-	} else {
+	} else if !args.flags['dry-run'] {
 		eprintln('error: neither uv nor twine is available')
 		eprintln('upload it yourself with `twine upload dist/*`')
 		exit(1)
 	}
+	// A dry run uploads nothing, so it shows the plan without an uploader installed,
+	// naming the one a real run would need.
 	mut upload := if uploader == 'twine' { ['twine', 'upload'] } else { ['uv', 'publish'] }
 	// Distributions only: `dist/` also holds the build directory every `vcraft build`
 	// leaves there, which uv and twine refuse as an upload, failing the whole batch.
@@ -1241,6 +1243,9 @@ fn cmd_publish(args Args) {
 	if args.flags['dry-run'] {
 		println('would upload ${p.name} ${p.version} with:')
 		println('  ${upload.join(' ')}')
+		if uploader == '' {
+			println('(neither uv nor twine is installed; a real upload needs one of them)')
+		}
 		return
 	}
 	result := os.exec(upload)

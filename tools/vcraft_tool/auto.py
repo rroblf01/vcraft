@@ -64,7 +64,8 @@ def _relocate_errors(output: str, name: str, origin: str, shift: int) -> str:
     line the user's file does not have; locations are rewritten to the original path and
     its own line numbers.
     """
-    pattern = re.compile(rf"(?:\./)?src/{re.escape(name)}\.v:(\d+):")
+    # Either separator: the compiler names the file as it was given, `.\src\x.v` on Windows.
+    pattern = re.compile(rf"(?:\.[/\\])?src[/\\]{re.escape(name)}\.v:(\d+):")
     return pattern.sub(lambda m: f"{origin}:{max(int(m.group(1)) - shift, 1)}:", output)
 
 

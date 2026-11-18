@@ -280,7 +280,8 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 - **`vcraft publish` passed `dist/build` to the uploader**: every `vcraft build` leaves its
   build directory in `dist/`, and `publish` handed everything there to `uv publish` or
   `twine upload`, which refuse a directory. It now uploads only the `.whl` and `.tar.gz`
-  files, and says so when there are none.
+  files, and says so when there are none. `publish --dry-run` no longer needs uv or twine
+  installed to show what it would upload.
 
 - **A failed build deleted the last working extension**, so after one compile error an
   editable install no longer imported at all. The compiler now writes into a staging

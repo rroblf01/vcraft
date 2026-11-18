@@ -2709,6 +2709,15 @@ pub fn c_marker() int {
         t.check("publish uploads the distributions and not the build directory",
                 "dist/mypkg-0.1.0.tar.gz" in proc.stdout and "dist/build" not in proc.stdout,
                 proc.stdout[-300:])
+        # The musllinux image has neither uploader: a dry run uploads nothing, so it must
+        # still show the plan rather than stop for a tool it will not run.
+        bare = tmp / "no-uploader"
+        bare.mkdir()
+        proc = subprocess.run([str(VCRAFT), "publish", "--dry-run"], cwd=pub,
+                              env=dict(os.environ, PATH=str(bare)), capture_output=True, text=True)
+        t.check("publish --dry-run works with neither uv nor twine installed",
+                proc.returncode == 0 and "would upload" in proc.stdout
+                and "neither uv nor twine" in proc.stdout, (proc.stdout + proc.stderr)[-300:])
 
         print("pip install an sdist")
         if sdists:
