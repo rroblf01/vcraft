@@ -138,6 +138,28 @@ int vpy_is_boxed(void *type) {
 	return 0;
 }
 
+// V never frees a closure on its own: the slot and the context it captured -- arrays
+// included -- stay reachable for the life of the process unless a `closure.Lifetime`
+// frame reclaims them. The runtime functions that run a closure the caller built for them
+// release it afterwards through V's own hook, as V does for a closure given to a detached
+// `spawn`. The hook exists only when the program creates a closure, so it is a weak
+// reference: an extension without closures links and the release does nothing. A function
+// that is not a closure is not in V's table and is left alone.
+#if defined(__GNUC__) || defined(__clang__) || defined(__TINYC__)
+extern void closure__closure_try_destroy(void *closure) __attribute__((weak));
+#define VPY_CLOSURE_RELEASE 1
+#endif
+
+void vpy_release_closure(void *f) {
+#ifdef VPY_CLOSURE_RELEASE
+	if (closure__closure_try_destroy != NULL && f != NULL) {
+		closure__closure_try_destroy(f);
+	}
+#else
+	(void)f;
+#endif
+}
+
 int vpy_python_api_version(void) {
 	return PYTHON_API_VERSION;
 }

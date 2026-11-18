@@ -107,7 +107,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 73,
+            glue.count("add_function_owned") == 74,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -1632,6 +1632,12 @@ def main() -> int:
     t.raises("a panic in a worker becomes a RuntimeError in the caller", RuntimeError,
              "failed", lambda: h.par_fail(1000))
     t.equal("and the extension still works after it", h.par_poly([1.0], 3), serial([1.0], 3))
+    t.equal("a closure run released sees its captures",
+            h.sum_released([float(i) for i in range(1000)]), float(sum(range(1000))))
+    # par_range and released free the closure they ran; running them again must not reuse
+    # a freed slot.
+    t.equal("and closures stay sound across many calls",
+            [h.sum_released([1.0, 2.0]) for _ in range(2000)][-1], 3.0)
 
     badge = h.Badge(1.0, 2.0, label="b", rank=3, motto="go" * 2)
     t.equal("@[vc_class: 'init'] on a subclass takes the base's fields first",

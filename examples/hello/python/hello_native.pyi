@@ -256,6 +256,9 @@ def arrow_upper(col: Any) -> Any:
 def par_poly(xs: Sequence[float], rounds: int) -> list[float]:
     """par_poly evaluates a polynomial at each point, one chunk of the points per core."""
 
+def sum_released(xs: Sequence[float]) -> float:
+    """sum_released adds up `xs` with the GIL released, through a closure over the list."""
+
 def par_fail(n: int) -> int:
     """par_fail panics in one of its chunks."""
 

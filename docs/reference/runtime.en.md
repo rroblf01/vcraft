@@ -1072,6 +1072,11 @@ type_alloc creates an instance of `typ`.
 allocated here. Getting this wrong writes the state over the type object and
 makes `Class()` return the class itself.
 
+An instance of a boxed class (see `boxed_storage`) gets its zeroed state block here, so
+every way an instance comes to exist -- `tp_new`, unpickling, a result built from V, a
+Python subclass -- has one before any field is read or written. A module with no boxed
+class pays one comparison.
+
 ```v
 pub fn no_memory() voidptr
 ```
@@ -1100,7 +1105,7 @@ Python subclass produced without running a vcraft constructor still has its stat
 bytes, zeroed by `PyType_GenericAlloc`. There is no null case to report.
 
 ```v
-pub fn mark_boxed_type(typ voidptr)
+pub fn mark_boxed_type(typ voidptr, size usize)
 ```
 
 mark_boxed_type registers a type whose instances are boxed, for the readers of `&T`
@@ -3049,6 +3054,8 @@ block, and the defer gives the GIL back on the way out, panic included. It does 
 `@[vc_nogil]` safe to call Python from - a released call still may not touch Python -
 it is the way back in.
 
+`f` is released when this returns (see `release_closure`): pass a closure literal.
+
 ```v
 pub fn released(f fn ())
 ```
@@ -3067,6 +3074,8 @@ next thread switch inside CPython, which is how this was found.
 `f` runs released, so it may not touch Python, may not call `allow_threads` or
 `end_allow_threads`, and may not raise a V error: all three go through the interpreter.
 Anything that has to cross the boundary goes before `released` or after it.
+
+`f` is released when this returns (see `release_closure`): pass a closure literal.
 
 ## `handle.v`
 
@@ -3856,6 +3865,8 @@ pub fn with_py_scope(f fn (mut PyScope))
 
 with_py_scope runs `f` with a fresh scope and releases it on exit, including
 on a panic. `f` receives the scope by mutable reference.
+
+`f` is released when this returns (see `release_closure`): pass a closure literal.
 
 ## `temporal.v`
 

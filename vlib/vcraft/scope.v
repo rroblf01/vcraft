@@ -54,7 +54,12 @@ pub fn (mut s PyScope) release() {
 
 // with_py_scope runs `f` with a fresh scope and releases it on exit, including
 // on a panic. `f` receives the scope by mutable reference.
+//
+// `f` is released when this returns (see `release_closure`): pass a closure literal.
 pub fn with_py_scope(f fn (mut PyScope)) {
+	defer {
+		release_closure(voidptr(f))
+	}
 	mut scope := PyScope{}
 	defer {
 		scope.release()

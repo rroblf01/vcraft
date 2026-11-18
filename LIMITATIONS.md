@@ -110,6 +110,16 @@ ptr := &cell
 vcraft.released(fn [ptr] () { unsafe { *ptr = ... } })
 ```
 
+### Closures live until something frees them
+V does not free a closure, or the values it captured, on its own: a function that builds
+one on every call grows by the size of its captures each time. `par_range`, `released`,
+`with_gil` and `with_py_scope` release the closure they are given once it has run, so the
+documented patterns do not leak, but that closure must not be called again afterwards.
+
+**Mitigation:** For a closure you create and keep elsewhere, run the code that creates
+it inside a `closure.Lifetime` frame and reclaim the frame when the closures are no longer
+needed, or use a named function, which is not a closure.
+
 ## API gaps vs PyO3
 
 ### Not implemented (low value)

@@ -95,7 +95,12 @@ pub fn gil_release(state int) {
 // block, and the defer gives the GIL back on the way out, panic included. It does not make
 // `@[vc_nogil]` safe to call Python from - a released call still may not touch Python -
 // it is the way back in.
+//
+// `f` is released when this returns (see `release_closure`): pass a closure literal.
 pub fn with_gil(f fn ()) {
+	defer {
+		release_closure(voidptr(f))
+	}
 	state := gil_ensure()
 	defer {
 		gil_release(state)
@@ -117,7 +122,12 @@ pub fn with_gil(f fn ()) {
 // `f` runs released, so it may not touch Python, may not call `allow_threads` or
 // `end_allow_threads`, and may not raise a V error: all three go through the interpreter.
 // Anything that has to cross the boundary goes before `released` or after it.
+//
+// `f` is released when this returns (see `release_closure`): pass a closure literal.
 pub fn released(f fn ()) {
+	defer {
+		release_closure(voidptr(f))
+	}
 	state := allow_threads()
 	defer {
 		if message := recover() {

@@ -1064,6 +1064,23 @@ pub fn par_poly(xs []f64, rounds int) []f64 {
 	return out
 }
 
+// sum_released adds up `xs` with the GIL released, through a closure over the list.
+@[vc_fn]
+pub fn sum_released(xs []f64) f64 {
+	mut total := 0.0
+	ptr := &total
+	vcraft.released(fn [xs, ptr] () {
+		mut acc := 0.0
+		for x in xs {
+			acc += x
+		}
+		unsafe {
+			*ptr = acc
+		}
+	})
+	return total
+}
+
 // par_fail panics in one of its chunks.
 @[vc_fn]
 pub fn par_fail(n int) int {

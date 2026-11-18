@@ -23,6 +23,10 @@ module vcraft
 // The calling thread keeps the GIL unless the function is `@[vc_nogil]`, which lets other
 // Python threads run meanwhile.
 //
+// `body` is released once every chunk has run (see `release_closure`): V keeps a closure
+// and what it captured -- `xs` and `out` above -- alive until something frees it, so pass
+// a closure literal and do not call it again afterwards.
+//
 // It is not generic -- V compiles a generic function called from another module without
 // its declaration -- so the body is a closure over the slices it reads and writes.
 
@@ -36,6 +40,9 @@ pub fn par_range(n int, body fn (start int, end int)) {
 // par_range_with is `par_range` with an explicit number of workers; 0 means one per core.
 // A small `n` uses fewer threads, and a single worker runs on the calling thread.
 pub fn par_range_with(n int, workers int, body fn (start int, end int)) {
+	defer {
+		release_closure(voidptr(body))
+	}
 	if n <= 0 {
 		return
 	}

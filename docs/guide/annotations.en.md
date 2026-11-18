@@ -121,7 +121,8 @@ into one chunk per core and runs the closure on each chunk in parallel, like ray
 `par_iter`. Allocate the result first and let each chunk write its own part. Workers must
 not touch Python objects; a panic in one becomes a RuntimeError in the caller. Combine it
 with `@[vc_nogil]` so other Python threads keep running. `par_range_with(n, workers, body)`
-sets the number of threads.
+sets the number of threads. The closure is freed once every chunk has run, so pass a
+closure literal and do not call it again.
 
 ## Next
 

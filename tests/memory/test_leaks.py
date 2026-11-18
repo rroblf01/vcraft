@@ -55,6 +55,26 @@ SCENARIOS = {
     "object out, owned": ("", "m.boxed(12345)", 100_000),
     "object in, borrowed": ("obj = object()", "m.identity(obj)", 100_000),
     "instances created and freed": ("", "m.Counter().increment()", 100_000),
+    # A boxed class: its state block is allocated in tp_new and freed at dealloc, and the
+    # strings it stores are copies the block owns.
+    "boxed instances with strings": ("", "n = m.Note('title'); n.rename('other'); n.tags = ['a', 'b']", 50_000),
+    "boxed &T arguments and results": ("a = m.Note('a'); b = m.Note('b')",
+                                       "m.pick_note(a, b, True); m.note_title(a)", 50_000),
+    "boxed pickle round trips": ("import pickle", "pickle.loads(pickle.dumps(m.Point3(1.0, label='x', tags=['t'])))", 20_000),
+    "constructors from the fields": ("", "m.Badge(1.0, label='b', motto='m', rank=2)", 50_000),
+    # Arrow columns: each export owns its buffers until the consumer releases them, and a
+    # view of an incoming column is released after the call.
+    "Arrow columns out and back in": ("", "m.arrow_sum(m.arrow_range(200))", 20_000),
+    "Arrow string columns": ("names = m.arrow_names(['ab', 'cd', 'ef'])", "m.arrow_upper(names)", 20_000),
+    "parallel loops": ("xs = [float(i) for i in range(2000)]", "m.par_poly(xs, 5)", 2_000),
+    "closures run with the GIL released": ("xs = [float(i) for i in range(2000)]",
+                                            "m.sum_released(xs)", 2_000),
+    "parallel loops that panic": (
+        "", "try:\n    m.par_fail(64)\nexcept RuntimeError:\n    pass", 2_000),
+    # The traceback frame a panic gets is built by compiling a one-line function.
+    "panics with a V traceback frame": (
+        "t = m.Tally()", "try:\n    t.add_then_fail(1)\nexcept RuntimeError:\n    pass", 5_000),
+    "callbacks through call_py": ("f = lambda v: v + 1", "m.apply_py(f, 3)", 50_000),
     # A `&T` result takes a new reference on the instance it resolves to; the caller owns
     # it and drops it, so a reference taken but not owned -- or owned twice -- grows.
     "instance references in and out": ("", "m.pick(m.Counter(), m.Counter()).increment()", 50_000),

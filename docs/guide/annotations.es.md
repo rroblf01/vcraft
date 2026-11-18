@@ -124,6 +124,8 @@ en un trozo por núcleo y ejecuta el closure sobre cada trozo en paralelo, como 
 hilos trabajadores no deben tocar objetos de Python; un pánico en uno se convierte en un
 RuntimeError en quien llama. Combínalo con `@[vc_nogil]` para que los demás hilos de Python
 sigan funcionando. `par_range_with(n, workers, body)` fija el número de hilos.
+El closure se libera cuando todos los trozos han terminado, así que pásale un closure
+literal y no lo vuelvas a llamar.
 
 ## Siguiente
 

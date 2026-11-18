@@ -686,6 +686,14 @@ extension.
 V closures capture by value, so a mutable outer variable is not updated by code inside
 the block. Store the result through a pointer (`mut cell := 0; ptr := &cell; vcraft.released(fn [ptr] () { unsafe { *ptr = ... } })`) or keep the state in a struct the closure receives.
 
+`released`, `with_gil`, `with_py_scope` and `par_range` free the closure they were given
+once it has run (`release_closure` in `closures.v`). V itself never does outside a
+`closure.Lifetime` frame, and a closure keeps what it captured reachable, so a function
+that built one per call leaked its captures on every call. Pass a closure literal; one you
+call again after handing it over points at a freed slot. The release goes through a weak
+reference to V's `closure__closure_try_destroy`, because that function exists only in a
+program that creates a closure; a named function is not in V's table and is left alone.
+
 
 `with_gil` is the other direction, for a thread V created: it acquires the GIL for a
 block and gives it back in a `defer`, panic included. A V thread holds no thread state

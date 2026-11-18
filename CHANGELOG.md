@@ -248,6 +248,12 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **`par_range`, `released`, `with_gil` and `with_py_scope` leaked their closure on every
+  call**: V never frees a closure, or what it captured, unless a `closure.Lifetime`
+  reclaims it, so a parallel loop over two 2000-element arrays grew the process by 32 KiB
+  per call. These functions now release the closure once it has run, as V does for one
+  given to a detached `spawn`; pass them a closure literal, not one you call again.
+
 - **A failed build deleted the last working extension**, so after one compile error an
   editable install no longer imported at all. The compiler now writes into a staging
   directory and the result replaces the previous build only once it built.

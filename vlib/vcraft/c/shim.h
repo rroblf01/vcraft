@@ -21,6 +21,7 @@ void vpy_critical_begin(void *cs, void *op);
 void vpy_mark_boxed(void *type, size_t size);
 int vpy_is_boxed(void *type);
 size_t vpy_boxed_size(void *type);
+void vpy_release_closure(void *f);
 void vpy_critical_end(void *cs);
 unsigned long vpy_version_hex(void);
 const char *vpy_version_string(void);
