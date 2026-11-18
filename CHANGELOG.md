@@ -7,6 +7,14 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+### Added
+
+- **A weekly canary against V's master** (`.github/workflows/v-canary.yml`): the generator,
+  runtime, examples and CLI suites run on the newest V and an issue labelled `v-canary`
+  is opened or updated when they fail, so an upstream break is known while it is small.
+  The README's Stability section now states the V pin policy: a pin move is a minor
+  release, never a patch.
+
 ## [1.8.0] - 2026-11-18
 
 ### Added

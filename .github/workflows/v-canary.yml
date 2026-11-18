@@ -1,0 +1,65 @@
+name: v-canary
+# vcraft pins one V commit (see ci.yml), so a release never meets a V it was not tested
+# with. The cost of pinning is surprise: V is pre-1.0 and moves, and a break would only
+# show up when the pin is next moved, possibly weeks of upstream changes at once.
+#
+# This runs the generator, runtime and CLI suites against V's current master once a week
+# and on demand. It never changes the pin and never blocks anything; when it fails it
+# opens (or updates) one issue labelled `v-canary`, so a break is known while it is one
+# upstream commit wide. When it passes, moving the pin is a one-line change.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: build V at upstream master
+        id: v
+        run: |
+          git clone -q --depth 1 https://github.com/vlang/v.git /tmp/v-src
+          cd /tmp/v-src
+          make -j"$(nproc)"
+          ./v version | tee /tmp/v-version.txt
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      - name: "suite: code generator"
+        run: python3 tests/codegen/test_codegen.py
+      - name: "suite: runtime"
+        if: ${{ !cancelled() }}
+        run: python3 tests/runtime/test_runtime.py
+      - name: "suite: examples gallery"
+        if: ${{ !cancelled() }}
+        run: python3 tests/examples/test_examples.py
+      - name: "suite: CLI"
+        if: ${{ !cancelled() }}
+        run: python3 tests/cli/test_cli.py
+
+      - name: report a break
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ steps.v.outputs.commit }}
+        run: |
+          title="V master breaks vcraft"
+          body="The weekly canary failed against V ${COMMIT}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. The pinned V is unaffected; this is the change the next pin move would bring."
+          existing="$(gh issue list --label v-canary --state open --json number --jq '.[0].number')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh label create v-canary --color FBCA04 --description "V master breaks vcraft" 2>/dev/null || true
+            gh issue create --title "$title" --label v-canary --body "$body"
+          fi

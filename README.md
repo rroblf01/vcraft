@@ -1881,6 +1881,13 @@ conversions in the type table are the public surface:
 - Generated glue, the runtime's V API under `vlib/vcraft`, and the wheel's internals
   are not part of the surface: they change whenever the generator needs them to.
 
+**The V compiler.** V is not at 1.0 yet, so vcraft pins the V commit it is tested with
+(`vcraft toolchain install` installs exactly that one) and a project never builds with a V
+nobody tested. Moving the pin is a minor release, with a note in MIGRATING.md when V
+changed something a project's own V code may notice; a patch release never moves it. A
+weekly CI canary runs the suites against V's master and opens an issue when it breaks, so
+an upstream change is found while it is one commit wide rather than at the next pin move.
+
 Upgrading a 0.x project: [MIGRATING.md](MIGRATING.md). Reporting a vulnerability:
 [SECURITY.md](SECURITY.md).
 
