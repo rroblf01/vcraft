@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/rroblf01/vcraft/tree/main/docs
+    about: The guide, the reference, and the guide for PyO3 and maturin users.
+  - name: Security vulnerability
+    url: https://github.com/rroblf01/vcraft/blob/main/SECURITY.md
+    about: Report privately, as SECURITY.md describes; never in a public issue.

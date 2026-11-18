@@ -1989,6 +1989,9 @@ Renamed in 1.0, still accepted with a warning: `@[vc_gil]` (now `@[vc_nogil]`),
 
 ## Development
 
+Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) is the short way in (setup, tests, what a
+change includes); [AGENTS.md](AGENTS.md) has the details every change runs into.
+
 ```console
 $ git clone https://github.com/rroblf01/vcraft && cd vcraft
 $ ./scripts/build-vcraft.sh            # builds bin/vcraft

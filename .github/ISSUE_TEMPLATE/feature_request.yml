@@ -1,0 +1,27 @@
+name: Proposal
+description: Something vcraft should do -- an annotation, a type, a command, a platform.
+labels: [proposal]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check DECISIONS.md first: some additions were weighed and set aside, with the
+        reason. If yours is there, say what has changed.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem it solves
+      description: What you are trying to do, and where vcraft gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: How it would look from V and from Python. A PyO3 or maturin equivalent helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

@@ -14,6 +14,8 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   is opened or updated when they fail, so an upstream break is known while it is small.
   The README's Stability section now states the V pin policy: a pin move is a minor
   release, never a patch.
+- **CONTRIBUTING.md, a code of conduct, and issue and pull request templates**: a bug
+  report asks for the reproduction and `vcraft doctor`, a proposal points at DECISIONS.md.
 - **A reference of the runtime API** (`docs/reference/runtime`), generated from the doc
   comments of every public function, struct, enum and constant in `vlib/vcraft` by
   `scripts/gen-runtime-docs.py`; CI fails when it falls behind the code.
