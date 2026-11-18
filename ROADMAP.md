@@ -103,6 +103,15 @@ Additions that do not change anything 1.x promises.
 
 ## Platforms and toolchain
 
+- [ ] **Move the V pin past the flat-AST change.** The weekly canary (first local run)
+      shows V master (65769c7) turning the flat AST's `typ` field from a string into a `u32`
+      type id, which `vlib/vcraft_codegen/collect.v` reads in a dozen places. The pinned V is
+      unaffected; the next pin move has to resolve the id to a name first.
+- [ ] **PyPy and GraalPy.** PyO3 supports both through their C-API emulation. vcraft mirrors
+      CPython's object header and checks the mirror at import (`check_layout`), and cpyext's
+      header differs, so this is a third struct shape next to the GIL and free-threaded
+      ones, plus a CI cell per interpreter. Worth it once someone needs it.
+
 - [ ] **Pyodide / WebAssembly wheels** (`pyemscripten_*` tags, as maturin builds), so a
       vcraft extension runs in the browser and in JupyterLite. What is known: V targets
       `wasm32_emscripten`; a Pyodide extension is an emscripten `SIDE_MODULE` built with
