@@ -515,6 +515,7 @@ pub fn build(project Project, opt BuildOptions) !BuildResult {
 		module:       p.module
 		package:      p.module
 		stubs_dir:    p.python_source
+		free_threaded: p.free_threading
 	})
 	for d in generate_result.diagnostics {
 		eprint(d.render())

@@ -143,6 +143,11 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   by a constructor, a `mut` method or a setter is copied for it, since Python's is
   borrowed for the call. Before, only scalars were allowed in `@[vc_field]`, and a string
   or map in an unexposed field compiled but could be freed under the instance.
+- **Friendlier builds and diagnostics.** A free-threaded `--interpreter` implies
+  `--free-threading`; a variadic parameter written before the `**kwargs` map is caught
+  with the order V needs spelled out; a refused `@[vc_iter]` no longer adds a second,
+  duplicated error; a diagnostic's caret skips indentation; `vcraft new` points at
+  `vcraft test`.
 - **A warning for `int` passed to C through memory.** V's `int` is 64 bits and C's 32:
   the generator now warns on `fn C.` declarations that take `&int`/`[]int` and on `int`
   fields of `struct C.` mirrors, and suggests `i32`.
@@ -227,11 +232,11 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   the doc comment. `help()`, Jupyter's `?`, Sphinx autodoc and IDE parameter hints work.
 
 - **Free-threaded: threads calling into one instance could lose updates.** Eight threads
-  calling `doc.feed(...)` on a shared object lost writes, silently. A method with a `mut`
-  receiver now holds the object's critical section (`PyCriticalSection`) for the call, so
-  concurrent calls into one instance serialise as they do under the GIL; calls on
-  different instances still run in parallel. With the GIL it compiles to nothing.
-
+  calling `doc.feed(...)` on a shared object lost writes, silently. In a free-threaded
+  build a method with a `mut` receiver now holds the object's critical section
+  (`PyCriticalSection`) for the call, so concurrent calls into one instance serialise as
+  they do under the GIL; calls on different instances still run in parallel. A GIL build
+  emits no locking code at all.
 - **The release could stall after the upload**: its new first-install check depends on the
   relocatable V archives, so `release.yml` now runs `release-v.yml` first (a reusable
   workflow that rebuilds only what is missing). Before, a tag pushed ahead of that rebuild

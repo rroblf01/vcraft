@@ -19,6 +19,9 @@ pub:
 	package string
 	// stubs_dir is where the `.pyi` goes, relative to the project root.
 	stubs_dir string = 'python'
+	// free_threaded generates for a free-threaded interpreter: methods that change their
+	// instance then hold its critical section. A GIL build gets none of that code.
+	free_threaded bool
 }
 
 // Generated is the result of a run.
@@ -63,7 +66,7 @@ pub fn generate(opt Options) Generated {
 	return Generated{
 		glue_path:    os.join_path(src, '_vcraft_generated.v')
 		glue:         own_stored_strings(lock_mutators(locate_panics(skip_recover_on_return(enter_collector(emit_glue(p))),
-			p, opt.project_root), p), p)
+			p, opt.project_root), p, opt.free_threaded), p)
 		stub_path:    os.join_path(opt.project_root, opt.stubs_dir, opt.package + '.pyi')
 		stub:         emit_stubs(p)
 		diagnostics: unique_diagnostics(p.diagnostics)
@@ -389,9 +392,13 @@ fn own_stored_strings(glue string, p Project) string {
 // lock_mutators makes every method that changes its instance -- a `(mut x T)` receiver --
 // hold the object's critical section for the call, so on a free-threaded interpreter two
 // threads calling into one instance cannot interleave their updates (`counter.add(1)` from
-// four threads lost increments). With the GIL the lock is compiled out and costs nothing.
+// four threads lost increments). Only for a free-threaded build: with the GIL the code is
+// not emitted at all, since even an empty lock cost a method call several nanoseconds.
 // Done over the finished text, after `vcraft.gc_enter()`, like the other post-passes.
-fn lock_mutators(glue string, p Project) string {
+fn lock_mutators(glue string, p Project, free_threaded bool) string {
+	if !free_threaded {
+		return glue
+	}
 	mut mutators := map[string]bool{}
 	for c in p.classes {
 		for m in c.methods {

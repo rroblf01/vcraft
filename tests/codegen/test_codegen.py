@@ -1493,11 +1493,11 @@ def main() -> int:
     def body_of(name: str) -> str:
         start = glue.find(f"fn {name}(")
         return glue[start:glue.find("\n}\n", start)] if start >= 0 else ""
-    t.check("a (mut c Counter) method takes the object's critical section",
-            "vcraft.critical_begin(" in body_of("vcraft_generated__method_counter_increment"))
-    t.check("a (c &Counter) method does not",
-            "vcraft.critical_begin(" not in body_of("vcraft_generated__method_counter_is_zero")
-            and body_of("vcraft_generated__method_counter_is_zero") != "")
+    # The example is generated for the GIL, where the lock is left out entirely; the
+    # free-threaded CI job builds a project with --free-threading and checks the lock.
+    t.check("a GIL build emits no critical section, which would only cost time",
+            "vcraft.critical_begin(" not in glue
+            and body_of("vcraft_generated__method_counter_increment") != "")
     import threading
     shared = h.Counter()
     def bump() -> None:

@@ -968,7 +968,7 @@ fn emit_class_new(c Class) string {
 	}
 	// The state is part of the object; `storage_of` names it so the readers below and
 	// the V constructor write into the same bytes.
-	w.write_string('\tstorage := ${c.state_ptr_expr('instance')}\n')
+	w.write_string(if c.boxed { '\tstorage := vcraft.boxed_storage(instance)\n' } else { '\tstorage := vcraft.storage_of(instance)\n' })
 	// `tp_new` owns the object: a panic on this path must release it, or the object
 	// `tp_alloc` handed over leaks when nil travels back to CPython. `instance_fail`
 	// decrefs it, which runs the generated dealloc and frees whatever the constructor

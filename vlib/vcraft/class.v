@@ -121,6 +121,7 @@ pub fn storage_of(obj voidptr) voidptr {
 // The state lives inside the object, so the address is always valid: an instance a
 // Python subclass produced without running a vcraft constructor still has its state
 // bytes, zeroed by `PyType_GenericAlloc`. There is no null case to report.
+@[inline]
 pub fn instance_storage(obj voidptr) voidptr {
 	return storage_of(obj)
 }

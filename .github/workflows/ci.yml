@@ -618,6 +618,27 @@ jobs:
           	}
           	return 0.0
           }
+
+          // A string field: the class keeps its state where V's collector sees it, and
+          // its mut method holds the instance's critical section.
+          @[vc_class]
+          pub struct Log {
+          mut:
+          	@[vc_field] text  string
+          	@[vc_field] lines int
+          }
+
+          @[vc_fn]
+          pub fn new_log() &Log {
+          	return &Log{}
+          }
+
+          @[vc_method]
+          pub fn (mut l Log) append(word string) int {
+          	l.text = l.text + word
+          	l.lines++
+          	return l.lines
+          }
           V
           "$GITHUB_WORKSPACE/bin/vcraft" build --free-threading \
             --interpreter "${{ steps.ft-python.outputs.python-path }}" \
@@ -660,6 +681,24 @@ jobs:
           [t.start() for t in threads]
           [t.join() for t in threads]
           assert [buf.get(i) for i in range(8)] == [float(i) for i in range(8)], [buf.get(i) for i in range(8)]
+          # Eight threads calling mut methods on one instance: each call holds the
+          # instance's critical section, so no update is lost (they were, before).
+          counter = m.Counter()
+          def bump():
+              for _ in range(20_000):
+                  counter.increment()
+          threads = [threading.Thread(target=bump) for _ in range(8)]
+          [t.start() for t in threads]
+          [t.join() for t in threads]
+          assert counter.value == 160_000, counter.value
+          log = m.Log()
+          def write():
+              for _ in range(3_000):
+                  log.append('ab')
+          threads = [threading.Thread(target=write) for _ in range(8)]
+          [t.start() for t in threads]
+          [t.join() for t in threads]
+          assert (log.lines, len(log.text), set(log.text)) == (24_000, 48_000, {'a', 'b'}), (log.lines, len(log.text))
           print('free-threaded import and threads ok')
           "
 
