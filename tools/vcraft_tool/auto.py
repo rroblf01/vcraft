@@ -29,24 +29,9 @@ import sys
 import sysconfig
 from pathlib import Path
 
+from vcraft_tool._locate import vcraft_binary  # noqa: F401  (part of this module's API)
+
 _MODULE_LINE = re.compile(r"^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)\s*$", re.M)
-
-
-def vcraft_binary() -> str:
-    """The vcraft binary: `VCRAFT_BIN`, the one bundled with this package, or PATH."""
-    override = os.environ.get("VCRAFT_BIN")
-    if override:
-        return override
-    try:
-        from vcraft_tool._launch import _binary
-
-        return _binary()
-    except (ImportError, SystemExit):
-        pass
-    found = shutil.which("vcraft")
-    if found:
-        return found
-    raise ImportError("vcraft is not installed: `pip install vcraft`, or set VCRAFT_BIN")
 
 
 def cache_root() -> Path:

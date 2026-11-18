@@ -16,6 +16,9 @@ name: release-v
 # and fall back to a source build when one is missing.
 on:
   workflow_dispatch:
+  # release.yml calls this first, so a release never reaches its first-install check
+  # with archives that still predate the -prod rebuild.
+  workflow_call:
   # When a push to main moves the pin (or this workflow), the `check` job below compares
   # the published release with the platforms this workflow builds, and only a missing
   # archive is built: a push that edits ci.yml for something else costs one API call.

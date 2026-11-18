@@ -45,7 +45,8 @@ def pytest_configure(config: pytest.Config) -> None:
     root = _project_root(Path(config.rootpath))
     if root is None:
         raise pytest.UsageError("--vcraft-develop: no vcraft.toml at or above the rootdir")
-    from vcraft_tool.auto import vcraft_binary
+    # Not from vcraft_tool.auto: importing that installs its .v import hook.
+    from vcraft_tool._locate import vcraft_binary
 
     proc = subprocess.run([vcraft_binary(), "develop"], cwd=root, capture_output=True, text=True)
     if proc.returncode != 0:

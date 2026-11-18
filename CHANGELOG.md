@@ -190,6 +190,14 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **The release could stall after the upload**: its new first-install check depends on the
+  relocatable V archives, so `release.yml` now runs `release-v.yml` first (a reusable
+  workflow that rebuilds only what is missing). Before, a tag pushed ahead of that rebuild
+  would fail the check and leave the action's floating tags unmoved.
+- **`pytest --vcraft-develop` installed the `.v` import hook** for the whole test session,
+  because finding the binary imported `vcraft_tool.auto`; it now comes from a module with
+  no side effects.
+
 - **`import vcraft_tool.auto` pointed compile errors at its cache**, `src/<name>.v`, with line
   numbers shifted by the `module` line it adds. They now name the imported file and its own
   lines, without the compiler's notices about vcraft's runtime.

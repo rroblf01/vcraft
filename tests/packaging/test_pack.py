@@ -384,6 +384,12 @@ def main() -> int:
                                   cwd=scripts_dir, env=auto_env, capture_output=True, text=True)
             t.check("an edited .v file is rebuilt", proc.stdout.strip() == "145",
                     (proc.stderr or proc.stdout).strip()[-300:])
+            proc = subprocess.run([python, "-c",
+                                   "import sys, vcraft_tool._locate as l; l.vcraft_binary(); "
+                                   "print(any(type(f).__name__ == 'VFinder' for f in sys.meta_path))"],
+                                  cwd=scripts_dir, env=auto_env, capture_output=True, text=True)
+            t.check("finding the binary (as the pytest plugin does) installs no import hook",
+                    proc.stdout.strip() == "False", (proc.stderr or proc.stdout).strip()[-300:])
             (scripts_dir / "broken.v").write_text(
                 "pub fn oops() int {\n\treturn \"x\"\n}\n@[vc_fn]\npub fn g() int {\n\treturn oops()\n}\n")
             proc = subprocess.run([python, "-c", "import vcraft_tool.auto, broken"],

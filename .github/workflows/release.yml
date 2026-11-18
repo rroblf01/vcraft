@@ -30,6 +30,14 @@ env:
 #    are what the `build` job's manylinux rebuild reads back.
 # ---------------------------------------------------------------------------
 jobs:
+  # The prebuilt V that `vcraft toolchain install` downloads, published (or republished)
+  # before anything else: `build` uses it, and `smoke` times a first install against it.
+  # When every archive is already published and relocatable this is one API call.
+  toolchain:
+    uses: ./.github/workflows/release-v.yml
+    permissions:
+      contents: write
+
   images:
     strategy:
       fail-fast: false
@@ -160,7 +168,7 @@ jobs:
 #    Needs the images (manylinux rebuild + buildcache).
 # ---------------------------------------------------------------------------
   build:
-    needs: [images-merge]
+    needs: [images-merge, toolchain]
     strategy:
       fail-fast: false
       matrix:
@@ -456,7 +464,7 @@ jobs:
         run: python3 scripts/check-docs-i18n.py
 
   smoke:
-    needs: [publish]
+    needs: [publish, toolchain]
     runs-on: ubuntu-latest
     permissions:
       contents: read
