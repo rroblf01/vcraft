@@ -72,10 +72,22 @@ def _with_module_line(source: str, name: str) -> str:
     return source
 
 
-def build(source: str, name: str, release: bool = True) -> Path:
+def _relocate_errors(output: str, name: str, origin: str, shift: int) -> str:
+    """Point compiler messages at the user's file instead of the cache's copy.
+
+    The build compiles `src/<name>.v` inside the cache, which may start with a `module`
+    line the user's file does not have; locations are rewritten to the original path and
+    its own line numbers.
+    """
+    pattern = re.compile(rf"(?:\./)?src/{re.escape(name)}\.v:(\d+):")
+    return pattern.sub(lambda m: f"{origin}:{max(int(m.group(1)) - shift, 1)}:", output)
+
+
+def build(source: str, name: str, release: bool = True, origin: str | None = None) -> Path:
     """Build V `source` as the extension module `name` and return the built file.
 
-    Cached: the same source for the same interpreter and vcraft builds once.
+    Cached: the same source for the same interpreter and vcraft builds once. `origin`
+    names the file the source came from, so a compile error points there.
     """
     if not name.isidentifier():
         raise ImportError(f"`{name}` is not a valid module name")
@@ -105,7 +117,14 @@ def build(source: str, name: str, release: bool = True) -> Path:
     proc = subprocess.run(command, cwd=project, capture_output=True, text=True)
     if proc.returncode != 0:
         shutil.rmtree(project, ignore_errors=True)
-        raise ImportError(f"vcraft could not build `{name}`:\n{(proc.stderr or proc.stdout).strip()}")
+        shift = text.count("\n") - source.count("\n")
+        message = (proc.stderr or proc.stdout).strip()
+        if origin:
+            message = _relocate_errors(message, name, origin, shift)
+        # Only the lines about the user's code: the compiler also prints notices about
+        # vcraft's own runtime, which say nothing about this file.
+        relevant = [line for line in message.splitlines() if "vcraft_tool/vlib" not in line]
+        raise ImportError(f"vcraft could not build `{name}`:\n" + "\n".join(relevant))
     built = [p for p in project.glob(f"dist/build/{name}*") if any(str(p).endswith(s) for s in suffixes)]
     if not built:
         raise ImportError(f"vcraft built `{name}` but no extension module was written")
@@ -131,7 +150,7 @@ class VFinder(importlib.abc.MetaPathFinder):
         for entry in (path if path is not None else sys.path):
             candidate = Path(entry or ".") / f"{last}.v"
             if candidate.is_file():
-                built = build(candidate.read_text(), last)
+                built = build(candidate.read_text(), last, origin=str(candidate))
                 return importlib.util.spec_from_file_location(fullname, built)
         return None
 

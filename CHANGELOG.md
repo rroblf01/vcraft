@@ -190,6 +190,10 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **`import vcraft_tool.auto` pointed compile errors at its cache**, `src/<name>.v`, with line
+  numbers shifted by the `module` line it adds. They now name the imported file and its own
+  lines, without the compiler's notices about vcraft's runtime.
+
 - **`vcraft publish --dry-run` uploaded.** The flag was ignored and the upload started (a
   missing credential was all that stopped it). It now prints the command and uploads
   nothing. `publish` also refuses wheels tagged `linux_*`, which PyPI rejects, before any

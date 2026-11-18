@@ -384,6 +384,14 @@ def main() -> int:
                                   cwd=scripts_dir, env=auto_env, capture_output=True, text=True)
             t.check("an edited .v file is rebuilt", proc.stdout.strip() == "145",
                     (proc.stderr or proc.stdout).strip()[-300:])
+            (scripts_dir / "broken.v").write_text(
+                "pub fn oops() int {\n\treturn \"x\"\n}\n@[vc_fn]\npub fn g() int {\n\treturn oops()\n}\n")
+            proc = subprocess.run([python, "-c", "import vcraft_tool.auto, broken"],
+                                  cwd=scripts_dir, env=auto_env, capture_output=True, text=True)
+            t.check("a compile error names the user's file and line",
+                    proc.returncode != 0 and "broken.v:2:" in proc.stderr
+                    and "src/broken.v" not in proc.stderr and "vcraft_tool/vlib" not in proc.stderr,
+                    proc.stderr.strip()[-500:])
         else:
             print("  skip no built binary for the real payload")
     except _Abort:
