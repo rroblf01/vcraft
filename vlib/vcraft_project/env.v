@@ -111,6 +111,37 @@ pub fn python_in_environment() string {
 	return python_binary_name()
 }
 
+// installed reports whether the active environment holds this project's development
+// install: the editable `.pth` or a copied extension in its site-packages. An unchanged
+// tree skips the rebuild only when this is true, so a virtualenv deleted and created again
+// at the same path, or a different one activated, gets the install instead of "up to date".
+// Read from the directory layout rather than by asking the interpreter, which would cost
+// a Python start-up on every incremental `develop`.
+pub fn installed(p Project) bool {
+	venv := active_environment()
+	if venv.len == 0 {
+		return false
+	}
+	mut dirs := []string{}
+	$if windows {
+		dirs << os.join_path(venv, 'Lib', 'site-packages')
+	} $else {
+		dirs << os.glob(os.join_path(venv, 'lib', 'python*', 'site-packages')) or { []string{} }
+	}
+	pth := vcraft_wheel.editable_pth_name(p.name)
+	for dir in dirs {
+		if os.exists(os.join_path(dir, pth)) {
+			return true
+		}
+		for f in os.ls(dir) or { []string{} } {
+			if f.starts_with(p.module + '.') && (f.ends_with('.so') || f.ends_with('.pyd')) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // develop installs a freshly built extension into the active environment.
 //
 // It copies the wheel's extension rather than installing the wheel, because `pip

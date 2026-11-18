@@ -81,7 +81,9 @@ $ pytest --vcraft-develop
 vcraft_develop = true
 ```
 
-El plugin no hace nada salvo que una de esas dos cosas lo active.
+El plugin no hace nada salvo que una de esas dos cosas lo active. Instala en el entorno
+del intérprete que ejecuta pytest, esté activado o no (`.venv/bin/pytest` funciona tal
+cual), y la ejecución que instala el proyecto por primera vez ya puede importarlo.
 
 ## Builds guiados por perfil: `--pgo`
 

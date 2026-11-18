@@ -18,7 +18,12 @@ with the compiler's output instead of testing a stale extension.
 
 from __future__ import annotations
 
+import importlib
+import os
+import site
 import subprocess
+import sys
+import sysconfig
 from pathlib import Path
 
 import pytest
@@ -48,7 +53,19 @@ def pytest_configure(config: pytest.Config) -> None:
     # Not from vcraft_tool.auto: importing that installs its .v import hook.
     from vcraft_tool._locate import vcraft_binary
 
-    proc = subprocess.run([vcraft_binary(), "develop"], cwd=root, capture_output=True, text=True)
+    # `vcraft develop` installs into VIRTUAL_ENV. That is the environment of the
+    # interpreter running these tests, which need not be the activated one: `.venv/bin/pytest`
+    # runs from a virtualenv nobody activated.
+    env = dict(os.environ)
+    if sys.prefix != sys.base_prefix:
+        env["VIRTUAL_ENV"] = sys.prefix
+    proc = subprocess.run([vcraft_binary(), "develop"], cwd=root, env=env,
+                          capture_output=True, text=True)
     if proc.returncode != 0:
         raise pytest.UsageError(
             f"vcraft develop failed in {root}:\n{(proc.stderr or proc.stdout).strip()}")
+    # A first `develop` writes `.pth` files, which Python reads only at start-up: without
+    # this, the run that installed the project could not import it. `addsitedir` reads them
+    # now and skips the directories already on sys.path.
+    site.addsitedir(sysconfig.get_paths()["platlib"])
+    importlib.invalidate_caches()

@@ -80,7 +80,9 @@ $ pytest --vcraft-develop
 vcraft_develop = true
 ```
 
-The plugin does nothing unless one of those turns it on.
+The plugin does nothing unless one of those turns it on. It installs into the environment
+of the interpreter running pytest, activated or not (`.venv/bin/pytest` works as is), and
+the run that first installs the project can already import it.
 
 ## Profile-guided builds: `--pgo`
 

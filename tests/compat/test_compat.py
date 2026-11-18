@@ -6,6 +6,8 @@ found on this machine, and every wheel is installed into a fresh virtualenv and 
 - `pip wheel .` (pip from a fresh virtualenv);
 - `python -m build` (sdist, then a wheel built from that sdist), from a uv virtualenv;
 - `uv build`, when `uv` is on PATH;
+- `pytest --vcraft-develop`, the plugin the vcraft wheel installs, from a uv virtualenv
+  holding that wheel and pytest;
 - `cibuildwheel` with the published vcraft-manylinux image, only when
   VCRAFT_TEST_CIBUILDWHEEL=1 (it pulls a container image and needs docker).
 
@@ -21,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import venv
 from pathlib import Path
@@ -64,6 +67,89 @@ def imports(t: Suite, label: str, wheel: Path, tmp: Path) -> None:
     t.check(f"{label}: the wheel installs and imports",
             proc.returncode == 0 and run.stdout.strip() == "5",
             (proc.stderr + run.stderr).strip()[-500:])
+
+
+def pytest_plugin(t: Suite, uv: str | None, tmp: Path) -> None:
+    """`pytest --vcraft-develop` rebuilds a project before its tests import it.
+
+    Runs the real plugin from the vcraft wheel, packed from this checkout, in a virtualenv
+    nobody activated (`.venv/bin/python -m pytest`), which is how an IDE runs tests.
+    """
+    print("pytest --vcraft-develop")
+    if uv is None:
+        print("  skip uv is not on PATH")
+        return
+    platform = sysconfig.get_platform().replace("-", "_").replace(".", "_")
+    dist = tmp / "tool-dist"
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "pack-vcraft-wheel.py"),
+                    "--version", "0.0.0", "--platform", platform, "--bin", str(VCRAFT),
+                    "--vlib", str(ROOT / "vlib"), "--out-dir", str(dist)],
+                   check=True, capture_output=True)
+    tool_wheel = next(dist.glob("vcraft-*.whl"))
+
+    def make_venv(name: str) -> Path | None:
+        target = tmp / name
+        subprocess.run([uv, "venv", "-q", "--python", sys.executable, str(target)],
+                       check=True, capture_output=True)
+        got = subprocess.run([uv, "pip", "install", "-q", "--python", str(venv_python(target)),
+                              str(tool_wheel), "pytest"], capture_output=True, text=True)
+        return target if got.returncode == 0 else None
+
+    first = make_venv("venv-pytest")
+    if first is None:
+        print("  skip pytest could not be installed (offline?)")
+        return
+    subprocess.run([str(VCRAFT), "new", "plugpkg"], cwd=tmp, check=True, capture_output=True)
+    project = tmp / "plugpkg"
+    source = project / "src" / "plugpkg_native.v"
+    tests = project / "tests" / "test_plugpkg.py"
+    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+
+    def pytest(venv_dir: Path, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run([str(venv_python(venv_dir)), "-m", "pytest", "-q", "-p",
+                               "no:cacheprovider", *args, "tests"], cwd=project, env=env,
+                              capture_output=True, text=True)
+
+    def report(proc: subprocess.CompletedProcess) -> str:
+        return (proc.stdout + proc.stderr).strip()[-800:]
+
+    proc = pytest(first, "--vcraft-develop")
+    t.check("the first run builds, installs and imports the project",
+            proc.returncode == 0 and "4 passed" in proc.stdout, report(proc))
+
+    source.write_text(source.read_text().replace("return a + b\n", "return a + b + 100\n"))
+    tests.write_text(tests.read_text().replace("m.add(2, 3), 5)", "m.add(2, 3), 105)"))
+    proc = pytest(first, "--vcraft-develop")
+    t.check("a change to the V source reaches the tests", proc.returncode == 0, report(proc))
+
+    source.write_text(source.read_text().replace("return a + b + 100\n", "return a + b\n"))
+    proc = pytest(first)
+    t.check("without the option nothing is rebuilt", proc.returncode == 0, report(proc))
+
+    good = source.read_text()
+    source.write_text(good + "\npub fn broken( {\n")
+    proc = pytest(first, "--vcraft-develop")
+    t.check("a failed build stops the run with the compiler's output",
+            proc.returncode != 0 and "vcraft develop failed" in proc.stdout + proc.stderr,
+            report(proc))
+    source.write_text(good)
+
+    tests.write_text(tests.read_text().replace("m.add(2, 3), 105)", "m.add(2, 3), 5)"))
+    pyproject = project / "pyproject.toml"
+    pyproject.write_text(pyproject.read_text() + "\n[tool.pytest.ini_options]\nvcraft_develop = true\n")
+    proc = pytest(first)
+    t.check("vcraft_develop = true in pyproject.toml turns it on", proc.returncode == 0,
+            report(proc))
+
+    # The sources are unchanged since the last build, so the build stamp says "up to
+    # date"; a second virtualenv still has to get the install.
+    second = make_venv("venv-pytest-2")
+    if second is None:
+        print("  skip pytest could not be installed a second time")
+        return
+    proc = pytest(second)
+    t.check("an unchanged tree still installs into a new virtualenv", proc.returncode == 0,
+            report(proc))
 
 
 def main() -> int:
@@ -118,6 +204,8 @@ def main() -> int:
                         (proc.stderr or proc.stdout).strip()[-800:])
                 if wheels:
                     imports(t, "build", wheels[0], tmp)
+
+        pytest_plugin(t, uv, tmp)
 
         print("uv build")
         if uv is None:

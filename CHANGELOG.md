@@ -149,7 +149,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   when installed, `unittest` discovery otherwise), passing everything after `--` to the
   runner. **`pytest --vcraft-develop`** (or `vcraft_develop = true` in
   `[tool.pytest.ini_options]`) does the same from pytest, through a plugin installed with
-  vcraft that is inactive unless asked for.
+  vcraft that is inactive unless asked for. It installs into the environment of the
+  interpreter running pytest, activated or not, and makes the install importable in the
+  same run.
 - **Tested with the packaging tools people already use**: a new suite builds a project
   through its backend with `pip wheel`, `python -m build` (sdist, then a wheel from it) and
   `uv build`, installs each wheel and imports it; it runs in CI. The wheels guide shows
@@ -268,6 +270,12 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   named a virtualenv that was not first on PATH: the build took the `python3` on PATH,
   the training the virtualenv's, and the training could not import the module. Both
   builds now target the interpreter the training runs on.
+
+- **`vcraft develop` answered "up to date" to a new virtualenv**: the build stamp covers
+  the sources, not the environment, so after recreating `.venv` (or activating another)
+  nothing was installed and the import failed; with no virtualenv at all it reported
+  success instead of asking for one. An unchanged tree now skips the build only when the
+  active environment holds the install.
 
 - **A failed build deleted the last working extension**, so after one compile error an
   editable install no longer imported at all. The compiler now writes into a staging

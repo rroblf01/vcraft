@@ -726,7 +726,14 @@ fn run_build(args Args, develop bool, target_override string) {
 				if saved == stamp {
 					mut artifact_ok := true
 					if develop {
-						if !os.exists(root + '/dist/build') {
+						// The stamp covers the sources, not the environment: the install
+						// has to be there too, or a new virtualenv is told "up to date".
+						installed := if p := vcraft_project.load(root) {
+							vcraft_project.installed(p)
+						} else {
+							false
+						}
+						if !os.exists(root + '/dist/build') || !installed {
 							artifact_ok = false
 						}
 					} else {
