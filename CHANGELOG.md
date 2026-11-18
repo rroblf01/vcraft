@@ -190,6 +190,15 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **Stubs a type checker and an editor can use.** Results are typed `list[...]` (they are
+  lists; a parameter keeps `Sequence[...]`), so `x: list[str] = f()` type-checks;
+  docstrings are the body of each `def` and `class`, where an editor shows them on hover,
+  instead of a bare string before it; a struct sequence is a `tuple[...]` with a property
+  per field rather than a `NamedTuple` it is not; an iterator class declares `__iter__` and
+  `__next__`, so `for x in obj` type-checks; enum members carry their values; and a
+  renamed function appears under its Python name. The example's stub passes
+  `mypy --strict`.
+
 - **`inspect.signature()` failed on every function, method and class, and a function's doc
   comment was missing from its `__doc__`** (it held only the typed signature). Docstrings
   now start with a signature CPython parses into `__text_signature__` (names and defaults;

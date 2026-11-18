@@ -56,6 +56,15 @@ class Suite:
             self.check(label, False, f"returned {result!r}, no exception")
 
 
+def flat_stub() -> str:
+    """The stub with each docstring body folded into `...`, so a check can look for one
+    `def f(...) -> T: ...` line whether or not `f` is documented."""
+    import re
+    text = STUBS.read_text() if STUBS.exists() else ""
+    docstring = r'(?:"""(?:[^"\\]|\\.|"(?!""))*""")'
+    return re.sub(r":\n[ ]+" + docstring + r"\n", ": ...\n", text)
+
+
 def _has_signature(f) -> bool:
     import inspect
     try:
@@ -106,9 +115,11 @@ def main() -> int:
             "'add($module, a, b)\\n--\\n\\nadd(a: int, b: int) -> int" in glue,
             glue[glue.find("'add("):][:120])
     t.check("void signature says None", "noop() -> None" in glue)
-    stubs = STUBS.read_text() if STUBS.exists() else ""
+    stubs = flat_stub()
     t.check("stub has add", "def add(a: int, b: int) -> int: ..." in stubs)
-    t.check("stub has the docstring", "Adds two integers" in stubs)
+    t.check("stub has the docstring", "Adds two integers" in STUBS.read_text())
+    t.check("the docstring is the body of the def, where an editor shows it",
+            'def add(a: int, b: int) -> int:\n    """Adds two integers' in STUBS.read_text())
     t.check("stub types the sequence element", "values: Sequence[int]" in stubs)
     t.check("stub types a memoryview result",
             "def squares_view(n: int) -> memoryview: ..." in stubs)
@@ -387,9 +398,9 @@ def main() -> int:
             [h.make_shape(k) for k in range(5)],
             [7, "seven", 7.5, True, {"start": 0, "end": 2, "label": "s"}])
     t.check("the stub types the struct sequence and the union",
-            "class Point(NamedTuple):" in STUBS.read_text()
-            and "def shape_kind(s: float | int | str | bool | dict[str, Any]) -> str: ..." in STUBS.read_text(),
-            [l for l in STUBS.read_text().splitlines() if "shape" in l or "Point" in l])
+            "class Point(tuple[int, int]):" in flat_stub()
+            and "def shape_kind(s: float | int | str | bool | dict[str, Any]) -> str: ..." in flat_stub(),
+            [l for l in flat_stub().splitlines() if "shape" in l or "Point" in l])
 
     print("pickling and copying classes")
     import copy
@@ -469,7 +480,7 @@ def main() -> int:
 
     t.check("a cancelled call is left alone when it finishes", asyncio.run(cancelled()))
     t.check("the stub declares it async",
-            "async def slow_square(n: int, label: str) -> str: ..." in STUBS.read_text())
+            "async def slow_square(n: int, label: str) -> str: ..." in flat_stub())
 
     print("N-dimensional arrays through the buffer protocol")
     import array as pyarray
@@ -495,8 +506,8 @@ def main() -> int:
              lambda: h.nd_scale(pyarray.array("i", [1, 2]), 1.0))
     t.raises("an object with no buffer is refused", TypeError, "",
              lambda: h.nd_scale([1.0, 2.0], 1.0))
-    t.check("the stub types them", "def nd_scale(a: Any, k: float) -> memoryview: ..." in STUBS.read_text(),
-            [l for l in STUBS.read_text().splitlines() if "nd_scale" in l])
+    t.check("the stub types them", "def nd_scale(a: Any, k: float) -> memoryview: ..." in flat_stub(),
+            [l for l in flat_stub().splitlines() if "nd_scale" in l])
 
     print("*args and **kwargs")
     t.equal("a variadic parameter takes the extra positionals", h.sum_all(1, 2, 3, 4), 10)
@@ -513,7 +524,7 @@ def main() -> int:
     t.equal("*args and **kwargs together", h.both("p", "x", "y", a=1, b=2), "p:x,y:3")
     t.raises("an unknown keyword without **kwargs is still refused", TypeError,
              "unexpected keyword", lambda: h.sum_all(1, nope=2))
-    stub_text = STUBS.read_text()
+    stub_text = flat_stub()
     t.check("the stub declares *args and **kwargs",
             "def sum_all(base: int, *xs: int) -> int: ..." in stub_text
             and "def tag(name: str, **opts: str) -> str: ..." in stub_text
@@ -540,8 +551,8 @@ def main() -> int:
     t.raises("its plain error is an AttributeError", AttributeError, "_hidden",
              lambda: setattr(rec, "_hidden", 1))
     t.check("the stub declares __setattr__",
-            "def __setattr__(self, name: str, value: int) -> None: ..." in STUBS.read_text(),
-            [l for l in STUBS.read_text().splitlines() if "__setattr__" in l])
+            "def __setattr__(self, name: str, value: int) -> None: ..." in flat_stub(),
+            [l for l in flat_stub().splitlines() if "__setattr__" in l])
     t.equal("__match_args__ lists the fields", h.Counter.__match_args__, ("value", "step"))
     t.equal("a subclass's start with its base's", h.BoundedCounter.__match_args__,
             ("value", "step", "limit"))
@@ -554,8 +565,8 @@ def main() -> int:
             matched = None
     t.equal("an instance destructures in a match statement", matched, (1, 1))
     t.check("the stub declares both",
-            "    __match_args__ = ('value', 'step')" in STUBS.read_text()
-            and "def __getattr__(self, name: str) -> str: ..." in STUBS.read_text())
+            "    __match_args__ = ('value', 'step')" in flat_stub()
+            and "def __getattr__(self, name: str) -> str: ..." in flat_stub())
 
     print("dates, decimals, big ints, JSON and logging")
     import datetime as pydt
@@ -589,7 +600,7 @@ def main() -> int:
     logging.getLogger("hello_native").removeHandler(handler)
     t.equal("V logs through Python's logging, under the module's name", records,
             [("hello_native", "INFO", "hi"), ("hello_native", "WARNING", "hi!")])
-    stub_text = STUBS.read_text()
+    stub_text = flat_stub()
     t.check("the stub names the Python types",
             "def next_day(t: datetime.datetime) -> datetime.datetime: ..." in stub_text
             and "def price_text(d: decimal.Decimal) -> decimal.Decimal: ..." in stub_text
@@ -711,14 +722,14 @@ def main() -> int:
             h.Counter.value.__doc__)
 
     print("class stub")
-    stub = STUBS.read_text() if STUBS.exists() else ""
+    stub = flat_stub()
     t.check("class is declared", "class Counter:" in stub)
     t.check("fields are attributes", "    value: int" in stub, stub[-400:])
     t.check("methods are declared", "    def increment(self) -> int: ..." in stub)
     t.check("property is decorated", "    @property\n" in stub)
     t.check("a static method is a staticmethod in the stub",
             "    @staticmethod\n" in stub and "def triple(n: int) -> int: ..." in stub, stub)
-    t.check("class docstring reaches the stub", "A counter with state." in stub)
+    t.check("class docstring reaches the stub", "A counter with state." in STUBS.read_text())
 
     print("static and raw methods in the generated file")
     t.check("the static method carries METH_STATIC", "vcraft.meth_static |" in glue)
@@ -1328,6 +1339,9 @@ def main() -> int:
             "\treturn Countdown{}\n}" in glue)
     t.check("a constructor that does more is still called",
             "return *new_owned_box(" in glue)
+    t.check("the stub declares the iterator protocol, so `for x in obj` type-checks",
+            "    def __iter__(self) -> Countdown: ..." in stub
+            and "    def __next__(self) -> int: ..." in stub, stub[-600:])
     t.check("the stub keeps both as methods",
             "    def rewind(self) -> None: ..." in stub
             and "    def advance(self) -> int: ..." in stub, stub[-600:])
