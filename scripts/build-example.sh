@@ -45,6 +45,14 @@ fi
 # VCRAFT_SANITIZE=1 builds with AddressSanitizer and UndefinedBehaviorSanitizer, for
 # the CI job that runs the suites under them. gcc rather than V's default tcc, which
 # has no sanitizers; the interpreter then needs the ASan runtime preloaded.
+# VCRAFT_PROD=1 compiles with -prod, as `vcraft build --release` does. -prod turns some
+# notices into errors (an unused variable), so glue that compiles in a debug build can
+# still break every release build; the codegen suite builds the example both ways.
+prod=()
+if [ -n "${VCRAFT_PROD:-}" ]; then
+	prod=(-prod)
+fi
+
 sanitize=()
 if [ -n "${VCRAFT_SANITIZE:-}" ]; then
 	sanitize=(-cc gcc -ldflags "-fsanitize=address,undefined")
@@ -55,6 +63,7 @@ fi
 
 "$here/scripts/vcraft-v.sh" -enable-globals -shared -o "$project/python/$module$suffix" \
 	${sanitize[@]+"${sanitize[@]}"} \
+	${prod[@]+"${prod[@]}"} \
 	${link_flags[@]+"${link_flags[@]}"} \
 	-path "$here/vlib|@vlib" \
 	-cflags "-I$include $sanitize_cflags" \

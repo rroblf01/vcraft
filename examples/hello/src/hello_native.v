@@ -883,6 +883,12 @@ pub fn (r &Record) lookup(name string) !int {
 	return s.extra[name] or { return error('no ${name}') }
 }
 
+// count_all takes only *args, so its glue reads no fixed parameter.
+@[vc_fn]
+pub fn count_all(xs ...int) int {
+	return xs.len
+}
+
 // next_day moves a datetime forward a day: `time.Time` is Python's `datetime`.
 @[vc_fn]
 pub fn next_day(t time.Time) time.Time {

@@ -190,6 +190,10 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 
 ### Fixed
 
+- **A function taking only `*args`/`**kwargs` broke every release build**: its glue
+  assigned `args` and never read it, which `-prod` rejects. The codegen suite now also
+  compiles the example with `-prod`, so glue that only a release build refuses is caught.
+
 - **The prebuilt V never worked outside CI, so every first install compiled V (about
   five minutes).** `release-v.yml` published a development build of the compiler, which
   reads the files it embeds from the path it was built at and panicked anywhere else;

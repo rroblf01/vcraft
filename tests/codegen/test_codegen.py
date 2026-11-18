@@ -11,6 +11,7 @@ produced. Nothing but the standard library is needed:
 
 import gc
 import shutil
+import os
 import subprocess
 import sys
 import sysconfig
@@ -72,7 +73,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 62,
+            glue.count("add_function_owned") == 63,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -1448,6 +1449,15 @@ def main() -> int:
             t.check("only PyInit is exported", exported <= allowed,
                     f"extra: {sorted(exported - allowed)}")
         t.check("extension suffix", extension.name.endswith(suffix), extension.name)
+
+    print("release build")
+    # -prod rejects what a debug build only notes (an unused variable in the glue), so
+    # the example is compiled once more the way `vcraft build --release` compiles.
+    t.equal("a function with only *args counts them", h.count_all(1, 2, 3), 3)
+    proc = subprocess.run([str(ROOT / "scripts" / "build-example.sh"), "hello", PACKAGE],
+                          env=dict(os.environ, VCRAFT_PROD="1"), capture_output=True, text=True)
+    t.check("the example also compiles with -prod", proc.returncode == 0,
+            "\n".join(l for l in (proc.stdout + proc.stderr).splitlines() if "error" in l)[-800:])
 
     print()
     if t.failures:

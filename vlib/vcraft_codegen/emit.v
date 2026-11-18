@@ -849,6 +849,12 @@ fn emit_bind(f Func) string {
 		// it unchanged; with keywords they read the slots, exactly as after `bind_args`.
 		var_pos := f.params.any(it.variadic())
 		var_kw := f.kwargs_param.len > 0
+		// A function whose every parameter is `*args` or `**kwargs` reads no fixed slot,
+		// and `-prod` rejects the then-unused `args` as an error.
+		fixed := f.params.filter(!it.variadic() && it.name != f.kwargs_param).len
+		if fixed == 0 {
+			return '\tsplit := vcraft.split_call(raw_args, nargs, kwnames, g_vc_names_${f.trampoline}, g_vc_optional_${f.trampoline}, ${var_pos}, ${var_kw}, ${vstring_literal(f.name)}) or { return unsafe { nil } }\n'
+		}
 		return '\tmut args := unsafe { raw_args }\n' +
 			'\tsplit := vcraft.split_call(raw_args, nargs, kwnames, g_vc_names_${f.trampoline}, g_vc_optional_${f.trampoline}, ${var_pos}, ${var_kw}, ${vstring_literal(f.name)}) or { return unsafe { nil } }\n' +
 			'\tif kwnames != unsafe { nil } {\n\t\targs = unsafe { voidptr(split.slots.data) }\n\t}\n'
