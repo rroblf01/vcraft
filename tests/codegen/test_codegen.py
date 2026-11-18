@@ -107,7 +107,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 71,
+            glue.count("add_function_owned") == 73,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -871,13 +871,14 @@ def main() -> int:
     # One per trampoline that works on a subclass's state, and none in a trampoline of a
     # class with no base: there is no generation above it to point at.
     # BoundedCounter publishes one level; TallyBuffer (a buffer subclass) publishes one
-    # too, and Draft (a subclass of the boxed Note) five, one per trampoline: its two fields
+    # too, Draft (a subclass of the boxed Note) and Badge (of Point3) five each, one per
+    # trampoline: their two fields
     # getters and setters and its tp_new. The exact count covers all three, and the
     # functions that load the state but never
     # enter it -- dealloc, traverse, clear, the buffer callbacks -- are not trampolines and
     # publish nothing.
     t.check("one published level per subclass trampoline",
-            glue.count("publish_base(1,") == 14,
+            glue.count("publish_base(1,") == 19,
             f"{glue.count('publish_base(1,')} published")
     # The chain is published only where `state_at` can observe it. A method of a
     # base-less class that never calls `state_at` does not enter the chain at all; a
@@ -1555,6 +1556,43 @@ def main() -> int:
     t.check("the stub types the new fields",
             "    title: str" in flat_stub() and "    tags: list[str]" in flat_stub())
 
+    print("boxed classes combined with everything else")
+    import pickle as _pickle
+    import copy as _copy
+    na, nb = h.Note("alpha" * 2), h.Note("beta" * 2)
+    t.equal("a boxed instance is a &T argument", (h.note_title(na), h.note_title(nb)),
+            ("alphaalpha", "betabeta"))
+    t.check("a &T result resolves to the boxed instance itself",
+            h.pick_note(na, nb, True) is nb and h.pick_note(na, nb, False) is na)
+    t.check("== and hash on a boxed class", h.Note("x") == h.Note("x") and h.Note("x") != h.Note("y")
+            and len({h.Note("q"), h.Note("q")}) == 1)
+    sub = h.Draft("dr")
+    t.check("a V subclass instance is a &Base argument and result",
+            h.note_title(sub) == "dr" and h.pick_note(na, sub, True) is sub)
+    class PyNote(h.Note):
+        def shout(self):
+            return self.title.upper()
+    pyn = PyNote("pysub" * 2)
+    pyn.tags = ["t"]
+    t.equal("a Python subclass of a boxed class", (pyn.shout(), h.note_title(pyn), pyn.tags),
+            ("PYSUBPYSUB", "pysubpysub", ["t"]))
+    t.raises("a boxed class with an unexposed field refuses pickling", TypeError, "words",
+             lambda: _pickle.dumps(na))
+    point = h.Point3(1.0, label="lab" * 2, tags=["a", "b"])
+    back = _pickle.loads(_pickle.dumps(point))
+    t.equal("a boxed class pickles (its block is made on unpickling)",
+            (back.x, back.label, back.tags), (1.0, "lablab", ["a", "b"]))
+    t.equal("and copies", (_copy.deepcopy(point).tags, _copy.copy(point).label), (["a", "b"], "lablab"))
+    class PyPoint(h.Point3):
+        pass
+    # deepcopy rebuilds through the same __reduce__ path as unpickling; a class defined in
+    # a function cannot be pickled by name, which is Python's rule, not vcraft's.
+    t.equal("a Python subclass of a boxed class is rebuilt", _copy.deepcopy(PyPoint(label="py")).label, "py")
+    for i in range(3000):
+        _pickle.loads(_pickle.dumps(h.Point3(label="x" * (i % 30), tags=["t"] * 3)))
+    gc.collect()
+    t.equal("values survive pickle churn", (point.label, back.tags), ("lablab", ["a", "b"]))
+
     print("constructors made from the fields")
     import inspect as _inspect
     pt = h.Point3(1.0, 2.0, label="a" + "b", tags=["x" * 3])
@@ -1594,6 +1632,14 @@ def main() -> int:
     t.raises("a panic in a worker becomes a RuntimeError in the caller", RuntimeError,
              "failed", lambda: h.par_fail(1000))
     t.equal("and the extension still works after it", h.par_poly([1.0], 3), serial([1.0], 3))
+
+    badge = h.Badge(1.0, 2.0, label="b", rank=3, motto="go" * 2)
+    t.equal("@[vc_class: 'init'] on a subclass takes the base's fields first",
+            (badge.x, badge.y, badge.label, badge.rank, badge.motto, badge.norm2()),
+            (1.0, 2.0, "b", 3, "gogo", 5.0))
+    t.equal("and its signature lists them in order", str(_inspect.signature(h.Badge)),
+            "(x=0.0, y=0.0, z=0.0, label='', tags=[], rank=0, motto='')")
+    t.equal("and it pickles", _pickle.loads(_pickle.dumps(badge)).motto, "gogo")
 
     print("call_py")
     t.equal("call_py passes PyObj arguments", h.apply_py(lambda v: v * 3, 7), 21)

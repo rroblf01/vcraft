@@ -90,10 +90,20 @@ pub fn type_flags(gc bool, weakref bool, dict bool) u32 {
 // `tp_new` receives the *type*, not an instance, so the instance has to be
 // allocated here. Getting this wrong writes the state over the type object and
 // makes `Class()` return the class itself.
+//
+// An instance of a boxed class (see `boxed_storage`) gets its zeroed state block here, so
+// every way an instance comes to exist -- `tp_new`, unpickling, a result built from V, a
+// Python subclass -- has one before any field is read or written. A module with no boxed
+// class pays one comparison.
 pub fn type_alloc(typ voidptr) voidptr {
-	unsafe {
-		return C.PyType_GenericAlloc(typ, 0)
+	obj := unsafe { C.PyType_GenericAlloc(typ, 0) }
+	if obj != unsafe { nil } {
+		size := C.vpy_boxed_size(typ)
+		if size > 0 {
+			box_new(obj, size)
+		}
 	}
+	return obj
 }
 
 // no_memory raises MemoryError and returns the null pointer, which is what a
@@ -128,7 +138,8 @@ pub fn instance_storage(obj voidptr) voidptr {
 
 fn C.vpy_gc_box(size usize) voidptr
 fn C.vpy_gc_unbox(block voidptr)
-fn C.vpy_mark_boxed(typ voidptr)
+fn C.vpy_mark_boxed(typ voidptr, size usize)
+fn C.vpy_boxed_size(typ voidptr) usize
 fn C.vpy_is_boxed(typ voidptr) int
 
 // A class whose fields hold V-managed memory (a string, an array, a map) cannot keep its
@@ -139,8 +150,8 @@ fn C.vpy_is_boxed(typ voidptr) int
 
 // mark_boxed_type registers a type whose instances are boxed, for the readers of `&T`
 // arguments and results that only have the type to go by.
-pub fn mark_boxed_type(typ voidptr) {
-	C.vpy_mark_boxed(typ)
+pub fn mark_boxed_type(typ voidptr, size usize) {
+	C.vpy_mark_boxed(typ, size)
 }
 
 // boxed_storage returns the state block of an instance of a boxed class.

@@ -948,6 +948,30 @@ pub fn (n &Note) summary() string {
 	return '${n.title}: ${n.tags.join(',')} (${n.views} views, ${n.words.len} words)'
 }
 
+// note_eq compares two notes by title: `==` on a boxed class.
+@[vc_eq]
+pub fn note_eq(a &Note, b &Note) bool {
+	return a.title == b.title
+}
+
+// note_hash hashes a note by its title.
+@[vc_hash]
+pub fn note_hash(n &Note) int {
+	return n.title.len
+}
+
+// note_title reads a Note passed as an argument: a `&T` parameter of a boxed class.
+@[vc_fn]
+pub fn note_title(n &Note) string {
+	return n.title
+}
+
+// pick_note returns one of two notes: a `&T` result pointing into a boxed instance.
+@[vc_fn]
+pub fn pick_note(a &Note, b &Note, second bool) &Note {
+	return if second { b } else { a }
+}
+
 // Draft is a subclass of a boxed class, which is boxed too.
 @[vc_class]
 @[vc_base(Note)]
@@ -1049,6 +1073,16 @@ pub fn par_fail(n int) int {
 		}
 	})
 	return n
+}
+
+// Badge is built from its fields and inherits from Point3: `@[vc_class: 'init']` on a
+// subclass takes the base's fields first.
+@[vc_class: 'init']
+@[vc_base(Point3)]
+pub struct Badge {
+mut:
+	@[vc_field] rank int
+	@[vc_field] motto string
 }
 
 // count_all takes only *args, so its glue reads no fixed parameter.

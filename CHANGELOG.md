@@ -174,6 +174,9 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   by a constructor, a `mut` method or a setter is copied for it, since Python's is
   borrowed for the call. Before, only scalars were allowed in `@[vc_field]`, and a string
   or map in an unexposed field compiled but could be freed under the instance.
+  Every way an instance comes to exist gets its block -- construction, unpickling and
+  `copy`, a `&T` result, a Python subclass -- and `&T` arguments and results, `==`/hash
+  and pickling work on such classes.
 - **Friendlier builds and diagnostics.** A free-threaded `--interpreter` implies
   `--free-threading`; a variadic parameter written before the `**kwargs` map is caught
   with the order V needs spelled out; a refused `@[vc_iter]` no longer adds a second,

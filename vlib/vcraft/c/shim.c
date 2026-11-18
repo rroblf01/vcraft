@@ -102,12 +102,31 @@ void vpy_critical_end(void *cs) {
 // registered once each as the module builds them. A handful per extension; looked up by
 // the readers of a `&T` argument or result, which must follow the pointer for these.
 static void *vpy_boxed_types[256];
+static size_t vpy_boxed_sizes[256];
 static int vpy_boxed_count = 0;
 
-void vpy_mark_boxed(void *type) {
+void vpy_mark_boxed(void *type, size_t size) {
 	if (vpy_boxed_count < 256) {
-		vpy_boxed_types[vpy_boxed_count++] = type;
+		vpy_boxed_types[vpy_boxed_count] = type;
+		vpy_boxed_sizes[vpy_boxed_count] = size;
+		vpy_boxed_count++;
 	}
+}
+
+// vpy_boxed_size is the state block an instance of `type` needs: the largest among the
+// boxed types it is or derives from (a Python subclass of one included), 0 when none.
+size_t vpy_boxed_size(void *type) {
+	if (vpy_boxed_count == 0) {
+		return 0;
+	}
+	size_t size = 0;
+	for (int i = 0; i < vpy_boxed_count; i++) {
+		if (PyType_IsSubtype((PyTypeObject *)type, (PyTypeObject *)vpy_boxed_types[i])
+			&& vpy_boxed_sizes[i] > size) {
+			size = vpy_boxed_sizes[i];
+		}
+	}
+	return size;
 }
 
 int vpy_is_boxed(void *type) {

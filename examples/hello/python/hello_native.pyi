@@ -235,6 +235,12 @@ def cheer_up(m: Mood) -> Mood:
 def apply_py(f: Any, x: int) -> int:
     """apply_py calls a Python function with a V value, through `call_py`."""
 
+def note_title(n: Note) -> str:
+    """note_title reads a Note passed as an argument: a `&T` parameter of a boxed class."""
+
+def pick_note(a: Note, b: Note, second: bool) -> Note:
+    """pick_note returns one of two notes: a `&T` result pointing into a boxed instance."""
+
 def arrow_range(n: int) -> Any:
     """arrow_range is an int64 Arrow column 0..n."""
 
@@ -504,6 +510,15 @@ class Point3:
     def __init__(self, x: float = 0.0, y: float = 0.0, z: float = 0.0, label: str = "", tags: Sequence[str] = []) -> None: ...
     def norm2(self) -> float:
         """norm2 is the squared length."""
+
+class Badge(Point3):
+    """Badge is built from its fields and inherits from Point3: `@[vc_class: 'init']` on a
+    subclass takes the base's fields first.
+    """
+    rank: int
+    motto: str
+    __match_args__ = ('x', 'y', 'z', 'label', 'tags', 'rank', 'motto')
+    def __init__(self, x: float = 0.0, y: float = 0.0, z: float = 0.0, label: str = "", tags: Sequence[str] = [], rank: int = 0, motto: str = "") -> None: ...
 
 class Countdown:
     """A countdown that yields its values one at a time.

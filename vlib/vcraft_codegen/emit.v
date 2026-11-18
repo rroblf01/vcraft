@@ -675,7 +675,7 @@ pub fn render_class_exec(p Project, c Class) string {
 	w.write_string('\t\treturn -1\n')
 	w.write_string('\t}\n')
 	if c.boxed {
-		w.write_string('\tvcraft.mark_boxed_type(' + c.ctype + '.ptr)\n')
+		w.write_string('\tvcraft.mark_boxed_type(' + c.ctype + '.ptr, ${c.size_fn}())\n')
 	}
 	w.write_string('\tvcraft.add_object_ref_on(module, ' + vstring_literal(c.py_name) + ', ' +
 		c.ctype + ')\n')
