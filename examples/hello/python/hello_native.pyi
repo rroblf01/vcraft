@@ -235,6 +235,18 @@ def cheer_up(m: Mood) -> Mood:
 def apply_py(f: Any, x: int) -> int:
     """apply_py calls a Python function with a V value, through `call_py`."""
 
+def arrow_range(n: int) -> Any:
+    """arrow_range is an int64 Arrow column 0..n."""
+
+def arrow_sum(col: Any) -> float:
+    """arrow_sum adds an int64 or float64 Arrow column, skipping nulls."""
+
+def arrow_names(names: Sequence[str]) -> Any:
+    """arrow_names is a utf8 Arrow column from a list of strings."""
+
+def arrow_upper(col: Any) -> Any:
+    """arrow_upper upper-cases a utf8 Arrow column into a new one."""
+
 def count_all(*xs: int) -> int:
     """count_all takes only *args, so its glue reads no fixed parameter."""
 

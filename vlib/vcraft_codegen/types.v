@@ -61,6 +61,12 @@ pub enum Strategy {
 	// NdOut is `vcraft.NdOut`, a result: a native buffer with a shape, returned as an
 	// N-dimensional `memoryview` that `numpy.asarray` wraps without copying.
 	nd_out
+	// ArrowIn is `vcraft.ArrowArray`, a parameter: a borrowed view of one Arrow column from
+	// anything implementing the Arrow PyCapsule interface (pyarrow, polars, pandas).
+	arrow_in
+	// ArrowOut is `vcraft.ArrowOut`, a result: a column Python receives as an object with
+	// `__arrow_c_array__`, which pyarrow and polars take without copying.
+	arrow_out
 	// VarArgs is a V variadic parameter, `...T`: Python's `*args`, every positional
 	// argument past the fixed ones, each read as a `T`.
 	var_args
@@ -113,6 +119,12 @@ pub fn lookup(v_type string) Strategy {
 	}
 	if base == 'vcraft.NdOut' || base == 'NdOut' {
 		return .nd_out
+	}
+	if base == 'vcraft.ArrowArray' || base == 'ArrowArray' {
+		return .arrow_in
+	}
+	if base == 'vcraft.ArrowOut' || base == 'ArrowOut' {
+		return .arrow_out
 	}
 	// `math.complex.Complex` is a struct, but a well-known one: it crosses as a Python
 	// `complex` rather than as an unsupported struct. Both spellings, because a project
@@ -250,6 +262,8 @@ pub fn describe(v_type string) string {
 		.bigint { 'int' }
 		.json_any { 'Any' }
 		.nd_out { 'memoryview' }
+		.arrow_in { 'Any' }
+		.arrow_out { 'Any' }
 		.unsupported { 'Any' }
 	}
 }

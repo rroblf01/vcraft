@@ -26,6 +26,14 @@ surprise.
 | `void`, `!void` | `None` | |
 | `!T` | `T`, or raises | See [Errors and panics](errors.md) |
 
+
+## Arrow columns
+
+| V | Python | Notes |
+| --- | --- | --- |
+| `vcraft.ArrowArray` (parameter) | any object with `__arrow_c_array__` or `__arrow_c_stream__` | pyarrow arrays read in place; polars Series and chunked arrays copied once; numbers and strings (`utf8`, `large_utf8`, `utf8_view`) |
+| `vcraft.ArrowOut` (result) | an object with `__arrow_c_array__` | `pyarrow.array(x)` and `polars.Series(x)` adopt it without a copy; build it with `vcraft.arrow_f64/i64/i32/strings` |
+
 ## Scalar width
 
 A narrow integer is range-checked on the way in: `t_i8(128)` raises `OverflowError`, and

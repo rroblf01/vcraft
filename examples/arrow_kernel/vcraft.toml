@@ -1,0 +1,11 @@
+[package]
+name = "arrow_kernel"
+version = "0.1.0"
+module = "arrowk"
+description = "Column kernels in V over Arrow: pyarrow, polars and pandas columns in, Arrow columns out, without copies."
+license = "MIT"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[build]
+minimum-version = "3.11"

@@ -1195,6 +1195,37 @@ array([[ 0.,  2.,  4.],
        [ 6.,  8., 10.]])
 ```
 
+### Arrow columns: pyarrow, polars, pandas
+
+A `vcraft.ArrowArray` parameter takes any Arrow column -- a pyarrow array, a polars
+Series, a chunked array -- through the Arrow PyCapsule interface, and a `vcraft.ArrowOut`
+result is a column pyarrow and polars adopt without a copy. The extension imports none of
+them.
+
+<!-- readme-test: skip -->
+```v
+@[vc_fn]
+pub fn scale(col vcraft.ArrowArray, k f64) !vcraft.ArrowOut {
+	xs := col.f64s()! // float64 buffer, in place
+	mut out := []f64{len: xs.len}
+	for i, x in xs {
+		out[i] = if col.is_null(i) { 0.0 } else { x * k }
+	}
+	return vcraft.arrow_f64(out)
+}
+```
+
+```python
+>>> pl.Series(m.scale(pl.Series([1.0, 2.0]), 10.0)).to_list()
+[10.0, 20.0]
+```
+
+`f64s()`, `f32s()`, `i64s()` and `i32s()` alias a numeric column, `str_at(i)` reads a
+string (`utf8`, `large_utf8` and polars' `utf8_view` alike), `is_null(i)` reads the
+validity bitmap; `vcraft.arrow_f64/arrow_i64/arrow_i32/arrow_strings` build a column. A
+pyarrow array is read in place; a stream (a polars Series, a chunked array) is copied once
+into one contiguous column. See `examples/arrow_kernel`.
+
 ### Buffers without copying
 
 A `[]u8` parameter accepts anything bytes-like through the buffer protocol:

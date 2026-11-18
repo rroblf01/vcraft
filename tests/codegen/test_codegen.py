@@ -56,6 +56,22 @@ class Suite:
             self.check(label, False, f"returned {result!r}, no exception")
 
 
+def _strings_column(h):
+    """A utf8 column made by vcraft itself, so the Arrow path is tested without pyarrow."""
+    return h.arrow_upper(_StrCol(["ab", "cd", "é"]))
+
+
+class _StrCol:
+    """The smallest Arrow exporter: wraps a vcraft column built from a list of str."""
+
+    def __init__(self, items):
+        import hello_native as h
+        self.inner = h.arrow_names(items)
+
+    def __arrow_c_array__(self, requested_schema=None):
+        return self.inner.__arrow_c_array__()
+
+
 def flat_stub() -> str:
     """The stub with each docstring body folded into `...`, so a check can look for one
     `def f(...) -> T: ...` line whether or not `f` is documented."""
@@ -91,7 +107,7 @@ def main() -> int:
     t.check("glue exports PyInit", "@[export: 'PyInit_hello_native']" in glue)
     t.check("glue is in the user module", "module hello_native" in glue)
     t.check("every annotated function is wrapped",
-            glue.count("add_function_owned") == 65,
+            glue.count("add_function_owned") == 69,
             f"found {glue.count('add_function_owned')}")
 
     print("annotations")
@@ -1549,6 +1565,19 @@ def main() -> int:
     t.equal("the constructor has a signature", str(_inspect.signature(h.Point3)),
             "(x=0.0, y=0.0, z=0.0, label='', tags=[])")
     t.raises("an unknown field is a TypeError", TypeError, "unexpected keyword", lambda: h.Point3(w=1))
+
+    print("Arrow columns")
+    col = h.arrow_range(5)
+    t.check("an ArrowOut implements the Arrow PyCapsule interface",
+            hasattr(col, "__arrow_c_array__") and hasattr(col, "__arrow_c_schema__") and len(col) == 5)
+    t.equal("an ArrowArray reads a column made by vcraft", h.arrow_sum(col), 10.0)
+    names = h.arrow_upper(_strings_column(h))
+    t.equal("utf8 columns cross both ways", len(h.arrow_upper(names)), 3)
+    t.raises("a non-Arrow object is a TypeError", TypeError, "expected an Arrow array", lambda: h.arrow_sum([1, 2]))
+    t.raises("a utf8 column is not a number column", TypeError, "float64", lambda: h.arrow_sum(names))
+    for _ in range(2000):
+        h.arrow_sum(h.arrow_range(100))
+    t.equal("columns survive many round trips", h.arrow_sum(h.arrow_range(100)), 4950.0)
 
     print("call_py")
     t.equal("call_py passes PyObj arguments", h.apply_py(lambda v: v * 3, 7), 21)

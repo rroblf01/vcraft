@@ -14,6 +14,11 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   is opened or updated when they fail, so an upstream break is known while it is small.
   The README's Stability section now states the V pin policy: a pin move is a minor
   release, never a patch.
+- **Arrow columns in and out** (`vcraft.ArrowArray`, `vcraft.ArrowOut`), over the Arrow
+  PyCapsule interface pyarrow, polars, pandas and DuckDB share: numeric columns alias in
+  place, strings in all three Arrow layouts read, nulls through `is_null`, and results
+  adopted by `pyarrow.array()`/`polars.Series()` without a copy. No pyarrow dependency.
+  New example: `examples/arrow_kernel`.
 - **`@[vc_class: 'init']`: constructors from the fields**, as a dataclass has: every
   exposed field becomes a parameter, positional or keyword, defaulting to its zero value
   (`Point3(1.0, label='origin')`), with a signature `inspect` reads. No `new_*` to write.

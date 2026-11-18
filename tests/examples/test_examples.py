@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import vcraft_build  # noqa: E402
 
-GALLERY = ["async_server", "csv_parser", "numpy_kernel", "with_c", "fuzzy_match"]
+GALLERY = ["async_server", "csv_parser", "numpy_kernel", "with_c", "fuzzy_match", "arrow_kernel"]
 VCRAFT = vcraft_build.VCRAFT
 
 

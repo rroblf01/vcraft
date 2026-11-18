@@ -26,6 +26,14 @@ una sorpresa en ejecución.
 | `void`, `!void` | `None` | |
 | `!T` | `T`, o lanza | Ver [Errores y pánicos](errors.md) |
 
+
+## Columnas Arrow
+
+| V | Python | Notas |
+| --- | --- | --- |
+| `vcraft.ArrowArray` (parámetro) | cualquier objeto con `__arrow_c_array__` o `__arrow_c_stream__` | los arrays de pyarrow se leen en sitio; las Series de polars y los chunked arrays se copian una vez; números y strings (`utf8`, `large_utf8`, `utf8_view`) |
+| `vcraft.ArrowOut` (resultado) | un objeto con `__arrow_c_array__` | `pyarrow.array(x)` y `polars.Series(x)` lo adoptan sin copia; se construye con `vcraft.arrow_f64/i64/i32/strings` |
+
 ## Anchura de los escalares
 
 Un entero estrecho se comprueba al entrar: `t_i8(128)` lanza `OverflowError`, y también un

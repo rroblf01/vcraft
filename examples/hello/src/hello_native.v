@@ -975,6 +975,54 @@ pub fn (p &Point3) norm2() f64 {
 	return p.x * p.x + p.y * p.y + p.z * p.z
 }
 
+// arrow_range is an int64 Arrow column 0..n.
+@[vc_fn]
+pub fn arrow_range(n int) vcraft.ArrowOut {
+	mut xs := []i64{cap: n}
+	for i in 0 .. n {
+		xs << i64(i)
+	}
+	return vcraft.arrow_i64(xs)
+}
+
+// arrow_sum adds an int64 or float64 Arrow column, skipping nulls.
+@[vc_fn]
+pub fn arrow_sum(col vcraft.ArrowArray) !f64 {
+	mut total := 0.0
+	if col.format == 'l' {
+		xs := col.i64s()!
+		for i, x in xs {
+			if !col.is_null(i) {
+				total += f64(x)
+			}
+		}
+		return total
+	}
+	xs := col.f64s()!
+	for i, x in xs {
+		if !col.is_null(i) {
+			total += x
+		}
+	}
+	return total
+}
+
+// arrow_names is a utf8 Arrow column from a list of strings.
+@[vc_fn]
+pub fn arrow_names(names []string) vcraft.ArrowOut {
+	return vcraft.arrow_strings(names)
+}
+
+// arrow_upper upper-cases a utf8 Arrow column into a new one.
+@[vc_fn]
+pub fn arrow_upper(col vcraft.ArrowArray) !vcraft.ArrowOut {
+	mut out := []string{cap: col.len}
+	for i in 0 .. col.len {
+		out << col.str_at(i)!.to_upper()
+	}
+	return vcraft.arrow_strings(out)
+}
+
 // count_all takes only *args, so its glue reads no fixed parameter.
 @[vc_fn]
 pub fn count_all(xs ...int) int {

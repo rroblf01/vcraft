@@ -2552,6 +2552,10 @@ fn validate(mut p Project, path string, decl astquery.Declaration, f Func) {
 	if !validate_var_args(mut p, path, decl, f) {
 		return
 	}
+	if lookup(f.v_ret) == .arrow_in {
+		report(mut p, path, decl, 'error: `${decl.name}` returns `vcraft.ArrowArray`, which is a borrowed view valid only for a call; return a `vcraft.ArrowOut` (`vcraft.arrow_f64(values)`) instead')
+		return
+	}
 	if lookup(f.v_ret) == .nd_array {
 		report(mut p, path, decl, 'error: `${decl.name}` returns `vcraft.NdArray`, which is a borrowed view valid only for a call; return a `vcraft.NdOut` (`vcraft.nd_out_f64(shape)`) instead')
 		return

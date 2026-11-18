@@ -18,6 +18,8 @@ module vcraft
 // same translation unit as the generated glue and the C compiler can inline its small
 // functions into the call path; as a separate object every one was an opaque call.
 #include "c/shim.c"
+// The Arrow C Data Interface: `vcraft.ArrowArray` in, `vcraft.arrow_*` columns out.
+#include "c/arrow.c"
 // glibc declares `struct dl_phdr_info` and `dl_iterate_phdr` only with
 // `_GNU_SOURCE`, which the header below needs for its Linux root walk. A `#define`
 // there comes too late (system headers precede it in the generated TU), so it

@@ -1748,6 +1748,7 @@ pub fn return_expr(strategy Strategy, value string, raw bool, v_type string, exp
 		}
 		.optional, .dict, .fixed { '${composite_boxed_expr(strategy, value, v_type)}.ptr' }
 		.nd_out { 'vcraft.nd_export(${value}).ptr' }
+		.arrow_out { 'vcraft.arrow_export(${value}).ptr' }
 		else { '${box_value_expr(value, v_type)}.ptr' }
 	}
 }
@@ -2207,6 +2208,8 @@ pub fn zero_value(strategy Strategy, v_type string) string {
 		.struct_type { '${v_type.trim_space()}{}' }
 		.nd_out { 'vcraft.NdOut{}' }
 		.nd_array { 'vcraft.NdArray{}' }
+		.arrow_out { 'vcraft.ArrowOut{}' }
+		.arrow_in { 'vcraft.ArrowArray{}' }
 		.datetime { 'time.Time{}' }
 		.timedelta { 'time.Duration(0)' }
 		.decimal { 'vcraft.Decimal{}' }
@@ -2260,6 +2263,10 @@ pub fn reader_expr(strategy Strategy, local string, index int, func string, para
 		return '${local}_enum := vcraft.enum_value(g_vc_enum_${info.key}.ptr, vcraft.required_arg(args, ${index}, ' +
 			"'${func}', '${param}') or { return unsafe { nil } }, ${vstring_literal(param)}) or { return unsafe { nil } }\n" +
 			'\t${local} := unsafe { ${param_type.trim_space()}(${local}_enum) }'
+	}
+	if strategy == .arrow_in {
+		return "${local} := vcraft.arrow_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }\n" +
+			'\tdefer { ${local}.release() }'
 	}
 	if strategy == .nd_array {
 		return "${local} := vcraft.nd_arg(args, ${index}, '${func}', '${param}') or { return unsafe { nil } }\n" +
@@ -2525,6 +2532,8 @@ pub fn boxed_expr(strategy Strategy, value string) string {
 		.sum_type { 'vcraft.to_py_none()' }
 		.nd_out { 'vcraft.nd_export(' + value + ')' }
 		.nd_array { 'vcraft.to_py_none()' }
+		.arrow_out { 'vcraft.arrow_export(' + value + ')' }
+		.arrow_in { 'vcraft.to_py_none()' }
 		// Boxed through `box_value_expr`, which has the type. Unreachable.
 		.datetime, .timedelta, .decimal, .bigint, .json_any { 'vcraft.to_py_none()' }
 		.unsupported { 'unsafe { nil }' }
