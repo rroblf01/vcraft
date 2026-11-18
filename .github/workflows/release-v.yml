@@ -8,25 +8,18 @@ name: release-v
 # The release is a prerelease, so it is a toolchain cache and never the repository's
 # "latest release": that stays the real vcraft release under the `vcraft/v*` tag.
 #
-# Runs when a push to main touches the pins, and on demand. It builds only what is
-# missing from the release (see the `check` job), so a push that edits ci.yml for
-# something else -- a version bump, a comment -- rebuilds nothing. A user's `vcraft
-# toolchain install` downloads these archives, which is what keeps a first install to
-# seconds instead of a five-minute compiler build; ci.yml and release.yml also use them
-# and fall back to a source build when one is missing.
+# Runs only when a release asks for it, or on demand: never on a push. release.yml calls
+# it first, and it builds only what is missing from the release (see the `check` job), so
+# a release whose pin has not moved costs one API call. A user's `vcraft toolchain
+# install` downloads these archives, which is what keeps a first install to seconds
+# instead of a five-minute compiler build; ci.yml and release.yml also use them and fall
+# back to a source build when one is missing, so CI after a pin move only costs time
+# until the next release (or a manual run) publishes the new archives.
 on:
   workflow_dispatch:
   # release.yml calls this first, so a release never reaches its first-install check
   # with archives that still predate the -prod rebuild.
   workflow_call:
-  # When a push to main moves the pin (or this workflow), the `check` job below compares
-  # the published release with the platforms this workflow builds, and only a missing
-  # archive is built: a push that edits ci.yml for something else costs one API call.
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/ci.yml
-      - .github/workflows/release-v.yml
 
 permissions:
   contents: write

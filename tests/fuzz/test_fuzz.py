@@ -206,7 +206,10 @@ def main() -> int:
     # misspelled annotations. Nothing may crash the vcraft binary; a clean failure
     # (non-zero exit) is the expected answer.
     print("hostile project inputs")
-    vcraft = ROOT / "bin" / "vcraft"
+    # Built here like every other suite that runs the CLI: a job that runs only this
+    # suite (the musl one does) has no bin/vcraft otherwise.
+    vcraft_build.build_vcraft()
+    vcraft = vcraft_build.VCRAFT
     import tempfile, os, shutil
     cases = [
         ("spaces and unicode path", "café project"),

@@ -464,6 +464,40 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14"
+
+      # The checks build projects with bin/vcraft, so they need V and a vcraft built
+      # from the tag: the prebuilt compiler the build job used, or the cache it saved.
+      - name: download the prebuilt compiler
+        id: v-prebuilt
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/v-src
+          gh release download "v/$V_COMMIT" --pattern "v-$V_COMMIT-linux-x86_64.tar.gz" \
+            --dir /tmp/v-dl --clobber
+          tar -xzf "/tmp/v-dl/v-$V_COMMIT-linux-x86_64.tar.gz" -C /tmp/v-src
+          /tmp/v-src/v version
+
+      - name: restore the V compiler cache
+        if: steps.v-prebuilt.outcome != 'success'
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: /tmp/v-src
+          key: v-slim1-ubuntu-latest-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          fail-on-cache-miss: true
+
+      - name: put V on PATH
+        run: echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      - name: build vcraft
+        run: ./scripts/build-vcraft.sh && bin/vcraft version
+
       - name: check sdist round-trip
         run: python3 scripts/check-sdist-roundtrip.py
       - name: check reproducible build

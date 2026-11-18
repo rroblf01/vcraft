@@ -728,28 +728,42 @@ jobs:
         run: python3 scripts/check-docs-i18n.py
 
 
-  reproducible:
-    name: reproducible build
+  # The three checks build projects with bin/vcraft, so they need the V compiler the
+  # v-compiler job caches and a vcraft built from this commit. One job builds it once.
+  distribution:
+    needs: v-compiler
+    name: distribution checks (reproducible, sdist round-trip, performance)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14"
+
+      - name: restore the V compiler
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: /tmp/v-src
+          key: v-slim1-ubuntu-latest-${{ runner.arch }}-${{ env.V_COMMIT }}-${{ env.VC_COMMIT }}
+          fail-on-cache-miss: true
+
+      - name: put V on PATH
+        run: echo "/tmp/v-src" >> "$GITHUB_PATH"
+
+      - name: build vcraft
+        id: vcraft-ready
+        run: ./scripts/build-vcraft.sh && bin/vcraft version
+
       - name: check reproducible build
+        if: ${{ !cancelled() && steps.vcraft-ready.outcome == 'success' }}
         run: python3 scripts/check-reproducible.py
 
-
-  sdist-roundtrip:
-    name: sdist round-trip
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: check sdist round-trip
+        if: ${{ !cancelled() && steps.vcraft-ready.outcome == 'success' }}
         run: python3 scripts/check-sdist-roundtrip.py
 
-
-  perf-baseline:
-    name: performance baseline
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: check performance baseline
+        if: ${{ !cancelled() && steps.vcraft-ready.outcome == 'success' }}
         run: python3 scripts/check-perf-baseline.py

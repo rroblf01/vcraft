@@ -35,7 +35,12 @@ def main() -> int:
         extract = td / "extracted"
         extract.mkdir()
         with tarfile.open(sdists[0]) as tf:
-            tf.extractall(extract)
+            # The "data" filter (3.12+, backported to 3.11.4) refuses links and paths
+            # that leave the directory, which an sdist never needs.
+            if hasattr(tarfile, "data_filter"):
+                tf.extractall(extract, filter="data")
+            else:
+                tf.extractall(extract)
         extracted_proj = next(extract.iterdir())
         # build wheel from extracted sdist
         r = run([str(VCRAFT), "build", "--release", "--out-dir", str(td / "wheel")],
