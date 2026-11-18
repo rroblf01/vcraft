@@ -254,6 +254,21 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   per call. These functions now release the closure once it has run, as V does for one
   given to a detached `spawn`; pass them a closure literal, not one you call again.
 
+- **The generated stub disagreed with the module it describes** in ways mypy's
+  `stubtest` reports: constructors were `__init__` though the arguments are bound in
+  `tp_new`, a struct sequence was a plain subclassable `tuple` without `n_fields` or
+  `__match_args__`, and the parameters of special methods such as `__setattr__` could be
+  passed by keyword. Constructors are now `__new__(cls, ...) -> Self`, a struct sequence is
+  `@final` and derives from `_typeshed.structseq`, as typeshed declares `os.stat_result`,
+  and special methods take positional-only parameters. The code generator suite runs
+  `mypy --strict` and `stubtest` on the example's stub when mypy is installed, and CI
+  installs it, along with numpy, pyarrow and polars for the examples gallery.
+
+- **`--pgo` trained with a different interpreter than it built for** when `VIRTUAL_ENV`
+  named a virtualenv that was not first on PATH: the build took the `python3` on PATH,
+  the training the virtualenv's, and the training could not import the module. Both
+  builds now target the interpreter the training runs on.
+
 - **A failed build deleted the last working extension**, so after one compile error an
   editable install no longer imported at all. The compiler now writes into a staging
   directory and the result replaces the previous build only once it built.

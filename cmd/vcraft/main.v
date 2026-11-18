@@ -622,6 +622,17 @@ fn cmd_pgo(args Args, develop bool) {
 			passed << '--${k}=${v}'
 		}
 	}
+	python := if args.options['interpreter'] != '' {
+		args.options['interpreter']
+	} else {
+		vcraft_project.python_in_environment()
+	}
+	// Both builds target the interpreter the training runs on. Left to itself the build
+	// takes the `python3` on PATH, which is not the virtualenv's when VIRTUAL_ENV names
+	// one that is not first on PATH, and the training then cannot import the module.
+	if args.options['interpreter'] == '' && python != vcraft_project.python_binary_name() {
+		passed << '--interpreter=${python}'
+	}
 	user_cflags := args.options['cflags']
 	user_ldflags := args.options['ldflags']
 	println('pgo 1/3: instrumented build')
@@ -633,11 +644,6 @@ fn cmd_pgo(args Args, develop bool) {
 	if os.system_args(instrumented) != 0 {
 		eprintln('error: the instrumented build failed')
 		exit(1)
-	}
-	python := if args.options['interpreter'] != '' {
-		args.options['interpreter']
-	} else {
-		vcraft_project.python_in_environment()
 	}
 	println('pgo 2/3: training with ${script}')
 	flush_stdout()

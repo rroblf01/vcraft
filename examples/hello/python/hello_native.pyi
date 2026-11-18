@@ -2,11 +2,15 @@
 # Regenerate with `vcraft build`.
 
 from typing import Any, Sequence
+from typing import Final, final, Self
+from _typeshed import structseq
 import enum
 import datetime
 import decimal
 
-class Point(tuple[int, int]):
+@final
+class Point(structseq[int], tuple[int, int]):
+    __match_args__: Final = ('x', 'y')
     @property
     def x(self) -> int: ...
     @property
@@ -355,7 +359,7 @@ class Counter:
     value: int
     step: int
     __match_args__ = ('value', 'step')
-    def __init__(self) -> None: ...
+    def __new__(cls) -> Self: ...
     def increment(self) -> int:
         """increment adds step to value and returns the new total."""
     def set_step(self, step: int) -> None:
@@ -435,7 +439,7 @@ class Pair:
     tag: int
     peer: Any
     __match_args__ = ('tag', 'peer')
-    def __init__(self) -> None: ...
+    def __new__(cls) -> Self: ...
     def link(self, other: Any) -> None:
         """link makes two instances point at each other, which is the cycle the collector
         exists to break.
@@ -447,7 +451,7 @@ class Registry:
     """Registry keeps collector-managed state alive through `vcraft.own_gc`: each instance has
     its own, released when the instance is.
     """
-    def __init__(self) -> None: ...
+    def __new__(cls) -> Self: ...
     def add(self, name: str) -> int:
         """add records a name and returns how many the registry holds."""
     def lookup(self, name: str) -> int:
@@ -459,8 +463,8 @@ class Config:
     """
     version: int
     __match_args__ = ('version',)
-    def __init__(self) -> None: ...
-    def __getattr__(self, name: str) -> str:
+    def __new__(cls) -> Self: ...
+    def __getattr__(self, name: str, /) -> str:
         """setting is the class's `__getattr__`: called only for names the class does not have."""
 
 class Record:
@@ -469,12 +473,12 @@ class Record:
     """
     size: int
     __match_args__ = ('size',)
-    def __init__(self) -> None: ...
-    def __setattr__(self, name: str, value: int) -> None:
+    def __new__(cls) -> Self: ...
+    def __setattr__(self, name: str, value: int, /) -> None:
         """put is the class's `__setattr__` for the names it does not define. The name is
         borrowed from Python, so it is cloned before the map keeps it.
         """
-    def __getattr__(self, name: str) -> int:
+    def __getattr__(self, name: str, /) -> int:
         """lookup is the matching `__getattr__`."""
 
 class Note:
@@ -485,7 +489,7 @@ class Note:
     tags: list[str]
     views: int
     __match_args__ = ('title', 'tags', 'views')
-    def __init__(self, title: str) -> None: ...
+    def __new__(cls, title: str) -> Self: ...
     def rename(self, title: str) -> None:
         """rename stores its argument in the instance."""
     def learn(self, text: str) -> int:
@@ -498,7 +502,7 @@ class Draft(Note):
     revision: int
     author: str
     __match_args__ = ('title', 'tags', 'views', 'revision', 'author')
-    def __init__(self, title: str) -> None: ...
+    def __new__(cls, title: str) -> Self: ...
 
 class Point3:
     """Point3 is built from its fields: `@[vc_class: 'init']` generates the constructor, so
@@ -510,7 +514,7 @@ class Point3:
     label: str
     tags: list[str]
     __match_args__ = ('x', 'y', 'z', 'label', 'tags')
-    def __init__(self, x: float = 0.0, y: float = 0.0, z: float = 0.0, label: str = "", tags: Sequence[str] = []) -> None: ...
+    def __new__(cls, x: float = 0.0, y: float = 0.0, z: float = 0.0, label: str = "", tags: Sequence[str] = []) -> Self: ...
     def norm2(self) -> float:
         """norm2 is the squared length."""
 
@@ -521,7 +525,7 @@ class Badge(Point3):
     rank: int
     motto: str
     __match_args__ = ('x', 'y', 'z', 'label', 'tags', 'rank', 'motto')
-    def __init__(self, x: float = 0.0, y: float = 0.0, z: float = 0.0, label: str = "", tags: Sequence[str] = [], rank: int = 0, motto: str = "") -> None: ...
+    def __new__(cls, x: float = 0.0, y: float = 0.0, z: float = 0.0, label: str = "", tags: Sequence[str] = [], rank: int = 0, motto: str = "") -> Self: ...
 
 class Countdown:
     """A countdown that yields its values one at a time.
@@ -534,7 +538,7 @@ class Countdown:
     current: int
     start: int
     __match_args__ = ('current', 'start')
-    def __init__(self) -> None: ...
+    def __new__(cls) -> Self: ...
     def __iter__(self) -> Countdown: ...
     def rewind(self) -> None:
         """rewind resets the countdown, so the same instance can be iterated twice."""
@@ -554,7 +558,7 @@ class Tally:
     """
     sum: int
     __match_args__ = ('sum',)
-    def __init__(self) -> None: ...
+    def __new__(cls) -> Self: ...
     def add_then_fail(self, by: int) -> None:
         """add_then_fail adds `by` to the sum and then panics.
 
@@ -569,7 +573,7 @@ class Vector:
     exactly once at dealloc. `memoryview(v)` exposes it without a copy, and the methods
     below read and write it in place.
     """
-    def __init__(self, n: int) -> None: ...
+    def __new__(cls, n: int) -> Self: ...
     def set(self, i: int, value: float) -> None:
         """set stores a value at `i`, ignoring an out-of-range index."""
     def get(self, i: int) -> float:
@@ -588,7 +592,7 @@ class Samples:
     element's own format, instead of the default 1-D byte view: `format "d"`, `itemsize 8`,
     and a length in elements rather than bytes.
     """
-    def __init__(self, n: int) -> None: ...
+    def __new__(cls, n: int) -> Self: ...
     def set(self, i: int, value: float) -> None:
         """set stores a value at `i`, ignoring an out-of-range index."""
     def at(self, i: int) -> float:
@@ -602,7 +606,7 @@ class TallyBuffer(Counter):
     """
     count: int
     __match_args__ = ('value', 'step', 'count')
-    def __init__(self, n: int) -> None: ...
+    def __new__(cls, n: int) -> Self: ...
     def push(self, value: int) -> None:
         """push stores a value at the next free slot, or does nothing when full."""
 
@@ -612,7 +616,7 @@ class Chunk:
     """
     buddy: Any
     __match_args__ = ('buddy',)
-    def __init__(self) -> None: ...
+    def __new__(cls) -> Self: ...
     def fill(self, b: int) -> None:
         """fill writes one byte into the buffer."""
 
@@ -623,7 +627,7 @@ class OwnedBox:
     """
     value: int
     __match_args__ = ('value',)
-    def __init__(self, value: int) -> None: ...
+    def __new__(cls, value: int) -> Self: ...
     def owned_is_set(self) -> bool:
         """owned_is_set reports whether the handle still owns its pointer."""
     def release_now(self) -> None:

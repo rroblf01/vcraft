@@ -67,6 +67,13 @@ def build_binary() -> None:
     vcraft_build.build_vcraft()
 
 
+# The suite tests the interpreter it runs on, and vcraft takes an active virtualenv's
+# interpreter over the `python3` on PATH. A VIRTUAL_ENV left over from another environment
+# would point the commands under test at a Python the suite does not check with.
+if os.environ.get("VIRTUAL_ENV") and Path(os.environ["VIRTUAL_ENV"]).resolve() != Path(sys.prefix).resolve():
+    del os.environ["VIRTUAL_ENV"]
+
+
 def vcraft(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run([str(VCRAFT), *args], cwd=cwd, capture_output=True, text=True)
 

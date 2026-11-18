@@ -166,6 +166,18 @@ jobs:
       # One step per suite, so the summary names the one that failed. Each
       # suite builds what it needs, so a failure in one does not stop the rest;
       # only a missing compiler does.
+      # Optional dependencies some checks use and skip without: mypy type-checks the
+      # generated stub and runs stubtest against the module (code generator suite), numpy,
+      # pyarrow and polars feed the gallery's kernels real arrays and columns (examples
+      # gallery suite). Wheels only, one at a time: a Python a package has no wheel for
+      # yet skips its checks instead of building it from source or failing the job.
+      - name: install the optional test dependencies
+        run: |
+          for pkg in mypy numpy pyarrow polars; do
+            python3 -m pip install -q --only-binary :all: "$pkg" \
+              || echo "::notice::no $pkg wheel for Python ${{ matrix.python }}; its checks are skipped"
+          done
+
       - name: "suite: vcraft.toml parser"
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/project/check_toml.py

@@ -10,11 +10,13 @@ produced. Nothing but the standard library is needed:
 """
 
 import gc
+import importlib.util
 import shutil
 import os
 import subprocess
 import sys
 import sysconfig
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -417,7 +419,7 @@ def main() -> int:
             [h.make_shape(k) for k in range(5)],
             [7, "seven", 7.5, True, {"start": 0, "end": 2, "label": "s"}])
     t.check("the stub types the struct sequence and the union",
-            "class Point(tuple[int, int]):" in flat_stub()
+            "@final\nclass Point(structseq[int], tuple[int, int]):" in flat_stub()
             and "def shape_kind(s: float | int | str | bool | dict[str, Any]) -> str: ..." in flat_stub(),
             [l for l in flat_stub().splitlines() if "shape" in l or "Point" in l])
 
@@ -570,7 +572,7 @@ def main() -> int:
     t.raises("its plain error is an AttributeError", AttributeError, "_hidden",
              lambda: setattr(rec, "_hidden", 1))
     t.check("the stub declares __setattr__",
-            "def __setattr__(self, name: str, value: int) -> None: ..." in flat_stub(),
+            "def __setattr__(self, name: str, value: int, /) -> None: ..." in flat_stub(),
             [l for l in flat_stub().splitlines() if "__setattr__" in l])
     t.equal("__match_args__ lists the fields", h.Counter.__match_args__, ("value", "step"))
     t.equal("a subclass's start with its base's", h.BoundedCounter.__match_args__,
@@ -585,7 +587,7 @@ def main() -> int:
     t.equal("an instance destructures in a match statement", matched, (1, 1))
     t.check("the stub declares both",
             "    __match_args__ = ('value', 'step')" in flat_stub()
-            and "def __getattr__(self, name: str) -> str: ..." in flat_stub())
+            and "def __getattr__(self, name: str, /) -> str: ..." in flat_stub())
 
     print("dates, decimals, big ints, JSON and logging")
     import datetime as pydt
@@ -1659,6 +1661,29 @@ def main() -> int:
     t.equal("an enum's __module__ is the extension", h.Mood.__module__, "hello_native")
     t.check("an enum member pickles", pickle.loads(pickle.dumps(happy)) is h.Mood.happy)
     t.check("the stub gives members their values", "    happy = 5" in flat_stub())
+
+    print("the stub against the module")
+    # mypy is optional here, as PyYAML is for the CLI suite: CI installs it, and a local
+    # run without it skips these two checks. `--strict` type-checks the stub itself;
+    # stubtest imports the module and compares every name and signature with it.
+    if importlib.util.find_spec("mypy") is None:
+        print("  skip mypy is not installed")
+    else:
+        proc = subprocess.run([sys.executable, "-m", "mypy", "--strict", "--no-incremental",
+                               str(STUBS)], capture_output=True, text=True)
+        t.check("the stub passes mypy --strict", proc.returncode == 0, proc.stdout[-1500:])
+        # `__getattr__` types the names a class answers through `tp_getattro`, which
+        # Python does not expose as a method. PEP 800 disjoint bases are left to a later
+        # release: the decorator is too new for the type checkers users still run.
+        allow = Path(tempfile.mkdtemp()) / "allow.txt"
+        allow.write_text(PACKAGE + r"\.\w+\.__getattr__" + "\n")
+        proc = subprocess.run([sys.executable, "-m", "mypy.stubtest", "--ignore-disjoint-bases",
+                               "--concise", "--allowlist", str(allow), PACKAGE],
+                              cwd=PYTHON_DIR, capture_output=True, text=True,
+                              env=dict(os.environ, MYPYPATH=str(PYTHON_DIR),
+                                       PYTHONPATH=str(PYTHON_DIR)))
+        t.check("stubtest finds the stub and the module agree", proc.returncode == 0,
+                (proc.stdout + proc.stderr)[-1500:])
 
     print("release build")
     # -prod rejects what a debug build only notes (an unused variable in the glue), so
