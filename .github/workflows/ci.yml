@@ -206,6 +206,10 @@ jobs:
         if: ${{ !cancelled() && steps.v-ready.outcome == 'success' }}
         run: python3 tests/compat/test_compat.py
 
+      - name: the runtime API reference is current
+        if: ${{ !cancelled() }}
+        run: python3 scripts/gen-runtime-docs.py --check
+
   cli:
     needs: v-compiler
     # The slowest suite on its own job (see above for why it is separate).

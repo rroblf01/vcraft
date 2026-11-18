@@ -51,6 +51,9 @@ python3 tests/cli/test_cli.py           # builds bin/vcraft, uses fresh venvs
 Other scripts:
 
 - `./scripts/build-vcraft.sh` builds the CLI into `bin/vcraft`.
+- `scripts/gen-runtime-docs.py` regenerates `docs/reference/runtime.{en,es}.md` from the
+  doc comments in `vlib/vcraft`; CI fails when it is stale (`--check`), so rerun it after
+  changing a public runtime function or its comment.
 - `scripts/update-ci-templates.py` rewrites `templates/ci/*.yml`, the workflows
   `generate-ci` writes, kept as text; the CLI suite fails when they drift (`--check`).
 - `./scripts/build-example.sh [example] [module]` runs the generator then compiles. It
