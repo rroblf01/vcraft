@@ -50,9 +50,10 @@ def v_binary() -> str:
     raise SystemExit("the V compiler is not on PATH; put it there or set VCRAFT_V")
 
 
-def _run(cmd: list[str], cwd: Path | str | None = None) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], cwd: Path | str | None = None,
+         env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     return subprocess.run([str(c) for c in cmd], cwd=str(cwd) if cwd else None,
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, env=env)
 
 
 def run_v(args: list[str], cwd: Path | str | None = None) -> subprocess.CompletedProcess:
@@ -210,6 +211,27 @@ def build_example(example: str = "hello", module: str = "hello_native") -> None:
         moved = Path(str(output) + appended)
         if not output.exists() and moved.exists():
             moved.replace(output)
+
+
+def build_example_prod(example: str = "hello", module: str = "hello_native"
+                       ) -> subprocess.CompletedProcess:
+    """Compile `examples/<example>` once more with -prod, as `vcraft build --release` does.
+
+    Returns the compiler run instead of raising. On Windows the output goes to `build/`:
+    the module the caller already imported holds its `.pyd` open, so it cannot be replaced.
+    """
+    if not WINDOWS:
+        return _run([SCRIPTS / "build-example.sh", example, module],
+                    env=dict(os.environ, VCRAFT_PROD="1"))
+    project = ROOT / "examples" / example
+    result = _run([_generator(), project, module, module])
+    if result.returncode != 0:
+        return result
+    out_dir = ROOT / "build" / "prod"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return run_v(["-enable-globals", "-shared", "-prod", "-o", out_dir / f"{module}{ext_suffix()}",
+                  *link_flags(module), "-path", f"{VLIB}|@vlib",
+                  "-cflags", f"-I{python_include()}", project])
 
 
 def build_runtime() -> None:

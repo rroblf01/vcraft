@@ -2082,3 +2082,103 @@ void vpy_set_tp_descr_set(PyObject *type, void *fn) {
 	(void)fn;
 #endif
 }
+
+// vpy_par_run calls `fn(ctx, i)` for every `i` in `0 .. count`, each on a thread of its
+// own, and returns once all have finished. `par_range` runs its chunks through it rather
+// than V's `spawn`: a V thread also gets an alternate signal stack and a stack size of its
+// own, and on macOS a page of every spawned thread outlived it (48 KiB more per call with
+// three workers), while plain threads -- those Python starts, which call into V just the
+// same -- release everything. A thread that cannot be started runs its share inline.
+typedef void (*vpy_par_fn)(void *ctx, int index);
+typedef struct {
+	vpy_par_fn fn;
+	void *ctx;
+	int index;
+} vpy_par_task;
+
+// V code runs on these threads, so they get the stack V gives its own (8 MiB): macOS
+// starts a secondary thread with 512 KiB.
+#define VPY_PAR_STACK (8u * 1024u * 1024u)
+
+#ifdef _WIN32
+#include <windows.h>
+static DWORD WINAPI vpy_par_start(LPVOID arg) {
+	vpy_par_task *task = (vpy_par_task *)arg;
+	task->fn(task->ctx, task->index);
+	return 0;
+}
+#else
+#include <pthread.h>
+static void *vpy_par_start(void *arg) {
+	vpy_par_task *task = (vpy_par_task *)arg;
+	task->fn(task->ctx, task->index);
+	return NULL;
+}
+#endif
+
+void vpy_par_run(int count, void *fn, void *ctx) {
+	vpy_par_fn run = (vpy_par_fn)fn;
+	if (count <= 0) {
+		return;
+	}
+	vpy_par_task *tasks = (vpy_par_task *)malloc((size_t)count * sizeof(vpy_par_task));
+#ifdef _WIN32
+	HANDLE *threads = (HANDLE *)calloc((size_t)count, sizeof(HANDLE));
+#else
+	pthread_t *threads = (pthread_t *)calloc((size_t)count, sizeof(pthread_t));
+	char *started = (char *)calloc((size_t)count, 1);
+#endif
+	int ok = tasks != NULL && threads != NULL;
+#ifndef _WIN32
+	ok = ok && started != NULL;
+	pthread_attr_t attr;
+	int have_attr = ok && pthread_attr_init(&attr) == 0;
+	if (have_attr) {
+		pthread_attr_setstacksize(&attr, VPY_PAR_STACK);
+	}
+#endif
+	for (int i = 0; i < count; i++) {
+		if (!ok) {
+			run(ctx, i);
+			continue;
+		}
+		tasks[i].fn = run;
+		tasks[i].ctx = ctx;
+		tasks[i].index = i;
+#ifdef _WIN32
+		threads[i] = CreateThread(NULL, VPY_PAR_STACK, vpy_par_start, &tasks[i],
+			STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
+		if (threads[i] == NULL) {
+			run(ctx, i);
+		}
+#else
+		if (pthread_create(&threads[i], have_attr ? &attr : NULL, vpy_par_start, &tasks[i]) == 0) {
+			started[i] = 1;
+		} else {
+			run(ctx, i);
+		}
+#endif
+	}
+	if (ok) {
+		for (int i = 0; i < count; i++) {
+#ifdef _WIN32
+			if (threads[i] != NULL) {
+				WaitForSingleObject(threads[i], INFINITE);
+				CloseHandle(threads[i]);
+			}
+#else
+			if (started[i]) {
+				pthread_join(threads[i], NULL);
+			}
+#endif
+		}
+	}
+#ifndef _WIN32
+	if (have_attr) {
+		pthread_attr_destroy(&attr);
+	}
+	free(started);
+#endif
+	free(threads);
+	free(tasks);
+}

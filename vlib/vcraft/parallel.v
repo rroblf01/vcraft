@@ -55,22 +55,41 @@ pub fn par_range_with(n int, workers int, body fn (start int, end int)) {
 		return
 	}
 	chunk := (n + w - 1) / w
-	mut threads := []thread{cap: w}
-	mut messages := []string{len: w}
-	for i in 0 .. w {
-		start := i * chunk
-		end := if start + chunk < n { start + chunk } else { n }
-		if start >= end {
-			break
-		}
-		threads << spawn par_worker(body, start, end, unsafe { &messages[i] })
+	count := (n + chunk - 1) / chunk
+	mut job := ParJob{
+		body:     body
+		n:        n
+		chunk:    chunk
+		messages: []string{len: count}
 	}
-	threads.wait()
-	for message in messages {
+	C.vpy_par_run(count, voidptr(par_entry), voidptr(&job))
+	for message in job.messages {
 		if message.len > 0 {
 			panic(message)
 		}
 	}
+}
+
+fn C.vpy_par_run(count int, f voidptr, ctx voidptr)
+
+// ParJob is what every worker of one `par_range_with` call reads: the body, the chunk
+// size and a message slot per chunk for a panic.
+struct ParJob {
+	body  fn (start int, end int) = unsafe { nil }
+	n     int
+	chunk int
+mut:
+	messages []string
+}
+
+// par_entry is the thread entry `vpy_par_run` calls with the job and the chunk index.
+// The threads are started from C rather than with `spawn` (see `vpy_par_run` in
+// c/shim.c for why).
+fn par_entry(ctx voidptr, index int) {
+	mut job := unsafe { &ParJob(ctx) }
+	start := index * job.chunk
+	end := if start + job.chunk < job.n { start + job.chunk } else { job.n }
+	par_worker(job.body, start, end, unsafe { &job.messages[index] })
 }
 
 // par_worker runs one chunk and records a panic instead of letting it end the process.

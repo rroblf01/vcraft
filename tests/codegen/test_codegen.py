@@ -1689,8 +1689,7 @@ def main() -> int:
     # -prod rejects what a debug build only notes (an unused variable in the glue), so
     # the example is compiled once more the way `vcraft build --release` compiles.
     t.equal("a function with only *args counts them", h.count_all(1, 2, 3), 3)
-    proc = subprocess.run([str(ROOT / "scripts" / "build-example.sh"), "hello", PACKAGE],
-                          env=dict(os.environ, VCRAFT_PROD="1"), capture_output=True, text=True)
+    proc = vcraft_build.build_example_prod("hello", PACKAGE)
     t.check("the example also compiles with -prod", proc.returncode == 0,
             "\n".join(l for l in (proc.stdout + proc.stderr).splitlines() if "error" in l)[-800:])
 

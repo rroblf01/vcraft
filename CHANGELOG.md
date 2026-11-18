@@ -259,6 +259,10 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
 - **Struct conversion errors were unformatted on Python 3.11**: a missing field or a
   tuple of the wrong length raised the raw format string (`%.*s: expected ...`), as
   3.11's `PyErr_Format` does not know `%.*s`. The struct name is now passed as `%U`.
+- **`par_range` leaked a page per worker thread on macOS** (48 KiB per call on a
+  three-core runner). V's `spawn` gives each thread an alternate signal stack and a stack
+  size of its own, and on macOS part of that outlived the thread. The workers are now
+  plain threads started from the runtime's C code, with the same 8 MiB stack.
 - **`par_range`, `released`, `with_gil` and `with_py_scope` leaked their closure on every
   call**: V never frees a closure, or what it captured, unless a `closure.Lifetime`
   reclaims it, so a parallel loop over two 2000-element arrays grew the process by 32 KiB
