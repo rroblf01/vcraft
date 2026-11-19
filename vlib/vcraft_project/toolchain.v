@@ -177,7 +177,13 @@ fn install_prebuilt(dir string) ! {
 		os.rmdir_all(dir) or { return error('cannot clear ${dir}: ${err.msg()}') }
 	}
 	os.mkdir_all(dir) or { return error('cannot create ${dir}') }
-	unpacked := os.system_args(['tar', '-xzf', archive, '-C', dir])
+	// The archive is named relative to its own directory: GNU tar (Git for Windows' is
+	// often first on PATH) reads `C:\...` as `host:path` and tries a remote archive.
+	// `--force-local` would say the same, but Windows' own bsdtar refuses that flag.
+	here := os.getwd()
+	os.chdir(os.dir(archive)) or { return error('cannot enter ${os.dir(archive)}') }
+	unpacked := os.system_args(['tar', '-xzf', os.file_name(archive), '-C', dir])
+	os.chdir(here) or {}
 	os.rm(archive) or {}
 	built_v := os.join_path(dir, executable_name('v'))
 	if unpacked != 0 || !v_matches_pin(built_v) {

@@ -357,6 +357,8 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   missing or predates the fix. The fallback now prints why the archive was refused, and
   a new `scripts/check-first-run.py` times the whole path from `pip install vcraft` to
   `import` (the release workflow runs it against PyPI with a three-minute budget).
+  On Windows the archive is packed and unpacked by a relative name, as the GNU tar Git
+  ships reads `C:\...` as a remote `host:path`.
 
 - **`develop` labels the wheel's size as the wheel's**, noting an editable one is a
   pointer, instead of an unlabelled `size` that read as the extension's.

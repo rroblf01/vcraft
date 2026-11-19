@@ -116,12 +116,14 @@ jobs:
         # archive is the whole checkout minus the two directories a build only needs
         # once: the bootstrap C sources and the git history. The bundled TCC stays in
         # on Windows: it is what V links with there. Git Bash provides `tar` on the
-        # Windows runner, so one body packages every platform.
+        # Windows runner, so one body packages every platform. The archive is named
+        # relative to the working directory: GNU tar reads `D:\a\...` as `host:path`, a
+        # remote archive, and fails on Windows with "Cannot connect to D".
         shell: bash
         run: |
           cd "$RUNNER_TEMP/v-src"
           rm -rf vc .git
-          tar -czf "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz" .
+          tar -czf "../v-$V_COMMIT-${{ matrix.asset }}.tar.gz" .
           ls -l "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz"
 
       # The archive is unpacked somewhere else and run there, the way a user's `vcraft
@@ -132,7 +134,8 @@ jobs:
         run: |
           elsewhere="$RUNNER_TEMP/relocated"
           mkdir -p "$elsewhere"
-          tar -xzf "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz" -C "$elsewhere"
+          # A relative archive name, for the reason given when it was packaged.
+          (cd "$RUNNER_TEMP" && tar -xzf "v-$V_COMMIT-${{ matrix.asset }}.tar.gz" -C relocated)
           mv "$RUNNER_TEMP/v-src" "$RUNNER_TEMP/v-src.moved"
           v="$elsewhere/v"; [ -x "$v" ] || v="$elsewhere/v.exe"
           "$v" version | tee "$RUNNER_TEMP/version.txt"
