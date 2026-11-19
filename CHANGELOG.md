@@ -7,7 +7,7 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
-## [1.8.0] - 2026-11-18
+## [1.8.0] - 2026-11-19
 
 ### Added
 

@@ -29,6 +29,14 @@ module vcraft
 $if linux {
 	#flag -D_GNU_SOURCE
 }
+// The runtime holds a weak reference to V's closure hook (`vpy_release_closure` in
+// c/shim.c), which only a program that creates a closure defines. An ELF linker resolves
+// a missing weak symbol to NULL by itself; Apple's ld still wants to see it somewhere,
+// so it is told the symbol may stay undefined. An extension already links with
+// `-undefined dynamic_lookup`, but a plain program (the layout probe) does not.
+$if macos {
+	#flag -Wl,-U,_closure__closure_try_destroy
+}
 // Before V's collector starts on macOS; see the header.
 #include "c/gc_preinit.h"
 
