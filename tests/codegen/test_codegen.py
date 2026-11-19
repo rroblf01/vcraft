@@ -471,8 +471,26 @@ def main() -> int:
 
     results, elapsed = asyncio.run(gathered())
     t.equal("an awaitable V function returns its result", results, ["t0:0", "t1:1", "t2:4", "t3:9"])
-    t.check("calls gathered together overlap (each runs without the GIL)", elapsed < 0.2,
-            f"{elapsed:.3f}s for four 60 ms calls")
+
+    # Overlap is judged against the same four calls awaited one after another, in this
+    # process: a fixed bound failed on a slow macOS runner, where thread start-up alone
+    # took a large part of it. Best of three, as a busy runner can stall one round.
+    async def sequential():
+        start = pytime.perf_counter()
+        for n in range(4):
+            await h.slow_square(n, f"t{n}")
+        return pytime.perf_counter() - start
+
+    rounds = []
+    for _ in range(3):
+        serial = asyncio.run(sequential())
+        rounds.append((elapsed / serial, elapsed, serial))
+        if elapsed < 0.6 * serial:
+            break
+        elapsed = asyncio.run(gathered())[1]
+    ratio, elapsed, serial = min(rounds)
+    t.check("calls gathered together overlap (each runs without the GIL)", ratio < 0.6,
+            f"{elapsed:.3f}s gathered against {serial:.3f}s one after another")
 
     async def failing():
         return await h.slow_square(-1, "x")
