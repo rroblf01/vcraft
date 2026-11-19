@@ -123,8 +123,9 @@ pub fn extra_marker() int {
             stub = (proj / "python" / "smoke_native.pyi").read_text()
             if "class Color(enum.IntEnum):" not in stub:
                 problems.append("the enum is missing from the .pyi")
-            if "red: Color" not in stub:
-                problems.append("the enum member is not typed as the enum in the .pyi")
+            # Members carry their values, as typeshed writes an IntEnum.
+            if "    red = 0" not in stub:
+                problems.append("the enum member is not written with its value in the .pyi")
             if "def paint(self, color: Color)" not in stub:
                 problems.append("the method signature was resolved by name, not receiver")
             if "    n: int" not in stub:
