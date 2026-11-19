@@ -188,7 +188,8 @@ def main() -> int:
     for _ in range(50):
         h.mean([item] * 10)
         h.total([7] * 10)
-    t.equal("reading a sequence keeps no reference", sys.getrefcount(item), before)
+    now = sys.getrefcount(item)
+    t.equal("reading a sequence keeps no reference", now - before, 0)
 
     print("returned lists and objects")
     # Each of these failed to build before: a `[]T` result called `to_py_list` with one
@@ -227,7 +228,8 @@ def main() -> int:
     for _ in range(100):
         h.identity(probe)
     t.check("a voidptr result is the same object", h.identity(probe) is probe)
-    t.equal("a voidptr result keeps the count", sys.getrefcount(probe), before)
+    now = sys.getrefcount(probe)
+    t.equal("a voidptr result keeps the count", now - before, 0)
     for _ in range(100):
         h.boxed(1)
     gc.collect()
@@ -739,12 +741,20 @@ def main() -> int:
     # the return is owned by the caller, exactly as for a raw module function.
     raw_sentinel = object()
     t.check("a raw method returns the same object", counter.raw_echo(raw_sentinel) is raw_sentinel)
-    raw_before = sys.getrefcount(raw_sentinel)
-    for _ in range(100):
-        counter.raw_echo(raw_sentinel)
-    t.check("a raw method keeps no extra reference",
-            sys.getrefcount(raw_sentinel) == raw_before,
-            sys.getrefcount(raw_sentinel) - raw_before)
+    # What is compared is the drift between two equal batches, after a warm-up batch:
+    # 3.15's trace-recording JIT can keep one reference to an object a hot loop handled,
+    # a fixed +1 that is not the extension's, while a leak grows with every call. Each
+    # count is read by a plain assignment: from 3.14 the interpreter may borrow a local
+    # on its stack, so the same object reads differently inside a larger expression.
+    def raw_batch():
+        for _ in range(100):
+            counter.raw_echo(raw_sentinel)
+        return sys.getrefcount(raw_sentinel)
+
+    raw_batch()
+    raw_before = raw_batch()
+    raw_after = raw_batch()
+    t.equal("a raw method keeps no extra reference", raw_after - raw_before, 0)
 
     print("class docstrings")
     t.check("class docstring", "A counter with state." in h.Counter.__doc__, h.Counter.__doc__)
@@ -992,8 +1002,8 @@ def main() -> int:
     before = sys.getrefcount(peer)
     pair.peer = peer
     t.check("the field holds the object it was given", pair.peer is peer)
-    t.check("and counts a reference of its own",
-            sys.getrefcount(peer) == before + 1, sys.getrefcount(peer) - before)
+    after = sys.getrefcount(peer)  # a plain assignment, like `before` (see raw_after)
+    t.equal("and counts a reference of its own", after - before, 1)
 
     t.raises("a reference field is type checked", TypeError, "must be a Pair",
              lambda: setattr(pair, "peer", 5))
@@ -1003,18 +1013,18 @@ def main() -> int:
 
     pair.peer = None
     t.check("None clears the field", pair.peer is None)
-    t.check("and gives the reference back", sys.getrefcount(peer) == before,
-            sys.getrefcount(peer) - before)
+    now = sys.getrefcount(peer)
+    t.equal("and gives the reference back", now - before, 0)
     t.check("the object is still alive", repr(peer) == "Pair(tag: 0, peer: None)",
             repr(peer))
 
     pair.peer = peer
     pair.peer = peer
-    t.check("assigning the same object twice counts once",
-            sys.getrefcount(peer) == before + 1, sys.getrefcount(peer) - before)
+    now = sys.getrefcount(peer)
+    t.equal("assigning the same object twice counts once", now - before, 1)
     pair.peer = None
-    t.check("and clearing it once gives it all back", sys.getrefcount(peer) == before,
-            sys.getrefcount(peer) - before)
+    now = sys.getrefcount(peer)
+    t.equal("and clearing it once gives it all back", now - before, 0)
 
     # A method that stores a borrowed pointer has to retain it. `link` does, so the peer
     # stays alive as long as the pair does.
@@ -1023,8 +1033,8 @@ def main() -> int:
     right_before = sys.getrefcount(right)
     left.link(right)
     t.check("a method can store a reference", left.peer is right)
-    t.check("and the method retained it", sys.getrefcount(right) == right_before + 1,
-            sys.getrefcount(right) - right_before)
+    now = sys.getrefcount(right)
+    t.equal("and the method retained it", now - right_before, 1)
 
     # The cycle. Neither instance is reachable from Python once both names are gone, and
     # each holds the other's last reference, so only the collector can free them.
@@ -1036,8 +1046,8 @@ def main() -> int:
             repr(left) == "Pair(tag: 1, peer: Pair(tag: 2, peer: Pair(...)))", repr(left))
     del left, right
     gc.collect()
-    t.check("the pair is gone", sys.getrefcount(peer) == before,
-            sys.getrefcount(peer) - before)
+    now = sys.getrefcount(peer)
+    t.equal("the pair is gone", now - before, 0)
     t.check("a fresh instance still works", h.Pair().tag == 0)
 
     print("cycle collection in the generated file")
