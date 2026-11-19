@@ -206,6 +206,10 @@ jobs:
             --pattern "v-$V_COMMIT-${{ matrix.asset }}.tar.gz" \
             --dir /tmp/v-dl --clobber
           tar -xzf "/tmp/v-dl/v-$V_COMMIT-${{ matrix.asset }}.tar.gz" -C /tmp/v-src
+          # A prebuilt V finds its standard library through the root baked in when it
+          # was built, which is the release runner's path; rebuilt in place (seconds)
+          # it carries this one. See rebuild_in_place in vlib/vcraft_project/toolchain.v.
+          (cd /tmp/v-src && ./v -o v.self cmd/v && mv -f v.self v)
           /tmp/v-src/v version
 
       - name: download the prebuilt compiler (Windows)
@@ -220,6 +224,12 @@ jobs:
           gh release download "v/$env:V_COMMIT" --pattern "v-$env:V_COMMIT-win-amd64.tar.gz" --dir "$env:RUNNER_TEMP\v-dl" --clobber
           New-Item -ItemType Directory -Force $v | Out-Null
           tar -xzf "$env:RUNNER_TEMP\v-dl\v-$env:V_COMMIT-win-amd64.tar.gz" -C $v
+          # Rebuilt in place, for the reason given in the POSIX step.
+          Push-Location $v
+          & "$v\v.exe" -o v.self.exe cmd\v
+          if ($LASTEXITCODE -ne 0) { throw "rebuilding V in place failed" }
+          Move-Item -Force v.self.exe v.exe
+          Pop-Location
           & "$v\v.exe" version
 
       - name: restore the V compiler cache
@@ -482,6 +492,10 @@ jobs:
           gh release download "v/$V_COMMIT" --pattern "v-$V_COMMIT-linux-x86_64.tar.gz" \
             --dir /tmp/v-dl --clobber
           tar -xzf "/tmp/v-dl/v-$V_COMMIT-linux-x86_64.tar.gz" -C /tmp/v-src
+          # A prebuilt V finds its standard library through the root baked in when it
+          # was built, which is the release runner's path; rebuilt in place (seconds)
+          # it carries this one. See rebuild_in_place in vlib/vcraft_project/toolchain.v.
+          (cd /tmp/v-src && ./v -o v.self cmd/v && mv -f v.self v)
           /tmp/v-src/v version
 
       - name: restore the V compiler cache

@@ -976,13 +976,16 @@ pub fn spawn_once() int {
         print("prebuilt toolchain")
         # `vcraft toolchain install` unpacks a published archive instead of building V when
         # one exists. A stand-in archive whose `v` reports the pinned commit exercises the
-        # download, unpack and check without a network or a real compiler.
+        # download, unpack, rebuild in place and check without a network or a real
+        # compiler: asked to build `cmd/v` it copies itself there and leaves a note.
         if not WINDOWS:
             import tarfile as _tarfile
             fake_root = tmp / "fake-v"
             fake_root.mkdir(exist_ok=True)
             fake_v = fake_root / "v"
-            fake_v.write_text("#!/bin/sh\necho 'V 0.5.2 36be926'\n")
+            fake_v.write_text("#!/bin/sh\n"
+                              "if [ \"$1\" = -o ]; then cp \"$0\" \"$2\"; echo \"$*\" > rebuilt.txt; exit 0; fi\n"
+                              "echo 'V 0.5.2 36be926'\n")
             fake_v.chmod(0o755)
             archive = tmp / "fake-v.tar.gz"
             with _tarfile.open(archive, "w:gz") as tar:
@@ -997,6 +1000,10 @@ pub fn spawn_once() int {
                     (proc.stdout + proc.stderr).strip()[-400:])
             installed = list(home.glob("v-*/v"))
             t.check("into the toolchain cache", len(installed) == 1, str(installed))
+            notes = list(home.glob("v-*/rebuilt.txt"))
+            t.check("and rebuilds it in place, so it finds its own vlib",
+                    len(notes) == 1 and "cmd/v" in notes[0].read_text(),
+                    str([n.read_text() for n in notes]))
             proc = subprocess.run([str(VCRAFT), "toolchain"], capture_output=True, text=True,
                                   env=env)
             t.check("which then reports the pinned commit", "the pinned commit" in proc.stdout,

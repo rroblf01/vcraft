@@ -47,7 +47,9 @@ jobs:
           done
           # Archives published before the -prod rebuild only ran at their build path;
           # the marker says this release's archives are the relocatable kind.
-          echo "$have" | grep -qx "v-$V_COMMIT-relocatable.txt" || { echo "missing: relocatable archives"; missing=true; }
+          # The second marker: archives that also carry `.git/HEAD` and were checked by
+          # rebuilding in place and compiling `import os` away from their build path.
+          echo "$have" | grep -qx "v-$V_COMMIT-relocatable2.txt" || { echo "missing: relocatable archives"; missing=true; }
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then missing=true; fi
           echo "missing=$missing" >> "$GITHUB_OUTPUT"
 
@@ -123,6 +125,10 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/v-src"
           rm -rf vc .git
+          # The commit, where `v version` reads it: the compiler a consumer rebuilds
+          # in place (see the next step) reports it only through `.git/HEAD`.
+          mkdir .git
+          echo "$V_COMMIT" > .git/HEAD
           tar -czf "../v-$V_COMMIT-${{ matrix.asset }}.tar.gz" .
           ls -l "$RUNNER_TEMP/v-$V_COMMIT-${{ matrix.asset }}.tar.gz"
 
@@ -137,11 +143,19 @@ jobs:
           # A relative archive name, for the reason given when it was packaged.
           (cd "$RUNNER_TEMP" && tar -xzf "v-$V_COMMIT-${{ matrix.asset }}.tar.gz" -C relocated)
           mv "$RUNNER_TEMP/v-src" "$RUNNER_TEMP/v-src.moved"
-          v="$elsewhere/v"; [ -x "$v" ] || v="$elsewhere/v.exe"
+          v="$elsewhere/v"; exe=""; [ -x "$v" ] || { v="$elsewhere/v.exe"; exe=".exe"; }
+          # V resolves its standard library from the root baked in at build time, which
+          # no longer exists here, so every consumer rebuilds it in place first, as
+          # `vcraft toolchain install` does (rebuild_in_place in toolchain.v).
+          (cd "$elsewhere" && "$v" -o "v.self$exe" cmd/v && mv -f "v.self$exe" "v$exe")
           "$v" version | tee "$RUNNER_TEMP/version.txt"
           grep -q "${V_COMMIT:0:7}" "$RUNNER_TEMP/version.txt"
-          printf 'fn main() { println("relocated ok") }\n' > "$RUNNER_TEMP/hello.v"
-          "$v" run "$RUNNER_TEMP/hello.v"
+          # Something that imports beyond builtin, compiled from outside the V root:
+          # a program with no imports passed here while `import os` failed everywhere.
+          mkdir -p "$RUNNER_TEMP/probe"
+          printf 'import os\nfn main() { println("relocated ok " + os.base("a/b")) }\n' > "$RUNNER_TEMP/probe/hello.v"
+          (cd "$RUNNER_TEMP/probe" && "$v" run hello.v) | tee "$RUNNER_TEMP/run.txt"
+          grep -q "relocated ok b" "$RUNNER_TEMP/run.txt"
 
       - name: upload the archive
         uses: actions/upload-artifact@v6
@@ -163,7 +177,7 @@ jobs:
       - name: mark the archives relocatable
         run: |
           mkdir -p relocatable
-          echo "built with -prod and run away from their build path" > "relocatable/v-$V_COMMIT-relocatable.txt"
+          echo "carry .git/HEAD; rebuilt in place and compiled import os away from their build path" > "relocatable/v-$V_COMMIT-relocatable2.txt"
 
       - name: create or update the release
         # One publish step rather than one per matrix cell: several cells racing to

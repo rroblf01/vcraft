@@ -353,12 +353,18 @@ Every change below is picked up by rebuilding with the new vcraft: no annotation
   `vcraft toolchain install` then fell back to the source build without saying why. The
   archives are now built with `-prod`, each one is unpacked and run away from its build
   path before it is published, Intel macOS (`macos-x86_64`) and Windows archives are
-  added, and the workflow runs by itself when a push moves the pins, rebuilding what is
-  missing or predates the fix. The fallback now prints why the archive was refused, and
-  a new `scripts/check-first-run.py` times the whole path from `pip install vcraft` to
-  `import` (the release workflow runs it against PyPI with a three-minute budget).
-  On Windows the archive is packed and unpacked by a relative name, as the GNU tar Git
-  ships reads `C:\...` as a remote `host:path`.
+  added, and every release runs the workflow first, rebuilding what is missing or
+  predates the fix. Even then a compiler moved off its build path found only `builtin`:
+  V takes the root of its standard library from the path baked in when it was built, so
+  `import os` failed for every project. The installer now rebuilds the unpacked compiler
+  with itself where it lives (about five seconds), which bakes the right root, and the
+  archive carries a `.git/HEAD` so the rebuilt `v version` still names the commit; the
+  publishing check compiles a program importing `os` from outside the V root. The
+  fallback now prints why the archive was refused, and a new `scripts/check-first-run.py`
+  times the whole path from `pip install vcraft` to `import` (the release workflow runs
+  it against PyPI with a three-minute budget). On Windows the archive is packed and
+  unpacked by a relative name, as the GNU tar Git ships reads `C:\...` as a remote
+  `host:path`.
 
 - **`develop` labels the wheel's size as the wheel's**, noting an editable one is a
   pointer, instead of an unlabelled `size` that read as the extension's.

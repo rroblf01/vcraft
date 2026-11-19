@@ -186,11 +186,14 @@ fn install_prebuilt(dir string) ! {
 	os.chdir(here) or {}
 	os.rm(archive) or {}
 	built_v := os.join_path(dir, executable_name('v'))
-	if unpacked != 0 || !v_matches_pin(built_v) {
+	rebuilt := if unpacked == 0 { rebuild_in_place(dir) } else { 0 }
+	if unpacked != 0 || rebuilt != 0 || !v_matches_pin(built_v) {
 		// Say why, so a fallback to the five-minute source build is never silent: the
 		// unpack status and what the unpacked compiler answered (or that it would not run).
 		reason := if unpacked != 0 {
 			'tar exited with ${unpacked}'
+		} else if rebuilt != 0 {
+			'rebuilding it in place exited with ${rebuilt}'
 		} else {
 			answer := os.exec([built_v, 'version'])
 			'`v version` exited with ${answer.exit_code} and said: ${answer.output.trim_space().limit(300)}'
@@ -199,6 +202,30 @@ fn install_prebuilt(dir string) ! {
 		return error('the prebuilt archive did not unpack to V ${v_commit[..7]} (${reason})')
 	}
 	println('installed the prebuilt V ${v_commit[..7]} in ${dir}')
+}
+
+// rebuild_in_place compiles the unpacked V with itself where it now lives, and returns
+// the exit status. V finds its standard library through the root baked into the binary
+// when it was built -- the release runner's directory, which exists nowhere else -- and
+// it looks beside the executable only when the file it compiles sits under that root, as
+// `cmd/v` does. The rebuilt compiler carries this directory instead, so it finds `os`
+// for every project. A few seconds, against minutes for the bootstrap from C; the
+// archive keeps a `.git/HEAD` naming the commit so the new binary still reports it.
+fn rebuild_in_place(dir string) int {
+	here := os.getwd()
+	os.chdir(dir) or { return -1 }
+	defer {
+		os.chdir(here) or {}
+	}
+	fresh := executable_name('v.self')
+	status := os.system_args([os.join_path(dir, executable_name('v')), '-o', fresh,
+		os.join_path('cmd', 'v')])
+	if status != 0 {
+		os.rm(fresh) or {}
+		return status
+	}
+	os.mv(fresh, executable_name('v'), overwrite: true) or { return -1 }
+	return 0
 }
 
 // install_toolchain builds the pinned V into `toolchain_dir()`, printing what it runs.
