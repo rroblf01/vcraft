@@ -2,14 +2,16 @@
   "environment": {
     "python": "3.13.16",
     "machine": "x86_64",
-    "platform": "Linux-6.18.56-1-lts-x86_64-with-glibc2.44",
+    "platform": "Linux-6.18.64-1-lts-x86_64-with-glibc2.44",
     "toolchain": {
-      "vcraft": "1.3.0",
+      "vcraft": "1.8.0",
       "V": "36be926",
       "PyO3": "0.29.0",
       "maturin": "1.15.0",
       "zig-maturin": "1.0.1",
-      "zig": "0.16.0"
+      "pybind11": "3.1.0",
+      "zig": "0.17.1",
+      "c++": "c++ (GCC) 16.2.1 20260810"
     }
   },
   "backends": {
@@ -21,40 +23,40 @@
         "extension_stripped": 520096,
         "files_in_wheel": 6
       },
-      "build_s": 9.464964626999063,
+      "build_s": 9.135045119999631,
       "import": {
-        "first_s": 0.0007143620005081175,
-        "warm_s": 0.0005804519987577805,
-        "rss_bytes": 806912
+        "first_s": 0.000918131998332683,
+        "warm_s": 0.0005115920012030983,
+        "rss_bytes": 884736
       },
       "speed": {
         "speed_ns": {
-          "add": 71.42442050007958,
-          "fib(25)": 237267.58399971004,
-          "count_primes(1e6)": 1997265.4249977495,
-          "sum_floats(100k)": 881091.2530007045,
-          "make_range(100k)": 2287242.8300070167,
-          "greet": 134.93382100023155,
-          "describe(3)": 173.64099800033728,
-          "maybe_double(21)": 67.505135600004,
-          "histogram(10k)": 733478.2559992163,
-          "minmax(100k)": 1102546.1600002018,
-          "reverse3([1,2,3])": 197.872363499755,
-          "checksum(100kB)": 14880.887124991204,
-          "echo_bytes(100kB)": 3902.6728299904794,
-          "join_strings(10k)": 506415.51000080653,
-          "expect_positive(err)": 237.00404100054584,
-          "Counter()": 95.74843000009423,
-          "c.increment()": 58.32426070010115,
-          "c.add(1)": 67.28629789995466,
-          "c.value": 48.07338519985933,
-          "c.is_zero": 36.61305115001596,
-          "c == c": 50.36288049996074,
-          "list(Countdown())": 365.3139405005277,
-          "Vector(1000)": 251.70861500009775,
-          "vector.total()": 785.1010119993589,
-          "complex_scale(1+2j, 3)": 93.9369555999292,
-          "Counter.zero()": 64.49818330002017
+          "add": 72.75043270001333,
+          "fib(25)": 221343.17500058387,
+          "count_primes(1e6)": 1988878.1749978077,
+          "sum_floats(100k)": 842135.9690000827,
+          "make_range(100k)": 2247013.900005186,
+          "greet": 135.27152125016073,
+          "describe(3)": 167.92216424983053,
+          "maybe_double(21)": 65.70265520003886,
+          "histogram(10k)": 686190.8399987442,
+          "minmax(100k)": 1075901.9050010466,
+          "reverse3([1,2,3])": 197.29997700005697,
+          "checksum(100kB)": 13724.03017498982,
+          "echo_bytes(100kB)": 3496.6799399990123,
+          "join_strings(10k)": 466297.6890012942,
+          "expect_positive(err)": 216.79110500008392,
+          "Counter()": 95.90645460011729,
+          "c.increment()": 55.323566799961554,
+          "c.add(1)": 64.5429554000657,
+          "c.value": 45.62166969990358,
+          "c.is_zero": 35.14044579997062,
+          "c == c": 47.67308379996393,
+          "list(Countdown())": 336.84030899985373,
+          "Vector(1000)": 226.00344649981707,
+          "vector.total()": 762.809265001124,
+          "complex_scale(1+2j, 3)": 92.59799829997064,
+          "Counter.zero()": 57.588563399986015
         }
       },
       "correctness": {
@@ -215,84 +217,84 @@
       },
       "threads": {
         "1": {
-          "seconds": 0.17647170999953232,
+          "seconds": 0.16859183400083566,
           "threads": 1,
           "calls": 64
         },
         "2": {
-          "seconds": 0.16970142500031216,
+          "seconds": 0.16822471399973438,
           "threads": 2,
           "calls": 64
         },
         "4": {
-          "seconds": 0.1966153969988227,
+          "seconds": 0.1717486249999638,
           "threads": 4,
           "calls": 64
         },
         "8": {
-          "seconds": 0.2146730460008257,
+          "seconds": 0.2218062240008294,
           "threads": 8,
           "calls": 64
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 35708928,
+          "peak": 35868672,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 40669184,
-          "kept": 897024,
+          "peak": 40890368,
+          "kept": -139264,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 45301760,
-          "kept": 9998336,
+          "peak": 45985792,
+          "kept": 9994240,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 35778560,
-          "kept": 487424,
+          "peak": 36335616,
+          "kept": 491520,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 36114432,
-          "kept": 102400,
+          "peak": 36196352,
+          "kept": 98304,
           "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 36155392,
-          "kept": 307200,
+          "peak": 36446208,
+          "kept": 303104,
           "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 36065280,
-          "kept": 45056,
+          "peak": 35901440,
+          "kept": 49152,
           "leak": 0
         },
         "histogram(new 1k words) x500": {
-          "peak": 36253696,
-          "kept": 204800,
+          "peak": 36601856,
+          "kept": 217088,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 35475456,
+          "peak": 35868672,
           "kept": 0,
           "leak": 0
         },
         "Vector(1000) x500": {
-          "peak": 35475456,
+          "peak": 35868672,
           "kept": 0,
           "leak": 0
         },
         "expect_positive(-1) x500k": {
-          "peak": 35770368,
+          "peak": 35868672,
           "kept": 0,
           "leak": 0
         },
         "sum_floats(wrong elem) x200k": {
-          "peak": 35475456,
+          "peak": 36143104,
           "kept": 0,
           "leak": 0
         }
@@ -301,45 +303,45 @@
     "vcraft": {
       "sizes": {
         "wheel_file": "bench_vcraft-0.1.0-cp313-cp313-linux_x86_64.whl",
-        "wheel": 306338,
-        "extension": 589848,
-        "extension_stripped": 517520,
+        "wheel": 300533,
+        "extension": 673448,
+        "extension_stripped": 591768,
         "files_in_wheel": 5
       },
-      "build_s": 7.16245597499983,
+      "build_s": 14.147288350999588,
       "import": {
-        "first_s": 0.0007112219991540769,
-        "warm_s": 0.0007314529993891483,
-        "rss_bytes": 778240
+        "first_s": 0.0006950719998712884,
+        "warm_s": 0.0006010719989717472,
+        "rss_bytes": 1032192
       },
       "speed": {
         "speed_ns": {
-          "add": 72.91834650004603,
-          "fib(25)": 112039.65175036501,
-          "count_primes(1e6)": 2218865.905006169,
-          "sum_floats(100k)": 223264.2549997763,
-          "make_range(100k)": 2452513.8300032266,
-          "greet": 119.53907950010034,
-          "describe(3)": 123.46009649991176,
-          "maybe_double(21)": 55.727848400056246,
-          "histogram(10k)": 567658.9920003607,
-          "minmax(100k)": 683205.645000271,
-          "reverse3([1,2,3])": 202.53908800077625,
-          "checksum(100kB)": 39609.267550076765,
-          "echo_bytes(100kB)": 2123.1124800033285,
-          "join_strings(10k)": 266026.3940006189,
-          "expect_positive(err)": 237.25421600011032,
-          "Counter()": 92.15350079994096,
-          "c.increment()": 52.306479000071704,
-          "c.add(1)": 68.24340950006444,
-          "c.value": 37.46926579997307,
-          "c.is_zero": 41.20529510000779,
-          "c == c": 38.761880900165124,
-          "list(Countdown())": 464.95511699868075,
-          "Vector(1000)": 310.1441574999626,
-          "vector.total()": 793.5961999992287,
-          "complex_scale(1+2j, 3)": 96.76182860002882,
-          "Counter.zero()": 65.32783420007036
+          "add": 61.719090699989465,
+          "fib(25)": 106211.91774998806,
+          "count_primes(1e6)": 2121868.2949984213,
+          "sum_floats(100k)": 228817.94450040616,
+          "make_range(100k)": 2275629.5049930485,
+          "greet": 111.0555570003271,
+          "describe(3)": 125.19953950004492,
+          "maybe_double(21)": 45.895479200044065,
+          "histogram(10k)": 582209.2109992809,
+          "minmax(100k)": 550665.0360002823,
+          "reverse3([1,2,3])": 151.63533824988917,
+          "checksum(100kB)": 12634.5502750155,
+          "echo_bytes(100kB)": 1739.2609200032894,
+          "join_strings(10k)": 256358.5014995624,
+          "expect_positive(err)": 212.22454400049173,
+          "Counter()": 62.39727449992643,
+          "c.increment()": 42.186973100069736,
+          "c.add(1)": 53.60898620001535,
+          "c.value": 32.96461045001706,
+          "c.is_zero": 32.95916394999949,
+          "c == c": 24.41119790000812,
+          "list(Countdown())": 239.27783450017162,
+          "Vector(1000)": 217.0909184997072,
+          "vector.total()": 763.0375980006647,
+          "complex_scale(1+2j, 3)": 82.04174179991242,
+          "Counter.zero()": 58.2980780998696
         }
       },
       "correctness": {
@@ -506,131 +508,131 @@
       },
       "threads": {
         "1": {
-          "seconds": 0.20723968099991907,
+          "seconds": 0.1666981369999121,
           "threads": 1,
           "calls": 64
         },
         "2": {
-          "seconds": 0.18643873399923905,
+          "seconds": 0.16943737600013264,
           "threads": 2,
           "calls": 64
         },
         "4": {
-          "seconds": 0.17550556300011522,
+          "seconds": 0.16776353100067354,
           "threads": 4,
           "calls": 64
         },
         "8": {
-          "seconds": 0.20237303400062956,
+          "seconds": 0.17440176099989912,
           "threads": 8,
           "calls": 64
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 35606528,
-          "kept": 229376,
+          "peak": 36118528,
+          "kept": 155648,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 43667456,
-          "kept": 4784128,
+          "peak": 44474368,
+          "kept": 4952064,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 76509184,
-          "kept": 30330880,
-          "leak": 524288
+          "peak": 76533760,
+          "kept": 30199808,
+          "leak": 262144
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 36433920,
-          "kept": 921600,
+          "peak": 37122048,
+          "kept": 770048,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 35864576,
-          "kept": 102400,
+          "peak": 36405248,
+          "kept": 98304,
           "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 35811328,
-          "kept": 204800,
+          "peak": 36499456,
+          "kept": 200704,
           "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 36319232,
-          "kept": 442368,
+          "peak": 36782080,
+          "kept": 495616,
           "leak": 0
         },
         "histogram(new 1k words) x500": {
-          "peak": 36900864,
-          "kept": 1019904,
+          "peak": 36986880,
+          "kept": 724992,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 35680256,
-          "kept": 229376,
+          "peak": 35999744,
+          "kept": 0,
           "leak": 0
         },
         "Vector(1000) x500": {
-          "peak": 36044800,
-          "kept": 45056,
-          "leak": 69632
+          "peak": 36392960,
+          "kept": 0,
+          "leak": 0
         },
         "expect_positive(-1) x500k": {
-          "peak": 35946496,
-          "kept": 221184,
+          "peak": 36597760,
+          "kept": 159744,
           "leak": 0
         },
         "sum_floats(wrong elem) x200k": {
-          "peak": 35606528,
-          "kept": 114688,
+          "peak": 36388864,
+          "kept": 155648,
           "leak": 0
         }
       }
     },
-    "zig-maturin": {
+    "pybind11": {
       "sizes": {
-        "wheel_file": "bench_zig-0.1.0-cp313-cp313-manylinux_2_28_x86_64.whl",
-        "wheel": 1047664,
-        "extension": 3692576,
-        "extension_stripped": 612048,
-        "files_in_wheel": 4
+        "wheel_file": "bench_pybind11-0.1.0-cp313-cp313-linux_x86_64.whl",
+        "wheel": 158605,
+        "extension": 420616,
+        "extension_stripped": 336128,
+        "files_in_wheel": 5
       },
-      "build_s": 17.67369013500138,
+      "build_s": 10.221691617000033,
       "import": {
-        "first_s": 0.00038572100129385944,
-        "warm_s": 0.0003306109992990969,
-        "rss_bytes": 393216
+        "first_s": 0.0013951650016679196,
+        "warm_s": 0.0013481040004990064,
+        "rss_bytes": 2736128
       },
       "speed": {
         "speed_ns": {
-          "add": 77.22431990005134,
-          "fib(25)": 359856.8609995709,
-          "count_primes(1e6)": 2032289.4899982205,
-          "sum_floats(100k)": 1371757.4125030297,
-          "make_range(100k)": 2463799.4849945246,
-          "greet": 235.11377600061678,
-          "describe(3)": 157.41196525004852,
-          "maybe_double(21)": 69.21218910010793,
-          "histogram(10k)": 1853711.7500000023,
-          "minmax(100k)": 1256138.4424998323,
-          "reverse3([1,2,3])": 182.58878649976396,
-          "checksum(100kB)": 41024.03340002638,
-          "echo_bytes(100kB)": 1828.7119475007785,
-          "join_strings(10k)": 265086.3170001685,
-          "expect_positive(err)": 228.34609100027592,
-          "Counter()": 78.05505550004455,
-          "c.increment()": 63.739386499946704,
-          "c.add(1)": 89.53111939990777,
-          "c.value": 32.38376555000286,
-          "c.is_zero": 42.949684700033686,
-          "c == c": 51.39758470013476,
-          "list(Countdown())": 267.10475549953117,
-          "Vector(1000)": 4184.613340003125,
-          "vector.total()": 778.7169739985984,
-          "complex_scale(1+2j, 3)": null,
-          "Counter.zero()": 71.40519060012593
+          "add": 78.50525730009394,
+          "fib(25)": 112022.3442499082,
+          "count_primes(1e6)": 2307969.6350032464,
+          "sum_floats(100k)": 840910.3289995983,
+          "make_range(100k)": 2982023.5450006295,
+          "greet": 124.79112700020777,
+          "describe(3)": 224.5954050004002,
+          "maybe_double(21)": 64.71083109991014,
+          "histogram(10k)": 378890.22899980773,
+          "minmax(100k)": 1057366.3024979397,
+          "reverse3([1,2,3])": 215.91748850005388,
+          "checksum(100kB)": 12783.522874997288,
+          "echo_bytes(100kB)": 1795.7406274990717,
+          "join_strings(10k)": 279012.9960003469,
+          "expect_positive(err)": 3115.077680004106,
+          "Counter()": 249.3813084993235,
+          "c.increment()": 136.12823799985563,
+          "c.add(1)": 155.33651000032478,
+          "c.value": 107.49679274977098,
+          "c.is_zero": 77.83186579999892,
+          "c == c": 143.80443824984468,
+          "list(Countdown())": 4267.80420999421,
+          "Vector(1000)": 397.4091585005226,
+          "vector.total()": 862.4162579999393,
+          "complex_scale(1+2j, 3)": 97.22313340007531,
+          "Counter.zero()": 65.30647740000859
         }
       },
       "correctness": {
@@ -643,8 +645,8 @@
         "add bool": "ok",
         "add float rejected": "ok",
         "add str rejected": "ok",
-        "add 2**63 overflows": "TypeError: expected int, got int",
-        "add 2**64-1 overflows": "TypeError: expected int, got int",
+        "add 2**63 overflows": "TypeError: add(): incompatible function arguments. The following argument types are supported:\n    1. (arg0: typing.SupportsInt | typing.SupportsIndex, arg1: typing.SupportsInt | typing.SupportsIndex) -> int\n\nInvoked with: 9223372036854775808, 0",
+        "add 2**64-1 overflows": "TypeError: add(): incompatible function arguments. The following argument types are supported:\n    1. (arg0: typing.SupportsInt | typing.SupportsIndex, arg1: typing.SupportsInt | typing.SupportsIndex) -> int\n\nInvoked with: 18446744073709551615, 0",
         "fib(0)": "ok",
         "fib(1)": "ok",
         "fib(20)": "ok",
@@ -672,12 +674,12 @@
         "make_range(0)": "ok",
         "make_range(1)": "ok",
         "make_range(3)": "ok",
-        "make_range negative": "SystemError: Objects/listobject.c:265: bad argument to internal function",
+        "make_range negative": "ok",
         "make_range float rejected": "ok",
         "greet empty": "ok",
         "greet unicode": "ok",
         "greet emoji": "ok",
-        "greet embedded NUL": "wrong: 'Hello, a!'",
+        "greet embedded NUL": "ok",
         "greet int rejected": "ok",
         "greet bytes rejected": "wrong: 'Hello, x!'",
         "describe defaults": "ok",
@@ -686,7 +688,7 @@
         "describe keyword unit": "ok",
         "describe mixed kw and pos": "ok",
         "describe missing required": "ok",
-        "describe unknown keyword": "wrong: 'item: 3'",
+        "describe unknown keyword": "ok",
         "describe too many positional": "ok",
         "maybe_double some": "ok",
         "maybe_double none": "ok",
@@ -705,9 +707,9 @@
         "checksum empty": "ok",
         "checksum 3 bytes": "ok",
         "checksum bytearray": "ok",
-        "checksum memoryview": "TypeError: expected str or bytes, got memoryview",
-        "checksum array": "TypeError: expected str or bytes, got array.array",
-        "checksum str rejected": "wrong: 195",
+        "checksum memoryview": "ok",
+        "checksum array": "ok",
+        "checksum str rejected": "ok",
         "echo_bytes round trip": "ok",
         "echo_bytes empty": "ok",
         "echo_bytes from bytearray": "ok",
@@ -745,9 +747,9 @@
         "vector out of range ignored": "ok",
         "vector length rejected": "ok",
         "vector memoryview writes through": "ok",
-        "complex round trip": "n/a",
-        "complex real coerced": "n/a",
-        "complex wrong type": "n/a",
+        "complex round trip": "ok",
+        "complex real coerced": "ok",
+        "complex wrong type": "ok",
         "static method on the class": "ok",
         "static method on an instance": "ok"
       },
@@ -777,7 +779,10 @@
           "loops": 2000
         },
         "checksum: borrowed memoryview": {
-          "unsupported": "TypeError"
+          "before": 3,
+          "after": 3,
+          "delta": 0,
+          "loops": 2000
         },
         "echo_bytes: borrowed argument": {
           "before": 3,
@@ -794,84 +799,84 @@
       },
       "threads": {
         "1": {
-          "seconds": 0.16689505100112,
+          "seconds": 0.16813940000065486,
           "threads": 1,
           "calls": 64
         },
         "2": {
-          "seconds": 0.16780416599976888,
+          "seconds": 0.16941279399907216,
           "threads": 2,
           "calls": 64
         },
         "4": {
-          "seconds": 0.16836604699892632,
+          "seconds": 0.16848348200073815,
           "threads": 4,
           "calls": 64
         },
         "8": {
-          "seconds": 0.22612801700051932,
+          "seconds": 0.2055841719993623,
           "threads": 8,
           "calls": 64
         }
       },
       "memory": {
         "greet x2M": {
-          "peak": 35704832,
+          "peak": 38203392,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 39358464,
-          "kept": 1544192,
+          "peak": 43143168,
+          "kept": 905216,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 45203456,
-          "kept": 9994240,
+          "peak": 39243776,
+          "kept": 1249280,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 35618816,
-          "kept": 495616,
+          "peak": 38244352,
+          "kept": 491520,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 35606528,
+          "peak": 37765120,
           "kept": 98304,
           "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 35606528,
+          "peak": 38068224,
           "kept": 200704,
           "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 35606528,
-          "kept": 61440,
+          "peak": 37720064,
+          "kept": 49152,
           "leak": 0
         },
         "histogram(new 1k words) x500": {
-          "peak": 36061184,
-          "kept": 94208,
+          "peak": 37777408,
+          "kept": 163840,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 35606528,
+          "peak": 38109184,
           "kept": 0,
           "leak": 0
         },
         "Vector(1000) x500": {
-          "peak": 35606528,
+          "peak": 37617664,
           "kept": 0,
           "leak": 0
         },
         "expect_positive(-1) x500k": {
-          "peak": 35606528,
+          "peak": 38105088,
           "kept": 0,
           "leak": 0
         },
         "sum_floats(wrong elem) x200k": {
-          "peak": 35688448,
+          "peak": 37687296,
           "kept": 0,
           "leak": 0
         }
@@ -880,38 +885,38 @@
     "python": {
       "sizes": {},
       "import": {
-        "first_s": 0.0002006109989451943,
-        "warm_s": 0.00016293999942718074,
-        "rss_bytes": 16384
+        "first_s": 0.00016728000082366634,
+        "warm_s": 0.00017336000018985942,
+        "rss_bytes": 28672
       },
       "speed": {
         "speed_ns": {
-          "add": 37.0522380500006,
-          "fib(25)": 9362723.225012815,
-          "count_primes(1e6)": 98067257.39999819,
-          "sum_floats(100k)": 1592344.312498426,
-          "make_range(100k)": 2369389.8449982954,
-          "greet": 72.6008608000484,
-          "describe(3)": 168.6786100003701,
-          "maybe_double(21)": 38.80069179995189,
-          "histogram(10k)": 623248.0590006162,
-          "minmax(100k)": 1978932.7025000604,
-          "reverse3([1,2,3])": 128.04095074989164,
-          "checksum(100kB)": 2278975.440003705,
-          "echo_bytes(100kB)": 1927.7768300025855,
-          "join_strings(10k)": 75371.65470002947,
-          "expect_positive(err)": 246.53351999950246,
-          "Counter()": 97.0588823000071,
-          "c.increment()": 57.47756140008278,
-          "c.add(1)": 58.79516909990343,
-          "c.value": 13.012987399997655,
-          "c.is_zero": 39.79938920001587,
-          "c == c": 75.13931390003563,
-          "list(Countdown())": 604.8095589994773,
-          "Vector(1000)": 2363.189150000835,
-          "vector.total()": 6082.5796899916895,
-          "complex_scale(1+2j, 3)": 64.60656649996963,
-          "Counter.zero()": 42.77203450001252
+          "add": 35.93551594995006,
+          "fib(25)": 9070339.599984435,
+          "count_primes(1e6)": 94442111.99988787,
+          "sum_floats(100k)": 1579657.4749992942,
+          "make_range(100k)": 2145551.1800013483,
+          "greet": 71.26904690012452,
+          "describe(3)": 158.7281372499092,
+          "maybe_double(21)": 37.343908049933816,
+          "histogram(10k)": 618515.1289992064,
+          "minmax(100k)": 1882503.5975032735,
+          "reverse3([1,2,3])": 127.09126800018566,
+          "checksum(100kB)": 2189305.7099987348,
+          "echo_bytes(100kB)": 1939.4374149987925,
+          "join_strings(10k)": 70993.198099859,
+          "expect_positive(err)": 223.04844799964485,
+          "Counter()": 102.80527050008459,
+          "c.increment()": 52.441774799990526,
+          "c.add(1)": 53.109080900139816,
+          "c.value": 11.785266525021143,
+          "c.is_zero": 37.01589900001636,
+          "c == c": 70.78239629991003,
+          "list(Countdown())": 583.6911839996901,
+          "Vector(1000)": 2345.2042200005963,
+          "vector.total()": 5867.900129996997,
+          "complex_scale(1+2j, 3)": 60.64004609997937,
+          "Counter.zero()": 40.05477790014993
         }
       },
       "correctness": {
@@ -1079,62 +1084,62 @@
       "threads": {},
       "memory": {
         "greet x2M": {
-          "peak": 35606528,
+          "peak": 35999744,
           "kept": 0,
           "leak": 0
         },
         "make_range(100k) x200": {
-          "peak": 39198720,
-          "kept": 1531904,
+          "peak": 39264256,
+          "kept": 528384,
           "leak": 0
         },
         "count_primes(10M) x5": {
-          "peak": 44904448,
+          "peak": 44998656,
           "kept": 9998336,
           "leak": 0
         },
         "sum_floats(new 10k list) x500": {
-          "peak": 35606528,
+          "peak": 35999744,
           "kept": 413696,
           "leak": 0
         },
         "checksum(new 100kB) x500": {
-          "peak": 35606528,
-          "kept": 102400,
+          "peak": 35999744,
+          "kept": 98304,
           "leak": 0
         },
         "echo_bytes(new 100kB) x500": {
-          "peak": 35606528,
-          "kept": 204800,
+          "peak": 35999744,
+          "kept": 200704,
           "leak": 0
         },
         "join_strings(new 1k strs) x500": {
-          "peak": 35606528,
-          "kept": 49152,
+          "peak": 35999744,
+          "kept": 45056,
           "leak": 0
         },
         "histogram(new 1k words) x500": {
-          "peak": 35606528,
-          "kept": 77824,
+          "peak": 35999744,
+          "kept": 69632,
           "leak": 0
         },
         "Counter() x1M": {
-          "peak": 35606528,
+          "peak": 35999744,
           "kept": 0,
           "leak": 0
         },
         "Vector(1000) x500": {
-          "peak": 35606528,
+          "peak": 35999744,
           "kept": 0,
           "leak": 0
         },
         "expect_positive(-1) x500k": {
-          "peak": 35606528,
+          "peak": 35999744,
           "kept": 0,
           "leak": 0
         },
         "sum_floats(wrong elem) x200k": {
-          "peak": 35606528,
+          "peak": 35999744,
           "kept": 0,
           "leak": 0
         }

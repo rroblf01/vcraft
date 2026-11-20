@@ -15,8 +15,8 @@ import subprocess
 import sys
 
 
-def _vcraft() -> str:
-    """Return the vcraft binary, preferring one on PATH over a sibling.
+def _find_vcraft() -> str | None:
+    """Return the vcraft binary if one is reachable, preferring an explicit one.
 
     A checkout has `bin/vcraft` next to the project and no installed copy, and
     the binary in the tree is the one whose behaviour matches the backend.
@@ -27,11 +27,16 @@ def _vcraft() -> str:
     sibling = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "vcraft")
     if os.path.exists(sibling):
         return sibling
-    found = shutil.which("vcraft")
+    return shutil.which("vcraft")
+
+
+def _vcraft() -> str:
+    found = _find_vcraft()
     if found:
         return found
     raise RuntimeError(
-        "vcraft is not on PATH; put it there, set VCRAFT_BIN, or build from a checkout"
+        "vcraft is not on PATH; put it there, set VCRAFT_BIN, or build from a checkout. " +
+        "See https://github.com/rroblf01/vcraft for installation instructions."
     )
 
 
@@ -46,6 +51,9 @@ def _run(*args: str, cwd: str | None = None) -> str:
     # checkout of this tool, so the binary has to be named rather than inferred
     # from where the project sits.
     env.setdefault("VCRAFT_BIN", _vcraft())
+    # Nobody is at the keyboard during a frontend build, so a missing V is
+    # installed rather than reported: the prebuilt one where it is published.
+    env.setdefault("VCRAFT_AUTO_TOOLCHAIN", "1")
     result = subprocess.run([_vcraft(), *args], capture_output=True, text=True, env=env, cwd=cwd)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
@@ -123,15 +131,23 @@ def build_sdist(sdist_directory, config_settings=None) -> str:
     return os.path.basename(produced)
 
 
-def get_requires_for_build_wheel(config_settings=None) -> list[str]:
-    # vcraft compiles through V and links nothing, so there is nothing to install
-    # before the build. The compiler itself is a host tool rather than a Python
-    # dependency, and PEP 517 has no way to ask for one.
+def _build_requires() -> list[str]:
+    # vcraft compiles through V and links nothing, so a host that already has
+    # vcraft needs nothing installed. One that does not -- an sdist installed
+    # anywhere, Kaggle, Colab, a clean CI runner -- gets vcraft from PyPI in the
+    # build environment, which then installs the pinned V on its own.
+    # VCRAFT_BUILD_REQUIRES=1 asks for it unconditionally.
+    if os.environ.get("VCRAFT_BUILD_REQUIRES") == "1" or _find_vcraft() is None:
+        return ["vcraft==1.8.0"]
     return []
+
+
+def get_requires_for_build_wheel(config_settings=None) -> list[str]:
+    return _build_requires()
 
 
 def get_requires_for_build_sdist(config_settings=None) -> list[str]:
-    return []
+    return _build_requires()
 
 
 def prepare_metadata_for_build_wheel(metadata_directory, config_settings=None) -> str:
@@ -175,7 +191,7 @@ def build_editable(wheel_directory, config_settings=None, metadata_directory=Non
 
 
 def get_requires_for_build_editable(config_settings=None) -> list[str]:
-    return []
+    return _build_requires()
 
 
 def prepare_metadata_for_build_editable(metadata_directory, config_settings=None) -> str:

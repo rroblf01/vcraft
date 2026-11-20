@@ -579,3 +579,22 @@ the bounds-check branch out of the loop body and made `count_primes` twice as sl
 
 A struct returned as a dict builds in 206 ns where it took 346 (keys interned at import),
 and a `@[vc_structseq]` struct in 182 ns (example module, debug build).
+
+## pybind11 joins (vcraft 1.8.0, Linux)
+
+A fourth project, [`pybind11/`](pybind11), implements the workloads in C++17 with
+pybind11 3.1.0, built by its setuptools helper with `-O3 -DNDEBUG`. The full run on the
+Ryzen 5 3600 (CPython 3.13.16, GCC 16) replaced the 1.3.0 figures in
+[`results-linux.md`](results-linux.md); zig-maturin was left out (zig 0.17 on the
+machine). What pybind11 adds to the picture:
+
+- Its compute matches V's through the same gcc (`fib(25)` 112 µs against 106), so the
+  gap to PyO3 there (221 µs) is LLVM against gcc on this recursion, not the bindings.
+- Its class calls cost 2.5–6× the others' (`Counter()` 249 ns, `c.value` 107,
+  `c == c` 144): every call goes through its generic overload dispatcher.
+- A raised exception costs ~3 µs (`expect_positive` 3.1 µs, `list(Countdown())` 4.3 µs
+  for one `StopIteration`), because it is a C++ throw translated at the boundary.
+- It is fastest on `histogram(10k)` (379 µs, against vcraft's 582) and builds the
+  smallest wheel (155 KiB), but import adds the most memory (2.6 MiB).
+- The correctness matrix finds two documented behaviours: an out-of-range integer
+  raises `TypeError`, not `OverflowError`, and a `std::string` parameter accepts `bytes`.

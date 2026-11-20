@@ -733,8 +733,11 @@ def render(results: dict) -> str:
     out.append("|---" * (len(names) + 1) + "|")
     for label in CORRECTNESS:
         row = [results["backends"][n].get("correctness", {}).get(label, "—") for n in names]
-        out.append(f"| {label} | " + " | ".join(c if c in ("ok", "n/a", "—") else f"`{c}`"
-                                                 for c in row) + " |")
+        # Only an error's first line: pybind11's list every overload on the following
+        # lines, and a newline would end the table row.
+        out.append(f"| {label} | " + " | ".join(
+            c if c in ("ok", "n/a", "—") else f"`{(c.splitlines() or [''])[0]}`"
+            for c in row) + " |")
     return "\n".join(out) + "\n"
 
 

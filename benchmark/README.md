@@ -117,56 +117,58 @@ C++ indexes `std::vector` with `operator[]`, as idiomatic C++ does, which has no
 ## Results
 
 The current run is [`results-linux.md`](results-linux.md): Linux x86_64 (AMD Ryzen 5
-3600), CPython 3.13, vcraft 1.3.0, V 36be926, PyO3 0.29, zig-maturin 1.0.1. Time per
-call, lower is better:
+3600), CPython 3.13, vcraft 1.8.0, V 36be926, PyO3 0.29, pybind11 3.1.0 (GCC 16). zig-maturin
+is not in it: the machine has zig 0.17, which zig-maturin 1.0.1 does not build with; its
+last figures are in the 1.3.0 run in [HISTORY.md](HISTORY.md). Time per call, lower is
+better:
 
-| workload | pyo3 | vcraft | zig-maturin | python |
+| workload | pyo3 | vcraft | pybind11 | python |
 |---|---|---|---|---|
-| `add` | 71 ns | 73 ns | 77 ns | 37 ns |
-| `fib(25)` | 237.3 µs | 112.0 µs | 359.9 µs | 9.36 ms |
-| `count_primes(1e6)` | 2.00 ms | 2.22 ms | 2.03 ms | 98.07 ms |
-| `sum_floats(100k)` | 881.1 µs | 223.3 µs | 1.37 ms | 1.59 ms |
-| `make_range(100k)` | 2.29 ms | 2.45 ms | 2.46 ms | 2.37 ms |
-| `greet` | 135 ns | 120 ns | 235 ns | 73 ns |
-| `describe(3)` | 174 ns | 123 ns | 157 ns | 169 ns |
-| `checksum(100kB)` | 14.9 µs | 39.6 µs | 41.0 µs | 2.28 ms |
-| `join_strings(10k)` | 506.4 µs | 266.0 µs | 265.1 µs | 75.4 µs |
-| `Counter()` | 96 ns | 92 ns | 78 ns | 97 ns |
-| `c.add(1)` | 67 ns | 68 ns | 90 ns | 59 ns |
-| `c.value` | 48 ns | 37 ns | 32 ns | 13 ns |
-| `c.increment()` | 58 ns | 52 ns | 64 ns | 57 ns |
-| `Vector(1000)` | 252 ns | 310 ns | 4.2 µs | 2.4 µs |
-| `complex_scale(1+2j, 3)` | 94 ns | 97 ns | — | 65 ns |
+| `add` | 73 ns | 62 ns | 79 ns | 36 ns |
+| `fib(25)` | 221.3 µs | 106.2 µs | 112.0 µs | 9.07 ms |
+| `count_primes(1e6)` | 1.99 ms | 2.12 ms | 2.31 ms | 94.44 ms |
+| `sum_floats(100k)` | 842.1 µs | 228.8 µs | 840.9 µs | 1.58 ms |
+| `make_range(100k)` | 2.25 ms | 2.28 ms | 2.98 ms | 2.15 ms |
+| `greet` | 135 ns | 111 ns | 125 ns | 71 ns |
+| `describe(3)` | 168 ns | 125 ns | 225 ns | 159 ns |
+| `histogram(10k)` | 686.2 µs | 582.2 µs | 378.9 µs | 618.5 µs |
+| `checksum(100kB)` | 13.7 µs | 12.6 µs | 12.8 µs | 2.19 ms |
+| `join_strings(10k)` | 466.3 µs | 256.4 µs | 279.0 µs | 71.0 µs |
+| `expect_positive(err)` | 217 ns | 212 ns | 3.1 µs | 223 ns |
+| `Counter()` | 96 ns | 62 ns | 249 ns | 103 ns |
+| `c.add(1)` | 65 ns | 54 ns | 155 ns | 53 ns |
+| `c.value` | 46 ns | 33 ns | 107 ns | 12 ns |
+| `list(Countdown())` | 337 ns | 239 ns | 4.3 µs | 584 ns |
+| `Vector(1000)` | 226 ns | 217 ns | 397 ns | 2.3 µs |
+| `complex_scale(1+2j, 3)` | 93 ns | 82 ns | 97 ns | 61 ns |
 
 What the numbers say:
 
-- **Speed: all three generate comparable native code.** On `fib` vcraft leads PyO3 by
-  about 2×, and the differences that remain are at the boundary: per-call cost and
-  conversions. vcraft leads `sum_floats`, `greet`, `describe` (keyword binding),
-  `minmax`, `histogram` and complex numbers; PyO3 is marginally ahead on a bare `add`
-  and on `c.add`, and leads `checksum` (the byte loop V's C backend lowers worse, see
-  below) and `count_primes`/`make_range` (V's array-write lowering). zig-maturin trails
-  on calls by structure.
-- **Method and attribute calls are at PyO3's level.** `c.value` (37 vs 48 ns),
-  `c.increment` (52 vs 58) and `c.is_zero` are faster than PyO3; `c.add` is level (68 vs
-  67). The nanosecond rows carry ±10% run-to-run noise (PyO3's own `c.value` moved
-  46 → 48 ns between the 1.2.0 and 1.3.0 runs), so read them against [HISTORY.md](HISTORY.md),
-  which has a controlled measurement; the clean benchmark signal is `Counter()`, 106 → 92 ns
-  against a flat PyO3. The benchmark's subclass publishes a state chain, and its own
-  trampolines pay for it; a class with no base does not.
-- **Memory.** PyO3 and zig-maturin stay near pure Python; vcraft keeps its Boehm heap —
-  `count_primes` leaves 28.9 MiB against 9.5 (19.6 MiB in the 1.2.0 run; the retained
-  figure is noisy between runs), and `make_range` 4.6 against 0.9, all plateauing, not
-  leaking. Import RSS is the lowest of the three (760 KiB against PyO3's 788). No scenario
-  leaks on any backend and no reference probe drifts.
-- **Size.** vcraft and zig-maturin build the smallest wheels; PyO3's is the same order.
-  vcraft's clean release build is the fastest.
+- **Compute is a draw between the compilers.** `fib` runs in 106 µs (V through gcc) and
+  112 µs (C++ through gcc) against PyO3's 221 µs; the sieve and the buffer sums are
+  within 15% of each other everywhere.
+- **The boundary is where they differ.** vcraft is fastest on 21 of the 26 workloads,
+  PyO3 on `count_primes` and `make_range` (and level on `v.total()` and the static
+  method). pybind11 is fastest on `histogram` (its
+  `unordered_map` to `dict`) and close on strings and bytes, but every call into a class
+  costs it 2.5–6× more (`c.value` 107 ns, `c == c` 144 ns), and raising an exception
+  (`expect_positive`, the `StopIteration` that ends `Countdown`) costs about 3–4 µs,
+  14–18× the others: pybind11 throws a C++ exception and translates it.
+- **Memory.** PyO3 and pybind11 stay near pure Python; vcraft keeps its Boehm heap
+  (`count_primes` leaves 28.8 MiB against PyO3's 9.5, `make_range` 4.7 against 0.9), all
+  plateauing, not leaking. Import adds 864 KiB with PyO3, 1,008 KiB with vcraft and
+  2,672 KiB with pybind11 (which also imports slowest, 1.35 ms). No scenario leaks on any
+  backend and no reference probe drifts.
+- **Size.** pybind11 builds the smallest wheel (155 KiB, against 279 and 293); PyO3
+  builds fastest from clean (9.1 s, pybind11 10.2, vcraft 14.1).
+- **Correctness.** vcraft panics on `make_range(-1)` (the benchmark's V code makes a
+  slice with a negative capacity); pybind11's two differences are under Known limits.
 
 ## Known limits
 
 ### vcraft
 
-- **V's array lowering.** `count_primes` and `make_range` sit ~1.1–1.2× PyO3 because
+- **V's array lowering.** `count_primes` and `make_range` sit ~1.0–1.1× PyO3 because
   `array.get` is a non-inline bounds-checked call behind `for x in arr` and `arr[i]`,
   `@[direct_array_access]` is not honored by `for in`, and the scalar `<<` fast path added
   in V's `#29736` does not fire for a local slice. It is in V's C codegen, not vcraft: the
