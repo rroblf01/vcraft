@@ -2,8 +2,10 @@
 .build-times.json
 __pycache__/
 
-# build output of the three projects
+# build output of the four projects
 dist/
+pybind11/build/
+pybind11/**/*.egg-info/
 pyo3/target/
 zig-maturin/.zig-cache/
 zig-maturin/zig-out/

@@ -1,7 +1,7 @@
 # Benchmarks
 
-Every number here can be reproduced from the repository: the harness, the three
-equivalent projects (PyO3, vcraft, zig-maturin) and a pure-Python reference are in
+Every number here can be reproduced from the repository: the harness, the four
+equivalent projects (PyO3, vcraft, zig-maturin, pybind11) and a pure-Python reference are in
 [`benchmark/`](https://github.com/rroblf01/vcraft/tree/main/benchmark), and each stored
 run records the toolchain that produced it.
 
@@ -92,8 +92,8 @@ $ python ab.py pyo3=.venv/bin/python:bench_pyo3 \
                vcraft=.venv/bin/python:bench_vcraft_native --rounds 5
 ```
 
-`run.sh` needs `uv`, `cargo` and a `v` built at the pinned commit on `PATH` (zig 0.16 is
-optional); it installs nothing outside `benchmark/.venv`. Besides speed it measures peak
+`run.sh` needs `uv`, `cargo` and a `v` built at the pinned commit on `PATH` (zig 0.16 and
+a C++17 compiler for pybind11 are optional); it installs nothing outside `benchmark/.venv`. Besides speed it measures peak
 and retained memory (each scenario twice, so a leak shows as growth), import time, wheel
 and binary size, a correctness matrix of edge cases, reference retention, and GIL-free
 scaling across threads.

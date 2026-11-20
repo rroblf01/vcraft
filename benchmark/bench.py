@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compares PyO3, vcraft and zig-maturin on the same workloads.
+"""Compares PyO3, vcraft, zig-maturin and pybind11 on the same workloads.
 
 Every backend is measured in fresh subprocesses so that one backend's allocator,
 garbage collector or imported runtime never shows up in another's numbers: one
@@ -61,7 +61,7 @@ def toolchain_versions() -> dict:
         "PyO3": _regex_version(HERE / "pyo3" / "Cargo.toml",
                                r'pyo3 = \{ version = "([^"]+)"'),
     }
-    for name in ("maturin", "zig-maturin"):
+    for name in ("maturin", "zig-maturin", "pybind11"):
         try:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
@@ -71,6 +71,11 @@ def toolchain_versions() -> dict:
         versions["zig"] = out.stdout.strip() or "?"
     else:
         versions["zig"] = "?"
+    if shutil.which("c++"):
+        out = subprocess.run(["c++", "--version"], capture_output=True, text=True)
+        versions["c++"] = (out.stdout.splitlines() or ["?"])[0]
+    else:
+        versions["c++"] = "?"
     return versions
 
 # name -> (importable module, project directory holding dist/)
@@ -78,6 +83,7 @@ BACKENDS = {
     "pyo3": ("bench_pyo3", HERE / "pyo3"),
     "vcraft": ("bench_vcraft_native", HERE / "vcraft"),
     "zig-maturin": ("bench_zig", HERE / "zig-maturin"),
+    "pybind11": ("bench_pybind11", HERE / "pybind11"),
     "python": ("pure_python", None),
 }
 
@@ -328,7 +334,9 @@ CORRECTNESS = {
     "vector length rejected": (
         ("m.Vector('x')"), PerBackend({"python": "n/a", "*": "TypeError"})),
     "vector memoryview writes through": (
-        "(lambda v: (memoryview(v).cast('d').__setitem__(0, 3.0), v.total())[1])(m.Vector(2))",
+        # A backend may export the bytes ('B') or the doubles themselves ('d').
+        "(lambda v, mv: ((mv if mv.format == 'd' else mv.cast('d')).__setitem__(0, 3.0),"
+        " v.total())[1])(*(lambda v: (v, memoryview(v)))(m.Vector(2)))",
         PerBackend({"pyo3": "n/a", "python": "n/a", "*": 3.0})),
     # A complex number in and out. zig-maturin has no complex conversion.
     "complex round trip": ("m.complex_scale(1+2j, 3)", PerBackend({"zig-maturin": "n/a", "*": 3 + 6j})),

@@ -1,7 +1,7 @@
 # Benchmarks
 
 Todos los números de esta página se pueden reproducir desde el repositorio: el banco de
-pruebas, los tres proyectos equivalentes (PyO3, vcraft, zig-maturin) y una referencia en
+pruebas, los cuatro proyectos equivalentes (PyO3, vcraft, zig-maturin, pybind11) y una referencia en
 Python puro están en
 [`benchmark/`](https://github.com/rroblf01/vcraft/tree/main/benchmark), y cada ejecución
 guardada registra el toolchain que la produjo.
@@ -95,7 +95,7 @@ $ python ab.py pyo3=.venv/bin/python:bench_pyo3 \
 ```
 
 `run.sh` necesita `uv`, `cargo` y un `v` compilado en el commit fijado en el `PATH` (zig
-0.16 es opcional); no instala nada fuera de `benchmark/.venv`. Además de velocidad mide
+0.16 y un compilador de C++17 para pybind11 son opcionales); no instala nada fuera de `benchmark/.venv`. Además de velocidad mide
 memoria máxima y retenida (cada escenario dos veces, así una fuga aparece como
 crecimiento), tiempo de importación, tamaño del wheel y del binario, una matriz de
 corrección con casos límite, retención de referencias y escalado sin GIL entre hilos.

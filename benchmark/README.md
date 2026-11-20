@@ -1,6 +1,6 @@
-# Benchmark: PyO3 vs vcraft vs zig-maturin
+# Benchmark: PyO3 vs vcraft vs zig-maturin vs pybind11
 
-Three independent projects implementing the same workloads with the same semantics, one
+Four independent projects implementing the same workloads with the same semantics, one
 per tool, plus a pure-Python reference:
 
 | directory | tool | language | module |
@@ -8,18 +8,20 @@ per tool, plus a pure-Python reference:
 | [`pyo3/`](pyo3) | PyO3 0.29 + maturin 1.15 | Rust | `bench_pyo3` |
 | [`vcraft/`](vcraft) | vcraft (this repo) | V | `bench_vcraft_native` |
 | [`zig-maturin/`](zig-maturin) | [zig-maturin](https://github.com/rroblf01/zig-maturin) 1.0.1 | Zig 0.16 | `bench_zig` |
+| [`pybind11/`](pybind11) | pybind11 3.1.0 + setuptools | C++17 | `bench_pybind11` |
 | [`pure_python.py`](pure_python.py) | — | Python | `pure_python` |
 
 ## How to run it
 
 ```console
-$ ./run.sh            # clean build of all three, install into .venv, benchmark
+$ ./run.sh            # clean build of all four, install into .venv, benchmark
 $ ./run.sh --quick    # fewer repeats, to check the harness
 ```
 
-It needs `uv`, `cargo`, `zig` 0.16 and a `v` built at the commit pinned in `docker/` on
-`PATH`. It installs nothing outside `benchmark/.venv`. `BENCH_PYTHON` picks the interpreter
-(3.13 by default, the newest all three support).
+It needs `uv`, `cargo` and a `v` built at the commit pinned in `docker/` on `PATH`; `zig`
+0.16 and a C++17 compiler (`c++`, for pybind11) are optional, and a backend whose
+toolchain is missing is left out of the run with a warning. It installs nothing outside `benchmark/.venv`. `BENCH_PYTHON` picks the interpreter
+(3.13 by default, the newest all of them support).
 
 ### Comparing two builds of vcraft
 
@@ -108,8 +110,9 @@ The older runs, the step-by-step vcraft work and the resolved findings are in
   The pure-Python reference cannot release the GIL and is not measured.
 
 Each tool compiles in its release mode: `cargo --release` (opt-level 3),
-`vcraft build --release` (`v -prod`) and `zig-maturin build --release` (`ReleaseSafe`). All
-three keep bounds checks.
+`vcraft build --release` (`v -prod`), `zig-maturin build --release` (`ReleaseSafe`) and
+pybind11's setuptools helper with `-O3 -DNDEBUG`. The first three keep bounds checks; the
+C++ indexes `std::vector` with `operator[]`, as idiomatic C++ does, which has none.
 
 ## Results
 
@@ -185,10 +188,21 @@ What the numbers say:
 
 Nothing to note in this benchmark.
 
+### pybind11
+
+- An integer that does not fit `int64_t` raises `TypeError` ("incompatible function
+  arguments") instead of `OverflowError`: pybind11 reports any failed conversion as a
+  mismatch of the whole signature.
+- A `std::string` parameter accepts `bytes` as well as `str`, so `greet(b'x')` returns
+  `'Hello, x!'` instead of raising. Both are found by the correctness matrix and are
+  pybind11's documented behaviour, not the benchmark's code.
+
 ## Workarounds in the benchmark code
 
-So the three projects compile with the same semantics:
+So the four projects compile with the same semantics:
 
 - **zig-maturin:** `build.zig` forwards the Python include and `make_range` uses
   `zm.PyList_SetItem`. Both are commented in the source.
 - **vcraft:** none.
+- **pybind11:** none. `Vector` exports its buffer as doubles (format `d`) rather than
+  bytes, so the memoryview case accepts either format.
