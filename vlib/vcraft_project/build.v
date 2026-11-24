@@ -393,6 +393,58 @@ pub fn check_versions(interpreter string, abi3 string, free_threading bool) ! {
 	}
 }
 
+// strip_vc_attributes removes vcraft's `@[vc_*]` attribute lines from the project's
+// V sources and returns the originals, keyed by path.
+//
+// Newer V turns unvalidated attributes into warnings, and `-prod` turns those warnings
+// into errors. vcraft has already read the attributes from the source text during
+// generation, so the compiler does not need them; stripping them keeps a release
+// build clean without changing the user's files permanently.
+fn strip_vc_attributes(root string) map[string]string {
+	mut backups := map[string]string{}
+	src_dir := root.trim_right('/') + '/src'
+	if !os.exists(src_dir) {
+		return backups
+	}
+	files := os.ls(src_dir) or { return backups }
+	for file in files {
+		if !file.ends_with('.v') {
+			continue
+		}
+		path := src_dir + '/' + file
+		original := os.read_file(path) or { continue }
+		new_src := strip_vc_attr_text(original)
+		if new_src != original {
+			backups[path] = original
+			os.write_file(path, new_src) or {}
+		}
+	}
+	return backups
+}
+
+// strip_vc_attr_text removes every `@[vc_*]` attribute, wherever it appears.
+fn strip_vc_attr_text(src string) string {
+	mut out := src
+	for {
+		start := out.index('@[vc_') or { -1 }
+		if start < 0 {
+			break
+		}
+		end := out.index_after(']', start) or { -1 }
+		if end < 0 {
+			break
+		}
+		out = out[..start] + out[end + 1..]
+	}
+	return out
+}
+
+fn restore_vc_attributes(backups map[string]string) {
+	for path, original in backups {
+		os.write_file(path, original) or {}
+	}
+}
+
 // build compiles the project and writes a wheel.
 pub fn build(project Project, opt BuildOptions) !BuildResult {
 	mut p := project
@@ -588,7 +640,6 @@ pub fn build(project Project, opt BuildOptions) !BuildResult {
 		' ' + opt.ldflags).trim_space()
 	mut args := [
 		opt.v,
-		'-new-compiler',
 		'-enable-globals',
 		'-shared',
 		'-o',
@@ -721,6 +772,8 @@ pub fn build(project Project, opt BuildOptions) !BuildResult {
 			os.rm(stale) or { return error('cannot remove ${stale}') }
 		}
 	}
+	backups := strip_vc_attributes(opt.root)
+	defer { restore_vc_attributes(backups) }
 	result := os.exec(args)
 	if result.exit_code != 0 {
 		return error('the V compiler failed:\n${user_diagnostics(result.output)}')

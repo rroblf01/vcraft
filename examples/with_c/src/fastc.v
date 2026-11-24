@@ -11,22 +11,22 @@ import vcraft
 #flag @VMODROOT/c/fastc.c
 #include "fastc.h"
 
-// C's `uint32_t`, `size_t` and `ptrdiff_t` are V's `u32`, `usize` and `isize`. V's `int`
+// C's `uint32_t`, `size_t` and `ptrdiff_t` are V's `u32`, `u64` and `i64`. V's `int`
 // is 64 bits and C's 32: never declare a C `int` as V `int`.
-fn C.fastc_fnv1a(data &u8, len usize) u32
-fn C.fastc_rle(src &u8, len usize, dst &u8, dst_cap usize) isize
+fn C.fastc_fnv1a(data &u8, len u64) u32
+fn C.fastc_rle(src &u8, len u64, dst &u8, dst_cap u64) i64
 
 // fnv1a hashes bytes with the C function, reading Python's buffer in place.
 @[vc_fn]
 pub fn fnv1a(data []u8) u32 {
-	return C.fastc_fnv1a(data.data, usize(data.len))
+	return C.fastc_fnv1a(data.data, u64(data.len))
 }
 
 // rle run-length encodes bytes in C, as (count, byte) pairs.
 @[vc_fn]
 pub fn rle(data []u8) ![]u8 {
 	mut out := []u8{len: data.len * 2}
-	written := C.fastc_rle(data.data, usize(data.len), out.data, usize(out.len))
+	written := C.fastc_rle(data.data, u64(data.len), out.data, u64(out.len))
 	if written < 0 {
 		return vcraft.raise_domain(.runtime_error, 'rle: output buffer too small')
 	}

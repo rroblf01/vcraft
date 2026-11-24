@@ -43,7 +43,7 @@ reject_extra_args reports a call that passed more arguments than the V function
 accepts. Called after the last parameter.
 
 ```v
-pub fn bind_args(args voidptr, nargs isize, kwnames voidptr, out voidptr, names []string, optional []bool, func string) bool
+pub fn bind_args(args voidptr, nargs i64, kwnames voidptr, out voidptr, names []string, optional []bool, func string) bool
 ```
 
 bind_args places the arguments of a METH_FASTCALL | METH_KEYWORDS call in one slot
@@ -66,7 +66,7 @@ positional arguments past them, and the keywords no fixed parameter takes. Every
 is borrowed from the call.
 
 ```v
-pub fn split_call(args voidptr, nargs isize, kwnames voidptr, names []string, optional []bool, var_pos bool, var_kw bool, func string) !CallSplit
+pub fn split_call(args voidptr, nargs i64, kwnames voidptr, names []string, optional []bool, var_pos bool, var_kw bool, func string) !CallSplit
 ```
 
 split_call binds a call to a function whose V parameters end with a variadic `...T`
@@ -82,7 +82,7 @@ pub fn unexpected_kwarg(name string, keyword string)
 unexpected_kwarg reports an unknown keyword argument.
 
 ```v
-pub fn arg_present(argv voidptr, nargs isize, kwnames voidptr, i int) bool
+pub fn arg_present(argv voidptr, nargs i64, kwnames voidptr, i int) bool
 ```
 
 arg_present reports whether the value for parameter `i` was passed.
@@ -270,10 +270,10 @@ pub fn from_py_i32_seq_arg(argv voidptr, i int, func string, name string) ![]i32
 from_py_i32_seq_arg reads positional argument `i` as a sequence of i32.
 
 ```v
-pub fn from_py_isize_seq_arg(argv voidptr, i int, func string, name string) ![]isize
+pub fn from_py_isize_seq_arg(argv voidptr, i int, func string, name string) ![]i64
 ```
 
-from_py_isize_seq_arg reads positional argument `i` as a sequence of isize.
+from_py_isize_seq_arg reads positional argument `i` as a sequence of i64.
 
 ```v
 pub fn from_py_rune_seq_arg(argv voidptr, i int, func string, name string) ![]rune
@@ -294,10 +294,10 @@ pub fn from_py_u32_seq_arg(argv voidptr, i int, func string, name string) ![]u32
 from_py_u32_seq_arg reads positional argument `i` as a sequence of u32.
 
 ```v
-pub fn from_py_usize_seq_arg(argv voidptr, i int, func string, name string) ![]usize
+pub fn from_py_usize_seq_arg(argv voidptr, i int, func string, name string) ![]u64
 ```
 
-from_py_usize_seq_arg reads positional argument `i` as a sequence of usize.
+from_py_usize_seq_arg reads positional argument `i` as a sequence of u64.
 
 ```v
 pub fn from_py_f32_seq_arg(argv voidptr, i int, func string, name string) ![]f32
@@ -561,7 +561,7 @@ aliasing a V slice into them. For reads the other direction costs nothing; for
 writes this is the price of the type.
 
 ```v
-pub fn native_alloc(nbytes usize) voidptr
+pub fn native_alloc(nbytes u64) voidptr
 ```
 
 native_alloc allocates `nbytes` of CPython-owned memory, released with `native_free`.
@@ -620,7 +620,7 @@ pub fn buffer_views_decr(p voidptr)
 buffer_views_decr is called by a generated `bf_releasebuffer`.
 
 ```v
-pub fn buffer_fill(view voidptr, exporter voidptr, data voidptr, len_bytes isize, readonly int, flags int) int
+pub fn buffer_fill(view voidptr, exporter voidptr, data voidptr, len_bytes i64, readonly int, flags int) int
 ```
 
 buffer_fill wraps one contiguous run of bytes in a `Py_buffer`.
@@ -630,7 +630,7 @@ it and `PyBuffer_Release` gives it back, which is the whole reason the memoryvie
 sound where `PyMemoryView_FromMemory` is not. Returns CPython's status.
 
 ```v
-pub fn buffer_fill_typed(view voidptr, exporter voidptr, data voidptr, len_bytes isize, itemsize isize, kind int, readonly int, flags int) int
+pub fn buffer_fill_typed(view voidptr, exporter voidptr, data voidptr, len_bytes i64, itemsize i64, kind int, readonly int, flags int) int
 ```
 
 buffer_fill_typed wraps a run of bytes in a typed `Py_buffer`, for a class whose
@@ -739,16 +739,16 @@ buffer_resize_i64 reallocates a native-backed `[]i64`, or raises BufferError whi
 memoryview of it is open. The address may move, so the result must be stored back.
 
 ```v
-pub fn buffer_new_isize(n int) []isize
+pub fn buffer_new_isize(n int) []i64
 ```
 
-buffer_new_isize allocates a native-backed `[]isize` of `n` elements, zero-initialised.
+buffer_new_isize allocates a native-backed `[]i64` of `n` elements, zero-initialised.
 
 ```v
-pub fn buffer_resize_isize(s []isize, n int) ![]isize
+pub fn buffer_resize_isize(s []i64, n int) ![]i64
 ```
 
-buffer_resize_isize reallocates a native-backed `[]isize`, or raises BufferError while a
+buffer_resize_isize reallocates a native-backed `[]i64`, or raises BufferError while a
 memoryview of it is open. The address may move, so the result must be stored back.
 
 ```v
@@ -804,16 +804,16 @@ buffer_resize_u64 reallocates a native-backed `[]u64`, or raises BufferError whi
 memoryview of it is open. The address may move, so the result must be stored back.
 
 ```v
-pub fn buffer_new_usize(n int) []usize
+pub fn buffer_new_usize(n int) []u64
 ```
 
-buffer_new_usize allocates a native-backed `[]usize` of `n` elements, zero-initialised.
+buffer_new_usize allocates a native-backed `[]u64` of `n` elements, zero-initialised.
 
 ```v
-pub fn buffer_resize_usize(s []usize, n int) ![]usize
+pub fn buffer_resize_usize(s []u64, n int) ![]u64
 ```
 
-buffer_resize_usize reallocates a native-backed `[]usize`, or raises BufferError while a
+buffer_resize_usize reallocates a native-backed `[]u64`, or raises BufferError while a
 memoryview of it is open. The address may move, so the result must be stored back.
 
 ```v
@@ -879,10 +879,10 @@ pub fn buffer_export_i64(s []i64) PyObj
 buffer_export_i64 exports a `[]i64` as a writable memoryview, transferring ownership.
 
 ```v
-pub fn buffer_export_isize(s []isize) PyObj
+pub fn buffer_export_isize(s []i64) PyObj
 ```
 
-buffer_export_isize exports a `[]isize` as a writable memoryview, transferring ownership.
+buffer_export_isize exports a `[]i64` as a writable memoryview, transferring ownership.
 
 ```v
 pub fn buffer_export_u8(s []u8) PyObj
@@ -909,10 +909,10 @@ pub fn buffer_export_u64(s []u64) PyObj
 buffer_export_u64 exports a `[]u64` as a writable memoryview, transferring ownership.
 
 ```v
-pub fn buffer_export_usize(s []usize) PyObj
+pub fn buffer_export_usize(s []u64) PyObj
 ```
 
-buffer_export_usize exports a `[]usize` as a writable memoryview, transferring ownership.
+buffer_export_usize exports a `[]u64` as a writable memoryview, transferring ownership.
 
 ```v
 pub fn buffer_export_f32(s []f32) PyObj
@@ -1105,7 +1105,7 @@ Python subclass produced without running a vcraft constructor still has its stat
 bytes, zeroed by `PyType_GenericAlloc`. There is no null case to report.
 
 ```v
-pub fn mark_boxed_type(typ voidptr, size usize)
+pub fn mark_boxed_type(typ voidptr, size u64)
 ```
 
 mark_boxed_type registers a type whose instances are boxed, for the readers of `&T`
@@ -1118,7 +1118,7 @@ pub fn boxed_storage(obj voidptr) voidptr
 boxed_storage returns the state block of an instance of a boxed class.
 
 ```v
-pub fn box_new(obj voidptr, size usize)
+pub fn box_new(obj voidptr, size u64)
 ```
 
 box_new gives a fresh instance of a boxed class its zeroed state block, once.
@@ -1144,7 +1144,7 @@ it and only a fully built state is ever copied in -- so the dealloc is safe even
 when the failure was a panic before the copy.
 
 ```v
-pub fn load_state(storage voidptr, dest voidptr, size usize)
+pub fn load_state(storage voidptr, dest voidptr, size u64)
 ```
 
 load_state and store_state move a V value between the state block and a local.
@@ -1267,7 +1267,7 @@ state_at returns the address of one generation of the running trampoline's state
 that level is not there.
 
 ```v
-pub fn set_state(member voidptr, value voidptr, size usize)
+pub fn set_state(member voidptr, value voidptr, size u64)
 ```
 
 set_state copies a Python value into a single field of the state block.
@@ -1276,7 +1276,7 @@ set_state copies a Python value into a single field of the state block.
 member is: by the address of the member, not by an offset computed here.
 
 ```v
-pub fn store_state(value voidptr, storage voidptr, size usize)
+pub fn store_state(value voidptr, storage voidptr, size u64)
 ```
 
 store_state copies a V value into the state block.
@@ -1541,7 +1541,7 @@ does not: Python falls back to the other operand's reflected method, and then to
 default, which is an error naming the type rather than a wrong `False`.
 
 ```v
-pub fn identity_hash(self voidptr) isize
+pub fn identity_hash(self voidptr) i64
 ```
 
 identity_hash is the default `tp_hash`: the object's own address.
@@ -1579,7 +1579,7 @@ number_slot builds one `PyType_Slot` for the number protocol, so generated code 
 assemble the `nb_*` slots a class needs without naming the CPython struct.
 
 ```v
-pub fn from_py_instance(obj voidptr, target voidptr, target_name string, offset usize, func string, name string) voidptr
+pub fn from_py_instance(obj voidptr, target voidptr, target_name string, offset u64, func string, name string) voidptr
 ```
 
 from_py_instance reads an argument that must be an instance of `target` and returns a
@@ -1591,7 +1591,7 @@ An instance of the target or of any subclass shares that layout, so a `&Base` pa
 accepts a subclass instance and reads the same bytes a `Base` method would.
 
 ```v
-pub fn instance_ref(ptr voidptr, target voidptr, target_name string, offset usize, candidates []voidptr, func string) voidptr
+pub fn instance_ref(ptr voidptr, target voidptr, target_name string, offset u64, candidates []voidptr, func string) voidptr
 ```
 
 instance_ref turns a `&T` result back into the instance that owns the memory it points
@@ -1606,7 +1606,7 @@ rather than guessed at, because handing CPython an object it does not own corrup
 interpreter.
 
 ```v
-pub fn hash_from_int(value int) isize
+pub fn hash_from_int(value int) i64
 ```
 
 hash_from_int folds a V integer into `Py_hash_t`.
@@ -1797,10 +1797,10 @@ pub fn i32_from_py_int(obj PyObj, name string) !i32
 i32_from_py_int reads a Python int into an i32.
 
 ```v
-pub fn isize_from_py_int(obj PyObj, name string) !isize
+pub fn isize_from_py_int(obj PyObj, name string) !i64
 ```
 
-isize_from_py_int reads a Python int into an isize.
+isize_from_py_int reads a Python int into an i64.
 
 ```v
 pub fn rune_from_py_int(obj PyObj, name string) !rune
@@ -1827,10 +1827,10 @@ pub fn u32_from_py_uint(obj PyObj, name string) !u32
 u32_from_py_uint reads a Python int into a u32.
 
 ```v
-pub fn usize_from_py_uint(obj PyObj, name string) !usize
+pub fn usize_from_py_uint(obj PyObj, name string) !u64
 ```
 
-usize_from_py_uint reads a Python int into a usize.
+usize_from_py_uint reads a Python int into a u64.
 
 ```v
 pub fn f32_from_py_f64(obj PyObj, name string) !f32
@@ -3696,13 +3696,13 @@ pub fn (o PyObj) type_name() string
 type_name returns the name of the object's type, for error messages.
 
 ```v
-pub fn (o PyObj) hash_value() isize
+pub fn (o PyObj) hash_value() i64
 ```
 
 hash_value returns the Python hash of the object, or -1 with an error set.
 
 ```v
-pub fn (o PyObj) len() isize
+pub fn (o PyObj) len() i64
 ```
 
 len returns the length of a sized object, or -1 with an error set.

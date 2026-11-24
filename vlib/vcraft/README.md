@@ -362,7 +362,7 @@ mut:
 // new_owned_box allocates an int the instance owns.
 @[vc_fn]
 pub fn new_owned_box(value int) &OwnedBox {
-	p := vcraft.native_alloc(usize(sizeof(int)))
+	p := vcraft.native_alloc(u64(sizeof(int)))
 	if p == unsafe { nil } {
 		panic('memory allocation failure')
 	}
@@ -455,8 +455,8 @@ has to be declared, and the declaration is what decides how the call is compiled
 #include <unistd.h>
 
 fn C.accept4(fd int, addr voidptr, addrlen voidptr, flags int) int
-fn C.recv(fd int, buf voidptr, len usize, flags int) isize
-fn C.send(fd int, buf voidptr, len usize, flags int) isize
+fn C.recv(fd int, buf voidptr, len u64, flags int) i64
+fn C.send(fd int, buf voidptr, len u64, flags int) i64
 ```
 
 Two rules follow from that, and both cost an afternoon when they are missed. The width has
@@ -471,7 +471,7 @@ carry the C names, not the ones the shape suggests:
 ```v
 struct C.iovec {
 	iov_base voidptr
-	iov_len  usize
+	iov_len  u64
 }
 ```
 

@@ -142,7 +142,7 @@ pub fn bytes_arg(argv voidptr, i int, func string, name string) !BytesArg {
 		// path of every `[]u8` call with `bytes` input.
 		unsafe {
 			mut buf := voidptr(nil)
-			mut n := isize(0)
+			mut n := i64(0)
 			if C.PyBytes_AsStringAndSize(obj.ptr, voidptr(&buf), voidptr(&n)) != 0 {
 				// Unreachable for exact `bytes`, which always exposes a buffer;
 				// kept because CPython signals failure this way, not with NULL.
@@ -197,7 +197,7 @@ pub fn bytes_view(obj PyObj, name string) !BytesArg {
 	if C.vpy_is_exact_bytes(obj.ptr) != 0 {
 		unsafe {
 			mut buf := voidptr(nil)
-			mut n := isize(0)
+			mut n := i64(0)
 			if C.PyBytes_AsStringAndSize(obj.ptr, voidptr(&buf), voidptr(&n)) != 0 {
 				return error('${name} is not bytes-like')
 			}
@@ -245,7 +245,7 @@ pub fn to_py_bytes_slice(value []u8) PyObj {
 // native_header is the size of the bookkeeping that precedes every native buffer's
 // payload: the open-view count, then the allocated payload size in bytes. The capacity is
 // kept so a resize can zero only the newly grown part.
-const native_header = isize(16)
+const native_header = i64(16)
 
 // native_base returns the start of the allocation, which is the payload minus its header.
 fn native_base(p voidptr) voidptr {
@@ -253,24 +253,24 @@ fn native_base(p voidptr) voidptr {
 }
 
 // native_views_ptr and native_cap_ptr address the two header words of a live buffer.
-fn native_views_ptr(p voidptr) &isize {
-	return unsafe { &isize(native_base(p)) }
+fn native_views_ptr(p voidptr) &i64 {
+	return unsafe { &i64(native_base(p)) }
 }
 
-fn native_cap_ptr(p voidptr) &isize {
-	return unsafe { &isize(voidptr(&u8(native_base(p)) + 8)) }
+fn native_cap_ptr(p voidptr) &i64 {
+	return unsafe { &i64(voidptr(&u8(native_base(p)) + 8)) }
 }
 
 // buffer_new_backing allocates `nbytes` of zeroed native memory and returns the payload
 // pointer, with an empty view count and the capacity recorded.
-fn buffer_new_backing(nbytes usize) voidptr {
-	p := C.PyObject_Calloc(1, nbytes + usize(native_header))
+fn buffer_new_backing(nbytes u64) voidptr {
+	p := C.PyObject_Calloc(1, nbytes + u64(native_header))
 	if p == unsafe { nil } {
 		// The exact spelling is what `raise_panic` maps to MemoryError.
 		panic('memory allocation failure')
 	}
 	unsafe {
-		native_cap_ptr(voidptr(&u8(p) + native_header))[0] = isize(nbytes)
+		native_cap_ptr(voidptr(&u8(p) + native_header))[0] = i64(nbytes)
 	}
 	return unsafe { voidptr(&u8(p) + native_header) }
 }
@@ -280,7 +280,7 @@ fn buffer_new_backing(nbytes usize) voidptr {
 // A fresh zeroed block is allocated rather than `realloc`ed, so only the bytes that were
 // there are carried over and the growth is zeroed: `realloc` would leave the extension
 // uninitialised, and a buffer is documented as zeroed.
-fn buffer_resize_backing(old voidptr, nbytes usize) !voidptr {
+fn buffer_resize_backing(old voidptr, nbytes u64) !voidptr {
 	if buffer_views(old) > 0 {
 		return raise_domain(.buffer_error, 'cannot resize a buffer while a memoryview of it is open')
 	}
@@ -288,17 +288,17 @@ fn buffer_resize_backing(old voidptr, nbytes usize) !voidptr {
 		return buffer_new_backing(nbytes)
 	}
 	old_cap := unsafe { int(native_cap_ptr(old)[0]) }
-	p := C.PyObject_Calloc(1, nbytes + usize(native_header))
+	p := C.PyObject_Calloc(1, nbytes + u64(native_header))
 	if p == unsafe { nil } {
 		return raise_domain(.memory_error, 'cannot grow a buffer')
 	}
 	carry := if old_cap < int(nbytes) { old_cap } else { int(nbytes) }
 	if carry > 0 {
-		C.vpy_memcpy(unsafe { voidptr(&u8(p) + native_header) }, old, usize(carry))
+		C.vpy_memcpy(unsafe { voidptr(&u8(p) + native_header) }, old, u64(carry))
 	}
 	C.PyObject_Free(native_base(old))
 	unsafe {
-		native_cap_ptr(voidptr(&u8(p) + native_header))[0] = isize(nbytes)
+		native_cap_ptr(voidptr(&u8(p) + native_header))[0] = i64(nbytes)
 	}
 	return unsafe { voidptr(&u8(p) + native_header) }
 }
@@ -307,7 +307,7 @@ fn buffer_resize_backing(old voidptr, nbytes usize) !voidptr {
 //
 // The block has no header and no view count; it is the raw allocator, for the capsule
 // escape hatch and anything that is not a `@[vc_buffer]` slice.
-pub fn native_alloc(nbytes usize) voidptr {
+pub fn native_alloc(nbytes u64) voidptr {
 	return C.PyObject_Malloc(nbytes)
 }
 
@@ -324,7 +324,7 @@ pub fn checksum_bytes(data []u8) u64 {
 		return 0
 	}
 	unsafe {
-		return C.vpy_checksum(voidptr(data.data), isize(data.len))
+		return C.vpy_checksum(voidptr(data.data), i64(data.len))
 	}
 }
 
@@ -334,7 +334,7 @@ pub fn sum_i64(data []i64) i64 {
 		return 0
 	}
 	unsafe {
-		return C.vpy_sum_i64(voidptr(data.data), isize(data.len))
+		return C.vpy_sum_i64(voidptr(data.data), i64(data.len))
 	}
 }
 
@@ -344,7 +344,7 @@ pub fn sum_f64(data []f64) f64 {
 		return 0.0
 	}
 	unsafe {
-		return C.vpy_sum_f64(voidptr(data.data), isize(data.len))
+		return C.vpy_sum_f64(voidptr(data.data), i64(data.len))
 	}
 }
 
@@ -396,7 +396,7 @@ pub fn buffer_views_decr(p voidptr) {
 // `exporter` is the object the view keeps alive: `PyBuffer_FillInfo` takes a reference on
 // it and `PyBuffer_Release` gives it back, which is the whole reason the memoryview is
 // sound where `PyMemoryView_FromMemory` is not. Returns CPython's status.
-pub fn buffer_fill(view voidptr, exporter voidptr, data voidptr, len_bytes isize,
+pub fn buffer_fill(view voidptr, exporter voidptr, data voidptr, len_bytes i64,
 	readonly int, flags int) int {
 	return C.PyBuffer_FillInfo(view, exporter, data, len_bytes, readonly, flags)
 }
@@ -407,8 +407,8 @@ pub fn buffer_fill(view voidptr, exporter voidptr, data voidptr, len_bytes isize
 // reports one item per element with the matching format instead of a byte view.
 // `PyBuffer_FillInfo`, which only expresses a byte view, backs `buffer_fill` instead.
 // Returns CPython's status.
-pub fn buffer_fill_typed(view voidptr, exporter voidptr, data voidptr, len_bytes isize,
-	itemsize isize, kind int, readonly int, flags int) int {
+pub fn buffer_fill_typed(view voidptr, exporter voidptr, data voidptr, len_bytes i64,
+	itemsize i64, kind int, readonly int, flags int) int {
 	return C.vpy_buffer_fill_typed(view, exporter, data, len_bytes, itemsize, kind, readonly,
 		flags)
 }
@@ -445,7 +445,7 @@ pub fn buffer_new_bool(n int) []bool {
 	mut out := []bool{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(bool))
+			out.data = buffer_new_backing(u64(n) * sizeof(bool))
 			out.len = n
 			out.cap = n
 		}
@@ -459,7 +459,7 @@ pub fn buffer_resize_bool(s []bool, n int) ![]bool {
 	mut out := []bool{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(bool))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(bool))!
 			out.len = n
 			out.cap = n
 		}
@@ -474,7 +474,7 @@ pub fn buffer_new_int(n int) []int {
 	mut out := []int{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(int))
+			out.data = buffer_new_backing(u64(n) * sizeof(int))
 			out.len = n
 			out.cap = n
 		}
@@ -488,7 +488,7 @@ pub fn buffer_resize_int(s []int, n int) ![]int {
 	mut out := []int{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(int))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(int))!
 			out.len = n
 			out.cap = n
 		}
@@ -503,7 +503,7 @@ pub fn buffer_new_i8(n int) []i8 {
 	mut out := []i8{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(i8))
+			out.data = buffer_new_backing(u64(n) * sizeof(i8))
 			out.len = n
 			out.cap = n
 		}
@@ -517,7 +517,7 @@ pub fn buffer_resize_i8(s []i8, n int) ![]i8 {
 	mut out := []i8{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(i8))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(i8))!
 			out.len = n
 			out.cap = n
 		}
@@ -532,7 +532,7 @@ pub fn buffer_new_i16(n int) []i16 {
 	mut out := []i16{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(i16))
+			out.data = buffer_new_backing(u64(n) * sizeof(i16))
 			out.len = n
 			out.cap = n
 		}
@@ -546,7 +546,7 @@ pub fn buffer_resize_i16(s []i16, n int) ![]i16 {
 	mut out := []i16{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(i16))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(i16))!
 			out.len = n
 			out.cap = n
 		}
@@ -561,7 +561,7 @@ pub fn buffer_new_i32(n int) []i32 {
 	mut out := []i32{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(i32))
+			out.data = buffer_new_backing(u64(n) * sizeof(i32))
 			out.len = n
 			out.cap = n
 		}
@@ -575,7 +575,7 @@ pub fn buffer_resize_i32(s []i32, n int) ![]i32 {
 	mut out := []i32{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(i32))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(i32))!
 			out.len = n
 			out.cap = n
 		}
@@ -590,7 +590,7 @@ pub fn buffer_new_i64(n int) []i64 {
 	mut out := []i64{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(i64))
+			out.data = buffer_new_backing(u64(n) * sizeof(i64))
 			out.len = n
 			out.cap = n
 		}
@@ -604,7 +604,7 @@ pub fn buffer_resize_i64(s []i64, n int) ![]i64 {
 	mut out := []i64{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(i64))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(i64))!
 			out.len = n
 			out.cap = n
 		}
@@ -614,12 +614,12 @@ pub fn buffer_resize_i64(s []i64, n int) ![]i64 {
 	return out
 }
 
-// buffer_new_isize allocates a native-backed `[]isize` of `n` elements, zero-initialised.
-pub fn buffer_new_isize(n int) []isize {
-	mut out := []isize{}
+// buffer_new_isize allocates a native-backed `[]i64` of `n` elements, zero-initialised.
+pub fn buffer_new_isize(n int) []i64 {
+	mut out := []i64{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(isize))
+			out.data = buffer_new_backing(u64(n) * sizeof(i64))
 			out.len = n
 			out.cap = n
 		}
@@ -627,13 +627,13 @@ pub fn buffer_new_isize(n int) []isize {
 	return out
 }
 
-// buffer_resize_isize reallocates a native-backed `[]isize`, or raises BufferError while a
+// buffer_resize_isize reallocates a native-backed `[]i64`, or raises BufferError while a
 // memoryview of it is open. The address may move, so the result must be stored back.
-pub fn buffer_resize_isize(s []isize, n int) ![]isize {
-	mut out := []isize{}
+pub fn buffer_resize_isize(s []i64, n int) ![]i64 {
+	mut out := []i64{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(isize))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(i64))!
 			out.len = n
 			out.cap = n
 		}
@@ -648,7 +648,7 @@ pub fn buffer_new_u8(n int) []u8 {
 	mut out := []u8{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(u8))
+			out.data = buffer_new_backing(u64(n) * sizeof(u8))
 			out.len = n
 			out.cap = n
 		}
@@ -662,7 +662,7 @@ pub fn buffer_resize_u8(s []u8, n int) ![]u8 {
 	mut out := []u8{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(u8))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(u8))!
 			out.len = n
 			out.cap = n
 		}
@@ -677,7 +677,7 @@ pub fn buffer_new_u16(n int) []u16 {
 	mut out := []u16{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(u16))
+			out.data = buffer_new_backing(u64(n) * sizeof(u16))
 			out.len = n
 			out.cap = n
 		}
@@ -691,7 +691,7 @@ pub fn buffer_resize_u16(s []u16, n int) ![]u16 {
 	mut out := []u16{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(u16))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(u16))!
 			out.len = n
 			out.cap = n
 		}
@@ -706,7 +706,7 @@ pub fn buffer_new_u32(n int) []u32 {
 	mut out := []u32{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(u32))
+			out.data = buffer_new_backing(u64(n) * sizeof(u32))
 			out.len = n
 			out.cap = n
 		}
@@ -720,7 +720,7 @@ pub fn buffer_resize_u32(s []u32, n int) ![]u32 {
 	mut out := []u32{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(u32))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(u32))!
 			out.len = n
 			out.cap = n
 		}
@@ -735,7 +735,7 @@ pub fn buffer_new_u64(n int) []u64 {
 	mut out := []u64{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(u64))
+			out.data = buffer_new_backing(u64(n) * sizeof(u64))
 			out.len = n
 			out.cap = n
 		}
@@ -749,7 +749,7 @@ pub fn buffer_resize_u64(s []u64, n int) ![]u64 {
 	mut out := []u64{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(u64))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(u64))!
 			out.len = n
 			out.cap = n
 		}
@@ -759,12 +759,12 @@ pub fn buffer_resize_u64(s []u64, n int) ![]u64 {
 	return out
 }
 
-// buffer_new_usize allocates a native-backed `[]usize` of `n` elements, zero-initialised.
-pub fn buffer_new_usize(n int) []usize {
-	mut out := []usize{}
+// buffer_new_usize allocates a native-backed `[]u64` of `n` elements, zero-initialised.
+pub fn buffer_new_usize(n int) []u64 {
+	mut out := []u64{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(usize))
+			out.data = buffer_new_backing(u64(n) * sizeof(u64))
 			out.len = n
 			out.cap = n
 		}
@@ -772,13 +772,13 @@ pub fn buffer_new_usize(n int) []usize {
 	return out
 }
 
-// buffer_resize_usize reallocates a native-backed `[]usize`, or raises BufferError while a
+// buffer_resize_usize reallocates a native-backed `[]u64`, or raises BufferError while a
 // memoryview of it is open. The address may move, so the result must be stored back.
-pub fn buffer_resize_usize(s []usize, n int) ![]usize {
-	mut out := []usize{}
+pub fn buffer_resize_usize(s []u64, n int) ![]u64 {
+	mut out := []u64{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(usize))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(u64))!
 			out.len = n
 			out.cap = n
 		}
@@ -793,7 +793,7 @@ pub fn buffer_new_f32(n int) []f32 {
 	mut out := []f32{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(f32))
+			out.data = buffer_new_backing(u64(n) * sizeof(f32))
 			out.len = n
 			out.cap = n
 		}
@@ -807,7 +807,7 @@ pub fn buffer_resize_f32(s []f32, n int) ![]f32 {
 	mut out := []f32{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(f32))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(f32))!
 			out.len = n
 			out.cap = n
 		}
@@ -822,7 +822,7 @@ pub fn buffer_new_f64(n int) []f64 {
 	mut out := []f64{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_new_backing(usize(n) * sizeof(f64))
+			out.data = buffer_new_backing(u64(n) * sizeof(f64))
 			out.len = n
 			out.cap = n
 		}
@@ -836,7 +836,7 @@ pub fn buffer_resize_f64(s []f64, n int) ![]f64 {
 	mut out := []f64{}
 	if n > 0 {
 		unsafe {
-			out.data = buffer_resize_backing(s.data, usize(n) * sizeof(f64))!
+			out.data = buffer_resize_backing(s.data, u64(n) * sizeof(f64))!
 			out.len = n
 			out.cap = n
 		}
@@ -874,7 +874,7 @@ const buffer_export_kind_bool = 3
 
 // buffer_export hands a native-backed payload to CPython. `owner` is the allocation to
 // free (the payload minus its header), nil for an empty slice that was never allocated.
-fn buffer_export(data voidptr, owner voidptr, nbytes isize, itemsize isize, kind int) PyObj {
+fn buffer_export(data voidptr, owner voidptr, nbytes i64, itemsize i64, kind int) PyObj {
 	return steal(C.vpy_buffer_export(data, owner, nbytes, itemsize, kind))
 }
 
@@ -891,7 +891,7 @@ fn buffer_export_owner(data voidptr) voidptr {
 pub fn buffer_export_bool(s []bool) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(bool)), isize(sizeof(bool)), buffer_export_kind_bool)
+			i64(s.len) * i64(sizeof(bool)), i64(sizeof(bool)), buffer_export_kind_bool)
 	}
 }
 
@@ -899,7 +899,7 @@ pub fn buffer_export_bool(s []bool) PyObj {
 pub fn buffer_export_int(s []int) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(int)), isize(sizeof(int)), buffer_export_kind_int)
+			i64(s.len) * i64(sizeof(int)), i64(sizeof(int)), buffer_export_kind_int)
 	}
 }
 
@@ -907,7 +907,7 @@ pub fn buffer_export_int(s []int) PyObj {
 pub fn buffer_export_i8(s []i8) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(i8)), isize(sizeof(i8)), buffer_export_kind_int)
+			i64(s.len) * i64(sizeof(i8)), i64(sizeof(i8)), buffer_export_kind_int)
 	}
 }
 
@@ -915,7 +915,7 @@ pub fn buffer_export_i8(s []i8) PyObj {
 pub fn buffer_export_i16(s []i16) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(i16)), isize(sizeof(i16)), buffer_export_kind_int)
+			i64(s.len) * i64(sizeof(i16)), i64(sizeof(i16)), buffer_export_kind_int)
 	}
 }
 
@@ -923,7 +923,7 @@ pub fn buffer_export_i16(s []i16) PyObj {
 pub fn buffer_export_i32(s []i32) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(i32)), isize(sizeof(i32)), buffer_export_kind_int)
+			i64(s.len) * i64(sizeof(i32)), i64(sizeof(i32)), buffer_export_kind_int)
 	}
 }
 
@@ -931,15 +931,15 @@ pub fn buffer_export_i32(s []i32) PyObj {
 pub fn buffer_export_i64(s []i64) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(i64)), isize(sizeof(i64)), buffer_export_kind_int)
+			i64(s.len) * i64(sizeof(i64)), i64(sizeof(i64)), buffer_export_kind_int)
 	}
 }
 
-// buffer_export_isize exports a `[]isize` as a writable memoryview, transferring ownership.
-pub fn buffer_export_isize(s []isize) PyObj {
+// buffer_export_isize exports a `[]i64` as a writable memoryview, transferring ownership.
+pub fn buffer_export_isize(s []i64) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(isize)), isize(sizeof(isize)), buffer_export_kind_int)
+			i64(s.len) * i64(sizeof(i64)), i64(sizeof(i64)), buffer_export_kind_int)
 	}
 }
 
@@ -947,7 +947,7 @@ pub fn buffer_export_isize(s []isize) PyObj {
 pub fn buffer_export_u8(s []u8) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(u8)), isize(sizeof(u8)), buffer_export_kind_uint)
+			i64(s.len) * i64(sizeof(u8)), i64(sizeof(u8)), buffer_export_kind_uint)
 	}
 }
 
@@ -955,7 +955,7 @@ pub fn buffer_export_u8(s []u8) PyObj {
 pub fn buffer_export_u16(s []u16) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(u16)), isize(sizeof(u16)), buffer_export_kind_uint)
+			i64(s.len) * i64(sizeof(u16)), i64(sizeof(u16)), buffer_export_kind_uint)
 	}
 }
 
@@ -963,7 +963,7 @@ pub fn buffer_export_u16(s []u16) PyObj {
 pub fn buffer_export_u32(s []u32) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(u32)), isize(sizeof(u32)), buffer_export_kind_uint)
+			i64(s.len) * i64(sizeof(u32)), i64(sizeof(u32)), buffer_export_kind_uint)
 	}
 }
 
@@ -971,15 +971,15 @@ pub fn buffer_export_u32(s []u32) PyObj {
 pub fn buffer_export_u64(s []u64) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(u64)), isize(sizeof(u64)), buffer_export_kind_uint)
+			i64(s.len) * i64(sizeof(u64)), i64(sizeof(u64)), buffer_export_kind_uint)
 	}
 }
 
-// buffer_export_usize exports a `[]usize` as a writable memoryview, transferring ownership.
-pub fn buffer_export_usize(s []usize) PyObj {
+// buffer_export_usize exports a `[]u64` as a writable memoryview, transferring ownership.
+pub fn buffer_export_usize(s []u64) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(usize)), isize(sizeof(usize)), buffer_export_kind_uint)
+			i64(s.len) * i64(sizeof(u64)), i64(sizeof(u64)), buffer_export_kind_uint)
 	}
 }
 
@@ -987,7 +987,7 @@ pub fn buffer_export_usize(s []usize) PyObj {
 pub fn buffer_export_f32(s []f32) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(f32)), isize(sizeof(f32)), buffer_export_kind_float)
+			i64(s.len) * i64(sizeof(f32)), i64(sizeof(f32)), buffer_export_kind_float)
 	}
 }
 
@@ -995,6 +995,6 @@ pub fn buffer_export_f32(s []f32) PyObj {
 pub fn buffer_export_f64(s []f64) PyObj {
 	unsafe {
 		return buffer_export(voidptr(s.data), buffer_export_owner(voidptr(s.data)),
-			isize(s.len) * isize(sizeof(f64)), isize(sizeof(f64)), buffer_export_kind_float)
+			i64(s.len) * i64(sizeof(f64)), i64(sizeof(f64)), buffer_export_kind_float)
 	}
 }

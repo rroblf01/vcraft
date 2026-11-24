@@ -27,7 +27,7 @@ fn C.vpy_arrow_validity(v voidptr) voidptr
 fn C.vpy_arrow_values(v voidptr) voidptr
 fn C.vpy_arrow_data(v voidptr) voidptr
 fn C.vpy_arrow_column(format &char, length i64, n_buffers int, b0 voidptr, b1 voidptr, b2 voidptr) voidptr
-fn C.vpy_arrow_malloc(n usize) voidptr
+fn C.vpy_arrow_malloc(n u64) voidptr
 
 // ArrowArray is a borrowed view of one Arrow column, valid for the call. `format` is the
 // Arrow format string: `g` float64, `f` float32, `l` int64, `i` int32, `s` int16, `c`
@@ -172,7 +172,7 @@ pub:
 	obj PyObj
 }
 
-fn arrow_values_copy(src voidptr, bytes usize) voidptr {
+fn arrow_values_copy(src voidptr, bytes u64) voidptr {
 	block := C.vpy_arrow_malloc(bytes)
 	if block != unsafe { nil } && bytes > 0 {
 		unsafe { vmemcpy(block, src, int(bytes)) }
@@ -182,19 +182,19 @@ fn arrow_values_copy(src voidptr, bytes usize) voidptr {
 
 // arrow_f64 makes a float64 Arrow column from `values`.
 pub fn arrow_f64(values []f64) ArrowOut {
-	b := arrow_values_copy(values.data, usize(values.len) * sizeof(f64))
+	b := arrow_values_copy(values.data, u64(values.len) * sizeof(f64))
 	return ArrowOut{steal(C.vpy_arrow_column(c'g', values.len, 2, unsafe { nil }, b, unsafe { nil }))}
 }
 
 // arrow_i64 makes an int64 Arrow column.
 pub fn arrow_i64(values []i64) ArrowOut {
-	b := arrow_values_copy(values.data, usize(values.len) * sizeof(i64))
+	b := arrow_values_copy(values.data, u64(values.len) * sizeof(i64))
 	return ArrowOut{steal(C.vpy_arrow_column(c'l', values.len, 2, unsafe { nil }, b, unsafe { nil }))}
 }
 
 // arrow_i32 makes an int32 Arrow column.
 pub fn arrow_i32(values []i32) ArrowOut {
-	b := arrow_values_copy(values.data, usize(values.len) * sizeof(i32))
+	b := arrow_values_copy(values.data, u64(values.len) * sizeof(i32))
 	return ArrowOut{steal(C.vpy_arrow_column(c'i', values.len, 2, unsafe { nil }, b, unsafe { nil }))}
 }
 
@@ -204,8 +204,8 @@ pub fn arrow_strings(values []string) ArrowOut {
 	for s in values {
 		total += s.len
 	}
-	offsets := &i32(C.vpy_arrow_malloc(usize(values.len + 1) * sizeof(i32)))
-	data := &u8(C.vpy_arrow_malloc(usize(total)))
+	offsets := &i32(C.vpy_arrow_malloc(u64(values.len + 1) * sizeof(i32)))
+	data := &u8(C.vpy_arrow_malloc(u64(total)))
 	mut at := 0
 	for i, s in values {
 		unsafe {

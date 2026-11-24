@@ -7,8 +7,8 @@ una sorpresa en ejecución.
 | Tipo V | Tipo Python | Notas |
 | --- | --- | --- |
 | `bool` | `bool` | Cualquier objeto al entrar; `True`/`False` al salir |
-| `i8`, `i16`, `i32`, `int`, `i64`, `isize` | `int` | Con comprobación de rango: fuera de rango lanza `OverflowError`; se aceptan `bool` y subclases de `int` (un `IntEnum`), como en Python |
-| `u8`, `u16`, `u32`, `u64`, `usize` | `int` | Negativo o fuera de rango lanza `OverflowError` |
+| `i8`, `i16`, `i32`, `int`, `i64`, `i64` | `int` | Con comprobación de rango: fuera de rango lanza `OverflowError`; se aceptan `bool` y subclases de `int` (un `IntEnum`), como en Python |
+| `u8`, `u16`, `u32`, `u64`, `u64` | `int` | Negativo o fuera de rango lanza `OverflowError` |
 | `f32`, `f64` | `float` | También acepta un `int` |
 | `rune` | `int` | El punto de código |
 | `string` | `str` | UTF-8; prestado al entrar, válido durante la llamada |

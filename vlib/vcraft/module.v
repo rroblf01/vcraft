@@ -38,7 +38,7 @@ pub type PyModuleExecFunc = fn (voidptr) int
 // both in the same PyMethodDef field, so they are kept as raw pointers here.
 pub type PyCFunctionNoArgs = fn (voidptr, voidptr) voidptr
 
-pub type PyCFunctionFast = fn (voidptr, voidptr, isize) voidptr
+pub type PyCFunctionFast = fn (voidptr, voidptr, i64) voidptr
 
 // new_module starts a module definition. Nothing is handed to CPython yet, so
 // functions may still be added. `name` and `docstring` are copied into buffers
@@ -293,7 +293,7 @@ pub fn check_layout() ! {
 		raise(.system_error, 'vcraft: PyMethodDef size mismatch')
 		return error('layout')
 	}
-	if unsafe { sizeof(isize) } != int(C.vpy_ssize_size()) {
+	if unsafe { sizeof(i64) } != int(C.vpy_ssize_size()) {
 		raise(.system_error, 'vcraft: Py_ssize_t size mismatch')
 		return error('layout')
 	}

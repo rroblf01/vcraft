@@ -10,7 +10,7 @@ module vcraft_codegen
 // PyO3 method writes its cell. A method that panics halfway leaves the fields it had
 // already written:
 //
-//	fn vcraft_generated__method_Counter_increment(self voidptr, args voidptr, nargs isize) voidptr {
+//	fn vcraft_generated__method_Counter_increment(self voidptr, args voidptr, nargs i64) voidptr {
 //		if nargs != 1 { vcraft.wrong_nargs('increment', 1, int(nargs)) return unsafe { nil } }
 //		arg0 := vcraft.from_py_int_arg(args, 0, 'increment', 'by') or { return unsafe { nil } }
 //		mut state := unsafe { &Counter(vcraft.instance_storage(self)) }
@@ -41,7 +41,7 @@ fn emit_class(p Project, c Class) string {
 	if c.base_indices.len > 0 {
 		w.write_string(emit_class_state_struct(p, c))
 	}
-	w.write_string('fn ${c.size_fn}() usize {\n')
+	w.write_string('fn ${c.size_fn}() u64 {\n')
 	w.write_string('\tunsafe { return sizeof(' + c.state_type() + ') }\n')
 	w.write_string('}\n\n')
 	w.write_string(emit_auto_init(c))
@@ -567,7 +567,7 @@ fn emit_next_trampoline(p Project, c Class, f Func) string {
 // already set. CPython raises the ValueError itself for a negative length.
 fn emit_len_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
-	w.write_string('fn ${c.len_fn}(self voidptr) isize {\n')
+	w.write_string('fn ${c.len_fn}(self voidptr) i64 {\n')
 	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
 	if f.nogil {
@@ -590,7 +590,7 @@ fn emit_len_trampoline(p Project, c Class, f Func) string {
 		w.write_string(emit_nogil_close())
 	}
 	w.write_string('\tif vcraft.error_is_set() {\n\t\treturn -1\n\t}\n')
-	w.write_string('\treturn isize(result)\n')
+	w.write_string('\treturn i64(result)\n')
 	w.write_string('}\n\n')
 	return w.str()
 }
@@ -604,7 +604,7 @@ fn emit_item_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
 	ret := lookup(f.v_ret)
 	index_cast := '${f.params[0].v_type.trim_space()}(index)'
-	w.write_string('fn ${c.item_fn}(self voidptr, index isize) voidptr {\n')
+	w.write_string('fn ${c.item_fn}(self voidptr, index i64) voidptr {\n')
 	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
 	if f.nogil {
@@ -646,7 +646,7 @@ fn emit_contains_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
 	w.write_string('fn ${box}(self voidptr, item voidptr) voidptr {\n')
 	w.write_string('\targs := unsafe { voidptr(&item) }\n')
-	w.write_string('\tnargs := isize(1)\n')
+	w.write_string('\tnargs := i64(1)\n')
 	w.write_string('\tkwnames := unsafe { nil }\n')
 	w.write_string('\t${param_reader(f.params[0], 'arg0', 0, f.name, f.opaque)}\n')
 	w.write_string(emit_state_pointer(c))
@@ -687,7 +687,7 @@ fn emit_contains_trampoline(p Project, c Class, f Func) string {
 // An out-of-range index is the user's own `IndexError`, raised from a `!T` method.
 fn emit_setitem_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
-	w.write_string('fn ${c.setitem_fn}(self voidptr, index isize, value voidptr) int {\n')
+	w.write_string('fn ${c.setitem_fn}(self voidptr, index i64, value voidptr) int {\n')
 	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
 	if f.nogil {
@@ -933,7 +933,7 @@ fn emit_class_new(c Class) string {
 		// non-null `kwnames` lets the same `param_reader` be used, which checks presence
 		// through `arg_present`.
 		w.write_string('\targs := unsafe { voidptr(&bound[0]) }\n')
-		w.write_string('\tnargs := isize(bound.len)\n')
+		w.write_string('\tnargs := i64(bound.len)\n')
 		w.write_string('\tkwnames := args\n')
 		for i, param in c.newstate_params {
 			name := local_name(i)
@@ -1140,10 +1140,10 @@ fn emit_class_buffer_slots(p Project, c Class) string {
 	w.write_string(emit_state_pointer(c))
 	w.write_string('\tfield := state.' + access + '\n')
 	if f.buffer_typed {
-		w.write_string('\trc := vcraft.buffer_fill_typed(view, self, field.data, isize(field.len) * isize(sizeof(' +
-			elem + ')), isize(sizeof(' + elem + ')), ' + buffer_kind(elem).str() + ', 0, flags)\n')
+		w.write_string('\trc := vcraft.buffer_fill_typed(view, self, field.data, i64(field.len) * i64(sizeof(' +
+			elem + ')), i64(sizeof(' + elem + ')), ' + buffer_kind(elem).str() + ', 0, flags)\n')
 	} else {
-		w.write_string('\trc := vcraft.buffer_fill(view, self, field.data, isize(field.len) * isize(sizeof(' +
+		w.write_string('\trc := vcraft.buffer_fill(view, self, field.data, i64(field.len) * i64(sizeof(' +
 			elem + ')), 0, flags)\n')
 	}
 	w.write_string('\tif rc == 0 {\n\t\tvcraft.buffer_views_incr(field.data)\n\t}\n')
@@ -1589,7 +1589,7 @@ fn emit_numeric_result(c Class, handler Func, call string, indent string) string
 // identity-based hash breaks every lookup in a set or a dict key without an error.
 fn emit_class_hash(c Class) string {
 	mut w := new_builder()
-	w.write_string('fn ${c.hash_fn}(self voidptr) isize {\n')
+	w.write_string('fn ${c.hash_fn}(self voidptr) i64 {\n')
 	if c.hash_name.len == 0 {
 		w.write_string('\treturn vcraft.identity_hash(self)\n')
 		w.write_string('}\n\n')

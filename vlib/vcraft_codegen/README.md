@@ -21,7 +21,7 @@ fn vcraft_generated__pyinit() voidptr {
 	return m.seal().ptr
 }
 
-fn vcraft_generated__wrap_add(self voidptr, args voidptr, nargs isize) voidptr {
+fn vcraft_generated__wrap_add(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('add', 2, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }

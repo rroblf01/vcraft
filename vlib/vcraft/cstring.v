@@ -25,7 +25,7 @@ pub fn cstring(s string) voidptr {
 		// The copy goes through the shim's memcpy rather than V's builtin, because
 		// the builtin compiles to `v_memcpy` whose declaration is emitted late in
 		// the file and would trip gcc's implicit declaration rule here.
-		C.vpy_memcpy(buf, s.str, usize(s.len))
+		C.vpy_memcpy(buf, s.str, u64(s.len))
 		*(buf + s.len) = 0
 		return buf
 	}
@@ -75,7 +75,7 @@ pub fn utf8_of(obj PyObj) (voidptr, int) {
 pub fn bytes_of(obj PyObj) (voidptr, int) {
 	unsafe {
 		mut buf := voidptr(nil)
-		mut size := isize(0)
+		mut size := i64(0)
 		if C.PyBytes_AsStringAndSize(obj.ptr, &buf, &size) != 0 {
 			return nil, 0
 		}

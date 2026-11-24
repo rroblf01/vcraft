@@ -179,7 +179,7 @@ fn params_of(ast &flat.FlatAst, id flat.NodeId, is_method bool) []Param {
 		}
 		out << Param{
 			name:   c.value
-			v_type: c.typ
+			v_type: c.typ_text()
 		}
 	}
 	return out
@@ -1655,26 +1655,26 @@ fn collect_fields(path string, lines []string, ast &flat.FlatAst, struct_name st
 		}
 		if c.value == 'pub' || c.value == 'mut' {
 			// The documented shape: the marker carries the name in `typ`.
-			if c.typ != c.value && is_identifier(c.typ) {
-				pending = c.typ
+			if c.typ_text() != c.value && is_identifier(c.typ_text()) {
+				pending = c.typ_text()
 			}
 			continue
 		}
 		if c.value == '' {
 			// A type-only node completes the pending name.
-			if pending != '' && c.typ != '' {
+			if pending != '' && c.typ_text() != '' {
 				out << Field{
 					name:   pending
-					v_type: c.typ
+					v_type: c.typ_text()
 				}
 				pending = ''
 			}
 			continue
 		}
-		if is_identifier(c.value) && c.typ != '' {
+		if is_identifier(c.value) && c.typ_text() != '' {
 			out << Field{
 				name:   c.value
-				v_type: c.typ
+				v_type: c.typ_text()
 			}
 			pending = ''
 		}
@@ -1966,7 +1966,7 @@ fn field_line_in(ast &flat.FlatAst, id flat.NodeId, name string) int {
 
 fn find_field_line(ast &flat.FlatAst, id flat.NodeId, name string) ?int {
 	node := ast.node(id)
-	if node.kind == .field_decl && (node.value == name || node.typ == name) {
+	if node.kind == .field_decl && (node.value == name || node.typ_text() == name) {
 		return ast.source_position(node.pos) or { token.Position{} }.line
 	}
 	for child in ast.children_of(node) {

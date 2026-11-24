@@ -1430,7 +1430,7 @@ pub fn (mut c Chunk) fill(b u8) {
 // int, `box_value` reads it, and `box_free` releases the allocation.
 @[vc_fn]
 pub fn new_box(value int) vcraft.PyObj {
-	p := vcraft.native_alloc(usize(sizeof(int)))
+	p := vcraft.native_alloc(u64(sizeof(int)))
 	if p == unsafe { nil } {
 		panic('memory allocation failure')
 	}
@@ -1490,7 +1490,7 @@ mut:
 // new_owned_box allocates an int the instance owns.
 @[vc_fn]
 pub fn new_owned_box(value int) &OwnedBox {
-	p := vcraft.native_alloc(usize(sizeof(int)))
+	p := vcraft.native_alloc(u64(sizeof(int)))
 	if p == unsafe { nil } {
 		panic('memory allocation failure')
 	}
@@ -1526,7 +1526,7 @@ pub fn (mut b OwnedBox) release_now() {
 @[vc_fn]
 @[vc_opaque: 'opaque_box_free']
 pub fn new_opaque_box(value int) voidptr {
-	p := vcraft.native_alloc(usize(sizeof(int)))
+	p := vcraft.native_alloc(u64(sizeof(int)))
 	if p == unsafe { nil } {
 		panic('memory allocation failure')
 	}

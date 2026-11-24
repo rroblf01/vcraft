@@ -281,7 +281,7 @@ fn nd_out(shape []int, itemsize int, kind u8) NdOut {
 		}
 		size *= n
 	}
-	data := if size > 0 { buffer_new_backing(usize(size) * usize(itemsize)) } else { unsafe { nil } }
+	data := if size > 0 { buffer_new_backing(u64(size) * u64(itemsize)) } else { unsafe { nil } }
 	return NdOut{
 		data:     data
 		shape:    shape.clone()
@@ -395,8 +395,8 @@ pub fn nd_export(o NdOut) PyObj {
 		`B`, `H`, `I`, `Q` { buffer_export_kind_uint }
 		else { buffer_export_kind_int }
 	}
-	flat := buffer_export(o.data, buffer_export_owner(o.data), isize(o.size) * isize(o.itemsize),
-		isize(o.itemsize), family)
+	flat := buffer_export(o.data, buffer_export_owner(o.data), i64(o.size) * i64(o.itemsize),
+		i64(o.itemsize), family)
 	if flat.is_null() || o.shape.len == 1 {
 		return flat
 	}

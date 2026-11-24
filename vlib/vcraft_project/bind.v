@@ -67,8 +67,8 @@ fn c_scalar_to_v(t string) string {
 		// LP64: `long` is 64 bits on Linux and macOS (32 on Windows; use int64_t there).
 		'long', 'long int', 'signed long', 'long long', 'long long int', 'int64_t' { 'i64' }
 		'unsigned long', 'unsigned long int', 'unsigned long long', 'uint64_t' { 'u64' }
-		'size_t', 'uintptr_t' { 'usize' }
-		'ssize_t', 'ptrdiff_t', 'intptr_t' { 'isize' }
+		'size_t', 'uintptr_t' { 'u64' }
+		'ssize_t', 'ptrdiff_t', 'intptr_t' { 'i64' }
 		'float' { 'f32' }
 		'double' { 'f64' }
 		'bool', '_Bool' { 'bool' }

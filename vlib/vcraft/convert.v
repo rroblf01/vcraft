@@ -173,7 +173,7 @@ pub fn from_py_bool(obj PyObj) bool {
 // `from_py_int` and `from_py_uint` read the full-width value with the usual
 // TypeError behaviour; what is left is refusing what does not fit, with the
 // OverflowError Python raises for the same input. V casts truncate silently,
-// so the check comes before the cast, never after it. `isize` and `usize`
+// so the check comes before the cast, never after it. `i64` and `u64`
 // need no check: on the 64-bit targets vcraft builds for they are the full
 // width already.
 
@@ -207,9 +207,9 @@ pub fn i32_from_py_int(obj PyObj, name string) !i32 {
 	return i32(value)
 }
 
-// isize_from_py_int reads a Python int into an isize.
-pub fn isize_from_py_int(obj PyObj, name string) !isize {
-	return isize(from_py_int(obj, name)!)
+// isize_from_py_int reads a Python int into an i64.
+pub fn isize_from_py_int(obj PyObj, name string) !i64 {
+	return i64(from_py_int(obj, name)!)
 }
 
 // rune_from_py_int reads a Python int into a rune.
@@ -252,9 +252,9 @@ pub fn u32_from_py_uint(obj PyObj, name string) !u32 {
 	return u32(value)
 }
 
-// usize_from_py_uint reads a Python int into a usize.
-pub fn usize_from_py_uint(obj PyObj, name string) !usize {
-	return usize(from_py_uint(obj, name)!)
+// usize_from_py_uint reads a Python int into a u64.
+pub fn usize_from_py_uint(obj PyObj, name string) !u64 {
+	return u64(from_py_uint(obj, name)!)
 }
 
 // f32_from_py_f64 reads a Python float or int into an f32, with the same
@@ -447,7 +447,7 @@ pub fn to_py_bool(value bool) PyObj {
 // success; a failed box releases the half-built list and returns a null object with
 // the exception already set.
 pub fn to_py_list[T](items []T, box fn (T) PyObj) PyObj {
-	list := steal(C.PyList_New(isize(items.len)))
+	list := steal(C.PyList_New(i64(items.len)))
 	if list.is_null() {
 		return list
 	}
@@ -457,7 +457,7 @@ pub fn to_py_list[T](items []T, box fn (T) PyObj) PyObj {
 			list.decref()
 			return steal(unsafe { nil })
 		}
-		C.PyList_SetItem(list.ptr, isize(i), value.ptr)
+		C.PyList_SetItem(list.ptr, i64(i), value.ptr)
 	}
 	return list
 }
@@ -468,7 +468,7 @@ pub fn to_py_list[T](items []T, box fn (T) PyObj) PyObj {
 // (a JSON decoder, a query result) takes, and it skips the closure indirection
 // `to_py_list` pays for every element.
 pub fn to_py_obj_list(items []PyObj) PyObj {
-	list := steal(C.PyList_New(isize(items.len)))
+	list := steal(C.PyList_New(i64(items.len)))
 	if list.is_null() {
 		return list
 	}
@@ -477,7 +477,7 @@ pub fn to_py_obj_list(items []PyObj) PyObj {
 			list.decref()
 			return steal(unsafe { nil })
 		}
-		C.PyList_SetItem(list.ptr, isize(i), item.ptr)
+		C.PyList_SetItem(list.ptr, i64(i), item.ptr)
 	}
 	return list
 }
@@ -539,7 +539,7 @@ pub fn to_py_obj_dict(m map[string]PyObj) PyObj {
 // list in one pass in C, with no function call per element. The generated glue uses
 // them for those element types and `to_py_list` for the rest.
 pub fn to_py_i64_list(items []i64) PyObj {
-	return steal(C.vpy_list_from_i64(unsafe { &i64(items.data) }, isize(items.len)))
+	return steal(C.vpy_list_from_i64(unsafe { &i64(items.data) }, i64(items.len)))
 }
 
 // to_py_int_fixed boxes a fixed-size array of `int` or `i64` as a list, read straight
@@ -547,7 +547,7 @@ pub fn to_py_i64_list(items []i64) PyObj {
 // path slices the array first, which allocates a slice header per call.
 pub fn to_py_int_fixed(ptr voidptr, n int, wide bool) PyObj {
 	if wide {
-		return steal(C.vpy_list_from_i64(unsafe { &i64(ptr) }, isize(n)))
+		return steal(C.vpy_list_from_i64(unsafe { &i64(ptr) }, i64(n)))
 	}
 	mut items := []int{len: n}
 	for k in 0 .. n {
@@ -559,7 +559,7 @@ pub fn to_py_int_fixed(ptr voidptr, n int, wide bool) PyObj {
 pub fn to_py_int_list(items []int) PyObj {
 	// The C pass reads 64-bit integers, so it only applies where an int is that wide.
 	if sizeof(int) == sizeof(i64) {
-		return steal(C.vpy_list_from_i64(unsafe { &i64(items.data) }, isize(items.len)))
+		return steal(C.vpy_list_from_i64(unsafe { &i64(items.data) }, i64(items.len)))
 	}
 	return to_py_list(items, fn (x int) PyObj {
 		return to_py_int(x)
@@ -567,7 +567,7 @@ pub fn to_py_int_list(items []int) PyObj {
 }
 
 pub fn to_py_f64_list(items []f64) PyObj {
-	return steal(C.vpy_list_from_f64(unsafe { &f64(items.data) }, isize(items.len)))
+	return steal(C.vpy_list_from_f64(unsafe { &f64(items.data) }, i64(items.len)))
 }
 
 // to_py_str_list boxes a `[]string` as a Python list of str in one pass, without a call per
@@ -575,14 +575,14 @@ pub fn to_py_f64_list(items []f64) PyObj {
 // which worked and cost a V function call and the closure's indirection for every element.
 pub fn to_py_str_list(items []string) PyObj {
 	unsafe {
-		return steal(C.vpy_list_from_str(items.data, isize(items.len)))
+		return steal(C.vpy_list_from_str(items.data, i64(items.len)))
 	}
 }
 
 // to_py_bytes_list boxes a `[][]u8` as a Python list of bytes in one pass.
 pub fn to_py_bytes_list(items [][]u8) PyObj {
 	unsafe {
-		return steal(C.vpy_list_from_bytes(items.data, isize(items.len)))
+		return steal(C.vpy_list_from_bytes(items.data, i64(items.len)))
 	}
 }
 
@@ -683,7 +683,7 @@ pub fn dict_items(obj PyObj, name string) ![]PyObj {
 		return error('${name}: not a dict')
 	}
 	mut out := []PyObj{}
-	mut pos := isize(0)
+	mut pos := i64(0)
 	mut key := unsafe { nil }
 	mut value := unsafe { nil }
 	for C.PyDict_Next(obj.ptr, &pos, &key, &value) != 0 {
@@ -718,8 +718,8 @@ pub fn dict_get(obj PyObj, key string, name string) !PyObj {
 // `vpy_struct_field` for why an attribute computed on access is refused.
 pub fn struct_field(obj PyObj, key string, index int, count int, name string) !PyObj {
 	keyp := cstring(key)
-	item := unsafe { C.vpy_struct_field(obj.ptr, &char(keyp), isize(index), isize(count), name.str,
-		isize(name.len)) }
+	item := unsafe { C.vpy_struct_field(obj.ptr, &char(keyp), i64(index), i64(count), name.str,
+		i64(name.len)) }
 	free_cstring(keyp)
 	if item == unsafe { nil } {
 		return error(name)
@@ -754,7 +754,7 @@ pub fn structseq_new(typ PyObj) PyObj {
 }
 
 pub fn structseq_set(seq PyObj, i int, value PyObj) {
-	C.vpy_structseq_set(seq.ptr, isize(i), value.ptr)
+	C.vpy_structseq_set(seq.ptr, i64(i), value.ptr)
 }
 
 pub fn structseq_done(seq PyObj) PyObj {
@@ -773,7 +773,7 @@ pub fn structseq_pack(typ PyObj, items []PyObj) PyObj {
 	for item in items {
 		raw << item.ptr
 	}
-	return steal(C.vpy_structseq_pack(typ.ptr, raw.data, isize(raw.len)))
+	return steal(C.vpy_structseq_pack(typ.ptr, raw.data, i64(raw.len)))
 }
 
 // new_dict returns a new empty `dict`, owned by the caller.
@@ -812,9 +812,9 @@ pub fn interned(name string) PyObj {
 
 // tuple_of builds a `tuple` from owned items; the tuple steals each reference.
 pub fn tuple_of(items []PyObj) PyObj {
-	t := C.PyTuple_New(isize(items.len))
+	t := C.PyTuple_New(i64(items.len))
 	for i, item in items {
-		C.PyTuple_SetItem(t, isize(i), item.ptr)
+		C.PyTuple_SetItem(t, i64(i), item.ptr)
 	}
 	return steal(t)
 }
@@ -892,6 +892,6 @@ pub fn list_append_owned(list PyObj, item PyObj) int {
 // list_set_owned stores `item` at index `i` of `list` (which must already have
 // room), stealing the caller's reference.
 pub fn list_set_owned(list PyObj, i int, item PyObj) {
-	C.PyList_SetItem(list.ptr, isize(i), item.ptr)
+	C.PyList_SetItem(list.ptr, i64(i), item.ptr)
 	// PyList_SetItem steals; nothing to decref.
 }

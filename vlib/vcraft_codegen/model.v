@@ -758,8 +758,8 @@ pub fn (f Field) is_scalar() bool {
 // CPython-owned memory, or as the element of a native buffer.
 pub fn is_scalar_type(v_type string) bool {
 	return match v_type.trim_space() {
-		'bool', 'int', 'i8', 'i16', 'i32', 'i64', 'isize' { true }
-		'u8', 'u16', 'u32', 'u64', 'usize' { true }
+		'bool', 'int', 'i8', 'i16', 'i32', 'i64' { true }
+		'u8', 'u16', 'u32', 'u64' { true }
 		'f32', 'f64' { true }
 		else { false }
 	}
@@ -777,7 +777,7 @@ pub fn buffer_kind(v_type string) int {
 	return match v_type.trim_space() {
 		'bool' { 3 }
 		'f32', 'f64' { 2 }
-		'i8', 'i16', 'i32', 'i64', 'isize', 'int' { 1 }
+		'i8', 'i16', 'i32', 'i64', 'int' { 1 }
 		else { 0 }
 	}
 }

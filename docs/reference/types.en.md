@@ -6,8 +6,8 @@ the file, line and column.
 | V type | Python type | Direction and notes |
 | --- | --- | --- |
 | `bool` | `bool` | Any object in (truth test); `True`/`False` out |
-| `i8`, `i16`, `i32`, `int`, `i64`, `isize` | `int` | Range-checked in; overflow raises `OverflowError` |
-| `u8`, `u16`, `u32`, `u64`, `usize` | `int` | Negative or overflow raises `OverflowError` |
+| `i8`, `i16`, `i32`, `int`, `i64`, `i64` | `int` | Range-checked in; overflow raises `OverflowError` |
+| `u8`, `u16`, `u32`, `u64`, `u64` | `int` | Negative or overflow raises `OverflowError` |
 | `f32`, `f64` | `float` | An `int` is accepted |
 | `rune` | `int` | The code point |
 | `string` | `str` | UTF-8 |

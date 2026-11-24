@@ -17,7 +17,7 @@ fn answer_trampoline(self voidptr, args voidptr) voidptr {
 // shape vcraft generates for every annotated function: the arguments arrive as
 // a borrowed PyObject pointer array plus a count, and the return value is a new
 // reference, or nil with an exception set.
-fn add_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn add_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	if nargs != 2 {
 		C.PyErr_SetString(C.vpyprobe_type_error(), c'add() takes exactly 2 arguments')
 		return unsafe { nil }

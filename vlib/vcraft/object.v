@@ -239,7 +239,7 @@ pub fn (o PyObj) type_name() string {
 	// and a hot one (a list element that is not a float) would otherwise lose that small
 	// allocation once per call.
 	mut buf := [64]u8{}
-	n := unsafe { C.vpy_type_name_into(o.ptr, voidptr(&buf[0]), isize(buf.len)) }
+	n := unsafe { C.vpy_type_name_into(o.ptr, voidptr(&buf[0]), i64(buf.len)) }
 	if n < 0 {
 		return '?'
 	}
@@ -247,12 +247,12 @@ pub fn (o PyObj) type_name() string {
 }
 
 // hash_value returns the Python hash of the object, or -1 with an error set.
-pub fn (o PyObj) hash_value() isize {
+pub fn (o PyObj) hash_value() i64 {
 	return C.PyObject_Hash(o.ptr)
 }
 
 // len returns the length of a sized object, or -1 with an error set.
-pub fn (o PyObj) len() isize {
+pub fn (o PyObj) len() i64 {
 	return C.PyObject_Length(o.ptr)
 }
 
@@ -264,7 +264,7 @@ pub fn (o PyObj) len() isize {
 // it as borrowed, so each element read kept a reference nothing released.
 pub fn (o PyObj) item(i int) PyObj {
 	unsafe {
-		return borrow(C.vpy_seq_item(o.ptr, isize(i)))
+		return borrow(C.vpy_seq_item(o.ptr, i64(i)))
 	}
 }
 

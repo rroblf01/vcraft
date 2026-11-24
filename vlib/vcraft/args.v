@@ -62,7 +62,7 @@ pub fn reject_extra_args(name string, expected int, given int) {
 // null is a parameter the caller left out, which only an optional one may be. Raises
 // TypeError, and returns false, for what Python itself refuses: too many positional
 // arguments, an unknown or repeated keyword, or a missing required parameter.
-pub fn bind_args(args voidptr, nargs isize, kwnames voidptr, out voidptr, names []string,
+pub fn bind_args(args voidptr, nargs i64, kwnames voidptr, out voidptr, names []string,
 	optional []bool, func string) bool {
 	n := names.len
 	if nargs > n {
@@ -77,7 +77,7 @@ pub fn bind_args(args voidptr, nargs isize, kwnames voidptr, out voidptr, names 
 	if kwnames != unsafe { nil } {
 		count := int(C.PyTuple_Size(kwnames))
 		for k in 0 .. count {
-			key := borrow(C.PyTuple_GetItem(kwnames, isize(k)))
+			key := borrow(C.PyTuple_GetItem(kwnames, i64(k)))
 			data, size := utf8_of(key)
 			if data == unsafe { nil } {
 				return false
@@ -129,7 +129,7 @@ pub mut:
 // `names` and `optional` describe the fixed parameters only. It raises the TypeError
 // Python would -- too many positional arguments without `*args`, an unknown keyword
 // without `**kwargs`, a repeated one, a missing required one -- and fails.
-pub fn split_call(args voidptr, nargs isize, kwnames voidptr, names []string, optional []bool,
+pub fn split_call(args voidptr, nargs i64, kwnames voidptr, names []string, optional []bool,
 	var_pos bool, var_kw bool, func string) !CallSplit {
 	n := names.len
 	mut out := CallSplit{}
@@ -155,7 +155,7 @@ pub fn split_call(args voidptr, nargs isize, kwnames voidptr, names []string, op
 	}
 	count := int(C.PyTuple_Size(kwnames))
 	for k in 0 .. count {
-		key := borrow(C.PyTuple_GetItem(kwnames, isize(k)))
+		key := borrow(C.PyTuple_GetItem(kwnames, i64(k)))
 		data, size := utf8_of(key)
 		if data == unsafe { nil } {
 			return error(func)
@@ -204,7 +204,7 @@ pub fn unexpected_kwarg(name string, keyword string) {
 // a null slot. A positional-only call has no slot array: `argv` is the argument pointer
 // array itself and the parameter is present when `i` is before the count. This is what
 // lets a call that omits trailing parameters read each one without a slot array.
-pub fn arg_present(argv voidptr, nargs isize, kwnames voidptr, i int) bool {
+pub fn arg_present(argv voidptr, nargs i64, kwnames voidptr, i int) bool {
 	if kwnames != unsafe { nil } {
 		return !arg_at(argv, i).is_null()
 	}
@@ -240,7 +240,7 @@ pub fn bind_new_args(args voidptr, kwds voidptr, out voidptr, names []string,
 		return false
 	}
 	for i in 0 .. given {
-		item := C.PyTuple_GetItem(args, isize(i))
+		item := C.PyTuple_GetItem(args, i64(i))
 		if item == unsafe { nil } {
 			return false
 		}
@@ -249,7 +249,7 @@ pub fn bind_new_args(args voidptr, kwds voidptr, out voidptr, names []string,
 		}
 	}
 	if kwds != unsafe { nil } {
-		mut pos := isize(0)
+		mut pos := i64(0)
 		mut key := voidptr(nil)
 		mut value := voidptr(nil)
 		for C.PyDict_Next(kwds, &pos, &key, &value) != 0 {
@@ -441,7 +441,7 @@ pub fn from_py_int_seq_arg(argv voidptr, i int, func string, name string) ![]int
 	mut k := 0
 	// The C pass writes 64-bit integers, so it only applies where an int is that wide.
 	if sizeof(int) == sizeof(i64) && n > 0 {
-		k = int(C.vpy_seq_fill_i64(obj.ptr, unsafe { &i64(out.data) }, isize(n)))
+		k = int(C.vpy_seq_fill_i64(obj.ptr, unsafe { &i64(out.data) }, i64(n)))
 	}
 	for k < n {
 		out[k] = int(from_py_int(obj.item(k), name)!)
@@ -468,7 +468,7 @@ pub fn read_int_fixed(argv voidptr, i int, func string, name string, out voidptr
 	}
 	mut k := 0
 	if wide && n > 0 {
-		k = int(C.vpy_seq_fill_i64(obj.ptr, unsafe { &i64(out) }, isize(n)))
+		k = int(C.vpy_seq_fill_i64(obj.ptr, unsafe { &i64(out) }, i64(n)))
 	}
 	for k < n {
 		value := from_py_int(obj.item(k), name)!
@@ -490,7 +490,7 @@ pub fn from_py_i64_seq_arg(argv voidptr, i int, func string, name string) ![]i64
 	mut out := []i64{len: n}
 	mut k := 0
 	if n > 0 {
-		k = int(C.vpy_seq_fill_i64(obj.ptr, unsafe { &i64(out.data) }, isize(n)))
+		k = int(C.vpy_seq_fill_i64(obj.ptr, unsafe { &i64(out.data) }, i64(n)))
 	}
 	for k < n {
 		out[k] = i64(from_py_int(obj.item(k), name)!)
@@ -509,7 +509,7 @@ pub fn from_py_f64_seq_arg(argv voidptr, i int, func string, name string) ![]f64
 	mut out := []f64{len: n}
 	mut k := 0
 	if n > 0 {
-		k = int(C.vpy_seq_fill_f64(obj.ptr, unsafe { &f64(out.data) }, isize(n)))
+		k = int(C.vpy_seq_fill_f64(obj.ptr, unsafe { &f64(out.data) }, i64(n)))
 	}
 	for k < n {
 		out[k] = from_py_f64(obj.item(k), name)!
@@ -594,11 +594,11 @@ pub fn from_py_i32_seq_arg(argv voidptr, i int, func string, name string) ![]i32
 	return out
 }
 
-// from_py_isize_seq_arg reads positional argument `i` as a sequence of isize.
-pub fn from_py_isize_seq_arg(argv voidptr, i int, func string, name string) ![]isize {
+// from_py_isize_seq_arg reads positional argument `i` as a sequence of i64.
+pub fn from_py_isize_seq_arg(argv voidptr, i int, func string, name string) ![]i64 {
 	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
 	n := int(obj.len())
-	mut out := []isize{cap: n}
+	mut out := []i64{cap: n}
 	mut k := 0
 	for k < n {
 		out << isize_from_py_int(obj.item(k), name)!
@@ -646,11 +646,11 @@ pub fn from_py_u32_seq_arg(argv voidptr, i int, func string, name string) ![]u32
 	return out
 }
 
-// from_py_usize_seq_arg reads positional argument `i` as a sequence of usize.
-pub fn from_py_usize_seq_arg(argv voidptr, i int, func string, name string) ![]usize {
+// from_py_usize_seq_arg reads positional argument `i` as a sequence of u64.
+pub fn from_py_usize_seq_arg(argv voidptr, i int, func string, name string) ![]u64 {
 	obj := seq_elements(argv, i, func, name) or { return error('${name}') }
 	n := int(obj.len())
-	mut out := []usize{cap: n}
+	mut out := []u64{cap: n}
 	mut k := 0
 	for k < n {
 		out << usize_from_py_uint(obj.item(k), name)!

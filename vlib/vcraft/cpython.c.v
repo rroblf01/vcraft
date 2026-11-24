@@ -60,23 +60,23 @@ fn C.vpy_version_hex() u64
 
 fn C.vpy_version_string() &char
 
-fn C.vpy_ssize_size() isize
+fn C.vpy_ssize_size() i64
 
-fn C.vpy_type_name_into(o voidptr, buf voidptr, n isize) int
+fn C.vpy_type_name_into(o voidptr, buf voidptr, n i64) int
 
-fn C.vpy_size_PyModuleDef() isize
+fn C.vpy_size_PyModuleDef() i64
 
-fn C.vpy_size_PyMethodDef() isize
+fn C.vpy_size_PyMethodDef() i64
 
-fn C.vpy_size_PyObject() isize
-fn C.vpy_size_voidptr() isize
+fn C.vpy_size_PyObject() i64
+fn C.vpy_size_voidptr() i64
 fn C.vpy_arena_new() voidptr
-fn C.vpy_arena_alloc(a voidptr, size usize) voidptr
+fn C.vpy_arena_alloc(a voidptr, size u64) voidptr
 fn C.vpy_arena_free(a voidptr)
-fn C.vpy_list_from_i64(ptr voidptr, n isize) voidptr
-fn C.vpy_list_from_f64(ptr voidptr, n isize) voidptr
-fn C.vpy_bytes_from_ptr(ptr voidptr, n isize) voidptr
-fn C.vpy_memoryview_from_ptr(ptr voidptr, n isize) voidptr
+fn C.vpy_list_from_i64(ptr voidptr, n i64) voidptr
+fn C.vpy_list_from_f64(ptr voidptr, n i64) voidptr
+fn C.vpy_bytes_from_ptr(ptr voidptr, n i64) voidptr
+fn C.vpy_memoryview_from_ptr(ptr voidptr, n i64) voidptr
 
 fn C.vpy_tpflags_default() u32
 fn C.vpy_tpflags_weakref() u32
@@ -85,11 +85,11 @@ fn C.vpy_tpflags_managed_dict() u32
 fn C.PyType_FromSpec(spec voidptr) voidptr
 fn C.PyType_Ready(typ voidptr) int
 
-fn C.PyType_GenericAlloc(typ voidptr, nitems isize) voidptr
+fn C.PyType_GenericAlloc(typ voidptr, nitems i64) voidptr
 
 fn C.PyErr_NoMemory()
 
-fn C.vpy_memcpy(dst voidptr, src voidptr, n usize) voidptr
+fn C.vpy_memcpy(dst voidptr, src voidptr, n u64) voidptr
 
 fn C.vpy_type_free(self voidptr)
 fn C.vpy_visit(obj voidptr, visit voidptr, arg voidptr) int
@@ -102,15 +102,15 @@ fn C.vpy_gil_ensure() int
 fn C.vpy_gil_release(state int)
 fn C.vpy_mod_gil_not_used() voidptr
 fn C.vpy_module_set_gil(m voidptr, gil voidptr) int
-fn C.vpy_module_def_head(dst voidptr, n usize)
+fn C.vpy_module_def_head(dst voidptr, n u64)
 fn C.vpy_buffer_new() voidptr
 fn C.vpy_buffer_get(obj voidptr, view voidptr) int
 fn C.vpy_buffer_ptr(view voidptr) voidptr
 fn C.vpy_buffer_len(view voidptr) int
 fn C.vpy_buffer_release(view voidptr)
 fn C.vpy_is_exact_bytes(obj voidptr) int
-fn C.vpy_buffer_export(data voidptr, owner voidptr, nbytes isize, itemsize isize, kind int) voidptr
-fn C.vpy_buffer_fill_typed(view voidptr, exporter voidptr, data voidptr, nbytes isize, itemsize isize, kind int, readonly int, flags int) int
+fn C.vpy_buffer_export(data voidptr, owner voidptr, nbytes i64, itemsize i64, kind int) voidptr
+fn C.vpy_buffer_fill_typed(view voidptr, exporter voidptr, data voidptr, nbytes i64, itemsize i64, kind int, readonly int, flags int) int
 fn C.vpy_state_init()
 fn C.vpy_gc_hook_python()
 fn C.vpy_gc_pin(ptr voidptr) voidptr
@@ -126,9 +126,9 @@ fn C.vpy_gc_track(self voidptr)
 
 fn C.vpy_type_ptr(self voidptr) voidptr
 
-fn C.vpy_ob_size(self voidptr) isize
+fn C.vpy_ob_size(self voidptr) i64
 
-fn C.vpy_tuple_size(self voidptr) isize
+fn C.vpy_tuple_size(self voidptr) i64
 
 // `Py_LIMITED_API` arrives on the compiler's `-cflags`, set from the project's `abi3`
 // floor, and this file picks it up from there rather than hard-coding a version.
@@ -163,7 +163,7 @@ fn C.PyObject_DelAttrString(o voidptr, name voidptr) int
 
 fn C.PyObject_Type(o voidptr) voidptr
 
-fn C.PyObject_Hash(o voidptr) isize
+fn C.PyObject_Hash(o voidptr) i64
 
 fn C.Py_ReprEnter(o voidptr) int
 
@@ -178,7 +178,7 @@ fn C.vpy_set_logger_name(name voidptr)
 
 fn C.PyObject_Repr(o voidptr) voidptr
 
-fn C.PyObject_Length(o voidptr) isize
+fn C.PyObject_Length(o voidptr) i64
 
 fn C.PyNumber_Check(o voidptr) int
 
@@ -223,7 +223,7 @@ fn C.vpy_complex_parts(o voidptr, re &f64, im &f64) int
 
 // ----------------------------------------------------------------- strings
 
-fn C.PyUnicode_FromStringAndSize(s voidptr, len isize) voidptr
+fn C.PyUnicode_FromStringAndSize(s voidptr, len i64) voidptr
 fn C.PyUnicode_FromString(s voidptr) voidptr
 fn C.PyErr_SetObject(exc voidptr, value voidptr)
 
@@ -231,29 +231,29 @@ fn C.PyUnicode_AsUTF8AndSize(o voidptr, len voidptr) voidptr
 
 fn C.PyUnicode_FromFormat(format voidptr) voidptr
 
-fn C.PyBytes_FromStringAndSize(s voidptr, len isize) voidptr
+fn C.PyBytes_FromStringAndSize(s voidptr, len i64) voidptr
 
 fn C.PyBytes_AsStringAndSize(o voidptr, s voidptr, len voidptr) int
 
 // ------------------------------------------------------------------ tuples
 
-fn C.PyTuple_Size(t voidptr) isize
+fn C.PyTuple_Size(t voidptr) i64
 
-fn C.PyTuple_GetItem(t voidptr, i isize) voidptr
+fn C.PyTuple_GetItem(t voidptr, i i64) voidptr
 
-fn C.PyTuple_New(size isize) voidptr
+fn C.PyTuple_New(size i64) voidptr
 
-fn C.PyTuple_SetItem(t voidptr, i isize, item voidptr) int
+fn C.PyTuple_SetItem(t voidptr, i i64, item voidptr) int
 
 // ------------------------------------------------------------- containers
 
-fn C.PyList_New(size isize) voidptr
+fn C.PyList_New(size i64) voidptr
 
 fn C.PyList_Append(l voidptr, item voidptr) int
 
-fn C.PyList_SetItem(l voidptr, i isize, item voidptr) int
+fn C.PyList_SetItem(l voidptr, i i64, item voidptr) int
 
-fn C.PySequence_GetItem(o voidptr, i isize) voidptr
+fn C.PySequence_GetItem(o voidptr, i i64) voidptr
 
 fn C.PyDict_New() voidptr
 
@@ -263,7 +263,7 @@ fn C.PyDict_GetItemString(d voidptr, key voidptr) voidptr
 
 fn C.PyDict_SetItem(d voidptr, key voidptr, value voidptr) int
 
-fn C.PyDict_Next(d voidptr, pos &isize, key &voidptr, value &voidptr) int
+fn C.PyDict_Next(d voidptr, pos &i64, key &voidptr, value &voidptr) int
 fn C.PyObject_IsSubclass(derived voidptr, cls voidptr) int
 fn C.PyObject_SetAttr(o voidptr, name voidptr, value voidptr) int
 fn C.PyDict_Update(a voidptr, b voidptr) int
@@ -289,39 +289,39 @@ fn C.PyModule_AddFunctions(module voidptr, functions voidptr) int
 
 fn C.vpy_is_limited_api() int
 fn C.vpy_call_exec(fn_ptr voidptr, module voidptr) int
-fn C.vpy_hash(self voidptr) isize
-fn C.vpy_hash_bits() isize
+fn C.vpy_hash(self voidptr) i64
+fn C.vpy_hash_bits() i64
 fn C.vpy_type_check(o voidptr, typ voidptr) int
 
 fn C.vpy_exact_long_as_i64(o voidptr, out &i64) int
 
 fn C.vpy_is_instance(o voidptr, typ voidptr) int
 
-fn C.vpy_seq_item(o voidptr, i isize) voidptr
+fn C.vpy_seq_item(o voidptr, i i64) voidptr
 
-fn C.vpy_seq_fill_f64(o voidptr, out &f64, n isize) isize
+fn C.vpy_seq_fill_f64(o voidptr, out &f64, n i64) i64
 
-fn C.vpy_seq_fill_i64(o voidptr, out &i64, n isize) isize
+fn C.vpy_seq_fill_i64(o voidptr, out &i64, n i64) i64
 
-fn C.vpy_list_from_i64(items &i64, n isize) voidptr
+fn C.vpy_list_from_i64(items &i64, n i64) voidptr
 
-fn C.vpy_list_from_f64(items &f64, n isize) voidptr
+fn C.vpy_list_from_f64(items &f64, n i64) voidptr
 
-fn C.vpy_list_from_str(items voidptr, n isize) voidptr
+fn C.vpy_list_from_str(items voidptr, n i64) voidptr
 
-fn C.vpy_list_from_bytes(items voidptr, n isize) voidptr
+fn C.vpy_list_from_bytes(items voidptr, n i64) voidptr
 
 // vpy_call calls a Python callable with borrowed positional arguments, returning a new
 // reference or null with an exception set.
-fn C.vpy_call(callee voidptr, args voidptr, nargs isize) voidptr
-fn C.vpy_call_kw(callee voidptr, args voidptr, nargs isize, kwargs voidptr) voidptr
-fn C.vpy_checksum(data voidptr, len isize) u64
-fn C.vpy_sum_i64(data voidptr, len isize) i64
-fn C.vpy_sum_f64(data voidptr, len isize) f64
+fn C.vpy_call(callee voidptr, args voidptr, nargs i64) voidptr
+fn C.vpy_call_kw(callee voidptr, args voidptr, nargs i64, kwargs voidptr) voidptr
+fn C.vpy_checksum(data voidptr, len i64) u64
+fn C.vpy_sum_i64(data voidptr, len i64) i64
+fn C.vpy_sum_f64(data voidptr, len i64) f64
 
 fn C.vpy_not_implemented() voidptr
-fn C.PyTuple_New(size isize) voidptr
-fn C.PyTuple_SET_ITEM(tuple voidptr, index isize, item voidptr)
+fn C.PyTuple_New(size i64) voidptr
+fn C.PyTuple_SET_ITEM(tuple voidptr, index i64, item voidptr)
 
 fn C.PyModule_AddFunctions(module voidptr, functions voidptr) int
 
@@ -378,7 +378,7 @@ fn C.vpy_set_type() voidptr
 fn C.vpy_get_dict(self voidptr, closure voidptr) voidptr
 fn C.vpy_set_dict(self voidptr, value voidptr, closure voidptr) int
 fn C.vpy_enable_managed_dict(o voidptr)
-fn C.vpy_enable_weakref(o voidptr, offset isize)
+fn C.vpy_enable_weakref(o voidptr, offset i64)
 fn C.vpy_set_tp_descr_get(o voidptr, cb voidptr)
 fn C.vpy_set_tp_descr_set(o voidptr, cb voidptr)
 fn C.vpy_enable_mapping(typ voidptr, mp_length voidptr, mp_subscript voidptr, mp_ass_subscript voidptr)
@@ -429,14 +429,14 @@ fn C.vpy_exc_blocking_io_error() voidptr
 fn C.vpy_exc_interrupted_error() voidptr
 fn C.vpy_exc_child_process_error() voidptr
 fn C.vpy_exc_process_lookup_error() voidptr
-fn C.vpy_raise_errno(code i32, context &u8, len isize)
+fn C.vpy_raise_errno(code i32, context &u8, len i64)
 fn C.vpy_last_errno() int
 fn C.vpy_running_loop() voidptr
 fn C.vpy_nd_get(obj voidptr, view voidptr) int
 fn C.vpy_view_ndim(view voidptr) int
-fn C.vpy_view_shape(view voidptr, i int) isize
-fn C.vpy_view_stride(view voidptr, i int) isize
-fn C.vpy_view_itemsize(view voidptr) isize
+fn C.vpy_view_shape(view voidptr, i int) i64
+fn C.vpy_view_stride(view voidptr, i int) i64
+fn C.vpy_view_itemsize(view voidptr) i64
 fn C.vpy_view_readonly(view voidptr) int
 fn C.vpy_view_format(view voidptr) &char
 fn C.vpy_async_settle_fn() voidptr
@@ -444,13 +444,13 @@ fn C.vpy_new_runtime_error() voidptr
 fn C.vpy_structseq_type(name &char, fields &&char, count int, doc &char) voidptr
 fn C.vpy_structseq_new(typ voidptr) voidptr
 fn C.PyUnicode_InternFromString(s voidptr) voidptr
-fn C.vpy_structseq_set(seq voidptr, i isize, value voidptr)
-fn C.vpy_structseq_pack(typ voidptr, items voidptr, count isize) voidptr
-fn C.vpy_struct_field(obj voidptr, key &char, index isize, count isize, name &u8, name_len isize) voidptr
+fn C.vpy_structseq_set(seq voidptr, i i64, value voidptr)
+fn C.vpy_structseq_pack(typ voidptr, items voidptr, count i64) voidptr
+fn C.vpy_struct_field(obj voidptr, key &char, index i64, count i64, name &u8, name_len i64) voidptr
 
 // vpy_set_error_utf8 raises an exception with a message given as a pointer and a length,
 // so the runtime does not copy a V string into a NUL-terminated buffer first.
-fn C.vpy_set_error_utf8(exc voidptr, msg voidptr, len isize)
+fn C.vpy_set_error_utf8(exc voidptr, msg voidptr, len i64)
 
 // ----------------------------------------------------------------- capsules
 
@@ -470,16 +470,16 @@ fn C.PyCapsule_SetName(capsule voidptr, name voidptr) int
 // run of bytes. It sets `view->obj` to the exporter and takes a reference, which is
 // what makes the memoryview keep the instance alive; the generated `bf_releasebuffer`
 // and this pair are the whole of the zero-copy contract. Stable ABI.
-fn C.PyBuffer_FillInfo(view voidptr, o voidptr, buf voidptr, len isize, readonly int, flags int) int
+fn C.PyBuffer_FillInfo(view voidptr, o voidptr, buf voidptr, len i64, readonly int, flags int) int
 
 // The CPython allocator. The state of a class is CPython-owned memory that V's
 // collector does not scan, so a native buffer kept in it is owned manually and freed
 // by `tp_dealloc`. These are the matching allocator and are part of the stable ABI.
-fn C.PyObject_Malloc(n usize) voidptr
+fn C.PyObject_Malloc(n u64) voidptr
 
-fn C.PyObject_Calloc(n usize, size usize) voidptr
+fn C.PyObject_Calloc(n u64, size u64) voidptr
 
-fn C.PyObject_Realloc(p voidptr, n usize) voidptr
+fn C.PyObject_Realloc(p voidptr, n u64) voidptr
 
 fn C.PyObject_Free(p voidptr)
 
@@ -678,16 +678,16 @@ pub struct PyModuleDefBase {
 pub mut:
 	head_pad [32]u8
 	m_init voidptr
-	m_index isize
+	m_index i64
 	m_copy voidptr
 }
 } $else {
 pub struct PyModuleDefBase {
 pub mut:
-	ob_refcnt isize
+	ob_refcnt i64
 	ob_type   voidptr
 	m_init    voidptr
-	m_index   isize
+	m_index   i64
 	m_copy    voidptr
 }
 }
@@ -708,7 +708,7 @@ pub mut:
 	base       PyModuleDefBase
 	m_name     voidptr
 	m_doc      voidptr
-	m_size     isize
+	m_size     i64
 	m_methods  voidptr
 	m_slots    voidptr
 	m_traverse voidptr
@@ -758,7 +758,7 @@ pub fn arena_new() Arena {
 
 pub fn (a Arena) alloc(size int) voidptr {
 	unsafe {
-		return C.vpy_arena_alloc(a.ptr, usize(size))
+		return C.vpy_arena_alloc(a.ptr, u64(size))
 	}
 }
 
@@ -772,19 +772,19 @@ pub fn (mut a Arena) free() {
 
 pub fn to_py_int_list_fast(ptr &i64, n int) PyObj {
 	unsafe {
-		return PyObj{ ptr: C.vpy_list_from_i64(ptr, isize(n)) }
+		return PyObj{ ptr: C.vpy_list_from_i64(ptr, i64(n)) }
 	}
 }
 
 pub fn to_py_f64_list_fast(ptr &f64, n int) PyObj {
 	unsafe {
-		return PyObj{ ptr: C.vpy_list_from_f64(ptr, isize(n)) }
+		return PyObj{ ptr: C.vpy_list_from_f64(ptr, i64(n)) }
 	}
 }
 
 pub fn to_py_bytes_fast(ptr &u8, n int) PyObj {
 	unsafe {
-		return PyObj{ ptr: C.vpy_bytes_from_ptr(ptr, isize(n)) }
+		return PyObj{ ptr: C.vpy_bytes_from_ptr(ptr, i64(n)) }
 	}
 }
 
@@ -792,6 +792,6 @@ pub fn to_py_bytes_fast(ptr &u8, n int) PyObj {
 
 pub fn to_py_memoryview(ptr voidptr, n int) PyObj {
 	unsafe {
-		return PyObj{ ptr: C.vpy_memoryview_from_ptr(ptr, isize(n)) }
+		return PyObj{ ptr: C.vpy_memoryview_from_ptr(ptr, i64(n)) }
 	}
 }

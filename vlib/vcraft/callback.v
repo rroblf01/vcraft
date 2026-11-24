@@ -21,7 +21,7 @@ module vcraft
 // to have the runtime release arguments it was given ownership of.
 pub fn call(callee voidptr, args []voidptr) PyObj {
 	unsafe {
-		return steal(C.vpy_call(callee, args.data, isize(args.len)))
+		return steal(C.vpy_call(callee, args.data, i64(args.len)))
 	}
 }
 
@@ -86,7 +86,7 @@ pub fn call_kw(callee voidptr, args []voidptr, kwargs map[string]PyObj) PyObj {
 		value := v.new_ref()
 		dict_set_owned(d, key, value)
 	}
-	result := steal(C.vpy_call_kw(callee, raw.data, isize(raw.len), d.ptr))
+	result := steal(C.vpy_call_kw(callee, raw.data, i64(raw.len), d.ptr))
 	d.decref()
 	return result
 }

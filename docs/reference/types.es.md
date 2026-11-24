@@ -6,8 +6,8 @@ tiempo de generación que nombra fichero, línea y columna.
 | Tipo V | Tipo Python | Sentido y notas |
 | --- | --- | --- |
 | `bool` | `bool` | Cualquier objeto al entrar (test de veracidad); `True`/`False` al salir |
-| `i8`, `i16`, `i32`, `int`, `i64`, `isize` | `int` | Con rango comprobado; el desbordamiento lanza `OverflowError` |
-| `u8`, `u16`, `u32`, `u64`, `usize` | `int` | Negativo o desbordamiento lanza `OverflowError` |
+| `i8`, `i16`, `i32`, `int`, `i64`, `i64` | `int` | Con rango comprobado; el desbordamiento lanza `OverflowError` |
+| `u8`, `u16`, `u32`, `u64`, `u64` | `int` | Negativo o desbordamiento lanza `OverflowError` |
 | `f32`, `f64` | `float` | También acepta un `int` |
 | `rune` | `int` | El punto de código |
 | `string` | `str` | UTF-8 |

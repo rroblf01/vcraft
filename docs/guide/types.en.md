@@ -7,8 +7,8 @@ surprise.
 | V type | Python type | Notes |
 | --- | --- | --- |
 | `bool` | `bool` | Any object in, true/false out |
-| `i8`, `i16`, `i32`, `int`, `i64`, `isize` | `int` | Range-checked: out of range raises `OverflowError`; `bool` and `int` subclasses (an `IntEnum`) are accepted, as in Python |
-| `u8`, `u16`, `u32`, `u64`, `usize` | `int` | Negative or out of range raises `OverflowError` |
+| `i8`, `i16`, `i32`, `int`, `i64`, `i64` | `int` | Range-checked: out of range raises `OverflowError`; `bool` and `int` subclasses (an `IntEnum`) are accepted, as in Python |
+| `u8`, `u16`, `u32`, `u64`, `u64` | `int` | Negative or out of range raises `OverflowError` |
 | `f32`, `f64` | `float` | An `int` is accepted too |
 | `rune` | `int` | The code point |
 | `string` | `str` | UTF-8; borrowed in, valid for the call |

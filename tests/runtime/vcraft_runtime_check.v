@@ -78,7 +78,7 @@ fn answer_trampoline(self voidptr, args voidptr) voidptr {
 	return vcraft.to_py_int(answer()).ptr
 }
 
-fn add_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn add_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('add', 2, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -92,7 +92,7 @@ fn add_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	return vcraft.to_py_int(add(a, b)).ptr
 }
 
-fn greet_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn greet_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('greet', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -109,7 +109,7 @@ fn greet_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	return vcraft.to_py_string(greeting).ptr
 }
 
-fn describe_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn describe_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('describe', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -122,7 +122,7 @@ fn describe_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	return vcraft.to_py_string(describe(value)).ptr
 }
 
-fn checked_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn checked_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('checked', 2, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -157,7 +157,7 @@ fn boom_trampoline(self voidptr, args voidptr) voidptr {
 	return vcraft.to_py_none().ptr
 }
 
-fn maybe_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn maybe_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('maybe', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -213,7 +213,7 @@ fn call_kw_test(callee voidptr) int {
 	return int(value)
 }
 
-fn call_kw_test_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn call_kw_test_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('call_kw_test', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -229,7 +229,7 @@ fn call_kw_test_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	return vcraft.to_py_int(result).ptr
 }
 
-fn sum_callback_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn sum_callback_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('sum_callback', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -296,7 +296,7 @@ fn call_from_thread(callee voidptr) int {
 	return value
 }
 
-fn call_from_thread_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn call_from_thread_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('call_from_thread', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -345,7 +345,7 @@ fn released_panics() int {
 	return 1
 }
 
-fn released_then_call_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn released_then_call_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('released_then_call', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -386,7 +386,7 @@ fn run_coro_fast(callee voidptr) int {
 	return value
 }
 
-fn run_coro_fast_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn run_coro_fast_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('run_coro_fast', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -420,7 +420,7 @@ fn unpack_bytes(t voidptr) !int {
 	return b.len
 }
 
-fn unpack_tuple_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn unpack_tuple_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('unpack_tuple', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -435,7 +435,7 @@ fn unpack_tuple_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	return vcraft.to_py_int(result).ptr
 }
 
-fn unpack_bytes_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn unpack_bytes_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('unpack_bytes', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -465,7 +465,7 @@ fn build_obj_list_trampoline(self voidptr, args voidptr) voidptr {
 }
 
 // from_py_list_sum reads a list and returns the sum of its ints.
-fn from_py_list_sum(self voidptr, args voidptr, nargs isize) voidptr {
+fn from_py_list_sum(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('from_py_list_sum', 1, int(nargs))
 	if vcraft.error_is_set() { return unsafe { nil } }
 	list := vcraft.require_arg(args, 0, 'from_py_list_sum', 'lst')
@@ -479,7 +479,7 @@ fn from_py_list_sum(self voidptr, args voidptr, nargs isize) voidptr {
 }
 
 // from_py_dict_sum reads a dict {str: int} and returns the sum of values.
-fn from_py_dict_sum(self voidptr, args voidptr, nargs isize) voidptr {
+fn from_py_dict_sum(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('from_py_dict_sum', 1, int(nargs))
 	if vcraft.error_is_set() { return unsafe { nil } }
 	d := vcraft.require_arg(args, 0, 'from_py_dict_sum', 'd')
@@ -506,7 +506,7 @@ fn build_set_trampoline(self voidptr, args voidptr) voidptr {
 }
 
 // read_set_sum reads a set and returns the sum.
-fn read_set_sum(self voidptr, args voidptr, nargs isize) voidptr {
+fn read_set_sum(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('read_set_sum', 1, int(nargs))
 	if vcraft.error_is_set() { return unsafe { nil } }
 	s := vcraft.require_arg(args, 0, 'read_set_sum', 's')
@@ -538,7 +538,7 @@ fn list_build_trampoline(self voidptr, args voidptr) voidptr {
 // type_obj_name returns the type name of an object.
 
 // bytes_view_sum reads bytes from a bytes_view.
-fn bytes_view_sum(self voidptr, args voidptr, nargs isize) voidptr {
+fn bytes_view_sum(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('bytes_view_sum', 1, int(nargs))
 	if vcraft.error_is_set() { return unsafe { nil } }
 	obj := vcraft.require_arg(args, 0, 'bytes_view_sum', 'obj')
@@ -562,7 +562,7 @@ fn setattr_hasattr(obj voidptr) vcraft.PyObj {
 	return vcraft.getattr(o.ptr, 'x')
 }
 
-fn setattr_hasattr_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn setattr_hasattr_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('setattr_hasattr', 1, int(nargs))
 	if vcraft.error_is_set() { return unsafe { nil } }
 	obj := vcraft.require_voidptr_arg(args, 0, 'setattr_hasattr', 'obj')
@@ -649,7 +649,7 @@ fn pyobj_methods_test_trampoline(self voidptr, args voidptr) voidptr {
 	return vcraft.to_py_int(pyobj_methods_test()).ptr
 }
 
-fn identity_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn identity_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('identity', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -663,7 +663,7 @@ fn identity_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	return obj.new_ref().ptr
 }
 
-fn sum_all_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn sum_all_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('sum_all', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }
@@ -684,7 +684,7 @@ fn sum_all_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
 	return vcraft.to_py_int(total).ptr
 }
 
-fn export_squares_trampoline(self voidptr, args voidptr, nargs isize) voidptr {
+fn export_squares_trampoline(self voidptr, args voidptr, nargs i64) voidptr {
 	vcraft.require_nargs('export_squares', 1, int(nargs))
 	if vcraft.error_is_set() {
 		return unsafe { nil }

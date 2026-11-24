@@ -136,10 +136,10 @@ pub fn instance_storage(obj voidptr) voidptr {
 	return storage_of(obj)
 }
 
-fn C.vpy_gc_box(size usize) voidptr
+fn C.vpy_gc_box(size u64) voidptr
 fn C.vpy_gc_unbox(block voidptr)
-fn C.vpy_mark_boxed(typ voidptr, size usize)
-fn C.vpy_boxed_size(typ voidptr) usize
+fn C.vpy_mark_boxed(typ voidptr, size u64)
+fn C.vpy_boxed_size(typ voidptr) u64
 fn C.vpy_is_boxed(typ voidptr) int
 
 // A class whose fields hold V-managed memory (a string, an array, a map) cannot keep its
@@ -150,7 +150,7 @@ fn C.vpy_is_boxed(typ voidptr) int
 
 // mark_boxed_type registers a type whose instances are boxed, for the readers of `&T`
 // arguments and results that only have the type to go by.
-pub fn mark_boxed_type(typ voidptr, size usize) {
+pub fn mark_boxed_type(typ voidptr, size u64) {
 	C.vpy_mark_boxed(typ, size)
 }
 
@@ -163,7 +163,7 @@ pub fn boxed_storage(obj voidptr) voidptr {
 }
 
 // box_new gives a fresh instance of a boxed class its zeroed state block, once.
-pub fn box_new(obj voidptr, size usize) {
+pub fn box_new(obj voidptr, size u64) {
 	unsafe {
 		slot := &voidptr(storage_of(obj))
 		if *slot == nil {
@@ -217,7 +217,7 @@ pub fn instance_fail(obj voidptr) voidptr {
 //
 // The copy is the point. It puts the V value back under V's own rules, where the
 // collector and the ownership checker can see it, for the duration of the call.
-pub fn load_state(storage voidptr, dest voidptr, size usize) {
+pub fn load_state(storage voidptr, dest voidptr, size u64) {
 	if storage == unsafe { nil } {
 		return
 	}
@@ -356,7 +356,7 @@ pub fn state_at(level int) voidptr {
 //
 // `size` is the size of that field, so a field is addressed the same way a V struct
 // member is: by the address of the member, not by an offset computed here.
-pub fn set_state(member voidptr, value voidptr, size usize) {
+pub fn set_state(member voidptr, value voidptr, size u64) {
 	if value == unsafe { nil } {
 		unsafe {
 			C.vpy_memcpy(member, nil, size)
@@ -369,7 +369,7 @@ pub fn set_state(member voidptr, value voidptr, size usize) {
 }
 
 // store_state copies a V value into the state block.
-pub fn store_state(value voidptr, storage voidptr, size usize) {
+pub fn store_state(value voidptr, storage voidptr, size u64) {
 	if storage == unsafe { nil } {
 		return
 	}
@@ -859,7 +859,7 @@ pub fn new_type(name string, state_size int, doc string, new_ voidptr, init void
 			// Python 3.11: set tp_weaklistoffset manually since managed weakrefs
 			// (Py_TPFLAGS_MANAGED_WEAKREF) are only available in 3.12+.
 			// The weakref list pointer lives at the end of the instance.
-			C.vpy_enable_weakref(result.ptr, isize(basicsize - int(C.vpy_size_voidptr())))
+			C.vpy_enable_weakref(result.ptr, i64(basicsize - int(C.vpy_size_voidptr())))
 		}
 		return result
 	}
@@ -918,9 +918,9 @@ pub fn identity_richcompare(self voidptr, other voidptr, op int) voidptr {
 // The id-based hash that goes with identity comparison. It is what a class without a
 // value comparison gets, and it is stable for the life of the object because the object
 // does not move while Python holds it.
-pub fn identity_hash(self voidptr) isize {
+pub fn identity_hash(self voidptr) i64 {
 	unsafe {
-		return isize(C.vpy_hash(self))
+		return i64(C.vpy_hash(self))
 	}
 }
 
@@ -966,7 +966,7 @@ pub fn number_slot(id i32, f voidptr) PyTypeSlot {
 // target's ancestors' structs, computed by the generator from the same layout it emitted.
 // An instance of the target or of any subclass shares that layout, so a `&Base` parameter
 // accepts a subclass instance and reads the same bytes a `Base` method would.
-pub fn from_py_instance(obj voidptr, target voidptr, target_name string, offset usize, func string,
+pub fn from_py_instance(obj voidptr, target voidptr, target_name string, offset u64, func string,
 	name string) voidptr {
 	if obj == unsafe { nil } || !is_instance_of(obj, target) {
 		raise_type_error('${func}() argument ${name} must be a ${target_name}, not ${type_name_of(obj)}')
@@ -987,7 +987,7 @@ pub fn from_py_instance(obj voidptr, target voidptr, target_name string, offset 
 // that points anywhere else -- a global, or memory the function allocated -- is reported
 // rather than guessed at, because handing CPython an object it does not own corrupts the
 // interpreter.
-pub fn instance_ref(ptr voidptr, target voidptr, target_name string, offset usize,
+pub fn instance_ref(ptr voidptr, target voidptr, target_name string, offset u64,
 	candidates []voidptr, func string) voidptr {
 	for candidate in candidates {
 		if candidate == unsafe { nil } {
@@ -1011,15 +1011,15 @@ pub fn instance_ref(ptr voidptr, target voidptr, target_name string, offset usiz
 // hash as a signed integer of platform width and does not require a value that fits in a
 // 64-bit one. Collisions are handled by the dict, so a truncated hash costs a comparison
 // rather than correctness.
-pub fn hash_from_int(value int) isize {
+pub fn hash_from_int(value int) i64 {
 	// The mask is applied with a modulo rather than a bitwise `&`. V translates `&` on
 	// integers to C's bitwise and, which is fine, but the whole expression is emitted
 	// from generated code and a stray `&` there lands in a context where C reads it as
 	// an address-of. A modulo has no such reading.
-	mut out := isize(value)
+	mut out := i64(value)
 	bits := hash_mask()
 	if bits < 64 {
-		out = out % (isize(1) << bits)
+		out = out % (i64(1) << bits)
 	}
 	if value < 0 {
 		return -out
@@ -1032,9 +1032,9 @@ pub fn hash_from_int(value int) isize {
 // A C `long`, so 64 bits where the platform uses `ssize_t` and 32 where it does not. It
 // is asked of the interpreter rather than assumed, because the answer decides whether a
 // hash above 2^31 keeps its top bits.
-fn hash_mask() isize {
+fn hash_mask() i64 {
 	unsafe {
-		return isize(C.vpy_hash_bits())
+		return i64(C.vpy_hash_bits())
 	}
 }
 
@@ -1045,7 +1045,7 @@ fn hash_mask() isize {
 // passed directly would be read as the first element of a tuple that does not exist.
 pub fn base_tuple(types []PyObj) voidptr {
 	unsafe {
-		return C.PyTuple_New(isize(types.len))
+		return C.PyTuple_New(i64(types.len))
 	}
 }
 
@@ -1119,7 +1119,7 @@ pub fn rebuild_fields(cls voidptr, fields voidptr, extra voidptr) PyObj {
 	if instance == unsafe { nil } {
 		return no_memory_obj()
 	}
-	mut pos := isize(0)
+	mut pos := i64(0)
 	mut key := voidptr(nil)
 	mut value := voidptr(nil)
 	for C.PyDict_Next(fields, &pos, &key, &value) != 0 {

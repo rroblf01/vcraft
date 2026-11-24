@@ -175,8 +175,8 @@ pub fn lookup(v_type string) Strategy {
 	}
 	return match base {
 		'bool' { Strategy.bool }
-		'int', 'i8', 'i16', 'i32', 'i64', 'isize', 'rune' { Strategy.int }
-		'u8', 'u16', 'u32', 'u64', 'usize' { Strategy.uint }
+		'int', 'i8', 'i16', 'i32', 'i64', 'rune' { Strategy.int }
+		'u8', 'u16', 'u32', 'u64' { Strategy.uint }
 		'f32', 'f64' { Strategy.float }
 		'string' { Strategy.str }
 		'[]u8' { Strategy.bytes }

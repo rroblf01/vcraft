@@ -41,7 +41,7 @@ pub const meth_fastcall = 0x0080
 
 // The calling convention METH_FASTCALL uses. It is the cheapest way CPython can
 // pass positional arguments, and it is the shape vcraft generates by default.
-pub type PyCFunctionFast = fn (voidptr, voidptr, isize) voidptr
+pub type PyCFunctionFast = fn (voidptr, voidptr, i64) voidptr
 
 // C declarations of CPython structs are described with voidptr for every
 // pointer-like member. Two reasons: V's ownership rules would otherwise demand

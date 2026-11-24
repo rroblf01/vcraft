@@ -267,8 +267,8 @@ generic value tree.
 | V                                     | Python                       | Notes                                              |
 | ------------------------------------- | ---------------------------- | -------------------------------------------------- |
 | `bool`                                | `bool`                       | Any object in, by its truth value                  |
-| `i8`, `i16`, `i32`, `int`, `i64`, `isize` | `int`                    | Range-checked: out of range raises OverflowError; `bool` and `int` subclasses accepted |
-| `u8`, `u16`, `u32`, `u64`, `usize`    | `int`                        | Negative or out of range raises OverflowError      |
+| `i8`, `i16`, `i32`, `int`, `i64`, `i64` | `int`                    | Range-checked: out of range raises OverflowError; `bool` and `int` subclasses accepted |
+| `u8`, `u16`, `u32`, `u64`, `u64`    | `int`                        | Negative or out of range raises OverflowError      |
 | `f32`, `f64`                          | `float`                      | An `int` is accepted too                           |
 | `rune`                                | `int`                        | The code point                                     |
 | `string`                              | `str`                        | UTF-8; borrowed in, valid for the call (see below) |
@@ -1050,7 +1050,7 @@ when Python collects it; CPython passes the destructor the capsule object, so ca
 // new_box allocates an int behind a capsule that frees it.
 @[vc_fn]
 pub fn new_box(value int) vcraft.PyObj {
-	p := vcraft.native_alloc(usize(sizeof(int)))
+	p := vcraft.native_alloc(u64(sizeof(int)))
 	if p == unsafe { nil } {
 		panic('memory allocation failure')
 	}

@@ -51,7 +51,7 @@ wrote src/mylib_c.v: 12 declaration(s)
 ```
 
 Lee los prototipos de función de una cabecera y escribe las declaraciones `fn C.` con los
-anchos que quiere decir C -- `int` es `i32`, `size_t` es `usize`, `const uint8_t *` es
+anchos que quiere decir C -- `int` es `i32`, `size_t` es `u64`, `const uint8_t *` es
 `&u8` --, que es donde los bindings escritos a mano fallan en silencio (el `int` de V es de
 64 bits). Los punteros a structs pasan a `voidptr`; los varargs, los structs por valor y
 los punteros a función quedan como comentarios que explican por qué. Las líneas

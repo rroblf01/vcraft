@@ -8,7 +8,7 @@ module vcraft_codegen
 //
 // The shape of a trampoline is fixed. For a plain function:
 //
-//	fn vcraft_generated__wrap_add(self voidptr, args voidptr, nargs isize) voidptr {
+//	fn vcraft_generated__wrap_add(self voidptr, args voidptr, nargs i64) voidptr {
 //		if nargs != 2 { vcraft.wrong_nargs('add', 2, int(nargs)) return unsafe { nil } }
 //		arg0 := vcraft.from_py_int_arg(args, 0, 'add', 'a') or { return unsafe { nil } }
 //		arg1 := vcraft.from_py_int_arg(args, 1, 'add', 'b') or { return unsafe { nil } }
@@ -417,7 +417,7 @@ fn emit_rebuild(p Project) string {
 	for c in p.classes {
 		checks << 'vcraft.is_class_of(cls, ${c.ctype}.ptr)'
 	}
-	return 'fn vcraft_generated__rebuild(_self voidptr, raw_args voidptr, nargs isize, kwnames voidptr) voidptr {\n' +
+	return 'fn vcraft_generated__rebuild(_self voidptr, raw_args voidptr, nargs i64, kwnames voidptr) voidptr {\n' +
 		'\tif nargs != 3 || kwnames != unsafe { nil } {\n' +
 		"\t\tvcraft.raise_type_error('_vcraft_rebuild() takes exactly 3 positional arguments')\n" +
 		'\t\treturn unsafe { nil }\n\t}\n' +
@@ -1001,7 +1001,7 @@ pub fn emit_method_trampoline(p Project, c Class, f Func) string {
 	signature := if f.params.len == 0 {
 		'self voidptr, _args voidptr'
 	} else {
-		'self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
+		'self voidptr, raw_args voidptr, nargs i64, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 	if f.params.len > 0 && !f.pass_module {
@@ -1095,7 +1095,7 @@ pub fn emit_static_trampoline(f Func) string {
 	signature := if f.params.len == 0 {
 		'_self voidptr, _args voidptr'
 	} else {
-		'_self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
+		'_self voidptr, raw_args voidptr, nargs i64, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 	if f.params.len > 0 && !f.pass_module {
@@ -1534,7 +1534,7 @@ pub fn emit_concat_trampoline(p Project, c Class, f Func) string {
 // emit_repeat_trampoline renders a method exposed as `sq_repeat`.
 pub fn emit_repeat_trampoline(p Project, c Class, f Func) string {
 	mut w := new_builder()
-	w.write_string('fn ${f.trampoline}(self voidptr, n isize) voidptr {\n')
+	w.write_string('fn ${f.trampoline}(self voidptr, n i64) voidptr {\n')
 	w.write_string('\tvcraft.gc_enter()\n')
 	w.write_string(emit_state_pointer(c))
 	w.write_string(emit_enter_state(p, c))
@@ -1569,7 +1569,7 @@ pub fn emit_trampoline(f Func) string {
 	signature := if f.params.len == 0 {
 		'_self voidptr, _args voidptr'
 	} else {
-		'_self voidptr, raw_args voidptr, nargs isize, kwnames voidptr'
+		'_self voidptr, raw_args voidptr, nargs i64, kwnames voidptr'
 	}
 	w.write_string('fn ${f.trampoline}(${signature}) voidptr {\n')
 

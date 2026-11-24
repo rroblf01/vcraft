@@ -34,6 +34,15 @@ export V_C_ERROR_BUG_REPORT_DISABLED=1
 
 command -v v >/dev/null || { echo "the V compiler is not on PATH" >&2; exit 1; }
 
+# Older V (the pinned 0.5.2) needs `-new-compiler` to disable the bootstrap retry
+# on a failed C compile; newer V dropped the option because the new compiler is
+# the only one. Probe once so the wrapper works with either.
+if printf 'fn main(){}\\n' > /tmp/.vcraft-v-probe.v && v -new-compiler -o /tmp/.vcraft-v-probe /tmp/.vcraft-v-probe.v >/dev/null 2>&1; then
+	NEW_COMPILER=(-new-compiler)
+else
+	NEW_COMPILER=()
+fi
+
 # systemd-run is only used when it understands every option below: an older
 # systemd-run accepts the command but rejects `--working-directory`, and the build
 # then fails on the wrapper rather than on anything it compiled. Checking the help
@@ -48,9 +57,9 @@ if command -v systemd-run >/dev/null && systemd-run --help 2>&1 | grep -q -- '--
 		${VTMP:+-E VTMP} ${VCRAFT_SANITIZE:+-E VCRAFT_SANITIZE} -E PATH -E HOME \
 		-p "MemoryMax=$memory_max" \
 		-p MemorySwapMax=0 \
-		v -new-compiler -no-parallel "$@"
+		v "${NEW_COMPILER[@]}" -no-parallel "$@"
 fi
 
 # Without systemd the flags above still bound the build, there is just no hard
 # ceiling.
-exec v -new-compiler -no-parallel "$@"
+exec v "${NEW_COMPILER[@]}" -no-parallel "$@"

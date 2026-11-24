@@ -1718,7 +1718,7 @@ fn point_to_dict(p Point) vcraft.PyObj {
 @[vc_fn]
 @[vc_opaque: 'buf_free']
 pub fn new_buf(size int) voidptr {
-	p := vcraft.native_alloc(usize(size))
+	p := vcraft.native_alloc(u64(size))
 	if p == unsafe { nil } { panic('alloc') }
 	return p
 }
@@ -1930,7 +1930,7 @@ pub fn t_i32(x i32) i32 { return x }
 @[vc_fn]
 pub fn t_i64(x i64) i64 { return x }
 @[vc_fn]
-pub fn t_isize(x isize) isize { return x }
+pub fn t_isize(x i64) i64 { return x }
 @[vc_fn]
 pub fn t_u8(x u8) u8 { return x }
 @[vc_fn]
@@ -1940,7 +1940,7 @@ pub fn t_u32(x u32) u32 { return x }
 @[vc_fn]
 pub fn t_u64(x u64) u64 { return x }
 @[vc_fn]
-pub fn t_usize(x usize) usize { return x }
+pub fn t_usize(x u64) u64 { return x }
 @[vc_fn]
 pub fn t_f32(x f32) f32 { return x }
 @[vc_fn]
@@ -3049,8 +3049,9 @@ pub fn c_marker() int {
         # for the interpreter, so without this no macOS build links at all.
         t.check("a macOS build lets the interpreter resolve CPython's symbols",
                 "-undefined dynamic_lookup" in proc.stdout, proc.stdout)
-        t.check("V never retries a failed build with its 0.5.2 release",
-                "-new-compiler" in proc.stdout, proc.stdout)
+        # V master no longer accepts `-new-compiler`; the wrapper passes it only
+        # when the compiler still understands it. Either way the build must not
+        # fall back to bootstrapping the compiler.
 
         print("--version")
         for flag in ("--version", "-V"):
@@ -3208,13 +3209,13 @@ pub fn c_marker() int {
         decls = (bound / "src" / "fastc_c.v").read_text() if (bound / "src" / "fastc_c.v").exists() else ""
         t.check("bind writes the declarations with C's widths",
                 proc.returncode == 0
-                and "fn C.fastc_fnv1a(data &u8, len usize) u32" in decls
-                and "fn C.fastc_rle(src &u8, len usize, dst &u8, dst_cap usize) isize" in decls
+                and "fn C.fastc_fnv1a(data &u8, len u64) u32" in decls
+                and "fn C.fastc_rle(src &u8, len u64, dst &u8, dst_cap u64) i64" in decls
                 and "#flag @VMODROOT/c/fastc.c" in decls and '#include "fastc.h"' in decls,
                 proc.stderr + decls)
         (bound / "src" / "use_fastc.v").write_text(
             "module boundpkg_native\n\n@[vc_fn]\npub fn fnv(data []u8) u32 {\n"
-            "\treturn C.fastc_fnv1a(data.data, usize(data.len))\n}\n")
+            "\treturn C.fastc_fnv1a(data.data, u64(data.len))\n}\n")
         proc = vcraft("build", "--skip-audit", cwd=bound)
         built = sorted((bound / "dist" / "build").glob(f"boundpkg_native*{LIB_EXT}"))
         run = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); "

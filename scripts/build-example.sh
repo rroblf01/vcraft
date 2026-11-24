@@ -21,6 +21,31 @@ mkdir -p "$here/build"
 
 "$here/build/vc-generate" "$project" "$module" "$module"
 
+# Newer V turns unvalidated attributes into warnings, and `-prod` turns those
+# warnings into errors. vcraft reads these attributes from the source text during
+# generation, so strip them before this compile and restore them after.
+backup_dir="$(mktemp -d)"
+trap 'for f in "$backup_dir"/*.v; do [ -e "$f" ] || continue; base="$(basename "$f")"; cp "$f" "$project/src/$base"; done; rm -rf "$backup_dir"' EXIT
+for f in "$project"/src/*.v; do
+	[ -e "$f" ] || continue
+	cp "$f" "$backup_dir/"
+	python3 - "$f" <<'PY'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+out = src
+while True:
+	start = out.find('@[vc_')
+	if start < 0:
+		break
+	end = out.find(']', start)
+	if end < 0:
+		break
+	out = out[:start] + out[end + 1:]
+open(path, 'w').write(out)
+PY
+done
+
 mkdir -p "$project/python"
 # Extensions leave the `Py*` symbols for the interpreter to resolve at import.
 # Apple's linker refuses undefined symbols in a shared object unless told so;

@@ -25,6 +25,11 @@
 #define _GNU_SOURCE
 #endif
 
+#ifndef GC_THREADS
+#define GC_THREADS 1
+#endif
+#include <gc/gc.h>
+
 #if (defined(__APPLE__) || defined(__linux__)) && defined(GC_THREADS)
 #include <dlfcn.h>
 
@@ -213,6 +218,11 @@ __attribute__((constructor)) static void vpy_gc_preinit_linux(void) {
 // requires: a thread left registered after it is gone would be signalled by the next
 // collection. POSIX uses a pthread key destructor; Windows has no per-thread TLS
 // destructor, so it uses a fiber-local slot's.
+#ifndef GC_THREADS
+#define GC_THREADS 1
+#endif
+#include <gc/gc.h>
+
 #if defined(GC_THREADS) && (defined(__APPLE__) || defined(__linux__))
 #include <pthread.h>
 

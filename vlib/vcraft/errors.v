@@ -47,7 +47,7 @@ pub fn clear_error() {
 // and every error the runtime reports would pay a malloc, a copy and a free for it.
 pub fn set_error(exc PyObj, message string) {
 	unsafe {
-		C.vpy_set_error_utf8(exc.ptr, message.str, isize(message.len))
+		C.vpy_set_error_utf8(exc.ptr, message.str, i64(message.len))
 	}
 }
 
@@ -316,7 +316,7 @@ pub fn set_error_object(exc voidptr, message string) {
 //	}
 pub fn raise_errno(code int, context string) IError {
 	unsafe {
-		C.vpy_raise_errno(i32(code), context.str, isize(context.len))
+		C.vpy_raise_errno(i32(code), context.str, i64(context.len))
 	}
 	return error_with_code(if context.len > 0 { context } else { 'errno ${code}' },
 		int(PyExc.os_error))

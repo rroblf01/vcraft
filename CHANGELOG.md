@@ -7,6 +7,16 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-11-24
+
+### Fixed
+
+- **V master compatibility.** Adapted to V master (`bbe5707`): conditional
+  `-new-compiler` in the wrapper, removal of the hard-coded flag from the build
+  command, `flat.Node.typ` → `typ_text()`, `isize`/`usize` → `i64`/`u64`,
+  libgc include in `gc_preinit.h`, and stripping of `@[vc_*]` attributes before
+  `-prod` builds. All suites pass against V master.
+
 ## [1.8.0] - 2026-11-19
 
 ### Added
@@ -17,7 +27,7 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
   The README's Stability section now states the V pin policy: a pin move is a minor
   release, never a patch.
 - **`vcraft bind <header.h>`** writes the `fn C.` declarations for a C header's functions
-  with the widths C means (`int` is `i32`, `size_t` is `usize`, `const uint8_t *` is
+  with the widths C means (`int` is `i32`, `size_t` is `u64`, `const uint8_t *` is
   `&u8`) and the `#flag`/`#include` lines, into `src/`; varargs, structs by value and
   function pointers are left as explained comments. The by-hand version is where the
   64-bit V `int` against C's 32 goes wrong silently.
@@ -1273,8 +1283,8 @@ packages them as wheels, with no Rust, C++ or zlib involved.
   caller) and `voidptr` (borrowed, increfed for the caller).
 - **`i64` throughout**: class fields, method parameters and sequence parameters
   accept `i64` as well as `int` (with this V compiler, `int` is already 64 bits).
-- **Narrow sequence parameters**: `[]i8`, `[]i16`, `[]i32`, `[]isize`, `[]rune`,
-  `[]u16`, `[]u32`, `[]usize`, `[]f32` and `[]bool` convert with the same
+- **Narrow sequence parameters**: `[]i8`, `[]i16`, `[]i32`, `[]i64`, `[]rune`,
+  `[]u16`, `[]u32`, `[]u64`, `[]f32` and `[]bool` convert with the same
   TypeError/OverflowError behaviour as scalar parameters. A sequence element
   with no reader is a diagnostic with file, line and column instead of a
   compile error in the generated glue.
