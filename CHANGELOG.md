@@ -11,11 +11,12 @@ annotation vocabulary, the `vcraft.toml` keys and the CLI.
 
 ### Fixed
 
-- **V master compatibility.** Adapted to V master (`bbe5707`): conditional
-  `-new-compiler` in the wrapper, removal of the hard-coded flag from the build
-  command, `flat.Node.typ` → `typ_text()`, `isize`/`usize` → `i64`/`u64`,
-  libgc include in `gc_preinit.h`, and stripping of `@[vc_*]` attributes before
-  `-prod` builds. All suites pass against V master.
+- **V master preparation.** The wrapper passes `-new-compiler` only when the
+  compiler understands it, the build command no longer hard-codes it, C widths use
+  `i64`/`u64`, `gc_preinit.h` includes libgc, and `-prod` builds strip `@[vc_*]`
+  attributes first. The flat-AST change (`flat.Node.typ` → `typ_text()`) waits for
+  the next V pin move, a minor release tracked in the roadmap: the pinned `36be926`
+  still exposes `typ` as a string.
 
 ## [1.8.0] - 2026-11-19
 
